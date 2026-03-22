@@ -1,0 +1,32 @@
+{
+    "artifact": "semitexa-dev.llm-hints/v1",
+    "hint_type": "page_scaffold",
+    "result": {
+        "command": "make:page",
+        "status": "success",
+        "created": [
+            "src/modules/Website/Application/Payload/Request/PricingPayload.php",
+            "src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php",
+            "src/modules/Website/Application/Resource/Response/PricingResponse.php",
+            "src/modules/Website/Application/View/templates/pages/pricing.html.twig"
+        ],
+        "skipped": [],
+        "conflicts": [],
+        "next_steps": []
+    },
+    "fill_targets": {
+        "src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php": [
+            "Implement business logic"
+        ],
+        "src/modules/Website/Application/Resource/Response/PricingResponse.php": [
+            "Add fluent setters"
+        ]
+    },
+    "facts": [
+        "All classes auto-discovered via PHP attributes"
+    ],
+    "constraints": [
+        "Handler must be final"
+    ],
+    "suggested_next_prompt": "Implement the handler business logic"
+}

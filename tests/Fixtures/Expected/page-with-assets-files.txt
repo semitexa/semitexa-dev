@@ -1,0 +1,7 @@
+src/modules/Website/Application/Payload/Request/PricingPayload.php
+src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php
+src/modules/Website/Application/Resource/Response/PricingResponse.php
+src/modules/Website/Application/View/templates/pages/pricing.html.twig
+src/modules/Website/Application/View/assets/pages/pricing.json
+src/modules/Website/Application/View/assets/pages/pricing.css
+src/modules/Website/Application/View/assets/pages/pricing.js
