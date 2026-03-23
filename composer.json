@@ -26,5 +26,9 @@
         "psr-4": {
             "Semitexa\\Dev\\Tests\\": "tests/"
         }
-    }
+    },
+    "keywords": [
+        "semitexa",
+        "dev"
+    ]
 }
