@@ -1,6 +1,6 @@
 {
     "name": "semitexa/dev",
-    "description": "Generator toolkit and AI-friendly CLI for Semitexa Framework",
+    "description": "Semitexa Dev - code generators and capability-aware CLI tooling for application scaffolding",
     "version": "1.0.0",
     "type": "library",
     "license": "MIT",
@@ -29,6 +29,10 @@
     },
     "keywords": [
         "semitexa",
-        "dev"
+        "dev",
+        "generators",
+        "scaffolding",
+        "cli",
+        "capabilities"
     ]
 }
