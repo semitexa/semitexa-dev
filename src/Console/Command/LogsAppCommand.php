@@ -92,6 +92,10 @@ final class LogsAppCommand extends BaseCommand
         if ($asJson) {
             $entries = array_map(fn(array $e) => array_diff_key($e, ['raw' => 1]), $entries);
             $stat = stat($filePath);
+            if ($stat === false) {
+                $io->error("Unable to stat log file: {$filePath}");
+                return Command::FAILURE;
+            }
             $output->writeln(json_encode([
                 'command' => 'logs:app',
                 'query' => [
@@ -132,6 +136,9 @@ final class LogsAppCommand extends BaseCommand
         foreach (glob($logDir . '/*.log') as $path) {
             $name = basename($path);
             $stat = stat($path);
+            if ($stat === false) {
+                continue;
+            }
             $files[] = [
                 'name' => $name,
                 'alias' => array_search($name, self::LOG_FILES, true) ?: null,
@@ -314,6 +321,10 @@ final class LogsAppCommand extends BaseCommand
         if ($asJson) {
             $entries = array_map(fn(array $e) => array_diff_key($e, ['raw' => 1]), $entries);
             $stat = stat($filePath);
+            if ($stat === false) {
+                $io->error("Unable to stat log file: {$filePath}");
+                return Command::FAILURE;
+            }
             $io->writeln(json_encode([
                 'command' => 'logs:app',
                 'query' => ['file' => $filename, 'around' => $around, 'context' => $contextLines, 'grep' => $grep],

@@ -101,7 +101,7 @@ final class MakeContractCommand extends BaseCommand
                 ],
                 'suggested_next_prompt' => "Run: bin/semitexa contracts:list --json to verify the binding",
             ]));
-            return self::SUCCESS;
+            return $hasConflicts ? self::FAILURE : self::SUCCESS;
         }
 
         if ($result->created) {
