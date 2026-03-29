@@ -34,8 +34,8 @@ final class LogsAppCommand extends BaseCommand
     {
         $this
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole', 'app')
-            ->addOption('lines', 'n', InputOption::VALUE_REQUIRED, 'Number of lines from end', '100')
-            ->addOption('grep', 'g', InputOption::VALUE_REQUIRED, 'Regex filter pattern')
+            ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'Number of lines from end', '100')
+            ->addOption('grep', null, InputOption::VALUE_REQUIRED, 'Regex filter pattern')
             ->addOption('level', null, InputOption::VALUE_REQUIRED, 'Filter by log level (ERROR, WARNING, INFO, DEBUG)')
             ->addOption('since', null, InputOption::VALUE_REQUIRED, 'Show entries since datetime or relative (-1h, -30m)')
             ->addOption('around', null, InputOption::VALUE_REQUIRED, 'Show entries around a timestamp (±context lines)')
@@ -85,6 +85,7 @@ final class LogsAppCommand extends BaseCommand
         $entries = array_map(fn(string $line) => $this->parseLine($line), $rawLines);
 
         if ($asJson) {
+            $entries = array_map(fn(array $e) => array_diff_key($e, ['raw' => 1]), $entries);
             $stat = stat($filePath);
             $output->writeln(json_encode([
                 'command' => 'logs:app',
@@ -290,6 +291,7 @@ final class LogsAppCommand extends BaseCommand
         $entries = array_map(fn(string $l) => $this->parseLine($l), $rawLines);
 
         if ($asJson) {
+            $entries = array_map(fn(array $e) => array_diff_key($e, ['raw' => 1]), $entries);
             $stat = stat($filePath);
             $io->writeln(json_encode([
                 'command' => 'logs:app',
