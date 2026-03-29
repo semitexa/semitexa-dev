@@ -67,10 +67,11 @@ final class MakeContractCommand extends BaseCommand
 
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:contract');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
+        $hasConflicts = $result->conflicts !== [];
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return $hasConflicts ? self::FAILURE : self::SUCCESS;
         }
 
         if ($input->getOption('llm-hints')) {
@@ -110,6 +111,6 @@ final class MakeContractCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
-        return self::SUCCESS;
+        return $hasConflicts ? self::FAILURE : self::SUCCESS;
     }
 }

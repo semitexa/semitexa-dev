@@ -311,6 +311,29 @@ final class CapabilityRegistry
                 supports: ['--json'],
                 follow_up: ['make:event-listener'],
             ),
+            new CommandCapability(
+                name: 'logs:app',
+                kind: 'introspection',
+                summary: 'Read application log files with plain-text filtering, structured parsing, and around-timestamp context.',
+                use_when: 'Inspecting recent application logs, narrowing by level/text, or grabbing context around a specific timestamp.',
+                avoid_when: 'You need infrastructure logs outside var/log or already know the exact file and line offset.',
+                optional_inputs: [
+                    'file' => ['type' => 'string', 'description' => 'Log file alias: app, debug, session-debug, swoole', 'default' => 'app'],
+                    'lines' => ['type' => 'int', 'description' => 'Number of lines from the end to inspect', 'default' => 100],
+                    'grep' => ['type' => 'string', 'description' => 'Case-insensitive plain-text filter applied to raw lines'],
+                    'level' => ['type' => 'string', 'description' => 'Filter structured entries by level (ERROR, WARNING, INFO, DEBUG)'],
+                    'since' => ['type' => 'string', 'description' => 'Show entries since datetime or relative offset like -1h or -30m'],
+                    'around' => ['type' => 'string', 'description' => 'Show entries around a timestamp'],
+                    'context' => ['type' => 'int', 'description' => 'Number of lines on each side for --around mode', 'default' => 20],
+                    'json' => ['type' => 'flag', 'description' => 'Output structured JSON', 'default' => false],
+                    'list' => ['type' => 'flag', 'description' => 'List available log files with sizes', 'default' => false],
+                ],
+                outputs: [
+                    'entries' => 'Plain-text lines or structured log entries parsed from var/log/*.log',
+                ],
+                supports: ['--json', '--list'],
+                follow_up: [],
+            ),
         ];
     }
 }

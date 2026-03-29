@@ -27,15 +27,15 @@ final class LogsAppCommand extends BaseCommand
     /** Monolog: [2026-03-29 08:25:00] channel.LEVEL: message {context} */
     private const MONOLOG_PATTERN = '/^\[(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*)\]\s+(\S+)\.(\w+):\s+(.*)/';
 
-    /** JSON log line: {"timestamp":"...", ...} */
-    private const JSON_LOG_PATTERN = '/^\{.*"timestamp"\s*:/';
+    /** JSON log line: {"timestamp":"...", ...} or {"datetime":"...", ...} */
+    private const JSON_LOG_PATTERN = '/^\{.*"(?:timestamp|datetime)"\s*:/';
 
     protected function configure(): void
     {
         $this
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole', 'app')
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'Number of lines from end', '100')
-            ->addOption('grep', null, InputOption::VALUE_REQUIRED, 'Regex filter pattern')
+            ->addOption('grep', null, InputOption::VALUE_REQUIRED, 'Case-insensitive plain-text filter')
             ->addOption('level', null, InputOption::VALUE_REQUIRED, 'Filter by log level (ERROR, WARNING, INFO, DEBUG)')
             ->addOption('since', null, InputOption::VALUE_REQUIRED, 'Show entries since datetime or relative (-1h, -30m)')
             ->addOption('around', null, InputOption::VALUE_REQUIRED, 'Show entries around a timestamp (±context lines)')
@@ -78,6 +78,11 @@ final class LogsAppCommand extends BaseCommand
         $asJson = $input->getOption('json');
 
         if ($around !== null) {
+            if ($level !== null || $since !== null) {
+                $io->error('--around cannot be combined with --level or --since.');
+                return Command::FAILURE;
+            }
+
             return $this->aroundMode($io, $input, $filePath, $filename, $around, $contextLines, $grep, $asJson);
         }
 
@@ -164,11 +169,16 @@ final class LogsAppCommand extends BaseCommand
      */
     private function readTail(string $filePath, int $maxLines, ?string $grep, ?string $level, ?string $since): array
     {
+        if (filesize($filePath) === 0) {
+            return [];
+        }
+
         $sinceTs = $since !== null ? $this->parseDateTime($since) : null;
 
         $file = new \SplFileObject($filePath, 'r');
         $file->seek(PHP_INT_MAX);
-        $totalLines = $file->key();
+        $lastIndex = $file->key();
+        $totalLines = $lastIndex + 1;
 
         if ($totalLines === 0) {
             return [];
@@ -190,7 +200,7 @@ final class LogsAppCommand extends BaseCommand
                 continue;
             }
 
-            if ($grep !== null && !@preg_match('/' . $grep . '/i', $line)) {
+            if ($grep !== null && !$this->matchesGrep($line, $grep)) {
                 continue;
             }
 
@@ -239,9 +249,18 @@ final class LogsAppCommand extends BaseCommand
             return Command::FAILURE;
         }
 
+        if (filesize($filePath) === 0) {
+            return Command::SUCCESS;
+        }
+
         $file = new \SplFileObject($filePath, 'r');
         $file->seek(PHP_INT_MAX);
-        $totalLines = $file->key();
+        $lastIndex = $file->key();
+        $totalLines = $lastIndex + 1;
+
+        if ($totalLines === 0) {
+            return Command::SUCCESS;
+        }
 
         // Binary search for the target timestamp
         $lo = 0;
@@ -256,9 +275,11 @@ final class LogsAppCommand extends BaseCommand
             $lineTs = isset($parsed['timestamp']) ? strtotime($parsed['timestamp']) : null;
 
             if ($lineTs === null || $lineTs === false) {
-                // Can't parse — move forward
-                $lo = $mid + 1;
-                continue;
+                $lineTs = $this->probeNearestTimestamp($file, $totalLines, $mid);
+                if ($lineTs === null) {
+                    $foundLine = $this->linearSearchClosestLine($filePath, $targetTs);
+                    break;
+                }
             }
 
             if ($lineTs < $targetTs) {
@@ -281,7 +302,7 @@ final class LogsAppCommand extends BaseCommand
             $line = rtrim($file->current(), "\r\n");
             $file->next();
 
-            if ($grep !== null && !@preg_match('/' . $grep . '/i', $line)) {
+            if ($grep !== null && !$this->matchesGrep($line, $grep)) {
                 continue;
             }
 
@@ -312,6 +333,64 @@ final class LogsAppCommand extends BaseCommand
         }
 
         return Command::SUCCESS;
+    }
+
+    private function matchesGrep(string $line, string $grep): bool
+    {
+        return preg_match('/' . preg_quote($grep, '/') . '/i', $line) === 1;
+    }
+
+    private function probeNearestTimestamp(\SplFileObject $file, int $totalLines, int $mid, int $probeLimit = 32): ?int
+    {
+        for ($offset = 1; $offset <= $probeLimit; $offset++) {
+            $backward = $mid - $offset;
+            if ($backward >= 0) {
+                $file->seek($backward);
+                $parsed = $this->parseLine(rtrim($file->current(), "\r\n"));
+                $lineTs = isset($parsed['timestamp']) ? strtotime($parsed['timestamp']) : null;
+                if ($lineTs !== null && $lineTs !== false) {
+                    return $lineTs;
+                }
+            }
+
+            $forward = $mid + $offset;
+            if ($forward < $totalLines) {
+                $file->seek($forward);
+                $parsed = $this->parseLine(rtrim($file->current(), "\r\n"));
+                $lineTs = isset($parsed['timestamp']) ? strtotime($parsed['timestamp']) : null;
+                if ($lineTs !== null && $lineTs !== false) {
+                    return $lineTs;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function linearSearchClosestLine(string $filePath, int $targetTs): int
+    {
+        $file = new \SplFileObject($filePath, 'r');
+        $closestLine = 0;
+
+        while (!$file->eof()) {
+            $lineNumber = $file->key();
+            $parsed = $this->parseLine(rtrim($file->current(), "\r\n"));
+            $file->next();
+
+            $lineTs = isset($parsed['timestamp']) ? strtotime($parsed['timestamp']) : null;
+            if ($lineTs === null || $lineTs === false) {
+                continue;
+            }
+
+            if ($lineTs <= $targetTs) {
+                $closestLine = $lineNumber;
+                continue;
+            }
+
+            break;
+        }
+
+        return $closestLine;
     }
 
     private function parseLine(string $line): array

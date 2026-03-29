@@ -26,16 +26,15 @@ final class EventListenerPlanBuilder
     {
         $module = $this->inflector->toStudly($params['module']);
         $className = $this->inflector->toStudly($params['name']);
-        $eventClass = $this->inflector->toStudly($params['event']);
+        [$eventImport, $eventClass] = $this->resolveEventReference($module, $params['event']);
         $execution = $this->inflector->toStudly($params['execution']);
 
         $namespace = "Semitexa\\Modules\\{$module}\\Application\\Handler\\DomainListener";
-        $eventNamespace = "Semitexa\\Modules\\{$module}\\Domain\\Event";
 
         $imports = [
             'use Semitexa\\Core\\Attributes\\AsEventListener;',
             'use Semitexa\\Core\\Event\\EventExecution;',
-            "use {$eventNamespace}\\{$eventClass};",
+            "use {$eventImport};",
         ];
 
         sort($imports);
@@ -58,5 +57,24 @@ final class EventListenerPlanBuilder
             ],
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function resolveEventReference(string $module, string $event): array
+    {
+        $event = trim($event);
+
+        if (str_contains($event, '\\')) {
+            $eventImport = ltrim($event, '\\');
+            $parts = explode('\\', $eventImport);
+
+            return [$eventImport, (string) end($parts)];
+        }
+
+        $eventClass = $this->inflector->toStudly($event);
+
+        return ["Semitexa\\Modules\\{$module}\\Domain\\Event\\{$eventClass}", $eventClass];
     }
 }

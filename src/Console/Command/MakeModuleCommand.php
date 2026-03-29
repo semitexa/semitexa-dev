@@ -47,6 +47,11 @@ final class MakeModuleCommand extends BaseCommand
         ]);
 
         if ($plan->dryRun) {
+            if ($input->getOption('json') || $input->getOption('llm-hints')) {
+                $io->error('--dry-run cannot be combined with --json or --llm-hints.');
+                return self::FAILURE;
+            }
+
             $io->title('Dry Run — Planned Directories');
             foreach ($plan->files as $file) {
                 $io->text(dirname($file->path));

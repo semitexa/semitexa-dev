@@ -43,13 +43,20 @@ final class DescribeEventCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        // Resolve short name to FQCN
-        $eventClass = $this->resolveEventClass($eventName);
-        if ($eventClass === null) {
+        $eventClasses = $this->resolveEventClasses($eventName);
+        if ($eventClasses === []) {
             $io->error("Event not found: {$eventName}");
             $io->note('Use describe:event (without --name) to see all registered events.');
             return Command::FAILURE;
         }
+        if (count($eventClasses) > 1) {
+            $io->error("Ambiguous event name: {$eventName}");
+            $io->listing(array_values($eventClasses));
+            $io->note('Use the full event class name with --name.');
+            return Command::FAILURE;
+        }
+
+        $eventClass = $eventClasses[0];
 
         $listeners = EventListenerRegistry::getListeners($eventClass);
 
@@ -202,15 +209,18 @@ final class DescribeEventCommand extends BaseCommand
         return Command::SUCCESS;
     }
 
-    private function resolveEventClass(string $name): ?string
+    /**
+     * @return list<string>
+     */
+    private function resolveEventClasses(string $name): array
     {
-        // If already a FQCN, try directly
         if (class_exists($name)) {
-            return $name;
+            return [$name];
         }
 
-        // Search all known listener event classes for short name match
         $allListenerClasses = EventListenerRegistry::getAllListenerClasses();
+        $matches = [];
+
         foreach ($allListenerClasses as $listenerClass) {
             try {
                 $ref = new \ReflectionClass($listenerClass);
@@ -220,8 +230,11 @@ final class DescribeEventCommand extends BaseCommand
                     $eventClass = $instance->event;
                     if (class_exists($eventClass)) {
                         $shortName = (new \ReflectionClass($eventClass))->getShortName();
-                        if ($shortName === $name || $eventClass === $name) {
-                            return $eventClass;
+                        if ($eventClass === $name) {
+                            return [$eventClass];
+                        }
+                        if ($shortName === $name) {
+                            $matches[$eventClass] = $eventClass;
                         }
                     }
                 }
@@ -230,7 +243,7 @@ final class DescribeEventCommand extends BaseCommand
             }
         }
 
-        return null;
+        return array_values($matches);
     }
 
     private function resolveRelativeFile(string $className): ?string
