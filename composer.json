@@ -1,7 +1,7 @@
 {
     "name": "semitexa/dev",
     "description": "Semitexa Dev - code generators and capability-aware CLI tooling for application scaffolding",
-    "version": "1.0.0",
+    "version": "v1.0.2",
     "type": "library",
     "license": "MIT",
     "authors": [
