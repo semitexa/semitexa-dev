@@ -106,7 +106,10 @@ final class ReleaseComposerManifestBuilder
             }
 
             if ($remoteUrl === null) {
-                continue;
+                throw new \RuntimeException(sprintf(
+                    'Unable to derive VCS URL for local package at "%s". Ensure the package has a .git origin or a composer.json with a semitexa/* name.',
+                    $url,
+                ));
             }
 
             if (isset($seenVcsUrls[$remoteUrl])) {

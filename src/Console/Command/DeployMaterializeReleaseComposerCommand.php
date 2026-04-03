@@ -31,7 +31,7 @@ final class DeployMaterializeReleaseComposerCommand extends BaseCommand
 
         try {
             $manifest = $builder->build($projectRoot);
-            $writtenPath = $projectRoot . '/' . ltrim((string) $input->getOption('output'), '/');
+            $writtenPath = $this->resolveOutputPath($projectRoot, (string) $input->getOption('output'));
             $backupPath = null;
 
             if ($input->getOption('write-root')) {
@@ -103,6 +103,40 @@ final class DeployMaterializeReleaseComposerCommand extends BaseCommand
     private function writeJson(string $path, array $data): void
     {
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
-        file_put_contents($path, $json);
+        $directory = dirname($path);
+        if (!is_dir($directory)) {
+            throw new \RuntimeException(sprintf('Output directory does not exist: %s', $directory));
+        }
+
+        $tempPath = tempnam($directory, basename($path) . '.tmp.');
+        if ($tempPath === false) {
+            throw new \RuntimeException(sprintf('Failed to create temporary file for: %s', $path));
+        }
+
+        if (file_put_contents($tempPath, $json, LOCK_EX) === false) {
+            @unlink($tempPath);
+            throw new \RuntimeException(sprintf('Failed to write JSON file: %s', $path));
+        }
+
+        if (!rename($tempPath, $path)) {
+            @unlink($tempPath);
+            throw new \RuntimeException(sprintf('Failed to finalize JSON file write: %s', $path));
+        }
+    }
+
+    private function resolveOutputPath(string $projectRoot, string $output): string
+    {
+        $relative = ltrim(str_replace('\\', '/', trim($output)), '/');
+        if ($relative === '' || str_contains($relative, "\0")) {
+            throw new \RuntimeException('Invalid output path.');
+        }
+
+        foreach (explode('/', $relative) as $segment) {
+            if ($segment === '..') {
+                throw new \RuntimeException('Output path must stay inside project root.');
+            }
+        }
+
+        return $projectRoot . '/' . $relative;
     }
 }

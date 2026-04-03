@@ -74,7 +74,7 @@ export SEMITEXA_REMOTE_DEPLOY_SSH_IDENTITY_FILE="${HOME}/.ssh/id_ed25519"
 export REMOTE_SMOKE_TARGET="deploy@127.0.0.1"
 export REMOTE_SMOKE_DEPLOY_PATH="${DEPLOY_PATH}"
 
-php "${SCRIPT_DIR}/run-remote-bootstrap-smoke.php" | tee "${LOG_PATH}"
+php "${SCRIPT_DIR}/run-remote-bootstrap-smoke.php" 2>&1 | tee "${LOG_PATH}"
 
 if [ ! -f "${DEPLOY_PATH}/.semitexa-deployment.json" ]; then
     echo "Remote deployment marker was not created during smoke run." >&2

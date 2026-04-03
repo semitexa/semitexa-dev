@@ -7,6 +7,10 @@ MARKER_PATH="${DEPLOY_PATH}/.semitexa-deployment.json"
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 elif command -v sudo >/dev/null 2>&1; then
+    if ! sudo -n true 2>/dev/null; then
+        echo "Remote verification requires root or passwordless sudo." >&2
+        exit 1
+    fi
     SUDO="sudo"
 else
     echo "Remote verification requires root or passwordless sudo." >&2

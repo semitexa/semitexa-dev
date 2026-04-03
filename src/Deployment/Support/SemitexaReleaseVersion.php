@@ -20,6 +20,8 @@ final class SemitexaReleaseVersion
     {
         $leftDate = self::parseDateBased($left);
         $rightDate = self::parseDateBased($right);
+        $leftSemantic = self::parseSemantic($left);
+        $rightSemantic = self::parseSemantic($right);
 
         if ($leftDate !== null && $rightDate !== null) {
             $baseComparison = strcmp($leftDate['base'], $rightDate['base']);
@@ -30,9 +32,6 @@ final class SemitexaReleaseVersion
             return self::suffixRank($leftDate['suffix']) <=> self::suffixRank($rightDate['suffix']);
         }
 
-        $leftSemantic = self::parseSemantic($left);
-        $rightSemantic = self::parseSemantic($right);
-
         if ($leftSemantic !== null && $rightSemantic !== null) {
             foreach (['major', 'minor', 'patch'] as $part) {
                 $comparison = $leftSemantic[$part] <=> $rightSemantic[$part];
@@ -42,6 +41,10 @@ final class SemitexaReleaseVersion
             }
 
             return self::suffixRank($leftSemantic['suffix']) <=> self::suffixRank($rightSemantic['suffix']);
+        }
+
+        if (($leftDate !== null && $rightSemantic !== null) || ($leftSemantic !== null && $rightDate !== null)) {
+            return self::schemeRank($leftSemantic !== null) <=> self::schemeRank($rightSemantic !== null);
         }
 
         return version_compare($left, $right);
@@ -114,5 +117,10 @@ final class SemitexaReleaseVersion
             'alpha' => 1000,
             default => 0,
         };
+    }
+
+    private static function schemeRank(bool $semantic): int
+    {
+        return $semantic ? 2 : 1;
     }
 }

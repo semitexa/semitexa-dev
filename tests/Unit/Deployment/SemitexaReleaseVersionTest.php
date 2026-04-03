@@ -33,4 +33,10 @@ final class SemitexaReleaseVersionTest extends TestCase
         self::assertGreaterThan(0, SemitexaReleaseVersion::compare('0.1.4', '0.1.3'));
         self::assertGreaterThan(0, SemitexaReleaseVersion::compare('1.0.12', '1.0.12-beta'));
     }
+
+    public function testPrefersSemanticVersionsWhenSchemesAreMixed(): void
+    {
+        self::assertGreaterThan(0, SemitexaReleaseVersion::compare('1.2.3', '2024.01.15.0001'));
+        self::assertLessThan(0, SemitexaReleaseVersion::compare('2024.01.15.0001', '1.2.3'));
+    }
 }

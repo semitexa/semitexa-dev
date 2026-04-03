@@ -8,11 +8,7 @@ final class RemoteDeployEnvBuilder
 {
     public function build(?string $remoteEnvFile, ?string $domain): string
     {
-        $tempPath = sprintf(
-            '%s/semitexa-remote-env-%s.env',
-            sys_get_temp_dir(),
-            bin2hex(random_bytes(8)),
-        );
+        $tempPath = $this->createTempFile();
 
         if ($remoteEnvFile !== null && trim($remoteEnvFile) !== '') {
             if (!is_file($remoteEnvFile) || !is_readable($remoteEnvFile)) {
@@ -30,7 +26,7 @@ final class RemoteDeployEnvBuilder
                 ));
             }
 
-            file_put_contents($tempPath, $content);
+            $this->writeTempFile($tempPath, $content);
 
             return $tempPath;
         }
@@ -42,13 +38,40 @@ final class RemoteDeployEnvBuilder
         ];
 
         if ($domain !== null && trim($domain) !== '') {
-            $lines[] = 'SEMITEXA_REMOTE_DEPLOY_DOMAIN=' . trim($domain);
+            $domain = trim($domain);
+            if (preg_match('/[\r\n\0]/', $domain) === 1) {
+                throw new \RuntimeException('Remote deploy domain must be a single-line host value.');
+            }
+
+            $lines[] = 'SEMITEXA_REMOTE_DEPLOY_DOMAIN=' . $domain;
         }
 
         $lines[] = '';
 
-        file_put_contents($tempPath, implode("\n", $lines));
+        $this->writeTempFile($tempPath, implode("\n", $lines));
 
         return $tempPath;
+    }
+
+    private function createTempFile(): string
+    {
+        $tempPath = tempnam(sys_get_temp_dir(), 'semitexa-remote-env-');
+        if ($tempPath === false) {
+            throw new \RuntimeException('Failed to create temporary remote env file.');
+        }
+
+        chmod($tempPath, 0600);
+
+        return $tempPath;
+    }
+
+    private function writeTempFile(string $path, string $content): void
+    {
+        if (file_put_contents($path, $content, LOCK_EX) === false) {
+            @unlink($path);
+            throw new \RuntimeException('Failed to write temporary remote env file.');
+        }
+
+        chmod($path, 0600);
     }
 }

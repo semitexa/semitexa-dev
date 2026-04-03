@@ -138,16 +138,15 @@ fi
 SOURCE_HOST="$(hostname 2>/dev/null || echo unknown)"
 DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-cat <<EOF | run_root tee "$MARKER_PATH" >/dev/null
-{
-  "artifact": "semitexa.remote-bootstrap/v1",
-  "project_name": "$(basename "$DEPLOY_PATH")",
-  "deployed_at_utc": "$DEPLOYED_AT_UTC",
-  "source_host": "$SOURCE_HOST",
-  "scenario": "$SCENARIO_ID",
-  "deployment_path": "$DEPLOY_PATH",
-  "domain": "$DEPLOY_DOMAIN"
-}
-EOF
+jq -n \
+    --arg artifact "semitexa.remote-bootstrap/v1" \
+    --arg project_name "$(basename "$DEPLOY_PATH")" \
+    --arg deployed_at_utc "$DEPLOYED_AT_UTC" \
+    --arg source_host "$SOURCE_HOST" \
+    --arg scenario "$SCENARIO_ID" \
+    --arg deployment_path "$DEPLOY_PATH" \
+    --arg domain "$DEPLOY_DOMAIN" \
+    '{artifact: $artifact, project_name: $project_name, deployed_at_utc: $deployed_at_utc, source_host: $source_host, scenario: $scenario, deployment_path: $deployment_path, domain: $domain}' \
+    | run_root tee "$MARKER_PATH" >/dev/null
 
 echo "[remote-bootstrap] Bootstrap complete"

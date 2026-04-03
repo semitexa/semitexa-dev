@@ -56,12 +56,16 @@ fi
 
 mkdir -p "${SYSTEMD_DIR}"
 
-project_root_escaped="$(printf '%s' "${PROJECT_ROOT}" | sed 's/[&|]/\\&/g')"
-unit_prefix_escaped="$(printf '%s' "${UNIT_PREFIX}" | sed 's/[&|]/\\&/g')"
-interval_escaped="$(printf '%s' "${INTERVAL}" | sed 's/[&|]/\\&/g')"
-run_as_user_escaped="$(printf '%s' "${RUN_AS_USER}" | sed 's/[&|]/\\&/g')"
+escape_sed() {
+    printf '%s' "$1" | sed -e 's/[&\\|]/\\&/g'
+}
+
+project_root_escaped="$(escape_sed "${PROJECT_ROOT}")"
+unit_prefix_escaped="$(escape_sed "${UNIT_PREFIX}")"
+interval_escaped="$(escape_sed "${INTERVAL}")"
+run_as_user_escaped="$(escape_sed "${RUN_AS_USER}")"
 home_dir="$(getent passwd "${RUN_AS_USER}" | cut -d: -f6)"
-home_dir_escaped="$(printf '%s' "${home_dir}" | sed 's/[&|]/\\&/g')"
+home_dir_escaped="$(escape_sed "${home_dir}")"
 
 sed \
     -e "s|@@PROJECT_ROOT@@|${project_root_escaped}|g" \
