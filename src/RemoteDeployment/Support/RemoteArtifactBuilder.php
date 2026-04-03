@@ -13,11 +13,17 @@ final class RemoteArtifactBuilder
      */
     private array $excludedPaths = [
         '.git',
+        '.codex',
+        '.claude',
+        '.idea',
+        '.env',
+        '.env.local',
         'node_modules',
         'vendor',
         '.phpunit.cache',
         'var/cache',
         'var/log',
+        'var/run',
     ];
 
     public function build(string $projectRoot): RemoteDeployArtifact

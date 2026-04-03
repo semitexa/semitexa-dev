@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Deployment\Service;
 
+use Semitexa\Core\Environment;
 use Semitexa\Dev\Deployment\Data\DeploymentPlan;
 use Semitexa\Dev\Deployment\Support\DeploymentLogWriter;
 
@@ -73,7 +74,7 @@ final class FrameworkDeploymentExecutor
     private function composerUpdateCommand(string $projectRoot): string
     {
         return sprintf(
-            '%s update %s --with-all-dependencies --no-dev --optimize-autoloader --working-dir=%s',
+            '%s update %s --with-all-dependencies --no-dev --no-interaction --optimize-autoloader --working-dir=%s',
             $this->composerBinary($projectRoot),
             escapeshellarg('semitexa/*'),
             escapeshellarg($projectRoot),
@@ -147,13 +148,42 @@ final class FrameworkDeploymentExecutor
 
     private function run(string $command, string $projectRoot): void
     {
-        $fullCommand = sprintf('cd %s && %s 2>&1', escapeshellarg($projectRoot), $command);
+        $fullCommand = sprintf(
+            'cd %s && %s%s 2>&1',
+            escapeshellarg($projectRoot),
+            $this->shellEnvironmentPrefix(),
+            $command,
+        );
         $output = [];
         exec($fullCommand, $output, $exitCode);
 
         if ($exitCode !== 0) {
             throw new \RuntimeException("Command failed: {$command}\n" . implode("\n", $output));
         }
+    }
+
+    private function shellEnvironmentPrefix(): string
+    {
+        $exports = [];
+        $environmentMap = [
+            'HOME' => Environment::getEnvValue('SEMITEXA_AUTO_DEPLOY_HOME', null),
+            'COMPOSER_HOME' => Environment::getEnvValue('SEMITEXA_AUTO_DEPLOY_COMPOSER_HOME', null),
+            'GIT_SSH_COMMAND' => Environment::getEnvValue('SEMITEXA_AUTO_DEPLOY_GIT_SSH_COMMAND', null),
+        ];
+
+        foreach ($environmentMap as $name => $value) {
+            if (!is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $exports[] = sprintf('export %s=%s', $name, escapeshellarg($value));
+        }
+
+        if ($exports === []) {
+            return '';
+        }
+
+        return implode(' && ', $exports) . ' && ';
     }
 
     /**

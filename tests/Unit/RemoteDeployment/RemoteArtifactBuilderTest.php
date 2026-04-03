@@ -17,11 +17,15 @@ final class RemoteArtifactBuilderTest extends TestCase
         mkdir($this->projectRoot . '/src', 0777, true);
         mkdir($this->projectRoot . '/vendor', 0777, true);
         mkdir($this->projectRoot . '/var/cache', 0777, true);
+        mkdir($this->projectRoot . '/.codex', 0777, true);
 
         file_put_contents($this->projectRoot . '/composer.json', "{}\n");
+        file_put_contents($this->projectRoot . '/.env', "APP_ENV=dev\n");
+        file_put_contents($this->projectRoot . '/.env.local', "APP_ENV=dev\n");
         file_put_contents($this->projectRoot . '/src/App.php', "<?php\n");
         file_put_contents($this->projectRoot . '/vendor/ignored.php', "<?php\n");
         file_put_contents($this->projectRoot . '/var/cache/ignored.txt', "ignored\n");
+        file_put_contents($this->projectRoot . '/.codex/ignored.md', "# ignored\n");
     }
 
     protected function tearDown(): void
@@ -42,6 +46,9 @@ final class RemoteArtifactBuilderTest extends TestCase
         self::assertStringContainsString('./src/App.php', $listing);
         self::assertStringNotContainsString('./vendor/ignored.php', $listing);
         self::assertStringNotContainsString('./var/cache/ignored.txt', $listing);
+        self::assertStringNotContainsString('./.env', $listing);
+        self::assertStringNotContainsString('./.env.local', $listing);
+        self::assertStringNotContainsString('./.codex/ignored.md', $listing);
 
         @unlink($artifact->path);
     }

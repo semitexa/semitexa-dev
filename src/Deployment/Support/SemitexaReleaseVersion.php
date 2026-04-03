@@ -8,7 +8,7 @@ final class SemitexaReleaseVersion
 {
     public static function isValid(string $version): bool
     {
-        return preg_match('/^\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-(?:alpha|beta|rc\d+|p\d+))?$/i', trim($version)) === 1;
+        return self::parseDateBased($version) !== null || self::parseSemantic($version) !== null;
     }
 
     public static function isStable(string $version): bool
@@ -18,19 +18,33 @@ final class SemitexaReleaseVersion
 
     public static function compare(string $left, string $right): int
     {
-        $leftParts = self::parse($left);
-        $rightParts = self::parse($right);
+        $leftDate = self::parseDateBased($left);
+        $rightDate = self::parseDateBased($right);
 
-        if ($leftParts === null || $rightParts === null) {
-            return strcmp($left, $right);
+        if ($leftDate !== null && $rightDate !== null) {
+            $baseComparison = strcmp($leftDate['base'], $rightDate['base']);
+            if ($baseComparison !== 0) {
+                return $baseComparison;
+            }
+
+            return self::suffixRank($leftDate['suffix']) <=> self::suffixRank($rightDate['suffix']);
         }
 
-        $baseComparison = strcmp($leftParts['base'], $rightParts['base']);
-        if ($baseComparison !== 0) {
-            return $baseComparison;
+        $leftSemantic = self::parseSemantic($left);
+        $rightSemantic = self::parseSemantic($right);
+
+        if ($leftSemantic !== null && $rightSemantic !== null) {
+            foreach (['major', 'minor', 'patch'] as $part) {
+                $comparison = $leftSemantic[$part] <=> $rightSemantic[$part];
+                if ($comparison !== 0) {
+                    return $comparison;
+                }
+            }
+
+            return self::suffixRank($leftSemantic['suffix']) <=> self::suffixRank($rightSemantic['suffix']);
         }
 
-        return self::suffixRank($leftParts['suffix']) <=> self::suffixRank($rightParts['suffix']);
+        return version_compare($left, $right);
     }
 
     /**
@@ -50,7 +64,7 @@ final class SemitexaReleaseVersion
     /**
      * @return array{base: string, suffix: string}|null
      */
-    private static function parse(string $version): ?array
+    private static function parseDateBased(string $version): ?array
     {
         $version = trim($version);
         if (preg_match('/^(\d{4}\.\d{2}\.\d{2}\.\d{4})(?:-(alpha|beta|rc\d+|p\d+))?$/i', $version, $m) !== 1) {
@@ -60,6 +74,24 @@ final class SemitexaReleaseVersion
         return [
             'base' => $m[1],
             'suffix' => strtolower($m[2] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array{major: int, minor: int, patch: int, suffix: string}|null
+     */
+    private static function parseSemantic(string $version): ?array
+    {
+        $version = trim($version);
+        if (preg_match('/^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc\d+|p\d+))?$/i', $version, $m) !== 1) {
+            return null;
+        }
+
+        return [
+            'major' => (int) $m[1],
+            'minor' => (int) $m[2],
+            'patch' => (int) $m[3],
+            'suffix' => strtolower($m[4] ?? ''),
         ];
     }
 

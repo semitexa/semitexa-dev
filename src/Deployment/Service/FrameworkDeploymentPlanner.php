@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Deployment\Service;
 
 use Semitexa\Dev\Deployment\Data\DeploymentPlan;
 use Semitexa\Dev\Deployment\Data\PackageUpdate;
+use Semitexa\Dev\Deployment\Source\ComposerVcsTagReleaseSource;
 use Semitexa\Dev\Deployment\Source\PackagistReleaseSource;
 use Semitexa\Dev\Deployment\Source\PrivateGitTagSource;
 use Semitexa\Dev\Deployment\Support\InstalledSemitexaPackageReader;
@@ -18,6 +19,7 @@ final class FrameworkDeploymentPlanner
         private readonly ProjectDeploymentConfigLoader $configLoader = new ProjectDeploymentConfigLoader(),
         private readonly InstalledSemitexaPackageReader $packageReader = new InstalledSemitexaPackageReader(),
         private readonly PackagistReleaseSource $packagistReleaseSource = new PackagistReleaseSource(),
+        private readonly ComposerVcsTagReleaseSource $composerVcsTagReleaseSource = new ComposerVcsTagReleaseSource(),
         private readonly PrivateGitTagSource $privateGitTagSource = new PrivateGitTagSource(),
     ) {}
 
@@ -29,7 +31,17 @@ final class FrameworkDeploymentPlanner
         $privateLatestVersion = null;
 
         if (in_array($config->sourceMode, ['packagist', 'mixed'], true)) {
-            $packageUpdates = $this->packagistReleaseSource->discoverUpdates($installedPackages);
+            $packageUpdates = $this->mergePackageUpdates(
+                $packageUpdates,
+                $this->packagistReleaseSource->discoverUpdates($installedPackages),
+            );
+        }
+
+        if (in_array($config->sourceMode, ['private', 'mixed'], true)) {
+            $packageUpdates = $this->mergePackageUpdates(
+                $packageUpdates,
+                $this->composerVcsTagReleaseSource->discoverUpdates($projectRoot, $installedPackages),
+            );
         }
 
         if (in_array($config->sourceMode, ['private', 'mixed'], true) && $config->privateRepositoryUrl !== null) {
@@ -88,6 +100,15 @@ final class FrameworkDeploymentPlanner
         }
 
         if ($packageUpdates !== []) {
+            $sources = array_values(array_unique(array_map(
+                static fn(PackageUpdate $update): string => $update->source,
+                $packageUpdates,
+            )));
+
+            if ($sources === ['vcs']) {
+                return 'A newer Semitexa package set is available via VCS tag discovery.';
+            }
+
             return 'A newer Semitexa package set is available via Composer package discovery.';
         }
 
@@ -96,5 +117,27 @@ final class FrameworkDeploymentPlanner
         }
 
         throw new \UnexpectedValueException('Inconsistent deployment plan: selected version exists without any update source.');
+    }
+
+    /**
+     * @param list<PackageUpdate> $existing
+     * @param list<PackageUpdate> $incoming
+     * @return list<PackageUpdate>
+     */
+    private function mergePackageUpdates(array $existing, array $incoming): array
+    {
+        $merged = [];
+
+        foreach (array_merge($existing, $incoming) as $update) {
+            $current = $merged[$update->packageName] ?? null;
+
+            if (!$current instanceof PackageUpdate || SemitexaReleaseVersion::compare($update->latestVersion, $current->latestVersion) > 0) {
+                $merged[$update->packageName] = $update;
+            }
+        }
+
+        ksort($merged);
+
+        return array_values($merged);
     }
 }

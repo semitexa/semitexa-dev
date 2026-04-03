@@ -367,18 +367,18 @@ final class CapabilityRegistry
             new CommandCapability(
                 name: 'deploy:bootstrap-remote',
                 kind: 'operations',
-                summary: 'Validate and prepare a first remote Semitexa deployment target over SSH for Ubuntu 20.04+ servers.',
+                summary: 'Bootstrap a first remote Semitexa deployment over SSH for Ubuntu 20.04+ servers.',
                 use_when: 'Bootstrapping a fresh remote server for the first deployment of a Semitexa project.',
                 avoid_when: 'Updating an already deployed server in place. This command is intentionally not an update workflow.',
                 optional_inputs: [
                     'target' => ['type' => 'string', 'description' => 'Explicit remote target in user@host format'],
                     'path' => ['type' => 'string', 'description' => 'Remote deployment path override'],
                     'force-reinitialize' => ['type' => 'flag', 'description' => 'Acknowledge reinitialization intent for an already initialized remote path', 'default' => false],
-                    'remote-env-file' => ['type' => 'string', 'description' => 'Reserved path to a future remote production env file'],
-                    'json' => ['type' => 'flag', 'description' => 'Output remote bootstrap preflight result as JSON', 'default' => false],
+                    'remote-env-file' => ['type' => 'string', 'description' => 'Path to a production env override file uploaded as remote .env.local'],
+                    'json' => ['type' => 'flag', 'description' => 'Output remote bootstrap result as JSON', 'default' => false],
                 ],
                 outputs: [
-                    'bootstrap_preflight' => 'Validated remote target, auth mode, Ubuntu scenario path, remote initialization state, and a local deploy artifact for first deployment',
+                    'bootstrap_result' => 'Remote target, auth mode, Ubuntu scenario, artifact metadata, completed steps, and final bootstrap status',
                 ],
                 supports: ['--json', '--target', '--path', '--force-reinitialize', '--remote-env-file'],
                 follow_up: [],
