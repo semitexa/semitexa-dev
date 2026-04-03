@@ -34,7 +34,7 @@ SEMITEXA_AUTO_DEPLOY_CHANNEL=stable
 SEMITEXA_AUTO_DEPLOY_SOURCE=mixed
 SEMITEXA_AUTO_DEPLOY_PRIVATE_REPOSITORY_URL=git@github.com:semitexa/releases.git
 SEMITEXA_AUTO_DEPLOY_HEALTHCHECK_URL=https://example.test/health
-SEMITEXA_AUTO_DEPLOY_RESTART_COMMAND=docker compose restart
+SEMITEXA_AUTO_DEPLOY_RESTART_COMMAND=bin/semitexa server:start
 SEMITEXA_AUTO_DEPLOY_HOME=/var/www/html/var/auto-deploy/home
 SEMITEXA_AUTO_DEPLOY_COMPOSER_HOME=/var/www/html/var/auto-deploy/composer
 SEMITEXA_AUTO_DEPLOY_GIT_SSH_COMMAND=ssh -i /var/www/html/var/auto-deploy/ssh/github_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/www/html/var/auto-deploy/ssh/known_hosts

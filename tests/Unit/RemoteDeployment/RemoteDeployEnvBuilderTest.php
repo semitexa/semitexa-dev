@@ -18,6 +18,7 @@ final class RemoteDeployEnvBuilderTest extends TestCase
         self::assertIsString($content);
         self::assertStringContainsString('APP_ENV=prod', $content);
         self::assertStringContainsString('APP_DEBUG=0', $content);
+        self::assertMatchesRegularExpression('/^APP_SECRET=[a-f0-9]{64}$/m', $content);
         self::assertStringContainsString('SEMITEXA_REMOTE_DEPLOY_DOMAIN=example.com', $content);
 
         @unlink($path);

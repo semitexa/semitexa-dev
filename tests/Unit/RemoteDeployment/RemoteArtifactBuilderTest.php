@@ -52,4 +52,34 @@ final class RemoteArtifactBuilderTest extends TestCase
 
         @unlink($artifact->path);
     }
+
+    public function testBuildsReleaseArtifactWithoutPackagesAndWithVendorContents(): void
+    {
+        mkdir($this->projectRoot . '/packages/semitexa-site/src', 0777, true);
+
+        file_put_contents($this->projectRoot . '/packages/semitexa-site/src/Site.php', "<?php\n");
+        file_put_contents($this->projectRoot . '/composer.release.json', "{\n  \"name\": \"release/root\",\n  \"require\": {\n    \"php\": \"^8.4\"\n  }\n}\n");
+
+        $artifact = (new RemoteArtifactBuilder())->build($this->projectRoot);
+        $extractRoot = sys_get_temp_dir() . '/semitexa-remote-artifact-extract-' . uniqid('', true);
+        mkdir($extractRoot, 0777, true);
+
+        exec(
+            sprintf(
+                'tar -xzf %s -C %s',
+                escapeshellarg($artifact->path),
+                escapeshellarg($extractRoot),
+            ),
+        );
+
+        self::assertFileExists($extractRoot . '/composer.json');
+        self::assertStringContainsString('release/root', (string) file_get_contents($extractRoot . '/composer.json'));
+        self::assertFileDoesNotExist($extractRoot . '/packages/semitexa-site/src/Site.php');
+        self::assertFileExists($extractRoot . '/vendor/autoload.php');
+        self::assertFileDoesNotExist($extractRoot . '/composer.lock');
+        self::assertFileDoesNotExist($extractRoot . '/composer.release.json');
+
+        exec('rm -rf ' . escapeshellarg($extractRoot));
+        @unlink($artifact->path);
+    }
 }

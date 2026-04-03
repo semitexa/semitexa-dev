@@ -83,6 +83,10 @@ ensure_apt_package() {
     run_root apt-get install -y "$@"
 }
 
+generate_app_secret() {
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
 echo "[remote-bootstrap] Preparing Ubuntu host"
 run_root apt-get update -y
 ensure_apt_package ca-certificates curl jq tar git
@@ -125,19 +129,25 @@ elif [ -n "$REMOTE_ENV_PATH" ]; then
     echo "Remote environment file not found at ${REMOTE_ENV_PATH}." >&2
     exit 1
 elif [ ! -f "${DEPLOY_PATH}/.env.local" ]; then
+    APP_SECRET_VALUE="$(generate_app_secret)"
     cat <<'EOF' | run_root tee "${DEPLOY_PATH}/.env.local" >/dev/null
 APP_ENV=prod
 APP_DEBUG=0
+APP_SECRET=__SEMITEXA_APP_SECRET__
 EOF
     cat <<'EOF' | run_root tee "${DEPLOY_PATH}/.env" >/dev/null
 APP_ENV=prod
 APP_DEBUG=0
+APP_SECRET=__SEMITEXA_APP_SECRET__
 EOF
+    run_root sed -i "s/__SEMITEXA_APP_SECRET__/${APP_SECRET_VALUE}/g" "${DEPLOY_PATH}/.env.local" "${DEPLOY_PATH}/.env"
 fi
 
 (
     cd "$DEPLOY_PATH"
-    project_sh bin/semitexa install
+    if [ ! -f "vendor/autoload.php" ] || [ ! -x "vendor/bin/semitexa" ]; then
+        project_sh bin/semitexa install
+    fi
     project_sh bin/semitexa server:start
     docker_compose exec -T app php vendor/bin/semitexa cache:clear
 )

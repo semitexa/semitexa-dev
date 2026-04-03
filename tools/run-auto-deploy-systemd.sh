@@ -32,5 +32,6 @@ echo ($updated && $restartRequired) ? "1" : "0";
 ')"
 
 if [ "${RESTART_REQUIRED}" = "1" ]; then
-    docker compose restart app
+    chmod +x ./bin/semitexa
+    ./bin/semitexa server:start
 fi
