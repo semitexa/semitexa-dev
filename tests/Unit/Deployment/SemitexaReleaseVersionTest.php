@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Tests\Unit\Deployment;
+
+use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Deployment\Support\SemitexaReleaseVersion;
+
+final class SemitexaReleaseVersionTest extends TestCase
+{
+    public function testRecognizesStableVersion(): void
+    {
+        self::assertTrue(SemitexaReleaseVersion::isValid('2026.04.03.1315'));
+        self::assertTrue(SemitexaReleaseVersion::isStable('2026.04.03.1315'));
+        self::assertFalse(SemitexaReleaseVersion::isStable('2026.04.03.1315-beta'));
+    }
+
+    public function testComparesChronologicalVersions(): void
+    {
+        self::assertGreaterThan(
+            0,
+            SemitexaReleaseVersion::compare('2026.04.03.1315', '2026.04.02.2359'),
+        );
+    }
+}

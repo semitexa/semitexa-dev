@@ -334,6 +334,36 @@ final class CapabilityRegistry
                 supports: ['--json', '--list'],
                 follow_up: [],
             ),
+            new CommandCapability(
+                name: 'deploy:check',
+                kind: 'operations',
+                summary: 'Inspect automatic Semitexa framework deployment status and discover newer stable releases.',
+                use_when: 'Checking whether a project is configured for auto deployment or whether newer Semitexa releases are available.',
+                avoid_when: 'You already know the project deployment state and do not need release discovery.',
+                optional_inputs: [
+                    'json' => ['type' => 'flag', 'description' => 'Output deployment plan details as JSON', 'default' => false],
+                ],
+                outputs: [
+                    'deployment_plan' => 'Current auto deployment config, discovered Semitexa release versions, and package update candidates',
+                ],
+                supports: ['--json'],
+                follow_up: ['deploy:auto'],
+            ),
+            new CommandCapability(
+                name: 'deploy:auto',
+                kind: 'operations',
+                summary: 'Run automatic Semitexa framework deployment when enabled and updates are available.',
+                use_when: 'Executing the phase-1 Semitexa auto deployment flow for a project that should update itself from configured release sources.',
+                avoid_when: 'Automatic deployment is disabled, or when you only need to inspect available updates without applying them.',
+                optional_inputs: [
+                    'json' => ['type' => 'flag', 'description' => 'Output deployment execution result as JSON', 'default' => false],
+                ],
+                outputs: [
+                    'deployment_result' => 'Deployment execution status, selected release version, updated packages, restart state, and health-check outcome',
+                ],
+                supports: ['--json'],
+                follow_up: ['deploy:check'],
+            ),
         ];
     }
 }
