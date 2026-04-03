@@ -18,6 +18,7 @@ Depends on `semitexa/core`. Used during development to generate boilerplate and 
 - JSON-formatted generation output
 - `deploy:check` for Semitexa framework update discovery
 - `deploy:auto` for phase-1 Composer-based framework auto deployment
+- `deploy:bootstrap-remote` for first remote Ubuntu server deployment preflight
 
 ## Notes
 
@@ -40,3 +41,33 @@ Operational commands:
 
 - `bin/semitexa deploy:check`
 - `bin/semitexa deploy:auto`
+
+## Remote First Deployment Config
+
+Remote first deployment is intentionally separate from framework auto-update. Operator-local target metadata belongs in `.env.local`:
+
+```dotenv
+SEMITEXA_REMOTE_DEPLOY_TARGETS=deploy@203.0.113.10,root@198.51.100.20
+SEMITEXA_REMOTE_DEPLOY_PATH=/srv/semitexa/my-project
+SEMITEXA_REMOTE_DEPLOY_SSH_PORT=22
+SEMITEXA_REMOTE_DEPLOY_DOMAIN=my-project.example.com
+SEMITEXA_REMOTE_DEPLOY_USE_PASSWORD=false
+```
+
+Operator command:
+
+- `bin/semitexa deploy:bootstrap-remote`
+
+Phase 1 currently covers only the destructive preflight path for first deployment:
+
+- interactive target selection or prompt
+- destructive confirmation
+- local SSH/scp/tar prerequisite check
+- SSH key auth first, password fallback second
+- Ubuntu 20.04+ remote OS detection
+- remote initialization-state detection
+
+Current phase 2 addition:
+
+- local `.tar.gz` deploy artifact build
+- local structured bootstrap log under `var/log/deployments/`
