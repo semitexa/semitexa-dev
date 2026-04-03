@@ -32,9 +32,9 @@ run_root() {
 
 project_sh() {
     if [ -n "$SUDO" ]; then
-        "$SUDO" -E sh "$@"
+        "$SUDO" -E "$@"
     else
-        sh "$@"
+        "$@"
     fi
 }
 
@@ -115,12 +115,13 @@ fi
 
 run_root mkdir -p "$DEPLOY_PATH"
 run_root tar -xzf "$ARTIFACT_PATH" -C "$DEPLOY_PATH"
-run_root chmod +x "${DEPLOY_PATH}/bin/semitexa"
 
 if [ ! -f "${DEPLOY_PATH}/bin/semitexa" ] || [ ! -f "${DEPLOY_PATH}/composer.json" ] || [ ! -f "${DEPLOY_PATH}/docker-compose.yml" ]; then
     echo "Uploaded artifact does not look like a Semitexa project." >&2
     exit 1
 fi
+
+run_root chmod +x "${DEPLOY_PATH}/bin/semitexa"
 
 if [ -n "$REMOTE_ENV_PATH" ] && [ -f "$REMOTE_ENV_PATH" ]; then
     run_root cp "$REMOTE_ENV_PATH" "${DEPLOY_PATH}/.env.local"

@@ -10,8 +10,11 @@ fi
 
 cd "${PROJECT_ROOT}"
 
-OUTPUT="$(./bin/semitexa deploy:auto --json)"
-STATUS=$?
+if OUTPUT="$(./bin/semitexa deploy:auto --json)"; then
+    STATUS=0
+else
+    STATUS=$?
+fi
 
 printf '%s\n' "${OUTPUT}"
 

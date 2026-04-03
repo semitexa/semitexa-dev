@@ -58,7 +58,7 @@ Important:
 
 - private packages such as `semitexa/site`, `semitexa/os-site`, and `semitexa/platform-site` require working GitHub SSH access on the target host
 - containerized projects should set `SEMITEXA_AUTO_DEPLOY_HOME`, `SEMITEXA_AUTO_DEPLOY_COMPOSER_HOME`, and `SEMITEXA_AUTO_DEPLOY_GIT_SSH_COMMAND` so Composer/Git auth also works inside the app container
-- the systemd installer runs a host-side wrapper that can restart `docker compose` after a successful in-container update when `deploy:auto` reports `restart_required=true`
+- the systemd installer runs the host-side wrapper in [`tools/run-auto-deploy-systemd.sh`](tools/run-auto-deploy-systemd.sh), which reruns `./bin/semitexa server:start` when `deploy:auto` reports `restart_required=true`
 - without that SSH access even `composer update --lock --no-install` will fail, so enabling the timer early is incorrect
 
 ## Remote First Deployment Config

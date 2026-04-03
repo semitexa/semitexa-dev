@@ -61,7 +61,10 @@ app_is_running() {
 
 (
     cd "$DEPLOY_PATH"
-    app_is_running
+    if ! app_is_running; then
+        echo "App container is not running in ${DEPLOY_PATH}." >&2
+        exit 1
+    fi
 )
 
 echo "[remote-bootstrap] Verification complete"
