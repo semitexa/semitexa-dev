@@ -1,4 +1,4 @@
-# semitexa/dev
+# Semitexa Dev
 
 Code generators and capability-aware CLI tooling for application scaffolding.
 
