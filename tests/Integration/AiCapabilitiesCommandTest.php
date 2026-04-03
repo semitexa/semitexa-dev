@@ -35,6 +35,9 @@ class AiCapabilitiesCommandTest extends TestCase
         $this->assertContains('make:handler', $names);
         $this->assertContains('make:resource', $names);
         $this->assertContains('make:page', $names);
+        $this->assertContains('deploy:check', $names);
+        $this->assertContains('deploy:auto', $names);
+        $this->assertContains('deploy:bootstrap-remote', $names);
 
         // Validate each command has required fields
         foreach ($data['commands'] as $cmd) {

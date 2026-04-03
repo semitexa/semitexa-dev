@@ -334,6 +334,55 @@ final class CapabilityRegistry
                 supports: ['--json', '--list'],
                 follow_up: [],
             ),
+            new CommandCapability(
+                name: 'deploy:check',
+                kind: 'operations',
+                summary: 'Inspect automatic Semitexa framework deployment status and discover newer stable releases.',
+                use_when: 'Checking whether a project is configured for auto deployment or whether newer Semitexa releases are available.',
+                avoid_when: 'You already know the project deployment state and do not need release discovery.',
+                optional_inputs: [
+                    'json' => ['type' => 'flag', 'description' => 'Output deployment plan details as JSON', 'default' => false],
+                ],
+                outputs: [
+                    'deployment_plan' => 'Current auto deployment config, discovered Semitexa release versions, and package update candidates',
+                ],
+                supports: ['--json'],
+                follow_up: ['deploy:auto'],
+            ),
+            new CommandCapability(
+                name: 'deploy:auto',
+                kind: 'operations',
+                summary: 'Run automatic Semitexa framework deployment when enabled and updates are available.',
+                use_when: 'Executing the phase-1 Semitexa auto deployment flow for a project that should update itself from configured release sources.',
+                avoid_when: 'Automatic deployment is disabled, or when you only need to inspect available updates without applying them.',
+                optional_inputs: [
+                    'json' => ['type' => 'flag', 'description' => 'Output deployment execution result as JSON', 'default' => false],
+                ],
+                outputs: [
+                    'deployment_result' => 'Deployment execution status, selected release version, updated packages, restart state, and health-check outcome',
+                ],
+                supports: ['--json'],
+                follow_up: ['deploy:check'],
+            ),
+            new CommandCapability(
+                name: 'deploy:bootstrap-remote',
+                kind: 'operations',
+                summary: 'Validate and prepare a first remote Semitexa deployment target over SSH for Ubuntu 20.04+ servers.',
+                use_when: 'Bootstrapping a fresh remote server for the first deployment of a Semitexa project.',
+                avoid_when: 'Updating an already deployed server in place. This command is intentionally not an update workflow.',
+                optional_inputs: [
+                    'target' => ['type' => 'string', 'description' => 'Explicit remote target in user@host format'],
+                    'path' => ['type' => 'string', 'description' => 'Remote deployment path override'],
+                    'force-reinitialize' => ['type' => 'flag', 'description' => 'Acknowledge reinitialization intent for an already initialized remote path', 'default' => false],
+                    'remote-env-file' => ['type' => 'string', 'description' => 'Reserved path to a future remote production env file'],
+                    'json' => ['type' => 'flag', 'description' => 'Output remote bootstrap preflight result as JSON', 'default' => false],
+                ],
+                outputs: [
+                    'bootstrap_preflight' => 'Validated remote target, auth mode, Ubuntu scenario path, remote initialization state, and a local deploy artifact for first deployment',
+                ],
+                supports: ['--json', '--target', '--path', '--force-reinitialize', '--remote-env-file'],
+                follow_up: [],
+            ),
         ];
     }
 }
