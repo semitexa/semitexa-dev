@@ -55,8 +55,8 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
 
         $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);
 
-        self::assertSame('*', $manifest['require']['semitexa/core']);
-        self::assertSame('*', $manifest['require']['semitexa/dev']);
+        self::assertSame('1.1.62', $manifest['require']['semitexa/core']);
+        self::assertSame('2026.04.03.1207', $manifest['require']['semitexa/dev']);
         self::assertArrayNotHasKey('semitexa/dev', $manifest['require-dev']);
         self::assertSame('stable', $manifest['minimum-stability']);
         self::assertSame([
@@ -67,7 +67,7 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
         ], $manifest['repositories']);
     }
 
-    public function testPreservesOriginalSemitexaConstraintsToAllowFutureUpdates(): void
+    public function testMaterializesSemitexaConstraintsFromLockedVersions(): void
     {
         $projectRoot = sys_get_temp_dir() . '/semitexa-release-manifest-constraints-' . bin2hex(random_bytes(4));
         mkdir($projectRoot . '/packages/semitexa-core', 0777, true);
@@ -97,7 +97,7 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
 
         $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);
 
-        self::assertSame('^1.1', $manifest['require']['semitexa/core']);
+        self::assertSame('1.1.62', $manifest['require']['semitexa/core']);
     }
 
     public function testPromotesSemitexaDevIntoRequireForOperationalReleaseRoots(): void
@@ -135,7 +135,7 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
 
         $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);
 
-        self::assertSame('*', $manifest['require']['semitexa/dev']);
+        self::assertSame('1.0.0', $manifest['require']['semitexa/dev']);
         self::assertArrayNotHasKey('semitexa/dev', $manifest['require-dev']);
         self::assertSame('^10.0', $manifest['require-dev']['phpunit/phpunit']);
     }
@@ -167,6 +167,44 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
         file_put_contents($projectRoot . '/packages/semitexa-site/composer.json', json_encode([
             'name' => 'semitexa/site',
             'license' => 'proprietary',
+        ], JSON_THROW_ON_ERROR));
+
+        $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);
+
+        self::assertSame([
+            [
+                'type' => 'vcs',
+                'url' => 'git@github.com:semitexa/semitexa-site.git',
+            ],
+        ], $manifest['repositories']);
+    }
+
+    public function testTreatsArrayLicenseContainingProprietaryAsPrivateRepository(): void
+    {
+        $projectRoot = sys_get_temp_dir() . '/semitexa-release-manifest-license-array-' . bin2hex(random_bytes(4));
+        mkdir($projectRoot . '/packages/semitexa-site', 0777, true);
+
+        file_put_contents($projectRoot . '/composer.json', json_encode([
+            'repositories' => [
+                [
+                    'type' => 'path',
+                    'url' => 'packages/semitexa-site',
+                ],
+            ],
+            'require' => [
+                'semitexa/site' => '*',
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        file_put_contents($projectRoot . '/composer.lock', json_encode([
+            'packages' => [
+                ['name' => 'semitexa/site', 'version' => '0.1.0'],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        file_put_contents($projectRoot . '/packages/semitexa-site/composer.json', json_encode([
+            'name' => 'semitexa/site',
+            'license' => ['MIT', 'Proprietary'],
         ], JSON_THROW_ON_ERROR));
 
         $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);

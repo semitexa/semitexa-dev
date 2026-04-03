@@ -44,6 +44,16 @@ docker_compose() {
     exit 1
 }
 
+app_is_running() {
+    local container_id
+    container_id="$(docker_compose ps -q app 2>/dev/null | head -n 1)"
+    if [ -z "$container_id" ]; then
+        return 1
+    fi
+
+    [ "$(docker_host_cmd inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)" = "true" ]
+}
+
 [ -f "$MARKER_PATH" ] || {
     echo "Remote deployment marker not found at ${MARKER_PATH}." >&2
     exit 1
@@ -51,7 +61,7 @@ docker_compose() {
 
 (
     cd "$DEPLOY_PATH"
-    docker_compose ps --status running app | grep -q app
+    app_is_running
 )
 
 echo "[remote-bootstrap] Verification complete"

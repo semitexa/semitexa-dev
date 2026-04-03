@@ -28,6 +28,8 @@ final class ReleaseComposerManifestBuilder
             throw new \RuntimeException('No installable Semitexa package versions were discovered in composer.lock.');
         }
 
+        $this->materializeSemitexaConstraints($composer, $versions);
+
         $composer['repositories'] = $this->materializeRepositories(
             $projectRoot,
             is_array($composer['repositories'] ?? null) ? $composer['repositories'] : [],
@@ -74,6 +76,35 @@ final class ReleaseComposerManifestBuilder
         unset($composer['require-dev']['semitexa/dev']);
         ksort($composer['require']);
         ksort($composer['require-dev']);
+    }
+
+    /**
+     * @param array<string, mixed> $composer
+     * @param array<string, string> $versions
+     */
+    private function materializeSemitexaConstraints(array &$composer, array $versions): void
+    {
+        foreach (['require', 'require-dev'] as $bucket) {
+            if (!is_array($composer[$bucket] ?? null)) {
+                continue;
+            }
+
+            foreach ($composer[$bucket] as $packageName => $_constraint) {
+                if (!is_string($packageName) || !str_starts_with($packageName, 'semitexa/')) {
+                    continue;
+                }
+
+                $version = $versions[$packageName] ?? null;
+                if (!is_string($version) || $version === '') {
+                    throw new \RuntimeException(sprintf(
+                        'Locked version for package "%s" was not found in composer.lock.',
+                        $packageName,
+                    ));
+                }
+
+                $composer[$bucket][$packageName] = $version;
+            }
+        }
     }
 
     /**
@@ -152,10 +183,13 @@ final class ReleaseComposerManifestBuilder
         }
 
         $repoName = str_replace('/', '-', $packageName);
-        $license = strtolower(trim((string) ($composer['license'] ?? '')));
+        $license = $composer['license'] ?? '';
+        $licenseValues = is_array($license) ? $license : [$license];
 
-        if ($license === 'proprietary') {
-            return sprintf('git@github.com:semitexa/%s.git', $repoName);
+        foreach ($licenseValues as $candidate) {
+            if (is_string($candidate) && strtolower(trim($candidate)) === 'proprietary') {
+                return sprintf('git@github.com:semitexa/%s.git', $repoName);
+            }
         }
 
         return sprintf('https://github.com/semitexa/%s.git', $repoName);
