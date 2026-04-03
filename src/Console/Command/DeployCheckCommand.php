@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
+use JsonException;
 use Semitexa\Core\Attributes\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Deployment\Service\FrameworkDeploymentPlanner;
@@ -26,28 +27,33 @@ final class DeployCheckCommand extends BaseCommand
         $plan = (new FrameworkDeploymentPlanner())->plan($this->getProjectRoot());
 
         if ($input->getOption('json')) {
-            $output->writeln(json_encode([
-                'enabled' => $plan->config->enabled,
-                'channel' => $plan->config->channel,
-                'source_mode' => $plan->config->sourceMode,
-                'healthcheck_url' => $plan->config->healthcheckUrl,
-                'private_repository_url' => $plan->config->privateRepositoryUrl,
-                'selected_version' => $plan->selectedVersion,
-                'private_latest_version' => $plan->privateLatestVersion,
-                'update_available' => $plan->updateAvailable,
-                'reason' => $plan->reason,
-                'installed_packages' => $plan->installedPackages,
-                'package_updates' => array_map(
-                    static fn($update) => [
-                        'package' => $update->packageName,
-                        'installed_version' => $update->installedVersion,
-                        'latest_version' => $update->latestVersion,
-                        'source' => $update->source,
-                    ],
-                    $plan->packageUpdates,
-                ),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            return Command::SUCCESS;
+            try {
+                $output->writeln(json_encode([
+                    'enabled' => $plan->config->enabled,
+                    'channel' => $plan->config->channel,
+                    'source_mode' => $plan->config->sourceMode,
+                    'healthcheck_url' => $plan->config->healthcheckUrl,
+                    'private_repository_url' => $plan->config->privateRepositoryUrl,
+                    'selected_version' => $plan->selectedVersion,
+                    'private_latest_version' => $plan->privateLatestVersion,
+                    'update_available' => $plan->updateAvailable,
+                    'reason' => $plan->reason,
+                    'installed_packages' => $plan->installedPackages,
+                    'package_updates' => array_map(
+                        static fn($update) => [
+                            'package' => $update->packageName,
+                            'installed_version' => $update->installedVersion,
+                            'latest_version' => $update->latestVersion,
+                            'source' => $update->source,
+                        ],
+                        $plan->packageUpdates,
+                    ),
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+                return Command::SUCCESS;
+            } catch (JsonException $e) {
+                $output->writeln('<error>Failed to encode deployment status as JSON: ' . $e->getMessage() . '</error>');
+                return Command::FAILURE;
+            }
         }
 
         $io = new SymfonyStyle($input, $output);
@@ -67,7 +73,7 @@ final class DeployCheckCommand extends BaseCommand
             foreach ($plan->packageUpdates as $update) {
                 $rows[] = [$update->packageName, $update->installedVersion, $update->latestVersion, $update->source];
             }
-            $io->section('Packagist package updates');
+            $io->section('Package updates');
             $io->table(['Package', 'Installed', 'Latest', 'Source'], $rows);
         }
 

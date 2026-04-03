@@ -38,7 +38,7 @@ final class ProjectDeploymentConfigLoader
 
     private function nullable(?string $value): ?string
     {
-        $value = is_string($value) ? trim($value) : null;
-        return $value === '' ? null : $value;
+        $trimmed = $value !== null ? trim($value) : null;
+        return $trimmed !== '' ? $trimmed : null;
     }
 }

@@ -39,6 +39,10 @@ final class InstalledSemitexaPackageReader
                     continue;
                 }
 
+                if (!SemitexaReleaseVersion::isValid($version)) {
+                    continue;
+                }
+
                 $packages[$name] = $version;
             }
         }

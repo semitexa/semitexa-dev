@@ -63,7 +63,7 @@ final class FrameworkDeploymentExecutor
             }
 
             return $this->finalize($projectRoot, $result, 'updated');
-        } catch (\RuntimeException $e) {
+        } catch (\Throwable $e) {
             $result['status'] = 'failed';
             $result['reason'] = $e->getMessage();
             return $this->finalize($projectRoot, $result, 'failed');
@@ -73,8 +73,9 @@ final class FrameworkDeploymentExecutor
     private function composerUpdateCommand(string $projectRoot): string
     {
         return sprintf(
-            '%s update semitexa/* --with-all-dependencies --no-dev --optimize-autoloader --working-dir=%s',
+            '%s update %s --with-all-dependencies --no-dev --optimize-autoloader --working-dir=%s',
             $this->composerBinary($projectRoot),
+            escapeshellarg('semitexa/*'),
             escapeshellarg($projectRoot),
         );
     }
@@ -114,6 +115,7 @@ final class FrameworkDeploymentExecutor
             return ['performed' => true, 'message' => 'Restart command executed from configuration.'];
         }
 
+        // Do not attempt host-level compose restarts from inside a container.
         if (is_file($projectRoot . '/docker-compose.yml') && trim((string) shell_exec('command -v docker 2>/dev/null')) !== '' && !is_file('/.dockerenv')) {
             $this->run('docker compose restart', $projectRoot);
             return ['performed' => true, 'message' => 'Restarted docker compose services.'];

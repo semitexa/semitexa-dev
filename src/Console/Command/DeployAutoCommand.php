@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
+use JsonException;
 use Semitexa\Core\Attributes\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Deployment\Service\FrameworkDeploymentExecutor;
@@ -32,8 +33,13 @@ final class DeployAutoCommand extends BaseCommand
         $result = $executor->execute($projectRoot, $plan);
 
         if ($input->getOption('json')) {
-            $output->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            return $result['status'] === 'failed' ? Command::FAILURE : Command::SUCCESS;
+            try {
+                $output->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+                return $result['status'] === 'failed' ? Command::FAILURE : Command::SUCCESS;
+            } catch (JsonException $e) {
+                $output->writeln('<error>Failed to encode deployment result as JSON: ' . $e->getMessage() . '</error>');
+                return Command::FAILURE;
+            }
         }
 
         $io = new SymfonyStyle($input, $output);

@@ -95,6 +95,6 @@ final class FrameworkDeploymentPlanner
             return 'A newer stable release tag was discovered in the configured private repository.';
         }
 
-        return 'A newer Semitexa release is available.';
+        throw new \UnexpectedValueException('Inconsistent deployment plan: selected version exists without any update source.');
     }
 }
