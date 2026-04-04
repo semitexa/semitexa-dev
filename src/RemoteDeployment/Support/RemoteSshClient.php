@@ -25,6 +25,14 @@ final class RemoteSshClient
         );
     }
 
+    public function upload(RemoteDeployTarget $target, int $port, string $localPath, string $remotePath, ?string $password = null): SshCommandResult
+    {
+        return $this->execute(
+            $this->buildScpCommand($target, $port, $localPath, $remotePath),
+            $password,
+        );
+    }
+
     public function requiresPassword(SshCommandResult $result): bool
     {
         $text = strtolower($result->stderr . "\n" . $result->stdout);
@@ -75,8 +83,9 @@ final class RemoteSshClient
      */
     private function buildSshCommand(RemoteDeployTarget $target, int $port, string $command, bool $batchMode): array
     {
-        return [
+        return array_merge([
             'ssh',
+        ], $this->identityArgs(), [
             '-p',
             (string) $port,
             '-o',
@@ -85,6 +94,43 @@ final class RemoteSshClient
             'StrictHostKeyChecking=accept-new',
             $target->toConnectionString(),
             'sh -lc ' . escapeshellarg($command),
-        ];
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildScpCommand(RemoteDeployTarget $target, int $port, string $localPath, string $remotePath): array
+    {
+        return array_merge([
+            'scp',
+        ], $this->identityArgs(), [
+            '-P',
+            (string) $port,
+            '-o',
+            'StrictHostKeyChecking=accept-new',
+            $localPath,
+            $target->toConnectionString() . ':' . $remotePath,
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function identityArgs(): array
+    {
+        $identityFile = trim((string) getenv('SEMITEXA_REMOTE_DEPLOY_SSH_IDENTITY_FILE'));
+        if ($identityFile === '') {
+            return [];
+        }
+
+        if (!is_file($identityFile)) {
+            throw new \RuntimeException(sprintf(
+                'SSH identity file "%s" does not exist.',
+                $identityFile,
+            ));
+        }
+
+        return ['-i', $identityFile];
     }
 }

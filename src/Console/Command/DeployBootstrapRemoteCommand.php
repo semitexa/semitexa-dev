@@ -11,6 +11,7 @@ use Semitexa\Dev\RemoteDeployment\Support\LocalPrerequisiteChecker;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteArtifactBuilder;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteBootstrapLogWriter;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteDeployConfigLoader;
+use Semitexa\Dev\RemoteDeployment\Support\RemoteDeployEnvBuilder;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteDeployEnvWriter;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteDeployTargetParser;
 use Semitexa\Dev\RemoteDeployment\Support\RemoteOsReleaseParser;
@@ -26,6 +27,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'deploy:bootstrap-remote', description: 'Validate and prepare a first remote Semitexa deployment target (Ubuntu 20.04+ only)')]
 final class DeployBootstrapRemoteCommand extends BaseCommand
 {
+    /**
+     * @var list<string>
+     */
+    private array $completedSteps = [];
+
     protected function configure(): void
     {
         $this
@@ -38,21 +44,33 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->completedSteps = [];
         $io = new SymfonyStyle($input, $output);
         $projectRoot = $this->getProjectRoot();
         $config = (new RemoteDeployConfigLoader())->load($projectRoot);
         $target = $this->resolveTarget($input, $io, $projectRoot, $config->targets);
         $path = trim((string) ($input->getOption('path') ?: $config->deployPath));
+        $result = [
+            'status' => 'blocked',
+            'phase' => 'phase-1-preflight',
+            'target' => $target->toConnectionString(),
+            'path' => $path,
+            'completed_steps' => [],
+        ];
+        $temporaryFiles = [];
+        $remoteWorkspace = null;
 
         try {
             $this->assertInteractive($input);
             $this->confirmDestructiveIntent($input, $io, $target, $path);
+            $this->markStep('destructive_confirmation');
 
             $checker = new LocalPrerequisiteChecker();
             $missing = $checker->missingBaseTools();
             if ($missing !== []) {
                 throw new \RuntimeException('Missing local prerequisites: ' . implode(', ', $missing));
             }
+            $this->markStep('local_prerequisites');
 
             $sshClient = new RemoteSshClient();
             $password = null;
@@ -80,6 +98,8 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
 
                 $authMode = 'password';
             }
+            $result['auth_mode'] = $authMode;
+            $this->markStep('ssh_authentication');
 
             $osResult = $sshClient->run($target, $config->sshPort, 'cat /etc/os-release', $password);
             if (!$osResult->isSuccess()) {
@@ -96,6 +116,7 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
                     $path,
                 ));
             }
+            $this->markStep('remote_preflight');
 
             if ($pathState->isInitialized()) {
                 $confirmed = $io->confirm(
@@ -108,10 +129,108 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
             }
 
             $artifact = (new RemoteArtifactBuilder())->build($projectRoot);
+            $temporaryFiles[] = $artifact->path;
+            $this->markStep('artifact_built');
+
+            $remoteEnvFile = (new RemoteDeployEnvBuilder())->build(
+                is_string($input->getOption('remote-env-file')) ? $input->getOption('remote-env-file') : null,
+                $config->domain,
+            );
+            $temporaryFiles[] = $remoteEnvFile;
+            $this->markStep('remote_env_prepared');
+
+            $scenarioId = sprintf('%s/%s', $osInfo->id, (new RemoteScenarioResolver())->normalizeUbuntuVersion($osInfo->versionId));
+            $remoteWorkspace = sprintf(
+                '/tmp/semitexa-remote-bootstrap-%s-%s',
+                gmdate('YmdHis'),
+                bin2hex(random_bytes(4)),
+            );
+
+            $this->runRemoteCommand(
+                $sshClient,
+                $target,
+                $config->sshPort,
+                sprintf('mkdir -p %s', escapeshellarg($remoteWorkspace)),
+                $password,
+                'Failed to create remote bootstrap workspace.',
+            );
+            $this->markStep('remote_workspace_created');
+
+            $remoteArtifactPath = $remoteWorkspace . '/' . basename($artifact->path);
+            $remoteBootstrapScriptPath = $remoteWorkspace . '/bootstrap.sh';
+            $remoteVerifyScriptPath = $remoteWorkspace . '/verify.sh';
+            $remoteEnvPath = $remoteWorkspace . '/remote.env.local';
+
+            $this->uploadFile($sshClient, $target, $config->sshPort, $artifact->path, $remoteArtifactPath, $password, 'Failed to upload deploy artifact.');
+            $this->uploadFile($sshClient, $target, $config->sshPort, $scenarioPath . '/bootstrap.sh', $remoteBootstrapScriptPath, $password, 'Failed to upload remote bootstrap script.');
+            $this->uploadFile($sshClient, $target, $config->sshPort, $scenarioPath . '/verify.sh', $remoteVerifyScriptPath, $password, 'Failed to upload remote verify script.');
+            $this->uploadFile($sshClient, $target, $config->sshPort, $remoteEnvFile, $remoteEnvPath, $password, 'Failed to upload remote env file.');
+            $this->markStep('remote_assets_uploaded');
+
+            $this->runRemoteCommand(
+                $sshClient,
+                $target,
+                $config->sshPort,
+                sprintf(
+                    'chmod 755 %s %s',
+                    escapeshellarg($remoteBootstrapScriptPath),
+                    escapeshellarg($remoteVerifyScriptPath),
+                ),
+                $password,
+                'Failed to make remote scenario scripts executable.',
+            );
+
+            $bootstrapCommand = $this->buildScenarioCommand(
+                [
+                    'SEMITEXA_DEPLOY_PATH' => $path,
+                    'SEMITEXA_ARTIFACT_PATH' => $remoteArtifactPath,
+                    'SEMITEXA_REMOTE_ENV_PATH' => $remoteEnvPath,
+                    'SEMITEXA_FORCE_REINITIALIZE' => $pathState->isInitialized() ? '1' : '0',
+                    'SEMITEXA_SCENARIO_ID' => $scenarioId,
+                    'SEMITEXA_DEPLOY_DOMAIN' => $config->domain ?? '',
+                ],
+                $remoteBootstrapScriptPath,
+            );
+            $this->runRemoteCommand(
+                $sshClient,
+                $target,
+                $config->sshPort,
+                $bootstrapCommand,
+                $password,
+                'Remote bootstrap scenario failed.',
+            );
+            $this->markStep('remote_bootstrap_completed');
+
+            $verifyCommand = $this->buildScenarioCommand(
+                [
+                    'SEMITEXA_DEPLOY_PATH' => $path,
+                    'SEMITEXA_SCENARIO_ID' => $scenarioId,
+                ],
+                $remoteVerifyScriptPath,
+            );
+            $this->runRemoteCommand(
+                $sshClient,
+                $target,
+                $config->sshPort,
+                $verifyCommand,
+                $password,
+                'Remote verification failed.',
+            );
+            $this->markStep('remote_verification_completed');
+
+            $this->runRemoteCommand(
+                $sshClient,
+                $target,
+                $config->sshPort,
+                sprintf('rm -rf %s', escapeshellarg($remoteWorkspace)),
+                $password,
+                'Failed to clean remote bootstrap workspace.',
+            );
+            $this->markStep('remote_workspace_cleaned');
 
             $result = [
-                'status' => 'ready',
-                'phase' => 'phase-2-artifact-ready',
+                'status' => 'deployed',
+                'phase' => 'phase-8-remote-bootstrap-complete',
                 'target' => $target->toConnectionString(),
                 'path' => $path,
                 'auth_mode' => $authMode,
@@ -121,6 +240,7 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
                     'pretty_name' => $osInfo->prettyName,
                 ],
                 'scenario_path' => $scenarioPath,
+                'scenario_id' => $scenarioId,
                 'path_state' => [
                     'exists' => $pathState->exists,
                     'has_files' => $pathState->hasFiles,
@@ -132,7 +252,8 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
                     'size_bytes' => $artifact->sizeBytes,
                     'sha256' => $artifact->sha256,
                 ],
-                'reason' => 'Remote first-deployment preflight passed and a deploy artifact was built locally. Remote upload and bootstrap execution are not implemented yet.',
+                'completed_steps' => $this->completedSteps,
+                'reason' => 'Remote first deployment completed. The project artifact was uploaded, bootstrapped on the remote Ubuntu host, and verified.',
             ];
             $result['log_path'] = (new RemoteBootstrapLogWriter())->write($projectRoot, $result);
 
@@ -157,17 +278,29 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {
+            $result['reason'] = $e->getMessage();
+            $result['completed_steps'] = $this->completedSteps;
+            if ($remoteWorkspace !== null) {
+                $result['remote_workspace'] = $remoteWorkspace;
+            }
+            try {
+                $result['log_path'] = (new RemoteBootstrapLogWriter())->write($projectRoot, $result);
+            } catch (\Throwable) {
+            }
+
             if ($input->getOption('json')) {
-                $output->writeln(json_encode([
-                    'status' => 'blocked',
-                    'phase' => 'phase-1-preflight',
-                    'reason' => $e->getMessage(),
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $output->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
                 return Command::FAILURE;
             }
 
             $io->error($e->getMessage());
             return Command::FAILURE;
+        } finally {
+            foreach ($temporaryFiles as $pathToDelete) {
+                if (is_string($pathToDelete) && is_file($pathToDelete)) {
+                    @unlink($pathToDelete);
+                }
+            }
         }
     }
 
@@ -235,5 +368,52 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
     private function bestError(string $stderr, string $stdout): string
     {
         return trim($stderr) !== '' ? trim($stderr) : trim($stdout);
+    }
+
+    private function markStep(string $step): void
+    {
+        $this->completedSteps[] = $step;
+    }
+
+    /**
+     * @param array<string, string> $environment
+     */
+    private function buildScenarioCommand(array $environment, string $scriptPath): string
+    {
+        $prefix = [];
+        foreach ($environment as $key => $value) {
+            $prefix[] = sprintf('%s=%s', $key, escapeshellarg($value));
+        }
+
+        return implode(' ', $prefix) . ' bash ' . escapeshellarg($scriptPath);
+    }
+
+    private function runRemoteCommand(
+        RemoteSshClient $sshClient,
+        RemoteDeployTarget $target,
+        int $port,
+        string $command,
+        ?string $password,
+        string $failureMessage,
+    ): void {
+        $result = $sshClient->run($target, $port, $command, $password);
+        if (!$result->isSuccess()) {
+            throw new \RuntimeException($failureMessage . ' ' . $this->bestError($result->stderr, $result->stdout));
+        }
+    }
+
+    private function uploadFile(
+        RemoteSshClient $sshClient,
+        RemoteDeployTarget $target,
+        int $port,
+        string $localPath,
+        string $remotePath,
+        ?string $password,
+        string $failureMessage,
+    ): void {
+        $result = $sshClient->upload($target, $port, $localPath, $remotePath, $password);
+        if (!$result->isSuccess()) {
+            throw new \RuntimeException($failureMessage . ' ' . $this->bestError($result->stderr, $result->stdout));
+        }
     }
 }
