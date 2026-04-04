@@ -2,6 +2,27 @@
 set -euo pipefail
 
 DEPLOY_PATH="${SEMITEXA_DEPLOY_PATH:?SEMITEXA_DEPLOY_PATH is required}"
+case "$DEPLOY_PATH" in
+    /*) ;;
+    *)
+        echo "SEMITEXA_DEPLOY_PATH must be an absolute path." >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$DEPLOY_PATH" == *"/../"* ]] || [[ "$DEPLOY_PATH" == ../* ]] || [[ "$DEPLOY_PATH" == */.. ]] || [[ "$DEPLOY_PATH" == *"/./"* ]]; then
+    echo "SEMITEXA_DEPLOY_PATH must not contain traversal segments." >&2
+    exit 1
+fi
+
+DEPLOY_PATH="$(readlink -m "$DEPLOY_PATH")"
+case "$DEPLOY_PATH" in
+    /|/bin|/boot|/dev|/etc|/home|/opt|/root|/run|/srv|/tmp|/usr|/var)
+        echo "Refusing unsafe deploy path: ${DEPLOY_PATH}." >&2
+        exit 1
+        ;;
+esac
+
 ARTIFACT_PATH="${SEMITEXA_ARTIFACT_PATH:?SEMITEXA_ARTIFACT_PATH is required}"
 REMOTE_ENV_PATH="${SEMITEXA_REMOTE_ENV_PATH:-}"
 FORCE_REINITIALIZE="${SEMITEXA_FORCE_REINITIALIZE:-0}"
@@ -87,9 +108,14 @@ generate_app_secret() {
     head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
 
+secure_env_file() {
+    run_root chown root:root "$1"
+    run_root chmod 600 "$1"
+}
+
 echo "[remote-bootstrap] Preparing Ubuntu host"
 run_root apt-get update -y
-ensure_apt_package ca-certificates curl jq tar git
+ensure_apt_package ca-certificates curl jq tar git php-cli
 
 if ! ensure_bin docker; then
     curl -fsSL https://get.docker.com | run_root sh
@@ -126,6 +152,8 @@ run_root chmod +x "${DEPLOY_PATH}/bin/semitexa"
 if [ -n "$REMOTE_ENV_PATH" ] && [ -f "$REMOTE_ENV_PATH" ]; then
     run_root cp "$REMOTE_ENV_PATH" "${DEPLOY_PATH}/.env.local"
     run_root cp "$REMOTE_ENV_PATH" "${DEPLOY_PATH}/.env"
+    secure_env_file "${DEPLOY_PATH}/.env.local"
+    secure_env_file "${DEPLOY_PATH}/.env"
 elif [ -n "$REMOTE_ENV_PATH" ]; then
     echo "Remote environment file not found at ${REMOTE_ENV_PATH}." >&2
     exit 1
@@ -142,6 +170,8 @@ APP_DEBUG=0
 APP_SECRET=__SEMITEXA_APP_SECRET__
 EOF
     run_root sed -i "s/__SEMITEXA_APP_SECRET__/${APP_SECRET_VALUE}/g" "${DEPLOY_PATH}/.env.local" "${DEPLOY_PATH}/.env"
+    secure_env_file "${DEPLOY_PATH}/.env.local"
+    secure_env_file "${DEPLOY_PATH}/.env"
 fi
 
 (
