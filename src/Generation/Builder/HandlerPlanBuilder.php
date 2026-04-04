@@ -34,7 +34,7 @@ final class HandlerPlanBuilder
         $resourceNamespace = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response";
 
         $imports = [
-            'use Semitexa\\Core\\Attributes\\AsPayloadHandler;',
+            'use Semitexa\\Core\\Attribute\\AsPayloadHandler;',
             'use Semitexa\\Core\\Contract\\TypedHandlerInterface;',
             "use {$payloadNamespace}\\{$payloadClass};",
             "use {$resourceNamespace}\\{$resourceClass};",
