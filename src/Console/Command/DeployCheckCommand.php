@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use JsonException;
-use Semitexa\Core\Attributes\AsCommand;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Deployment\Service\FrameworkDeploymentPlanner;
 use Symfony\Component\Console\Command\Command;

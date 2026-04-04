@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
-use Semitexa\Core\Attributes\AsCommand;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\ModuleRegistry;
@@ -17,6 +17,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'describe:route', description: 'Show the full chain for a route: payload → handler → resource → template → auth')]
 final class DescribeRouteCommand extends BaseCommand
 {
+    public function __construct(
+        private readonly AttributeDiscovery $attributeDiscovery,
+        private readonly ModuleRegistry $moduleRegistry,
+    ) {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this
@@ -34,20 +41,20 @@ final class DescribeRouteCommand extends BaseCommand
             return Command::FAILURE;
         }
 
-        AttributeDiscovery::initialize();
+        $this->attributeDiscovery->initialize();
 
         $path = $input->getOption('path');
         $method = strtoupper($input->getOption('method') ?? 'GET');
 
-        $route = AttributeDiscovery::findRoute($path, $method);
+        $route = $this->attributeDiscovery->findRoute($path, $method);
 
         if ($route === null) {
             // Try matching against all routes by path prefix
-            $routes = AttributeDiscovery::getRoutes();
+            $routes = $this->attributeDiscovery->getRoutes();
             foreach ($routes as $r) {
                 if (($r['path'] ?? '') === $path) {
                     $methods = $r['methods'] ?? [$r['method'] ?? 'GET'];
-                    $route = AttributeDiscovery::findRoute($path, $methods[0]);
+                    $route = $this->attributeDiscovery->findRoute($path, $methods[0]);
                     break;
                 }
             }
@@ -79,7 +86,7 @@ final class DescribeRouteCommand extends BaseCommand
         $methods = $route['methods'] ?? [$route['method'] ?? 'GET'];
         $responseClass = $route['responseClass'] ?? null;
         $handlers = $route['handlers'] ?? [];
-        $responseAttrs = $responseClass ? AttributeDiscovery::getResolvedResponseAttributes($responseClass) : null;
+        $responseAttrs = $responseClass ? $this->attributeDiscovery->getResolvedResponseAttributes($responseClass) : null;
 
         $description = [
             'path' => $route['path'] ?? '',
@@ -88,7 +95,7 @@ final class DescribeRouteCommand extends BaseCommand
             'public' => $route['public'] ?? true,
             'payload' => [
                 'class' => $payloadClass,
-                'module' => ModuleRegistry::getModuleNameForClass($payloadClass) ?? 'project',
+                'module' => $this->moduleRegistry->getModuleNameForClass($payloadClass) ?? 'project',
                 'file' => $this->resolveRelativeFile($payloadClass),
             ],
             'resource' => null,
@@ -99,7 +106,7 @@ final class DescribeRouteCommand extends BaseCommand
         if ($responseClass) {
             $description['resource'] = [
                 'class' => $responseClass,
-                'module' => ModuleRegistry::getModuleNameForClass($responseClass) ?? 'project',
+                'module' => $this->moduleRegistry->getModuleNameForClass($responseClass) ?? 'project',
                 'file' => $this->resolveRelativeFile($responseClass),
                 'handle' => $responseAttrs['handle'] ?? null,
                 'template' => $responseAttrs['template'] ?? null,
@@ -114,7 +121,7 @@ final class DescribeRouteCommand extends BaseCommand
         foreach ($handlers as $h) {
             $description['handlers'][] = [
                 'class' => $h['class'],
-                'module' => ModuleRegistry::getModuleNameForClass($h['class']) ?? 'project',
+                'module' => $this->moduleRegistry->getModuleNameForClass($h['class']) ?? 'project',
                 'file' => $this->resolveRelativeFile($h['class']),
                 'execution' => $h['execution'] ?? 'sync',
                 'priority' => $h['priority'] ?? 0,

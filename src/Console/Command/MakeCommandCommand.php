@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
-use Semitexa\Core\Attributes\AsCommand;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Generation\Builder\CommandPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;

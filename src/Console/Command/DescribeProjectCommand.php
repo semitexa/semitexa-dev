@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
-use Semitexa\Core\Attributes\AsCommand;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\Event\EventListenerRegistry;
@@ -18,6 +18,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'describe:project', description: 'Show project overview: modules, routes, contracts, listeners')]
 final class DescribeProjectCommand extends BaseCommand
 {
+    public function __construct(
+        private readonly AttributeDiscovery $attributeDiscovery,
+        private readonly EventListenerRegistry $eventListenerRegistry,
+        private readonly ModuleRegistry $moduleRegistry,
+    ) {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this
@@ -26,25 +34,24 @@ final class DescribeProjectCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        AttributeDiscovery::initialize();
-        EventListenerRegistry::ensureBuilt();
-
-        $modules = ModuleRegistry::getModules();
-        $routes = AttributeDiscovery::getRoutes();
+        $this->attributeDiscovery->initialize();
+        $this->eventListenerRegistry->ensureBuilt();
+        $modules = $this->moduleRegistry->getModules();
+        $routes = $this->attributeDiscovery->getRoutes();
 
         // Count routes per module
         $routesByModule = [];
         foreach ($routes as $route) {
             $payloadClass = $route['class'] ?? '';
-            $moduleName = ModuleRegistry::getModuleNameForClass($payloadClass) ?? 'project';
+            $moduleName = $this->moduleRegistry->getModuleNameForClass($payloadClass) ?? 'project';
             $routesByModule[$moduleName] = ($routesByModule[$moduleName] ?? 0) + 1;
         }
 
         // Count listeners per module
-        $listenerClasses = EventListenerRegistry::getAllListenerClasses();
+        $listenerClasses = $this->eventListenerRegistry->getAllListenerClasses();
         $listenersByModule = [];
         foreach ($listenerClasses as $listenerClass) {
-            $moduleName = ModuleRegistry::getModuleNameForClass($listenerClass) ?? 'project';
+            $moduleName = $this->moduleRegistry->getModuleNameForClass($listenerClass) ?? 'project';
             $listenersByModule[$moduleName] = ($listenersByModule[$moduleName] ?? 0) + 1;
         }
 

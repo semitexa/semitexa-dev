@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Semitexa\Core\Util\ProjectRoot;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Console\Command\DeployBootstrapRemoteCommand;
 use Symfony\Component\Console\Tester\CommandTester;
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Console\Command;
 
-use Semitexa\Core\Attributes\AsCommand;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\Event\EventListenerRegistry;
@@ -18,6 +18,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'describe:event', description: 'Show all listeners for a given event, or list all events with their listener count')]
 final class DescribeEventCommand extends BaseCommand
 {
+    public function __construct(
+        private readonly AttributeDiscovery $attributeDiscovery,
+        private readonly EventListenerRegistry $eventListenerRegistry,
+        private readonly ModuleRegistry $moduleRegistry,
+    ) {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this
@@ -27,9 +35,8 @@ final class DescribeEventCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        AttributeDiscovery::initialize();
-        EventListenerRegistry::ensureBuilt();
-
+        $this->attributeDiscovery->initialize();
+        $this->eventListenerRegistry->ensureBuilt();
         $eventName = $input->getOption('name');
 
         if ($eventName) {
@@ -58,11 +65,11 @@ final class DescribeEventCommand extends BaseCommand
 
         $eventClass = $eventClasses[0];
 
-        $listeners = EventListenerRegistry::getListeners($eventClass);
+        $listeners = $this->eventListenerRegistry->getListeners($eventClass);
 
         $description = [
             'event' => $eventClass,
-            'module' => ModuleRegistry::getModuleNameForClass($eventClass) ?? 'project',
+            'module' => $this->moduleRegistry->getModuleNameForClass($eventClass) ?? 'project',
             'file' => $this->resolveRelativeFile($eventClass),
             'listener_count' => count($listeners),
             'listeners' => [],
@@ -71,7 +78,7 @@ final class DescribeEventCommand extends BaseCommand
         foreach ($listeners as $l) {
             $description['listeners'][] = [
                 'class' => $l['class'],
-                'module' => ModuleRegistry::getModuleNameForClass($l['class']) ?? 'project',
+                'module' => $this->moduleRegistry->getModuleNameForClass($l['class']) ?? 'project',
                 'file' => $this->resolveRelativeFile($l['class']),
                 'execution' => $l['execution'],
                 'priority' => $l['priority'] ?? 0,
@@ -131,20 +138,20 @@ final class DescribeEventCommand extends BaseCommand
         $io = new SymfonyStyle($input, $output);
 
         // Collect all events with their listener counts
-        $allListenerClasses = EventListenerRegistry::getAllListenerClasses();
+        $allListenerClasses = $this->eventListenerRegistry->getAllListenerClasses();
         $eventMap = [];
 
         foreach ($allListenerClasses as $listenerClass) {
             try {
                 $ref = new \ReflectionClass($listenerClass);
-                $attrs = $ref->getAttributes(\Semitexa\Core\Attributes\AsEventListener::class);
+                $attrs = $ref->getAttributes(\Semitexa\Core\Attribute\AsEventListener::class);
                 foreach ($attrs as $attr) {
                     $instance = $attr->newInstance();
                     $eventClass = $instance->event;
                     if (!isset($eventMap[$eventClass])) {
                         $eventMap[$eventClass] = [
                             'event' => $eventClass,
-                            'module' => ModuleRegistry::getModuleNameForClass($eventClass) ?? 'project',
+                            'module' => $this->moduleRegistry->getModuleNameForClass($eventClass) ?? 'project',
                             'listeners' => 0,
                             'sync' => 0,
                             'async' => 0,
@@ -218,13 +225,13 @@ final class DescribeEventCommand extends BaseCommand
             return [$name];
         }
 
-        $allListenerClasses = EventListenerRegistry::getAllListenerClasses();
+        $allListenerClasses = $this->eventListenerRegistry->getAllListenerClasses();
         $matches = [];
 
         foreach ($allListenerClasses as $listenerClass) {
             try {
                 $ref = new \ReflectionClass($listenerClass);
-                $attrs = $ref->getAttributes(\Semitexa\Core\Attributes\AsEventListener::class);
+                $attrs = $ref->getAttributes(\Semitexa\Core\Attribute\AsEventListener::class);
                 foreach ($attrs as $attr) {
                     $instance = $attr->newInstance();
                     $eventClass = $instance->event;
