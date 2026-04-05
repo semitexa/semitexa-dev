@@ -7,6 +7,8 @@ namespace Semitexa\Dev\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Core\Discovery\AttributeDiscovery;
+use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\Event\EventListenerRegistry;
 use Semitexa\Core\ModuleRegistry;
 use Symfony\Component\Console\Command\Command;
@@ -18,11 +20,19 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'describe:project', description: 'Show project overview: modules, routes, contracts, listeners')]
 final class DescribeProjectCommand extends BaseCommand
 {
+    private ?AttributeDiscovery $attributeDiscovery;
+    private ?EventListenerRegistry $eventListenerRegistry;
+    private ?ModuleRegistry $moduleRegistry;
+    private ?ClassDiscovery $classDiscovery = null;
+
     public function __construct(
-        private readonly AttributeDiscovery $attributeDiscovery,
-        private readonly EventListenerRegistry $eventListenerRegistry,
-        private readonly ModuleRegistry $moduleRegistry,
+        ?AttributeDiscovery $attributeDiscovery = null,
+        ?EventListenerRegistry $eventListenerRegistry = null,
+        ?ModuleRegistry $moduleRegistry = null,
     ) {
+        $this->attributeDiscovery = $attributeDiscovery;
+        $this->eventListenerRegistry = $eventListenerRegistry;
+        $this->moduleRegistry = $moduleRegistry;
         parent::__construct();
     }
 
@@ -34,24 +44,24 @@ final class DescribeProjectCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $this->attributeDiscovery->initialize();
-        $this->eventListenerRegistry->ensureBuilt();
-        $modules = $this->moduleRegistry->getModules();
-        $routes = $this->attributeDiscovery->getRoutes();
+        $this->attributeDiscovery()->initialize();
+        $this->eventListenerRegistry()->ensureBuilt();
+        $modules = $this->moduleRegistry()->getModules();
+        $routes = $this->attributeDiscovery()->getRoutes();
 
         // Count routes per module
         $routesByModule = [];
         foreach ($routes as $route) {
             $payloadClass = $route['class'] ?? '';
-            $moduleName = $this->moduleRegistry->getModuleNameForClass($payloadClass) ?? 'project';
+            $moduleName = $this->moduleRegistry()->getModuleNameForClass($payloadClass) ?? 'project';
             $routesByModule[$moduleName] = ($routesByModule[$moduleName] ?? 0) + 1;
         }
 
         // Count listeners per module
-        $listenerClasses = $this->eventListenerRegistry->getAllListenerClasses();
+        $listenerClasses = $this->eventListenerRegistry()->getAllListenerClasses();
         $listenersByModule = [];
         foreach ($listenerClasses as $listenerClass) {
-            $moduleName = $this->moduleRegistry->getModuleNameForClass($listenerClass) ?? 'project';
+            $moduleName = $this->moduleRegistry()->getModuleNameForClass($listenerClass) ?? 'project';
             $listenersByModule[$moduleName] = ($listenersByModule[$moduleName] ?? 0) + 1;
         }
 
@@ -147,6 +157,49 @@ final class DescribeProjectCommand extends BaseCommand
         }
 
         $io->table(['Module', 'Type', 'Extends', 'Contents (r=routes s=services c=contracts l=listeners e=events)'], $tableRows);
+    }
+
+    private function attributeDiscovery(): AttributeDiscovery
+    {
+        if ($this->attributeDiscovery === null) {
+            $this->attributeDiscovery = new AttributeDiscovery(
+                $this->classDiscovery(),
+                $this->moduleRegistry(),
+                new RouteRegistry(),
+            );
+        }
+
+        return $this->attributeDiscovery;
+    }
+
+    private function eventListenerRegistry(): EventListenerRegistry
+    {
+        if ($this->eventListenerRegistry === null) {
+            $this->eventListenerRegistry = new EventListenerRegistry(
+                $this->classDiscovery(),
+                $this->moduleRegistry(),
+            );
+        }
+
+        return $this->eventListenerRegistry;
+    }
+
+    private function moduleRegistry(): ModuleRegistry
+    {
+        if ($this->moduleRegistry === null) {
+            $this->moduleRegistry = new ModuleRegistry();
+        }
+
+        return $this->moduleRegistry;
+    }
+
+    private function classDiscovery(): ClassDiscovery
+    {
+        if ($this->classDiscovery === null) {
+            $this->classDiscovery = new ClassDiscovery();
+        }
+
+        return $this->classDiscovery;
     }
 
     private function countPhpFiles(string $dir): int

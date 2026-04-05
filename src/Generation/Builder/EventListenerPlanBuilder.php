@@ -32,7 +32,7 @@ final class EventListenerPlanBuilder
         $namespace = "Semitexa\\Modules\\{$module}\\Application\\Handler\\DomainListener";
 
         $imports = [
-            'use Semitexa\\Core\\Attributes\\AsEventListener;',
+            'use Semitexa\\Core\\Attribute\\AsEventListener;',
             'use Semitexa\\Core\\Event\\EventExecution;',
             "use {$eventImport};",
         ];
