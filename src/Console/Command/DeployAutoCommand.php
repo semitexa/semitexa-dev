@@ -34,7 +34,8 @@ final class DeployAutoCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             try {
-                $output->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+                $compactJson = json_encode($result, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+                $output->writeln($compactJson);
                 return $result['status'] === 'failed' ? Command::FAILURE : Command::SUCCESS;
             } catch (JsonException $e) {
                 $output->writeln('<error>Failed to encode deployment result as JSON: ' . $e->getMessage() . '</error>');

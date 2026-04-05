@@ -59,7 +59,7 @@ final class FrameworkDeploymentExecutor
             $result['restart_required'] = !$restartStatus['performed'];
             $result['restart_status'] = $restartStatus['message'];
 
-            if ($plan->config->healthcheckUrl !== null) {
+            if ($plan->config->healthcheckUrl !== null && $restartStatus['performed']) {
                 $this->assertHealthy($plan->config->healthcheckUrl);
             }
 
