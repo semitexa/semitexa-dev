@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="${1:-}"
+
+if [ -z "${PROJECT_ROOT}" ]; then
+    echo "Usage: run-auto-deploy-systemd.sh <project-root>" >&2
+    exit 1
+fi
+
+cd "${PROJECT_ROOT}"
+
+if OUTPUT="$(./bin/semitexa deploy:auto --json)"; then
+    STATUS=0
+else
+    STATUS=$?
+fi
+
+printf '%s\n' "${OUTPUT}"
+
+if [ "${STATUS}" -ne 0 ]; then
+    exit "${STATUS}"
+fi
+
+JSON_PAYLOAD="${OUTPUT}"
+
+if [ -z "${JSON_PAYLOAD}" ]; then
+    echo "Failed to locate deploy:auto JSON payload." >&2
+    exit 2
+fi
+
+RESTART_REQUIRED="$(printf '%s' "${JSON_PAYLOAD}" | php -r '
+$data = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($data)) {
+    fwrite(STDERR, "Failed to decode deploy:auto JSON output.\n");
+    exit(2);
+}
+
+$updated = ($data["status"] ?? null) === "updated";
+$restartRequired = (bool) ($data["restart_required"] ?? false);
+echo ($updated && $restartRequired) ? "1" : "0";
+')"
+
+if [ "${RESTART_REQUIRED}" = "1" ]; then
+    ./bin/semitexa server:start
+fi
