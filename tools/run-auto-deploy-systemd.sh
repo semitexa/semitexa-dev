@@ -22,7 +22,7 @@ if [ "${STATUS}" -ne 0 ]; then
     exit "${STATUS}"
 fi
 
-JSON_PAYLOAD="$(printf '%s\n' "${OUTPUT}" | sed -n 's/^__SEMITEXA_DEPLOY_AUTO_JSON__=//p' | tail -n 1)"
+JSON_PAYLOAD="${OUTPUT}"
 
 if [ -z "${JSON_PAYLOAD}" ]; then
     echo "Failed to locate deploy:auto JSON payload." >&2

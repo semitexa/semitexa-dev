@@ -34,11 +34,8 @@ final class DeployAutoCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             try {
-                $prettyJson = json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
                 $compactJson = json_encode($result, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-
-                $output->writeln($prettyJson);
-                $output->writeln('__SEMITEXA_DEPLOY_AUTO_JSON__=' . $compactJson);
+                $output->writeln($compactJson);
                 return $result['status'] === 'failed' ? Command::FAILURE : Command::SUCCESS;
             } catch (JsonException $e) {
                 $output->writeln('<error>Failed to encode deployment result as JSON: ' . $e->getMessage() . '</error>');

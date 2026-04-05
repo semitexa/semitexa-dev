@@ -50,11 +50,8 @@ final class DeployCheckCommand extends BaseCommand
                     ),
                 ];
 
-                $prettyJson = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
                 $compactJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-
-                $output->writeln($prettyJson);
-                $output->writeln('__SEMITEXA_DEPLOY_CHECK_JSON__=' . $compactJson);
+                $output->writeln($compactJson);
                 return Command::SUCCESS;
             } catch (JsonException $e) {
                 $output->writeln('<error>Failed to encode deployment status as JSON: ' . $e->getMessage() . '</error>');
