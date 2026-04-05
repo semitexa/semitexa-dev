@@ -42,6 +42,5 @@ echo ($updated && $restartRequired) ? "1" : "0";
 ')"
 
 if [ "${RESTART_REQUIRED}" = "1" ]; then
-    chmod +x ./bin/semitexa
     ./bin/semitexa server:start
 fi
