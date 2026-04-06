@@ -138,6 +138,9 @@ EOF
     run_root sed -i "s/__SEMITEXA_APP_SECRET__/${APP_SECRET_VALUE}/g" "${DEPLOY_PATH}/.env"
 fi
 
+run_root chown root:root "${DEPLOY_PATH}/.env" 2>/dev/null || true
+run_root chmod 600 "${DEPLOY_PATH}/.env" 2>/dev/null || true
+
 (
     cd "$DEPLOY_PATH"
     if [ ! -f "vendor/autoload.php" ] || [ ! -x "vendor/bin/semitexa" ]; then
