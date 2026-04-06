@@ -58,12 +58,12 @@ Important:
 
 - private packages such as `semitexa/site`, `semitexa/os-site`, and `semitexa/platform-site` require working GitHub SSH access on the target host
 - containerized projects should set `SEMITEXA_AUTO_DEPLOY_HOME`, `SEMITEXA_AUTO_DEPLOY_COMPOSER_HOME`, and `SEMITEXA_AUTO_DEPLOY_GIT_SSH_COMMAND` so Composer/Git auth also works inside the app container
-- the systemd installer runs the host-side wrapper in [`tools/run-auto-deploy-systemd.sh`](tools/run-auto-deploy-systemd.sh), which reruns `./bin/semitexa server:start` when `deploy:auto` reports `restart_required=true`
+- the systemd installer copies the host-side wrapper into `<project>/tools/run-auto-deploy-systemd.sh`, and the service runs it to rerun `./bin/semitexa server:start` when `deploy:auto` reports `restart_required=true`
 - without that SSH access even `composer update --lock --no-install` will fail, so enabling the timer early is incorrect
 
 ## Remote First Deployment Config
 
-Remote first deployment is intentionally separate from framework auto-update. Operator-local target metadata belongs in `.env.local`:
+Remote first deployment is intentionally separate from framework auto-update. Operator-local target metadata belongs in `.env`:
 
 ```dotenv
 SEMITEXA_REMOTE_DEPLOY_TARGETS=deploy@203.0.113.10,root@198.51.100.20
@@ -92,7 +92,7 @@ Phase 1 currently covers the first complete remote bootstrap slice:
 - Ubuntu 20.04+ remote OS detection
 - remote initialization-state detection
 - local `.tar.gz` deploy artifact build
-- remote `.env.local` materialization from `--remote-env-file` or generated prod-safe defaults
+- remote `.env` materialization from `--remote-env-file` or generated prod-safe defaults
 - remote artifact/script upload to a temporary bootstrap workspace
 - Ubuntu bootstrap scenario execution
 - Docker install/verification, `bin/semitexa install`, `bin/semitexa server:start`, and `cache:clear`

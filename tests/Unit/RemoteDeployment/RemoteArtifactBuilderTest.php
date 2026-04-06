@@ -21,7 +21,6 @@ final class RemoteArtifactBuilderTest extends TestCase
 
         file_put_contents($this->projectRoot . '/composer.json', "{}\n");
         file_put_contents($this->projectRoot . '/.env', "APP_ENV=dev\n");
-        file_put_contents($this->projectRoot . '/.env.local', "APP_ENV=dev\n");
         file_put_contents($this->projectRoot . '/src/App.php', "<?php\n");
         file_put_contents($this->projectRoot . '/vendor/ignored.php', "<?php\n");
         file_put_contents($this->projectRoot . '/var/cache/ignored.txt', "ignored\n");
@@ -47,7 +46,6 @@ final class RemoteArtifactBuilderTest extends TestCase
         self::assertStringNotContainsString('./vendor/ignored.php', $listing);
         self::assertStringNotContainsString('./var/cache/ignored.txt', $listing);
         self::assertStringNotContainsString('./.env', $listing);
-        self::assertStringNotContainsString('./.env.local', $listing);
         self::assertStringNotContainsString('./.codex/ignored.md', $listing);
 
         @unlink($artifact->path);

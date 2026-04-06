@@ -124,25 +124,22 @@ fi
 run_root chmod +x "${DEPLOY_PATH}/bin/semitexa"
 
 if [ -n "$REMOTE_ENV_PATH" ] && [ -f "$REMOTE_ENV_PATH" ]; then
-    run_root cp "$REMOTE_ENV_PATH" "${DEPLOY_PATH}/.env.local"
     run_root cp "$REMOTE_ENV_PATH" "${DEPLOY_PATH}/.env"
 elif [ -n "$REMOTE_ENV_PATH" ]; then
     echo "Remote environment file not found at ${REMOTE_ENV_PATH}." >&2
     exit 1
-elif [ ! -f "${DEPLOY_PATH}/.env.local" ]; then
+elif [ ! -f "${DEPLOY_PATH}/.env" ]; then
     APP_SECRET_VALUE="$(generate_app_secret)"
-    cat <<'EOF' | run_root tee "${DEPLOY_PATH}/.env.local" >/dev/null
-APP_ENV=prod
-APP_DEBUG=0
-APP_SECRET=__SEMITEXA_APP_SECRET__
-EOF
     cat <<'EOF' | run_root tee "${DEPLOY_PATH}/.env" >/dev/null
 APP_ENV=prod
 APP_DEBUG=0
 APP_SECRET=__SEMITEXA_APP_SECRET__
 EOF
-    run_root sed -i "s/__SEMITEXA_APP_SECRET__/${APP_SECRET_VALUE}/g" "${DEPLOY_PATH}/.env.local" "${DEPLOY_PATH}/.env"
+    run_root sed -i "s/__SEMITEXA_APP_SECRET__/${APP_SECRET_VALUE}/g" "${DEPLOY_PATH}/.env"
 fi
+
+run_root chown root:root "${DEPLOY_PATH}/.env" 2>/dev/null || true
+run_root chmod 600 "${DEPLOY_PATH}/.env" 2>/dev/null || true
 
 (
     cd "$DEPLOY_PATH"
