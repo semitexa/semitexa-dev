@@ -374,7 +374,7 @@ final class CapabilityRegistry
                     'target' => ['type' => 'string', 'description' => 'Explicit remote target in user@host format'],
                     'path' => ['type' => 'string', 'description' => 'Remote deployment path override'],
                     'force-reinitialize' => ['type' => 'flag', 'description' => 'Acknowledge reinitialization intent for an already initialized remote path', 'default' => false],
-                    'remote-env-file' => ['type' => 'string', 'description' => 'Path to a production env override file uploaded as remote .env.local'],
+                    'remote-env-file' => ['type' => 'string', 'description' => 'Path to a production env override file uploaded as remote .env'],
                     'json' => ['type' => 'flag', 'description' => 'Output remote bootstrap result as JSON', 'default' => false],
                 ],
                 outputs: [

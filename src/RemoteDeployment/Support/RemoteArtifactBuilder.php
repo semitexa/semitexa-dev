@@ -18,7 +18,6 @@ final class RemoteArtifactBuilder
         '.claude',
         '.idea',
         '.env',
-        '.env.local',
         'node_modules',
         'vendor',
         '.phpunit.cache',

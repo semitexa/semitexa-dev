@@ -159,7 +159,7 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
             $remoteArtifactPath = $remoteWorkspace . '/' . basename($artifact->path);
             $remoteBootstrapScriptPath = $remoteWorkspace . '/bootstrap.sh';
             $remoteVerifyScriptPath = $remoteWorkspace . '/verify.sh';
-            $remoteEnvPath = $remoteWorkspace . '/remote.env.local';
+            $remoteEnvPath = $remoteWorkspace . '/remote.env';
 
             $this->uploadFile($sshClient, $target, $config->sshPort, $artifact->path, $remoteArtifactPath, $password, 'Failed to upload deploy artifact.');
             $this->uploadFile($sshClient, $target, $config->sshPort, $scenarioPath . '/bootstrap.sh', $remoteBootstrapScriptPath, $password, 'Failed to upload remote bootstrap script.');
@@ -323,7 +323,7 @@ final class DeployBootstrapRemoteCommand extends BaseCommand
             }
 
             $target = $parser->parseOne($raw);
-            if ($io->confirm('Append this target to .env.local for future use?', true)) {
+            if ($io->confirm('Append this target to .env for future use?', true)) {
                 (new RemoteDeployEnvWriter())->appendTarget($projectRoot, $target->toConnectionString());
             }
 
