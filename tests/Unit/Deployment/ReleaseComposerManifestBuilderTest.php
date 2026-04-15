@@ -67,6 +67,50 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
         ], $manifest['repositories']);
     }
 
+    public function testNormalizesHttpsGitHubOriginsToSshForSemitexaRepositories(): void
+    {
+        $projectRoot = sys_get_temp_dir() . '/semitexa-release-manifest-https-origin-' . bin2hex(random_bytes(4));
+        mkdir($projectRoot . '/packages/semitexa-core', 0777, true);
+
+        file_put_contents($projectRoot . '/composer.json', json_encode([
+            'repositories' => [
+                [
+                    'type' => 'path',
+                    'url' => 'packages/semitexa-core',
+                ],
+            ],
+            'require' => [
+                'semitexa/core' => '*',
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        file_put_contents($projectRoot . '/composer.lock', json_encode([
+            'packages' => [
+                ['name' => 'semitexa/core', 'version' => '1.1.62'],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        file_put_contents($projectRoot . '/packages/semitexa-core/composer.json', json_encode([
+            'name' => 'semitexa/core',
+        ], JSON_THROW_ON_ERROR));
+
+        exec(sprintf('git -C %s init -q', escapeshellarg($projectRoot . '/packages/semitexa-core')));
+        exec(sprintf(
+            'git -C %s remote add origin %s',
+            escapeshellarg($projectRoot . '/packages/semitexa-core'),
+            escapeshellarg('https://github.com/semitexa/semitexa-core.git'),
+        ));
+
+        $manifest = (new ReleaseComposerManifestBuilder())->build($projectRoot);
+
+        self::assertSame([
+            [
+                'type' => 'vcs',
+                'url' => 'git@github.com:semitexa/semitexa-core.git',
+            ],
+        ], $manifest['repositories']);
+    }
+
     public function testMaterializesSemitexaConstraintsFromLockedVersions(): void
     {
         $projectRoot = sys_get_temp_dir() . '/semitexa-release-manifest-constraints-' . bin2hex(random_bytes(4));
@@ -217,7 +261,7 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
         ], $manifest['repositories']);
     }
 
-    public function testFallsBackToHttpsForPublicPackagesWithoutGitMetadata(): void
+    public function testFallsBackToSshForSemitexaPackagesWithoutGitMetadata(): void
     {
         $projectRoot = sys_get_temp_dir() . '/semitexa-release-manifest-public-' . bin2hex(random_bytes(4));
         mkdir($projectRoot . '/packages/semitexa-cache', 0777, true);
@@ -250,7 +294,7 @@ final class ReleaseComposerManifestBuilderTest extends TestCase
         self::assertSame([
             [
                 'type' => 'vcs',
-                'url' => 'https://github.com/semitexa/semitexa-cache.git',
+                'url' => 'git@github.com:semitexa/semitexa-cache.git',
             ],
         ], $manifest['repositories']);
     }

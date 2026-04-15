@@ -29,7 +29,7 @@ if [ -z "${JSON_PAYLOAD}" ]; then
     exit 2
 fi
 
-RESTART_REQUIRED="$(printf '%s' "${JSON_PAYLOAD}" | php -r '
+PARSED_PAYLOAD="$(printf '%s' "${JSON_PAYLOAD}" | php -r '
 $data = json_decode(stream_get_contents(STDIN), true);
 if (!is_array($data)) {
     fwrite(STDERR, "Failed to decode deploy:auto JSON output.\n");
@@ -38,9 +38,40 @@ if (!is_array($data)) {
 
 $updated = ($data["status"] ?? null) === "updated";
 $restartRequired = (bool) ($data["restart_required"] ?? false);
-echo ($updated && $restartRequired) ? "1" : "0";
+echo ($updated ? "1" : "0"), "\t", (($updated && $restartRequired) ? "1" : "0"), "\t", (string) ($data["healthcheck_url"] ?? "");
 ')"
+
+IFS=$'\t' read -r UPDATED RESTART_REQUIRED HEALTHCHECK_URL <<< "${PARSED_PAYLOAD}"
 
 if [ "${RESTART_REQUIRED}" = "1" ]; then
     ./bin/semitexa server:start
+fi
+
+if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ] && [ -n "${HEALTHCHECK_URL}" ]; then
+    php -r '
+$url = $argv[1] ?? "";
+if ($url === "") {
+    fwrite(STDERR, "Health check URL is empty.\n");
+    exit(2);
+}
+
+$context = stream_context_create([
+    "http" => [
+        "timeout" => 10,
+        "ignore_errors" => true,
+        "header" => "User-Agent: Semitexa-Dev-Auto-Deploy\r\n",
+    ],
+]);
+
+$response = @file_get_contents($url, false, $context);
+$statusCode = 0;
+if (isset($http_response_header[0]) && preg_match("/\s(\d{3})\s/", $http_response_header[0], $m) === 1) {
+    $statusCode = (int) $m[1];
+}
+
+if ($response === false || $statusCode < 200 || $statusCode >= 300) {
+    fwrite(STDERR, "Health check failed for {$url}.\n");
+    exit(1);
+}
+' "${HEALTHCHECK_URL}"
 fi

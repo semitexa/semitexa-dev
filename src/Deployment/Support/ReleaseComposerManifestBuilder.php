@@ -143,6 +143,8 @@ final class ReleaseComposerManifestBuilder
                 ));
             }
 
+            $remoteUrl = $this->normalizeSemitexaGitHubRemote($remoteUrl);
+
             if (isset($seenVcsUrls[$remoteUrl])) {
                 continue;
             }
@@ -183,16 +185,16 @@ final class ReleaseComposerManifestBuilder
         }
 
         $repoName = str_replace('/', '-', $packageName);
-        $license = $composer['license'] ?? '';
-        $licenseValues = is_array($license) ? $license : [$license];
+        return sprintf('git@github.com:semitexa/%s.git', $repoName);
+    }
 
-        foreach ($licenseValues as $candidate) {
-            if (is_string($candidate) && strtolower(trim($candidate)) === 'proprietary') {
-                return sprintf('git@github.com:semitexa/%s.git', $repoName);
-            }
+    private function normalizeSemitexaGitHubRemote(string $remoteUrl): string
+    {
+        if (preg_match('~(?:git@github\.com:|https://github\.com/)(semitexa/[^/]+?)(?:\.git)?$~i', $remoteUrl, $matches) === 1) {
+            return sprintf('git@github.com:%s.git', strtolower($matches[1]));
         }
 
-        return sprintf('https://github.com/semitexa/%s.git', $repoName);
+        return $remoteUrl;
     }
 
     /**
