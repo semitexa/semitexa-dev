@@ -39,6 +39,22 @@ final class RunAutoDeploySystemdScriptTest extends TestCase
         }
     }
 
+    public function testWrapperFailsWhenDeployCheckOutputIsMalformed(): void
+    {
+        $server = $this->startHttpServer(200);
+        $projectRoot = $this->createFakeProject($server, 'notice: deprecated output');
+
+        try {
+            [$exitCode, $output] = $this->runWrapper($projectRoot);
+
+            self::assertNotSame(0, $exitCode, $output);
+            self::assertStringContainsString('Failed to decode deploy:check JSON output.', $output);
+            self::assertFileExists($projectRoot . '/var/server-started');
+        } finally {
+            $this->cleanupProject($projectRoot, $server);
+        }
+    }
+
     /**
      * @return array{0: int, 1: string}
      */
@@ -111,7 +127,7 @@ final class RunAutoDeploySystemdScriptTest extends TestCase
     /**
      * @param array{server_root: string, port: int, process: resource} $server
      */
-    private function createFakeProject(array $server): string
+    private function createFakeProject(array $server, ?string $deployCheckOutput = null): string
     {
         $projectRoot = sys_get_temp_dir() . '/semitexa-auto-deploy-project-' . bin2hex(random_bytes(4));
         mkdir($projectRoot . '/bin', 0777, true);
@@ -125,6 +141,7 @@ final class RunAutoDeploySystemdScriptTest extends TestCase
         $healthcheckPayload = json_encode([
             'healthcheck_url' => sprintf('http://127.0.0.1:%d/', $server['port']),
         ], JSON_THROW_ON_ERROR);
+        $deployCheckPayload = $deployCheckOutput ?? $healthcheckPayload;
 
         $script = <<<BASH
 #!/usr/bin/env bash
@@ -151,7 +168,7 @@ BASH;
             $projectRoot . '/bin/semitexa',
             str_replace(
                 ['__PAYLOAD__', '__HEALTHCHECK_PAYLOAD__'],
-                [$payload, $healthcheckPayload],
+                [$payload, $deployCheckPayload],
                 $script,
             ),
         );

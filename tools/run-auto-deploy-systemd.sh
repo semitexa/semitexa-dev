@@ -57,7 +57,8 @@ if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ]; then
     HEALTHCHECK_URL="$(printf '%s' "${HEALTHCHECK_JSON}" | php -r '
 $data = json_decode(stream_get_contents(STDIN), true);
 if (!is_array($data)) {
-    exit(0);
+    fwrite(STDERR, "Failed to decode deploy:check JSON output.\n");
+    exit(2);
 }
 
 $url = $data["healthcheck_url"] ?? "";
