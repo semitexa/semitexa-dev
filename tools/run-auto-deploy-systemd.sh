@@ -49,8 +49,12 @@ fi
 
 HEALTHCHECK_URL=""
 if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ]; then
-    if HEALTHCHECK_JSON="$(./bin/semitexa deploy:check --json 2>/dev/null)"; then
-        HEALTHCHECK_URL="$(printf '%s' "${HEALTHCHECK_JSON}" | php -r '
+    if ! HEALTHCHECK_JSON="$(./bin/semitexa deploy:check --json 2>/dev/null)"; then
+        echo "Failed to inspect health check configuration after restart-required deployment." >&2
+        exit 1
+    fi
+
+    HEALTHCHECK_URL="$(printf '%s' "${HEALTHCHECK_JSON}" | php -r '
 $data = json_decode(stream_get_contents(STDIN), true);
 if (!is_array($data)) {
     exit(0);
@@ -61,7 +65,6 @@ if (is_string($url)) {
     echo $url;
 }
 ')"
-    fi
 fi
 
 if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ] && [ -n "${HEALTHCHECK_URL}" ]; then
@@ -70,6 +73,16 @@ $url = $argv[1] ?? "";
 if ($url === "") {
     fwrite(STDERR, "Health check URL is empty.\n");
     exit(2);
+}
+
+$displayUrl = $url;
+$parts = parse_url($url);
+if (is_array($parts)) {
+    $scheme = isset($parts["scheme"]) ? $parts["scheme"] . "://" : "";
+    $host = $parts["host"] ?? "";
+    $port = isset($parts["port"]) ? ":" . $parts["port"] : "";
+    $path = $parts["path"] ?? "";
+    $displayUrl = $scheme . $host . $port . $path;
 }
 
 $context = stream_context_create([
@@ -87,7 +100,7 @@ if (isset($http_response_header[0]) && preg_match("/\s(\d{3})\s/", $http_respons
 }
 
 if ($response === false || $statusCode < 200 || $statusCode >= 300) {
-    fwrite(STDERR, "Health check failed for {$url}.\n");
+    fwrite(STDERR, "Health check failed for {$displayUrl}.\n");
     exit(1);
 }
 ' "${HEALTHCHECK_URL}"
