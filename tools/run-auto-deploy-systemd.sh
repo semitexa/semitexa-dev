@@ -38,13 +38,30 @@ if (!is_array($data)) {
 
 $updated = ($data["status"] ?? null) === "updated";
 $restartRequired = (bool) ($data["restart_required"] ?? false);
-echo ($updated ? "1" : "0"), "\t", (($updated && $restartRequired) ? "1" : "0"), "\t", (string) ($data["healthcheck_url"] ?? "");
+echo ($updated ? "1" : "0"), "\t", (($updated && $restartRequired) ? "1" : "0");
 ')"
 
-IFS=$'\t' read -r UPDATED RESTART_REQUIRED HEALTHCHECK_URL <<< "${PARSED_PAYLOAD}"
+IFS=$'\t' read -r UPDATED RESTART_REQUIRED <<< "${PARSED_PAYLOAD}"
 
 if [ "${RESTART_REQUIRED}" = "1" ]; then
     ./bin/semitexa server:start
+fi
+
+HEALTHCHECK_URL=""
+if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ]; then
+    if HEALTHCHECK_JSON="$(./bin/semitexa deploy:check --json 2>/dev/null)"; then
+        HEALTHCHECK_URL="$(printf '%s' "${HEALTHCHECK_JSON}" | php -r '
+$data = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($data)) {
+    exit(0);
+}
+
+$url = $data["healthcheck_url"] ?? "";
+if (is_string($url)) {
+    echo $url;
+}
+')"
+    fi
 fi
 
 if [ "${UPDATED}" = "1" ] && [ "${RESTART_REQUIRED}" = "1" ] && [ -n "${HEALTHCHECK_URL}" ]; then

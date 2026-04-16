@@ -58,7 +58,7 @@ final class RunAutoDeploySystemdScriptTest extends TestCase
     }
 
     /**
-     * @return array{project_root: string, server_root: string, port: int, process: resource}
+     * @return array{server_root: string, port: int, process: resource}
      */
     private function startHttpServer(int $statusCode): array
     {
@@ -120,6 +120,9 @@ final class RunAutoDeploySystemdScriptTest extends TestCase
         $payload = json_encode([
             'status' => 'updated',
             'restart_required' => true,
+        ], JSON_THROW_ON_ERROR);
+
+        $healthcheckPayload = json_encode([
             'healthcheck_url' => sprintf('http://127.0.0.1:%d/', $server['port']),
         ], JSON_THROW_ON_ERROR);
 
@@ -131,6 +134,9 @@ case "\${1:-}" in
   deploy:auto)
     printf '%s\n' '__PAYLOAD__'
     ;;
+  deploy:check)
+    printf '%s\n' '__HEALTHCHECK_PAYLOAD__'
+    ;;
   server:start)
     touch var/server-started
     ;;
@@ -141,7 +147,14 @@ case "\${1:-}" in
 esac
 BASH;
 
-        file_put_contents($projectRoot . '/bin/semitexa', str_replace('__PAYLOAD__', $payload, $script));
+        file_put_contents(
+            $projectRoot . '/bin/semitexa',
+            str_replace(
+                ['__PAYLOAD__', '__HEALTHCHECK_PAYLOAD__'],
+                [$payload, $healthcheckPayload],
+                $script,
+            ),
+        );
         chmod($projectRoot . '/bin/semitexa', 0755);
 
         return $projectRoot;

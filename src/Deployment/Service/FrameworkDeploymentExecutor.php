@@ -27,7 +27,6 @@ final class FrameworkDeploymentExecutor
             'reason' => $plan->reason,
             'release_channel' => $plan->config->channel,
             'source_mode' => $plan->config->sourceMode,
-            'healthcheck_url' => $plan->config->healthcheckUrl,
             'selected_version' => $plan->selectedVersion,
             'private_latest_version' => $plan->privateLatestVersion,
             'installed_packages' => $plan->installedPackages,
