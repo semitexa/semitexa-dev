@@ -55,7 +55,42 @@ final class MakeServiceCommand extends BaseCommand
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:service',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('service_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Domain/Service/{$name}.php" => [
+                            'Add #[InjectAsReadonly] properties for dependencies',
+                            'Implement service methods',
+                        ],
+                    ],
+                    'facts' => [
+                        '#[AsService] makes it auto-discoverable and injectable via #[InjectAsReadonly]',
+                        'Services are worker-scoped singletons (shared across requests in one worker)',
+                    ],
+                    'constraints' => [
+                        'Use #[InjectAsReadonly] for dependencies, never constructor injection',
+                        'Service must be final class',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);

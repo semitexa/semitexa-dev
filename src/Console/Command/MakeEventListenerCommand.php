@@ -65,7 +65,43 @@ final class MakeEventListenerCommand extends BaseCommand
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:event-listener',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('event_listener_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Handler/DomainListener/{$name}.php" => [
+                            'Implement event handling logic in handle() method',
+                            'Add #[InjectAsReadonly] properties for dependencies if needed',
+                        ],
+                    ],
+                    'facts' => [
+                        '#[AsEventListener] implies #[ExecutionScoped] — a fresh clone per execution',
+                        'Sync runs in-request, Async runs after response (Swoole defer), Queued goes to queue worker',
+                        'The event class must exist in Domain/Event/ of the same or another module',
+                    ],
+                    'constraints' => [
+                        'handle() must accept exactly one parameter: the event class',
+                        'handle() must return void',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);

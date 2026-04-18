@@ -98,6 +98,7 @@ final class SafeFileWriter implements FileWriterInterface
         foreach ($phpFiles as $rel) {
             $full = $this->basePath . '/' . ltrim($rel, '/');
             if (!is_file($full)) {
+                $errors[] = ['file' => $rel, 'message' => 'created file is missing during verification'];
                 continue;
             }
 

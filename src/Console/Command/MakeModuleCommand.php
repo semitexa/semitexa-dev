@@ -47,10 +47,31 @@ final class MakeModuleCommand extends BaseCommand
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:module',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
-            if ($input->getOption('json') || $input->getOption('llm-hints')) {
-                $io->error('--dry-run cannot be combined with --json or --llm-hints.');
-                return self::FAILURE;
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('module_scaffold', $plannedResult, [
+                    'facts' => [
+                        "Module namespace: Semitexa\\Modules\\{$module}",
+                        'All directories follow the standard convention and are auto-discovered',
+                        'No need to register the module or add PSR-4 entries to composer.json',
+                    ],
+                    'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
+                ]));
+                return self::SUCCESS;
             }
 
             $io->title('Dry Run — Planned Directories');

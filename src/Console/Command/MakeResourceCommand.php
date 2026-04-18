@@ -63,7 +63,42 @@ final class MakeResourceCommand extends BaseCommand
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:resource',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('resource_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                            'Add fluent with*() setter methods for template variables',
+                            'Each setter should call $this->with($key, $value)',
+                        ],
+                    ],
+                    'facts' => [
+                        'Resource is auto-discovered via #[AsResource] attribute',
+                        'HtmlResponse provides pageTitle(), seoTag(), with() helpers',
+                        'The template path uses @project-layouts-{Module}/ prefix by convention',
+                    ],
+                    'constraints' => [
+                        'Must extend HtmlResponse and implement ResourceInterface',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);
