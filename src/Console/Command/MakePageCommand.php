@@ -12,6 +12,7 @@ use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
 use Semitexa\Dev\Generation\Writer\SafeFileWriter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -125,6 +126,7 @@ final class MakePageCommand extends BaseCommand
 
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:page');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
+        $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));

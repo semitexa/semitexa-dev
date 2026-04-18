@@ -293,7 +293,7 @@ final class CapabilityRegistry
                     'description' => 'Module list with type, extends, and counts for routes/services/contracts/listeners/events/commands',
                 ],
                 supports: ['--json'],
-                follow_up: ['describe:module'],
+                follow_up: ['ai:ask module'],
             ),
             new CommandCapability(
                 name: 'describe:event',

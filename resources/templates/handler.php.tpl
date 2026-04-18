@@ -9,7 +9,7 @@ namespace {{namespace}};
 #[AsPayloadHandler(payload: {{payloadClass}}::class, resource: {{resourceClass}}::class)]
 final class {{className}} implements TypedHandlerInterface
 {
-    public function handle({{payloadClass}} $payload, {{resourceClass}} $resource): {{resourceClass}}
+{{injections}}    public function handle({{payloadClass}} $payload, {{resourceClass}} $resource): {{resourceClass}}
     {
         return $resource;
     }

@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
+use Semitexa\Dev\Console\Command\Support\DeprecationBanner;
 use Semitexa\Dev\Generation\Support\NameInflector;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -24,6 +25,8 @@ final class DescribeModuleCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        DeprecationBanner::emit($output, 'describe:module', 'ai:ask module');
+
         $io = new SymfonyStyle($input, $output);
 
         if (!$input->getOption('name')) {

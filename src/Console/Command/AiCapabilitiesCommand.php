@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Capability\CapabilityRegistry;
+use Semitexa\Dev\Console\Command\Support\DeprecationBanner;
 use Semitexa\Dev\Generation\Data\CapabilityManifest;
 use Semitexa\Dev\Generation\Support\CapabilityManifestFormatter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -24,6 +25,8 @@ final class AiCapabilitiesCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        DeprecationBanner::emit($output, 'ai:capabilities', 'ai:ask capabilities');
+
         $io = new SymfonyStyle($input, $output);
         $capabilities = CapabilityRegistry::all();
 

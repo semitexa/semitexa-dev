@@ -11,6 +11,7 @@ use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\Event\EventListenerRegistry;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Console\Command\Support\DeprecationBanner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -44,6 +45,8 @@ final class DescribeProjectCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        DeprecationBanner::emit($output, 'describe:project', 'ai:ask project');
+
         $this->attributeDiscovery()->initialize();
         $this->eventListenerRegistry()->ensureBuilt();
         $modules = $this->moduleRegistry()->getModules();

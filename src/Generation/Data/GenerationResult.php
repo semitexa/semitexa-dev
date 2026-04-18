@@ -14,6 +14,7 @@ final readonly class GenerationResult
      * @param list<string> $conflicts
      * @param list<string> $next_steps
      * @param array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null $verify
+     * @param array{status: string, checks: array<string, array{status: string, summary: string}>}|null $lint
      */
     public function __construct(
         public string $command,
@@ -23,7 +24,22 @@ final readonly class GenerationResult
         public array $conflicts = [],
         public array $next_steps = [],
         public ?array $verify = null,
+        public ?array $lint = null,
     ) {}
+
+    public function withLint(?array $lint): self
+    {
+        return new self(
+            command: $this->command,
+            status: $this->status,
+            created: $this->created,
+            skipped: $this->skipped,
+            conflicts: $this->conflicts,
+            next_steps: $this->next_steps,
+            verify: $this->verify,
+            lint: $lint,
+        );
+    }
 
     public function toArray(): array
     {
@@ -37,6 +53,9 @@ final readonly class GenerationResult
         ];
         if ($this->verify !== null) {
             $out['verify'] = $this->verify;
+        }
+        if ($this->lint !== null) {
+            $out['lint'] = $this->lint;
         }
         return $out;
     }

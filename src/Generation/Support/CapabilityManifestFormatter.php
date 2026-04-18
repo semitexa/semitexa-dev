@@ -10,6 +10,6 @@ final class CapabilityManifestFormatter
 {
     public function format(CapabilityManifest $manifest): string
     {
-        return json_encode($manifest->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return json_encode($manifest->toArray(), JSON_UNESCAPED_SLASHES);
     }
 }

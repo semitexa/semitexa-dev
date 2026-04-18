@@ -11,6 +11,7 @@ use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\Event\EventListenerRegistry;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Console\Command\Support\DeprecationBanner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -45,6 +46,8 @@ final class DescribeEventCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        DeprecationBanner::emit($output, 'describe:event', 'ai:ask event');
+
         $this->attributeDiscovery()->initialize();
         $this->eventListenerRegistry()->ensureBuilt();
         $eventName = $input->getOption('name');
@@ -63,7 +66,7 @@ final class DescribeEventCommand extends BaseCommand
         $eventClasses = $this->resolveEventClasses($eventName);
         if ($eventClasses === []) {
             $io->error("Event not found: {$eventName}");
-            $io->note('Use describe:event (without --name) to see all registered events.');
+            $io->note('Use `ai:ask event` (without --name) to see all registered events.');
             return Command::FAILURE;
         }
         if (count($eventClasses) > 1) {

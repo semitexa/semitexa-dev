@@ -6,12 +6,17 @@ namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
+use Semitexa\Dev\Ai\Similarity\DuplicateDetector;
+use Semitexa\Dev\Ai\Similarity\DuplicateGate;
+use Semitexa\Dev\Ai\Similarity\DuplicateQuery;
+use Semitexa\Dev\Ai\Similarity\SimilarityIndexBuilder;
 use Semitexa\Dev\Generation\Builder\EventListenerPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
 use Semitexa\Dev\Generation\Writer\SafeFileWriter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -31,6 +36,7 @@ final class MakeEventListenerCommand extends BaseCommand
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
             ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
+            ->addOption('override-duplicate', null, InputOption::VALUE_NONE, 'Bypass duplicate/similarity refusal')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
     }
@@ -64,6 +70,35 @@ final class MakeEventListenerCommand extends BaseCommand
             'execution' => $execution,
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
+
+        $module = $inflector->toStudly($input->getOption('module'));
+        $listenerClassName = $inflector->toStudly($input->getOption('name'));
+        $listenerFqcn = "Semitexa\\Modules\\{$module}\\Application\\Handler\\DomainListener\\{$listenerClassName}";
+        $eventInput = trim((string) $input->getOption('event'));
+        $eventFqcn = str_contains($eventInput, '\\')
+            ? ltrim($eventInput, '\\')
+            : "Semitexa\\Modules\\{$module}\\Domain\\Event\\" . $inflector->toStudly($eventInput);
+        $duplicateGate = new DuplicateGate();
+        $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());
+        $gateExit = $duplicateGate->run(
+            new DuplicateQuery(
+                kind: 'listener',
+                module: $module,
+                className: $listenerClassName,
+                fqcn: $listenerFqcn,
+                relativePath: $plan->files[0]->path,
+                extras: ['event_fqcn' => $eventFqcn],
+            ),
+            $detector,
+            $io,
+            $output,
+            (bool) $input->getOption('override-duplicate'),
+            (bool) $input->getOption('json'),
+            (bool) $input->getOption('llm-hints'),
+        );
+        if ($gateExit !== null) {
+            return $gateExit;
+        }
 
         $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
             command: 'make:event-listener',
@@ -112,6 +147,7 @@ final class MakeEventListenerCommand extends BaseCommand
 
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:event-listener');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
+        $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));

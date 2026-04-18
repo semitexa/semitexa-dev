@@ -10,6 +10,7 @@ use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Console\Command\Support\DeprecationBanner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -42,6 +43,8 @@ final class DescribeRouteCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        DeprecationBanner::emit($output, 'describe:route', 'ai:ask route');
+
         $io = new SymfonyStyle($input, $output);
 
         if (!$input->getOption('path')) {
