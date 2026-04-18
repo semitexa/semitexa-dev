@@ -30,7 +30,8 @@ final class MakePayloadCommand extends BaseCommand
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method')
             ->addOption('response', null, InputOption::VALUE_REQUIRED, 'Response class name without suffix')
             ->addOption('public', null, InputOption::VALUE_NONE, 'Add #[PublicEndpoint] attribute')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -59,10 +60,45 @@ final class MakePayloadCommand extends BaseCommand
             'method' => $input->getOption('method'),
             'response' => $input->getOption('response'),
             'public' => (bool) $input->getOption('public'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:payload',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('payload_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                            'Add properties for request parameters',
+                            'Implement validation rules in validate()',
+                        ],
+                    ],
+                    'facts' => [
+                        'Payload classes are auto-discovered via #[AsPayload] attribute',
+                        'ValidatablePayload::validate() runs before the handler',
+                    ],
+                    'constraints' => [
+                        'Do not add constructor — properties are hydrated via setters or public access',
+                    ],
+                    'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name} --write",
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);
@@ -97,7 +133,7 @@ final class MakePayloadCommand extends BaseCommand
                 'constraints' => [
                     'Do not add constructor — properties are hydrated via setters or public access',
                 ],
-                'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name}",
+                    'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name} --write",
             ]));
             return self::SUCCESS;
         }

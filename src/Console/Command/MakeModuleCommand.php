@@ -23,7 +23,8 @@ final class MakeModuleCommand extends BaseCommand
     {
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module name (e.g., Catalog)')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create directories (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -43,13 +44,34 @@ final class MakeModuleCommand extends BaseCommand
 
         $plan = $builder->build([
             'name' => $input->getOption('name'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:module',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
-            if ($input->getOption('json') || $input->getOption('llm-hints')) {
-                $io->error('--dry-run cannot be combined with --json or --llm-hints.');
-                return self::FAILURE;
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('module_scaffold', $plannedResult, [
+                    'facts' => [
+                        "Module namespace: Semitexa\\Modules\\{$module}",
+                        'All directories follow the standard convention and are auto-discovered',
+                        'No need to register the module or add PSR-4 entries to composer.json',
+                    ],
+                    'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
+                ]));
+                return self::SUCCESS;
             }
 
             $io->title('Dry Run — Planned Directories');

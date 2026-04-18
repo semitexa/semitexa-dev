@@ -28,7 +28,8 @@ final class MakeHandlerCommand extends BaseCommand
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Handler name without suffix')
             ->addOption('payload', null, InputOption::VALUE_REQUIRED, 'Payload class name without suffix')
             ->addOption('resource', null, InputOption::VALUE_REQUIRED, 'Resource class name without suffix')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -55,10 +56,45 @@ final class MakeHandlerCommand extends BaseCommand
             'name' => $input->getOption('name'),
             'payload' => $input->getOption('payload'),
             'resource' => $input->getOption('resource'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:handler',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('handler_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                            'Implement business logic in handle() method',
+                            'Populate the resource with data via fluent setters',
+                        ],
+                    ],
+                    'facts' => [
+                        'Handler is auto-discovered via #[AsPayloadHandler] attribute',
+                        'The handle() method receives a hydrated payload and empty resource',
+                    ],
+                    'constraints' => [
+                        'Handler must be final and implement TypedHandlerInterface',
+                        'Return type must match the resource parameter type',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);

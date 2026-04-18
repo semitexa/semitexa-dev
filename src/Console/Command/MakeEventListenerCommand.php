@@ -28,7 +28,8 @@ final class MakeEventListenerCommand extends BaseCommand
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Listener class name')
             ->addOption('event', null, InputOption::VALUE_REQUIRED, 'Event class name to listen for')
             ->addOption('execution', null, InputOption::VALUE_REQUIRED, 'Execution mode: Sync, Async, or Queued')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -61,10 +62,46 @@ final class MakeEventListenerCommand extends BaseCommand
             'name' => $input->getOption('name'),
             'event' => $input->getOption('event'),
             'execution' => $execution,
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:event-listener',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('event_listener_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Handler/DomainListener/{$name}.php" => [
+                            'Implement event handling logic in handle() method',
+                            'Add #[InjectAsReadonly] properties for dependencies if needed',
+                        ],
+                    ],
+                    'facts' => [
+                        '#[AsEventListener] implies #[ExecutionScoped] — a fresh clone per execution',
+                        'Sync runs in-request, Async runs after response (Swoole defer), Queued goes to queue worker',
+                        'The event class must exist in Domain/Event/ of the same or another module',
+                    ],
+                    'constraints' => [
+                        'handle() must accept exactly one parameter: the event class',
+                        'handle() must return void',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);

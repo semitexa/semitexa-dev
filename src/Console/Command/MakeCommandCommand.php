@@ -28,7 +28,8 @@ final class MakeCommandCommand extends BaseCommand
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Command class name (e.g., ImportUsers)')
             ->addOption('command-name', null, InputOption::VALUE_REQUIRED, 'CLI command name (e.g., users:import)')
             ->addOption('description', null, InputOption::VALUE_REQUIRED, 'Command description')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -55,10 +56,45 @@ final class MakeCommandCommand extends BaseCommand
             'name' => $input->getOption('name'),
             'commandName' => $input->getOption('command-name'),
             'description' => $input->getOption('description'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:command',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
+
         if ($plan->dryRun) {
+            if ($input->getOption('json')) {
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $className = str_ends_with($name, 'Command') ? $name : $name . 'Command';
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('command_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Command/{$className}.php" => [
+                            'Add arguments and options in configure()',
+                            'Implement command logic in execute()',
+                        ],
+                    ],
+                    'facts' => [
+                        '#[AsCommand] auto-discovers the command — no manual registration needed',
+                        'BaseCommand provides getProjectRoot() and rebuildAutoload() helpers',
+                    ],
+                    'constraints' => [
+                        'execute() must return Command::SUCCESS or Command::FAILURE',
+                    ],
+                ]));
+                return self::SUCCESS;
+            }
+
             $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
                 $io->section($file->path);

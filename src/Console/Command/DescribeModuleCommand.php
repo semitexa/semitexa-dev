@@ -62,7 +62,7 @@ final class DescribeModuleCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.module-description/v1',
                 'generated_at' => date('c'),
                 'module' => $description,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES));
             return self::SUCCESS;
         }
 

@@ -31,7 +31,8 @@ final class MakePageCommand extends BaseCommand
             ->addOption('layout', null, InputOption::VALUE_REQUIRED, 'Layout template name')
             ->addOption('public', null, InputOption::VALUE_NONE, 'Add #[PublicEndpoint]')
             ->addOption('with-assets', null, InputOption::VALUE_NONE, 'Generate CSS/JS/assets.json stubs')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -61,12 +62,56 @@ final class MakePageCommand extends BaseCommand
             'layout' => $input->getOption('layout'),
             'public' => (bool) $input->getOption('public'),
             'withAssets' => (bool) $input->getOption('with-assets'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
+
+        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+            command: 'make:page',
+            status: 'dry_run',
+            created: array_map(static fn($file): string => $file->path, $plan->files),
+            next_steps: ['Re-run with --write to create files'],
+        );
 
         if ($plan->dryRun) {
             if ($input->getOption('json')) {
-                $output->writeln(json_encode($plan->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $output->writeln((new JsonResultFormatter())->format($plannedResult));
+                return self::SUCCESS;
+            }
+
+            if ($input->getOption('llm-hints')) {
+                $module = $inflector->toStudly($input->getOption('module'));
+                $name = $inflector->toStudly($input->getOption('name'));
+                $kebab = $inflector->toKebab($name);
+                $formatter = new LlmHintsFormatter();
+                $output->writeln($formatter->format('page_scaffold', $plannedResult, [
+                    'fill_targets' => [
+                        "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                            'Add properties for request parameters',
+                            'Implement validation rules in validate()',
+                        ],
+                        "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                            'Implement business logic in handle()',
+                            'Populate resource via fluent setters',
+                        ],
+                        "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                            'Add fluent with*() setter methods',
+                        ],
+                        "src/modules/{$module}/Application/View/templates/pages/{$kebab}.html.twig" => [
+                            'Build the page HTML template',
+                        ],
+                    ],
+                    'facts' => [
+                        'All three classes are auto-discovered via PHP attributes',
+                        'The handler receives a hydrated payload and empty resource',
+                        'Template variables are set via Resource::with() method',
+                    ],
+                    'constraints' => [
+                        'Handler must be final class',
+                        'Resource must extend HtmlResponse and implement ResourceInterface',
+                        'Payload must implement ValidatablePayload',
+                    ],
+                    'suggested_next_prompt' => "Open the handler at src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
+                ]));
                 return self::SUCCESS;
             }
 
