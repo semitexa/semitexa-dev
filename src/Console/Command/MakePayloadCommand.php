@@ -94,7 +94,7 @@ final class MakePayloadCommand extends BaseCommand
                     'constraints' => [
                         'Do not add constructor — properties are hydrated via setters or public access',
                     ],
-                    'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name}",
+                    'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name} --write",
                 ]));
                 return self::SUCCESS;
             }
@@ -133,7 +133,7 @@ final class MakePayloadCommand extends BaseCommand
                 'constraints' => [
                     'Do not add constructor — properties are hydrated via setters or public access',
                 ],
-                'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name}",
+                    'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name} --write",
             ]));
             return self::SUCCESS;
         }

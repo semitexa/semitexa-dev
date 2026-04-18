@@ -89,8 +89,8 @@ final class SafeFileWriter implements FileWriterInterface
             return null;
         }
 
-        $phpBin = PHP_BINARY ?: 'php';
-        if (!is_file($phpBin)) {
+        $phpBin = $this->resolvePhpBinary();
+        if ($phpBin === null) {
             return ['status' => 'skipped', 'checked' => 0, 'errors' => []];
         }
 
@@ -132,5 +132,16 @@ final class SafeFileWriter implements FileWriterInterface
             'checked' => count($phpFiles),
             'errors'  => $errors,
         ];
+    }
+
+    private function resolvePhpBinary(): ?string
+    {
+        if (PHP_BINARY !== '' && (is_file(PHP_BINARY) || is_executable(PHP_BINARY))) {
+            return PHP_BINARY;
+        }
+
+        $resolved = trim((string) @shell_exec('command -v php 2>/dev/null'));
+
+        return $resolved !== '' ? $resolved : null;
     }
 }
