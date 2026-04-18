@@ -107,7 +107,7 @@ final class DescribeProjectCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.project-description/v1',
                 'generated_at' => date('c'),
                 'project' => $description,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
 

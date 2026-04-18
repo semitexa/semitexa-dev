@@ -102,7 +102,7 @@ final class DescribeEventCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.event-description/v1',
                 'generated_at' => date('c'),
                 'event' => $description,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
 
@@ -188,7 +188,7 @@ final class DescribeEventCommand extends BaseCommand
                 'generated_at' => date('c'),
                 'total_events' => count($events),
                 'events' => $events,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
 

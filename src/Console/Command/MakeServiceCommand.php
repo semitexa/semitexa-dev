@@ -26,7 +26,8 @@ final class MakeServiceCommand extends BaseCommand
         $this
             ->addOption('module', null, InputOption::VALUE_REQUIRED, 'Target module name')
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Service class name')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -51,7 +52,7 @@ final class MakeServiceCommand extends BaseCommand
         $plan = $builder->build([
             'module' => $input->getOption('module'),
             'name' => $input->getOption('name'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         if ($plan->dryRun) {

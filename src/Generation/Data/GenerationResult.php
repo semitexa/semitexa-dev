@@ -13,6 +13,7 @@ final readonly class GenerationResult
      * @param list<string> $skipped
      * @param list<string> $conflicts
      * @param list<string> $next_steps
+     * @param array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null $verify
      */
     public function __construct(
         public string $command,
@@ -21,11 +22,12 @@ final readonly class GenerationResult
         public array $skipped = [],
         public array $conflicts = [],
         public array $next_steps = [],
+        public ?array $verify = null,
     ) {}
 
     public function toArray(): array
     {
-        return [
+        $out = [
             'command' => $this->command,
             'status' => $this->status,
             'created' => $this->created,
@@ -33,5 +35,9 @@ final readonly class GenerationResult
             'conflicts' => $this->conflicts,
             'next_steps' => $this->next_steps,
         ];
+        if ($this->verify !== null) {
+            $out['verify'] = $this->verify;
+        }
+        return $out;
     }
 }

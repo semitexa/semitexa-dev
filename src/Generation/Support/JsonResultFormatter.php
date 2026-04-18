@@ -14,6 +14,6 @@ final class JsonResultFormatter
             'artifact' => 'semitexa-dev.generation-result/v1',
             'generated_at' => date('c'),
             'result' => $result->toArray(),
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        ], JSON_UNESCAPED_SLASHES);
     }
 }

@@ -49,6 +49,8 @@ final class SafeFileWriter implements FileWriterInterface
             $nextSteps[] = 'Use --force to overwrite conflicting files';
         }
 
+        $verify = $this->verifyCreated($created);
+
         return new GenerationResult(
             command: $this->commandName,
             status: $status,
@@ -56,6 +58,7 @@ final class SafeFileWriter implements FileWriterInterface
             skipped: $skipped,
             conflicts: $conflicts,
             next_steps: $nextSteps,
+            verify: $verify,
         );
     }
 
@@ -66,5 +69,67 @@ final class SafeFileWriter implements FileWriterInterface
             mkdir($dir, 0755, true);
         }
         file_put_contents($path, $content);
+    }
+
+    /**
+     * Run `php -l` on each newly-created .php file. Returns null when no PHP
+     * files were created (keeps the envelope small for non-PHP outputs).
+     *
+     * @param list<string> $created
+     * @return array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null
+     */
+    private function verifyCreated(array $created): ?array
+    {
+        $phpFiles = array_values(array_filter(
+            $created,
+            static fn(string $rel): bool => str_ends_with($rel, '.php'),
+        ));
+
+        if ($phpFiles === []) {
+            return null;
+        }
+
+        $phpBin = PHP_BINARY ?: 'php';
+        if (!is_file($phpBin)) {
+            return ['status' => 'skipped', 'checked' => 0, 'errors' => []];
+        }
+
+        $errors = [];
+        foreach ($phpFiles as $rel) {
+            $full = $this->basePath . '/' . ltrim($rel, '/');
+            if (!is_file($full)) {
+                continue;
+            }
+
+            $descriptors = [
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
+            $process = @proc_open([$phpBin, '-l', '-n', $full], $descriptors, $pipes);
+            if (!is_resource($process)) {
+                $errors[] = ['file' => $rel, 'message' => 'could not invoke php -l'];
+                continue;
+            }
+
+            $stdout = stream_get_contents($pipes[1]) ?: '';
+            $stderr = stream_get_contents($pipes[2]) ?: '';
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+
+            if ($exitCode !== 0) {
+                $message = trim($stderr !== '' ? $stderr : $stdout);
+                $errors[] = [
+                    'file'    => $rel,
+                    'message' => $message !== '' ? $message : "php -l exited with code {$exitCode}",
+                ];
+            }
+        }
+
+        return [
+            'status'  => $errors === [] ? 'pass' : 'fail',
+            'checked' => count($phpFiles),
+            'errors'  => $errors,
+        ];
     }
 }

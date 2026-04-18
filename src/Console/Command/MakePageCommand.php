@@ -31,7 +31,8 @@ final class MakePageCommand extends BaseCommand
             ->addOption('layout', null, InputOption::VALUE_REQUIRED, 'Layout template name')
             ->addOption('public', null, InputOption::VALUE_NONE, 'Add #[PublicEndpoint]')
             ->addOption('with-assets', null, InputOption::VALUE_NONE, 'Generate CSS/JS/assets.json stubs')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -61,12 +62,12 @@ final class MakePageCommand extends BaseCommand
             'layout' => $input->getOption('layout'),
             'public' => (bool) $input->getOption('public'),
             'withAssets' => (bool) $input->getOption('with-assets'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         if ($plan->dryRun) {
             if ($input->getOption('json')) {
-                $output->writeln(json_encode($plan->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $output->writeln(json_encode($plan->toArray(), JSON_UNESCAPED_SLASHES));
                 return self::SUCCESS;
             }
 

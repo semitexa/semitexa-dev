@@ -23,7 +23,8 @@ final class MakeModuleCommand extends BaseCommand
     {
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module name (e.g., Catalog)')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create directories (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -43,7 +44,7 @@ final class MakeModuleCommand extends BaseCommand
 
         $plan = $builder->build([
             'name' => $input->getOption('name'),
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         if ($plan->dryRun) {

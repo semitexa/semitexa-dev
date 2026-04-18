@@ -80,7 +80,7 @@ final class DescribeRouteCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.route-description/v1',
                 'generated_at' => date('c'),
                 'route' => $description,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
 

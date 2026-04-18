@@ -28,7 +28,8 @@ final class MakeEventListenerCommand extends BaseCommand
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Listener class name')
             ->addOption('event', null, InputOption::VALUE_REQUIRED, 'Event class name to listen for')
             ->addOption('execution', null, InputOption::VALUE_REQUIRED, 'Execution mode: Sync, Async, or Queued')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -61,7 +62,7 @@ final class MakeEventListenerCommand extends BaseCommand
             'name' => $input->getOption('name'),
             'event' => $input->getOption('event'),
             'execution' => $execution,
-            'dryRun' => (bool) $input->getOption('dry-run'),
+            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         if ($plan->dryRun) {

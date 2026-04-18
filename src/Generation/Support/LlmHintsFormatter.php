@@ -42,6 +42,6 @@ final class LlmHintsFormatter
             $hints['suggested_next_prompt'] = $metadata['suggested_next_prompt'];
         }
 
-        return json_encode($hints, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return json_encode($hints, JSON_UNESCAPED_SLASHES);
     }
 }
