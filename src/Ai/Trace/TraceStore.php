@@ -90,20 +90,36 @@ final class TraceStore
             throw new \RuntimeException("trace '{$traceId}' does not exist — call start first");
         }
 
-        $nextId = $this->readLastEventId($path) + 1;
-        $event = new TraceEvent(
-            eventId:   $nextId,
-            at:        date('c'),
-            eventKind: $eventKind,
-            summary:   $summary,
-            payload:   $payload,
-        );
-        $line = json_encode($event->toArray(), JSON_UNESCAPED_SLASHES) . "\n";
-        $ok = file_put_contents($path, $line, LOCK_EX | FILE_APPEND);
-        if ($ok === false) {
-            throw new \RuntimeException("failed to append to trace: {$path}");
+        $handle = fopen($path, 'c+');
+        if ($handle === false) {
+            throw new \RuntimeException("cannot open trace for append: {$path}");
         }
-        return $event;
+
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                throw new \RuntimeException("failed to lock trace for append: {$path}");
+            }
+
+            $nextId = $this->readLastEventIdFromHandle($handle) + 1;
+            $event = new TraceEvent(
+                eventId:   $nextId,
+                at:        date('c'),
+                eventKind: $eventKind,
+                summary:   $summary,
+                payload:   $payload,
+            );
+            $line = json_encode($event->toArray(), JSON_UNESCAPED_SLASHES) . "\n";
+
+            if (fseek($handle, 0, SEEK_END) !== 0 || fwrite($handle, $line) === false || !fflush($handle)) {
+                throw new \RuntimeException("failed to append to trace: {$path}");
+            }
+
+            flock($handle, LOCK_UN);
+
+            return $event;
+        } finally {
+            fclose($handle);
+        }
     }
 
     public function read(string $traceId): Trace
@@ -131,6 +147,7 @@ final class TraceStore
                 if (!is_array($decoded)) {
                     continue;
                 }
+                /** @var array<string, mixed> $decoded */
                 $kind = $decoded['kind'] ?? null;
                 if ($kind === TraceHeader::KIND && $header === null) {
                     $header = TraceHeader::fromArray($decoded);
@@ -213,6 +230,7 @@ final class TraceStore
         if (!is_array($decoded) || ($decoded['kind'] ?? null) !== TraceHeader::KIND) {
             throw new \RuntimeException("malformed header in {$path}");
         }
+        /** @var array<string, mixed> $decoded */
         $header = TraceHeader::fromArray($decoded);
         // Normalise: if a malformed file has a mismatched id, trust the filename.
         if ($header->traceId !== $traceId) {
@@ -227,33 +245,37 @@ final class TraceStore
         return $header;
     }
 
-    private function readLastEventId(string $path): int
+    /**
+     * Reads the greatest event id from an already-open trace handle.
+     *
+     * The caller is responsible for any locking discipline around this read.
+     *
+     * @param resource $handle
+     */
+    private function readLastEventIdFromHandle($handle): int
     {
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            throw new \RuntimeException("cannot open trace: {$path}");
-        }
+        rewind($handle);
+
         $lastId = 0;
-        try {
-            while (($line = fgets($handle)) !== false) {
-                $line = trim($line);
-                if ($line === '' || $line[0] !== '{') {
-                    continue;
-                }
-                $decoded = json_decode($line, true);
-                if (!is_array($decoded)) {
-                    continue;
-                }
-                if (($decoded['kind'] ?? null) === TraceEvent::KIND) {
-                    $id = (int) ($decoded['event_id'] ?? 0);
-                    if ($id > $lastId) {
-                        $lastId = $id;
-                    }
+        while (($line = fgets($handle)) !== false) {
+            $line = trim($line);
+            if ($line === '' || $line[0] !== '{') {
+                continue;
+            }
+            $decoded = json_decode($line, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            /** @var array<string, mixed> $decoded */
+            if (($decoded['kind'] ?? null) === TraceEvent::KIND) {
+                $rawId = $decoded['event_id'] ?? 0;
+                $id = is_int($rawId) ? $rawId : (is_numeric($rawId) ? (int) $rawId : 0);
+                if ($id > $lastId) {
+                    $lastId = $id;
                 }
             }
-        } finally {
-            fclose($handle);
         }
+
         return $lastId;
     }
 }

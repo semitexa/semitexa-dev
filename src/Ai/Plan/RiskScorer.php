@@ -57,7 +57,7 @@ final class RiskScorer
         }
 
         if ($recipe->id === 'rename_symbol') {
-            $requiredSteps[] = 'use ai:review-graph:impact to enumerate callers before renaming';
+            $requiredSteps[] = 'run ai:context rename_symbol to inspect prior art and callers before renaming';
         }
 
         return new RiskAssessment(
