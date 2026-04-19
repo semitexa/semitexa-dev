@@ -56,10 +56,12 @@ class AiTraceCommandTest extends TestCase
         ]);
 
         $this->assertSame(0, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $header = $this->arrayValue($decoded, 'header');
         $this->assertSame('semitexa-dev.ai-trace-start/v1', $decoded['artifact']);
-        $this->assertSame('ship-x', $decoded['header']['trace_id']);
-        $this->assertSame(TraceHeader::SCHEMA_VERSION, $decoded['header']['schema_version']);
+        $this->assertSame('created', $decoded['status']);
+        $this->assertSame('ship-x', $header['trace_id']);
+        $this->assertSame(TraceHeader::SCHEMA_VERSION, $header['schema_version']);
         $this->assertSame('var/ai-traces/ship-x.ndjson', $decoded['path']);
         $this->assertFileExists($this->tmpRoot . '/var/ai-traces/ship-x.ndjson');
     }
@@ -77,10 +79,12 @@ class AiTraceCommandTest extends TestCase
         ]);
 
         $this->assertSame(0, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertSame(1, $decoded['event']['event_id']);
-        $this->assertSame(TraceEventKind::VERIFY_RESULT, $decoded['event']['event_kind']);
-        $this->assertSame('pass', $decoded['event']['payload']['verdict']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $event = $this->arrayValue($decoded, 'event');
+        $payload = $this->arrayValue($event, 'payload');
+        $this->assertSame(1, $event['event_id']);
+        $this->assertSame(TraceEventKind::VERIFY_RESULT, $event['event_kind']);
+        $this->assertSame('pass', $payload['verdict']);
     }
 
     public function test_show_returns_full_trace_in_order(): void
@@ -94,11 +98,12 @@ class AiTraceCommandTest extends TestCase
         $exit = $tester->execute(['action' => 'show', '--id' => 't', '--json' => true]);
 
         $this->assertSame(0, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $events = $this->listValue($decoded, 'events');
         $this->assertSame('semitexa-dev.ai-trace-report/v1', $decoded['artifact']);
         $this->assertSame(3, $decoded['event_count']);
-        $this->assertSame(['first', 'second', 'third'], array_column($decoded['events'], 'summary'));
-        $this->assertSame([1, 2, 3], array_column($decoded['events'], 'event_id'));
+        $this->assertSame(['first', 'second', 'third'], array_column($events, 'summary'));
+        $this->assertSame([1, 2, 3], array_column($events, 'event_id'));
     }
 
     public function test_show_ndjson_default_emits_summary_header_and_events(): void
@@ -123,8 +128,9 @@ class AiTraceCommandTest extends TestCase
         $tester = $this->newTester();
         $tester->execute(['action' => 'list', '--json' => true]);
 
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $ids = array_column($decoded['traces'], 'trace_id');
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $traces = $this->listValue($decoded, 'traces');
+        $ids = array_column($traces, 'trace_id');
         sort($ids);
         $this->assertSame(['alpha', 'beta'], $ids);
         $this->assertSame(2, $decoded['trace_count']);
@@ -141,9 +147,9 @@ class AiTraceCommandTest extends TestCase
         ]);
 
         $this->assertSame(1, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
+        $decoded = $this->decodeJson($tester->getDisplay());
         $this->assertSame('error', $decoded['kind']);
-        $this->assertStringContainsString('does not exist', $decoded['error']);
+        $this->assertStringContainsString('does not exist', $this->stringValue($decoded, 'error'));
     }
 
     public function test_invalid_trace_id_rejected_with_error_envelope(): void
@@ -151,8 +157,8 @@ class AiTraceCommandTest extends TestCase
         $tester = $this->newTester();
         $exit = $tester->execute(['action' => 'start', '--id' => 'Bad Id']);
         $this->assertSame(1, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertStringContainsString('invalid trace id', $decoded['error']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertStringContainsString('invalid trace id', $this->stringValue($decoded, 'error'));
     }
 
     public function test_unknown_event_kind_rejected(): void
@@ -166,8 +172,8 @@ class AiTraceCommandTest extends TestCase
             '--summary' => 'x',
         ]);
         $this->assertSame(1, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertStringContainsString('unknown event kind', $decoded['error']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertStringContainsString('unknown event kind', $this->stringValue($decoded, 'error'));
     }
 
     public function test_bad_payload_json_rejected(): void
@@ -182,8 +188,8 @@ class AiTraceCommandTest extends TestCase
             '--payload' => '{not valid json',
         ]);
         $this->assertSame(1, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertStringContainsString('invalid --payload JSON', $decoded['error']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertStringContainsString('invalid --payload JSON', $this->stringValue($decoded, 'error'));
     }
 
     public function test_start_is_idempotent(): void
@@ -191,12 +197,14 @@ class AiTraceCommandTest extends TestCase
         $this->start('t', 'Original');
         $tester = $this->newTester();
         $tester->execute(['action' => 'start', '--id' => 't', '--topic' => 'Rewrite attempt']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertSame('opened', $decoded['status']);
 
         // Show: topic must still be 'Original'.
         $show = $this->newTester();
         $show->execute(['action' => 'show', '--id' => 't', '--json' => true]);
-        $decoded = json_decode(trim($show->getDisplay()), true);
-        $this->assertSame('Original', $decoded['header']['topic']);
+        $decoded = $this->decodeJson($show->getDisplay());
+        $this->assertSame('Original', $this->arrayValue($decoded, 'header')['topic']);
     }
 
     public function test_missing_id_on_actions_returns_error(): void
@@ -204,7 +212,7 @@ class AiTraceCommandTest extends TestCase
         $tester = $this->newTester();
         foreach (['start', 'append', 'show'] as $action) {
             $tester->execute(['action' => $action]);
-            $decoded = json_decode(trim($tester->getDisplay()), true);
+            $decoded = $this->decodeJson($tester->getDisplay());
             $this->assertSame('error', $decoded['kind'], "missing id for {$action}");
         }
     }
@@ -214,8 +222,8 @@ class AiTraceCommandTest extends TestCase
         $tester = $this->newTester();
         $exit = $tester->execute(['action' => 'delete']);
         $this->assertSame(1, $exit);
-        $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertStringContainsString("unknown action", $decoded['error']);
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertStringContainsString("unknown action", $this->stringValue($decoded, 'error'));
     }
 
     public function test_on_disk_format_is_valid_ndjson(): void
@@ -228,12 +236,12 @@ class AiTraceCommandTest extends TestCase
         $lines = array_values(array_filter(explode("\n", (string) $raw)));
         $this->assertCount(3, $lines);
 
-        $header = json_decode($lines[0], true);
+        $header = $this->decodeJson($lines[0]);
         $this->assertSame('header', $header['kind']);
         $this->assertSame(TraceHeader::SCHEMA_VERSION, $header['schema_version']);
 
         foreach ([1, 2] as $idx) {
-            $row = json_decode($lines[$idx], true);
+            $row = $this->decodeJson($lines[$idx]);
             $this->assertSame('event', $row['kind']);
             $this->assertSame($idx, $row['event_id']);
         }
@@ -280,12 +288,58 @@ class AiTraceCommandTest extends TestCase
             if ($line === '' || $line[0] !== '{') {
                 continue;
             }
-            $decoded = json_decode($line, true);
-            if (is_array($decoded)) {
-                $lines[] = $decoded;
-            }
+            $lines[] = $this->decodeJson($line);
         }
         return $lines;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeJson(string $json): array
+    {
+        $decoded = json_decode(trim($json), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertIsArray($decoded);
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function arrayValue(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        $this->assertIsArray($value);
+
+        /** @var array<string, mixed> $value */
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return list<array<string, mixed>>
+     */
+    private function listValue(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        $this->assertIsArray($value);
+
+        /** @var list<array<string, mixed>> $value */
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function stringValue(array $data, string $key): string
+    {
+        $value = $data[$key] ?? null;
+        $this->assertIsString($value);
+
+        return $value;
     }
 
     private function removeDir(string $dir): void
@@ -298,6 +352,7 @@ class AiTraceCommandTest extends TestCase
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($items as $item) {
+            \assert($item instanceof \SplFileInfo);
             $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
         }
         rmdir($dir);

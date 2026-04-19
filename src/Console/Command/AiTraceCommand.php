@@ -61,7 +61,7 @@ final class AiTraceCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $action = (string) $input->getArgument('action');
+        $action = $this->stringArgument($input, 'action');
         $jsonMode = (bool) $input->getOption('json');
         $store = $this->traceStore;
 
@@ -81,10 +81,11 @@ final class AiTraceCommand extends BaseCommand
             return self::FAILURE;
         }
         try {
+            $alreadyExists = $store->exists($id);
             $header = $store->openOrCreate(
                 $id,
-                $input->getOption('topic') !== null ? (string) $input->getOption('topic') : null,
-                $input->getOption('recipe') !== null ? (string) $input->getOption('recipe') : null,
+                $this->nullableStringOption($input, 'topic'),
+                $this->nullableStringOption($input, 'recipe'),
             );
         } catch (\InvalidArgumentException|\RuntimeException $e) {
             return $this->error($output, $e->getMessage(), $jsonMode);
@@ -93,11 +94,11 @@ final class AiTraceCommand extends BaseCommand
         $record = [
             'artifact' => 'semitexa-dev.ai-trace-start/v1',
             'action'   => self::ACTION_START,
-            'status'   => $store->exists($id) ? 'opened' : 'created',
+            'status'   => $alreadyExists ? 'opened' : 'created',
             'header'   => $header->toArray(),
             'path'     => $this->relPath($store->pathFor($id)),
         ];
-        $output->writeln(json_encode($record, JSON_UNESCAPED_SLASHES));
+        $this->writeJson($output, $record);
         return self::SUCCESS;
     }
 
@@ -108,7 +109,7 @@ final class AiTraceCommand extends BaseCommand
             return self::FAILURE;
         }
 
-        $kind = (string) ($input->getOption('kind') ?? '');
+        $kind = $this->stringOption($input, 'kind');
         if ($kind === '') {
             return $this->error($output, '--kind is required for append', $jsonMode);
         }
@@ -120,23 +121,15 @@ final class AiTraceCommand extends BaseCommand
             );
         }
 
-        $summary = (string) ($input->getOption('summary') ?? '');
+        $summary = $this->stringOption($input, 'summary');
         if ($summary === '') {
             return $this->error($output, '--summary is required for append', $jsonMode);
         }
 
-        $payload = [];
-        $payloadRaw = $input->getOption('payload');
-        if ($payloadRaw !== null && $payloadRaw !== '') {
-            try {
-                $decoded = json_decode((string) $payloadRaw, true, 512, JSON_THROW_ON_ERROR);
-            } catch (\JsonException $e) {
-                return $this->error($output, 'invalid --payload JSON: ' . $e->getMessage(), $jsonMode);
-            }
-            if (!is_array($decoded)) {
-                return $this->error($output, '--payload must decode to a JSON object', $jsonMode);
-            }
-            $payload = $decoded;
+        try {
+            $payload = $this->decodePayload($input);
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($output, $e->getMessage(), $jsonMode);
         }
 
         try {
@@ -151,7 +144,7 @@ final class AiTraceCommand extends BaseCommand
             'trace_id' => $id,
             'event'    => $event->toArray(),
         ];
-        $output->writeln(json_encode($record, JSON_UNESCAPED_SLASHES));
+        $this->writeJson($output, $record);
         return self::SUCCESS;
     }
 
@@ -168,27 +161,27 @@ final class AiTraceCommand extends BaseCommand
         }
 
         if ($jsonMode) {
-            $output->writeln(json_encode([
+            $this->writeJson($output, [
                 'artifact'   => 'semitexa-dev.ai-trace-report/v1',
                 'action'     => self::ACTION_SHOW,
                 'header'     => $trace->header->toArray(),
                 'events'     => array_map(static fn(TraceEvent $e) => $e->toArray(), $trace->events),
                 'event_count'=> count($trace->events),
-            ], JSON_UNESCAPED_SLASHES));
+            ]);
             return self::SUCCESS;
         }
 
-        $output->writeln(json_encode([
+        $this->writeJson($output, [
             'kind'        => 'summary',
             'trace_id'    => $trace->header->traceId,
             'topic'       => $trace->header->topic,
             'recipe'      => $trace->header->recipe,
             'created_at'  => $trace->header->createdAt,
             'event_count' => count($trace->events),
-        ], JSON_UNESCAPED_SLASHES));
-        $output->writeln(json_encode($trace->header->toArray(), JSON_UNESCAPED_SLASHES));
+        ]);
+        $this->writeJson($output, $trace->header->toArray());
         foreach ($trace->events as $event) {
-            $output->writeln(json_encode($event->toArray(), JSON_UNESCAPED_SLASHES));
+            $this->writeJson($output, $event->toArray());
         }
         return self::SUCCESS;
     }
@@ -199,28 +192,28 @@ final class AiTraceCommand extends BaseCommand
         $rows = array_map(static fn(TraceHeader $h) => $h->toArray(), $headers);
 
         if ($jsonMode) {
-            $output->writeln(json_encode([
+            $this->writeJson($output, [
                 'artifact'    => 'semitexa-dev.ai-trace-list/v1',
                 'action'      => self::ACTION_LIST,
                 'traces'      => $rows,
                 'trace_count' => count($rows),
-            ], JSON_UNESCAPED_SLASHES));
+            ]);
             return self::SUCCESS;
         }
 
-        $output->writeln(json_encode([
+        $this->writeJson($output, [
             'kind'        => 'summary',
             'trace_count' => count($rows),
-        ], JSON_UNESCAPED_SLASHES));
+        ]);
         foreach ($rows as $row) {
-            $output->writeln(json_encode(['kind' => 'trace'] + $row, JSON_UNESCAPED_SLASHES));
+            $this->writeJson($output, ['kind' => 'trace'] + $row);
         }
         return self::SUCCESS;
     }
 
     private function requireId(InputInterface $input, OutputInterface $output, bool $jsonMode): ?string
     {
-        $id = (string) ($input->getOption('id') ?? '');
+        $id = $this->stringOption($input, 'id');
         if ($id === '') {
             $this->error($output, '--id is required', $jsonMode);
             return null;
@@ -237,18 +230,71 @@ final class AiTraceCommand extends BaseCommand
     private function error(OutputInterface $output, string $message, bool $jsonMode): int
     {
         if ($jsonMode) {
-            $output->writeln(json_encode([
+            $this->writeJson($output, [
                 'artifact' => 'semitexa-dev.ai-trace-report/v1',
                 'status'   => 'error',
                 'error'    => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ]);
         } else {
-            $output->writeln(json_encode([
+            $this->writeJson($output, [
                 'kind'  => 'error',
                 'error' => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ]);
         }
         return self::FAILURE;
+    }
+
+    private function stringArgument(InputInterface $input, string $name): string
+    {
+        $value = $input->getArgument($name);
+
+        return is_string($value) ? $value : '';
+    }
+
+    private function stringOption(InputInterface $input, string $name): string
+    {
+        $value = $input->getOption($name);
+
+        return is_string($value) ? $value : '';
+    }
+
+    private function nullableStringOption(InputInterface $input, string $name): ?string
+    {
+        $value = $input->getOption($name);
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodePayload(InputInterface $input): array
+    {
+        $payloadRaw = $input->getOption('payload');
+        if (!is_string($payloadRaw) || $payloadRaw === '') {
+            return [];
+        }
+
+        try {
+            $decoded = json_decode($payloadRaw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \InvalidArgumentException('invalid --payload JSON: ' . $e->getMessage(), previous: $e);
+        }
+
+        if (!is_array($decoded)) {
+            throw new \InvalidArgumentException('--payload must decode to a JSON object');
+        }
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function writeJson(OutputInterface $output, array $payload): void
+    {
+        $output->writeln(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     private function relPath(string $abs): string

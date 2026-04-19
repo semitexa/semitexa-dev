@@ -60,8 +60,8 @@ class LegacyCommandNameRegressionTest extends TestCase
 
     public function test_no_legacy_command_names_remain_in_repository(): void
     {
-        $root = realpath(__DIR__ . '/../../../..');
-        $this->assertIsString($root, 'project root not resolvable');
+        $root = realpath(__DIR__ . '/../..');
+        $this->assertIsString($root, 'repository root not resolvable');
 
         $forbidden = self::forbiddenNames();
         $scannedExtensions = array_flip(self::scannedExtensions());
