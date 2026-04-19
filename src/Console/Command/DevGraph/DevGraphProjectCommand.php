@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Dev\Console\Command;
+namespace Semitexa\Dev\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
@@ -17,8 +17,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'describe:project', description: 'Show project overview: modules, routes, contracts, listeners')]
-final class DescribeProjectCommand extends BaseCommand
+#[AsCommand(name: 'dev:graph:project', description: 'Show project overview: modules, routes, contracts, listeners')]
+final class DevGraphProjectCommand extends BaseCommand
 {
     private ?AttributeDiscovery $attributeDiscovery;
     private ?EventListenerRegistry $eventListenerRegistry;
@@ -33,13 +33,12 @@ final class DescribeProjectCommand extends BaseCommand
         $this->attributeDiscovery = $attributeDiscovery;
         $this->eventListenerRegistry = $eventListenerRegistry;
         $this->moduleRegistry = $moduleRegistry;
-        parent::__construct();
+        parent::__construct('dev:graph:project');
     }
 
     protected function configure(): void
     {
-        $this
-            ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
+        $this->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -49,7 +48,6 @@ final class DescribeProjectCommand extends BaseCommand
         $modules = $this->moduleRegistry()->getModules();
         $routes = $this->attributeDiscovery()->getRoutes();
 
-        // Count routes per module
         $routesByModule = [];
         foreach ($routes as $route) {
             $payloadClass = $route['class'] ?? '';
@@ -57,7 +55,6 @@ final class DescribeProjectCommand extends BaseCommand
             $routesByModule[$moduleName] = ($routesByModule[$moduleName] ?? 0) + 1;
         }
 
-        // Count listeners per module
         $listenerClasses = $this->eventListenerRegistry()->getAllListenerClasses();
         $listenersByModule = [];
         foreach ($listenerClasses as $listenerClass) {
@@ -65,13 +62,14 @@ final class DescribeProjectCommand extends BaseCommand
             $listenersByModule[$moduleName] = ($listenersByModule[$moduleName] ?? 0) + 1;
         }
 
-        // Scan module directories for services, contracts, events, commands
-        $root = $this->getProjectRoot();
         $moduleDetails = [];
         foreach ($modules as $module) {
             $name = $module['name'];
             $type = $module['type'] ?? 'unknown';
             $extends = $module['extends'] ?? null;
+
+            $sourceRoots = $this->resolveModuleSourceRoots($module);
+            $counts = $this->countByCategory($sourceRoots);
 
             $detail = [
                 'name' => $name,
@@ -80,17 +78,12 @@ final class DescribeProjectCommand extends BaseCommand
                 'namespace' => $module['namespace'] ?? null,
                 'routes' => $routesByModule[$name] ?? 0,
                 'listeners' => $listenersByModule[$name] ?? 0,
+                'services' => $counts['services'],
+                'contracts' => $counts['contracts'],
+                'events' => $counts['events'],
+                'models' => $counts['models'],
+                'commands' => $counts['commands'],
             ];
-
-            // For local modules, count domain files
-            if ($type === 'local') {
-                $modulePath = $root . '/src/modules/' . $name;
-                $detail['services'] = $this->countPhpFiles($modulePath . '/Domain/Service');
-                $detail['contracts'] = $this->countPhpFiles($modulePath . '/Domain/Contract');
-                $detail['events'] = $this->countPhpFiles($modulePath . '/Domain/Event');
-                $detail['models'] = $this->countPhpFiles($modulePath . '/Domain/Model');
-                $detail['commands'] = $this->countPhpFiles($modulePath . '/Application/Command');
-            }
 
             $moduleDetails[] = $detail;
         }
@@ -202,23 +195,101 @@ final class DescribeProjectCommand extends BaseCommand
         return $this->classDiscovery;
     }
 
-    private function countPhpFiles(string $dir): int
+    /**
+     * Pick the directories to scan for a module. PSR-4 autoload roots are the
+     * source of truth — they reflect what the module actually ships, regardless
+     * of whether it lives in src/modules/, packages/, or vendor/. Falls back to
+     * the module path itself when a composer.json declares no PSR-4 mapping.
+     *
+     * @param array<string, mixed> $module
+     * @return list<string>
+     */
+    private function resolveModuleSourceRoots(array $module): array
     {
-        if (!is_dir($dir)) {
-            return 0;
-        }
-
-        $count = 0;
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $count++;
+        $roots = [];
+        $psr4 = $module['autoloadPsr4'] ?? [];
+        if (is_array($psr4)) {
+            foreach ($psr4 as $dirs) {
+                foreach ((array) $dirs as $dir) {
+                    if (is_string($dir) && is_dir($dir)) {
+                        $roots[] = $dir;
+                    }
+                }
             }
         }
 
-        return $count;
+        if ($roots === []) {
+            $path = $module['path'] ?? null;
+            if (is_string($path) && is_dir($path)) {
+                $roots[] = $path;
+            }
+        }
+
+        return array_values(array_unique($roots));
+    }
+
+    /**
+     * Walk PHP files under each source root and bucket them by the closest
+     * matching directory-name convention (Service, Contract, Event, Model,
+     * Command). Console/Command files are CLI commands and are intentionally
+     * excluded from the "commands" bucket — that bucket is for application/
+     * domain commands.
+     *
+     * @param list<string> $sourceRoots
+     * @return array{services: int, contracts: int, events: int, models: int, commands: int}
+     */
+    private function countByCategory(array $sourceRoots): array
+    {
+        $counts = ['services' => 0, 'contracts' => 0, 'events' => 0, 'models' => 0, 'commands' => 0];
+
+        foreach ($sourceRoots as $root) {
+            $realRoot = realpath($root) ?: $root;
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($realRoot, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::LEAVES_ONLY,
+                \RecursiveIteratorIterator::CATCH_GET_CHILD,
+            );
+
+            foreach ($iterator as $file) {
+                if (!$file instanceof \SplFileInfo || !$file->isFile() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $absolute = $file->getPathname();
+                $relative = ltrim(substr($absolute, strlen($realRoot)), '/\\');
+                $segments = explode('/', str_replace('\\', '/', $relative));
+                array_pop($segments);
+                if ($segments === []) {
+                    continue;
+                }
+
+                $hasConsoleAncestor = in_array('Console', $segments, true);
+
+                foreach (array_reverse($segments) as $segment) {
+                    if ($segment === 'Service') {
+                        $counts['services']++;
+                        break;
+                    }
+                    if ($segment === 'Contract') {
+                        $counts['contracts']++;
+                        break;
+                    }
+                    if ($segment === 'Event') {
+                        $counts['events']++;
+                        break;
+                    }
+                    if ($segment === 'Model') {
+                        $counts['models']++;
+                        break;
+                    }
+                    if ($segment === 'Command' && !$hasConsoleAncestor) {
+                        $counts['commands']++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $counts;
     }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Dev\Console\Command;
+namespace Semitexa\Dev\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
@@ -17,8 +17,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'describe:event', description: 'Show all listeners for a given event, or list all events with their listener count')]
-final class DescribeEventCommand extends BaseCommand
+#[AsCommand(name: 'dev:graph:event', description: 'Show all listeners for a given event, or list all events with their listener count')]
+final class DevGraphEventCommand extends BaseCommand
 {
     private ?AttributeDiscovery $attributeDiscovery;
     private ?EventListenerRegistry $eventListenerRegistry;
@@ -33,7 +33,7 @@ final class DescribeEventCommand extends BaseCommand
         $this->attributeDiscovery = $attributeDiscovery;
         $this->eventListenerRegistry = $eventListenerRegistry;
         $this->moduleRegistry = $moduleRegistry;
-        parent::__construct();
+        parent::__construct('dev:graph:event');
     }
 
     protected function configure(): void
@@ -63,7 +63,7 @@ final class DescribeEventCommand extends BaseCommand
         $eventClasses = $this->resolveEventClasses($eventName);
         if ($eventClasses === []) {
             $io->error("Event not found: {$eventName}");
-            $io->note('Use describe:event (without --name) to see all registered events.');
+            $io->note('Use `ai:ask event` (without --name) to see all registered events.');
             return Command::FAILURE;
         }
         if (count($eventClasses) > 1) {
@@ -147,7 +147,6 @@ final class DescribeEventCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        // Collect all events with their listener counts
         $allListenerClasses = $this->eventListenerRegistry()->getAllListenerClasses();
         $eventMap = [];
 

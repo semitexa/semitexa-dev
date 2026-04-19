@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Dev\Console\Command;
+namespace Semitexa\Dev\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
@@ -14,9 +14,14 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'ai:capabilities', description: 'List all available generator commands with inputs, outputs, and usage guidance')]
-final class AiCapabilitiesCommand extends BaseCommand
+#[AsCommand(name: 'dev:graph:capabilities', description: 'List all available generator and introspection commands with inputs, outputs, and usage guidance')]
+final class DevGraphCapabilitiesCommand extends BaseCommand
 {
+    public function __construct()
+    {
+        parent::__construct('dev:graph:capabilities');
+    }
+
     protected function configure(): void
     {
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON manifest');

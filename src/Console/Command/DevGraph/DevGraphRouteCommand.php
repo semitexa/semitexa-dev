@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Dev\Console\Command;
+namespace Semitexa\Dev\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\Command\BaseCommand;
@@ -16,8 +16,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'describe:route', description: 'Show the full chain for a route: payload → handler → resource → template → auth')]
-final class DescribeRouteCommand extends BaseCommand
+#[AsCommand(name: 'dev:graph:route', description: 'Show the full chain for a route: payload → handler → resource → template → auth')]
+final class DevGraphRouteCommand extends BaseCommand
 {
     private ?AttributeDiscovery $attributeDiscovery;
     private ?ModuleRegistry $moduleRegistry;
@@ -29,7 +29,7 @@ final class DescribeRouteCommand extends BaseCommand
     ) {
         $this->attributeDiscovery = $attributeDiscovery;
         $this->moduleRegistry = $moduleRegistry;
-        parent::__construct();
+        parent::__construct('dev:graph:route');
     }
 
     protected function configure(): void
@@ -57,7 +57,6 @@ final class DescribeRouteCommand extends BaseCommand
         $route = $this->attributeDiscovery()->findRoute($path, $method);
 
         if ($route === null) {
-            // Try matching against all routes by path prefix
             $routes = $this->attributeDiscovery()->getRoutes();
             foreach ($routes as $r) {
                 if (($r['path'] ?? '') === $path) {
@@ -153,23 +152,19 @@ final class DescribeRouteCommand extends BaseCommand
 
         $io->section('Chain');
 
-        // Payload
         $io->text("  Payload:  {$info['payload']['class']}");
         $io->text("            {$info['payload']['file']}");
 
-        // Handlers
         foreach ($info['handlers'] as $h) {
             $io->text("  Handler:  {$h['class']} [{$h['execution']}]");
             $io->text("            {$h['file']}");
         }
 
-        // Resource
         if ($info['resource']) {
             $io->text("  Resource: {$info['resource']['class']}");
             $io->text("            {$info['resource']['file']}");
         }
 
-        // Template
         if ($info['template']) {
             $io->text("  Template: {$info['template']}");
         }

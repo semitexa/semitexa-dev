@@ -18,7 +18,7 @@ class CapabilityManifestFormatterTest extends TestCase
             generated_at: '2026-03-22T00:00:00+00:00',
             commands: [
                 new CommandCapability(
-                    name: 'ai:capabilities',
+                    name: 'dev:graph:capabilities',
                     kind: 'introspection',
                     summary: 'List commands',
                     use_when: 'Starting',
@@ -34,7 +34,7 @@ class CapabilityManifestFormatterTest extends TestCase
         $this->assertSame('semitexa.ai-capabilities/v1', $data['artifact']);
         $this->assertSame('2026-03-22T00:00:00+00:00', $data['generated_at']);
         $this->assertCount(1, $data['commands']);
-        $this->assertSame('ai:capabilities', $data['commands'][0]['name']);
+        $this->assertSame('dev:graph:capabilities', $data['commands'][0]['name']);
         $this->assertSame('introspection', $data['commands'][0]['kind']);
     }
 }
