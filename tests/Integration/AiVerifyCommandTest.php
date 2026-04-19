@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Console\Command\AiVerifyCommand;
+use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -156,7 +159,7 @@ class AiVerifyCommandTest extends TestCase
 
     public function test_trace_option_appends_verify_result_event(): void
     {
-        $store = new TraceStore($this->tmpRoot);
+        $store = new TraceStore();
         $store->openOrCreate('ship-x', 'Ship feature X');
 
         $tester = $this->newTester();
@@ -193,7 +196,7 @@ class AiVerifyCommandTest extends TestCase
 
     public function test_trace_fallback_env_var_is_honoured(): void
     {
-        $store = new TraceStore($this->tmpRoot);
+        $store = new TraceStore();
         $store->openOrCreate('env-trace');
         putenv('SEMITEXA_AI_TRACE_ID=env-trace');
         try {
@@ -240,8 +243,19 @@ class AiVerifyCommandTest extends TestCase
      */
     private function newTester(array $failingLints = []): CommandTester
     {
+        $traceStore = new TraceStore();
+        $traceAppender = new TraceAutoAppender();
+        PropertyInjector::inject($traceAppender, new ArrayContainer([
+            TraceStore::class => $traceStore,
+        ]));
+
+        $verifyCommand = new AiVerifyCommand();
+        PropertyInjector::inject($verifyCommand, new ArrayContainer([
+            TraceAutoAppender::class => $traceAppender,
+        ]));
+
         $app = new Application();
-        $app->add(new AiVerifyCommand());
+        $app->add($verifyCommand);
 
         foreach ([
             'semitexa:lint:handlers',

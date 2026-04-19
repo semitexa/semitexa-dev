@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Ai\Trace;
 
+use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Support\ProjectRoot;
+
 /**
  * File-backed NDJSON trace store under `<projectRoot>/var/ai-traces/`.
  *
@@ -19,16 +22,17 @@ namespace Semitexa\Dev\Ai\Trace;
  * Trace IDs are validated against a safe pattern. This is the only name the
  * filesystem sees, so we keep it restrictive: lowercase/digits/`-`/`_`, 1–64
  * chars, must start alphanumeric.
+ *
+ * Container-managed (#[AsService]) so this type is injectable via
+ * #[InjectAsReadonly]. Project root is resolved lazily from
+ * {@see ProjectRoot::get()} — tests chdir into a fixture dir and call
+ * `ProjectRoot::reset()` to isolate the filesystem.
  */
+#[AsService]
 final class TraceStore
 {
     private const ID_PATTERN = '/^[a-z0-9][a-z0-9_-]{0,63}$/';
     private const SUBDIR     = 'var/ai-traces';
-
-    public function __construct(
-        private readonly string $projectRoot,
-        private readonly string $subdir = self::SUBDIR,
-    ) {}
 
     public static function assertValidId(string $traceId): void
     {
@@ -149,7 +153,7 @@ final class TraceStore
      */
     public function list(): array
     {
-        $dir = $this->projectRoot . '/' . trim($this->subdir, '/');
+        $dir = $this->dir();
         if (!is_dir($dir)) {
             return [];
         }
@@ -175,12 +179,17 @@ final class TraceStore
 
     public function pathFor(string $traceId): string
     {
-        return $this->projectRoot . '/' . trim($this->subdir, '/') . '/' . $traceId . '.ndjson';
+        return $this->dir() . '/' . $traceId . '.ndjson';
+    }
+
+    private function dir(): string
+    {
+        return ProjectRoot::get() . '/' . self::SUBDIR;
     }
 
     private function ensureDir(): void
     {
-        $dir = $this->projectRoot . '/' . trim($this->subdir, '/');
+        $dir = $this->dir();
         if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
             throw new \RuntimeException("failed to create trace dir: {$dir}");
         }

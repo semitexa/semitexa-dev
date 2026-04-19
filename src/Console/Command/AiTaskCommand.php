@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Classifier\TaskClassifier;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -19,6 +19,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'ai:task', description: 'Classify a task description into a recipe + suggested make:* invocation')]
 final class AiTaskCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected TraceAutoAppender $traceAppender;
+
     public function __construct()
     {
         parent::__construct('ai:task');
@@ -114,8 +117,7 @@ final class AiTaskCommand extends BaseCommand
             'generator_chain'  => $result->recipe->generator_chain,
             'alternatives'     => $result->alternatives,
         ];
-        $appender = new TraceAutoAppender(new TraceStore($this->getProjectRoot()));
-        $appender->appendIfActive($input, $output, TraceEventKind::TASK_RESULT, $summary, $payload);
+        $this->traceAppender->appendIfActive($input, $output, TraceEventKind::TASK_RESULT, $summary, $payload);
     }
 
     private function truncate(string $value, int $max): string

@@ -15,8 +15,8 @@ namespace Semitexa\Dev\Ai\Convention;
  *   - {@see writeAll()} replaces the cache atomically (temp file + rename).
  *
  * The store deliberately exposes no auto-mine: re-mining is an explicit
- * operator action via the `ai:mine-conventions` command. Scaffolders should
- * never silently spend time scanning the codebase mid-write.
+ * operator action via the `dev:graph:mine-conventions` command. Scaffolders
+ * should never silently spend time scanning the codebase mid-write.
  */
 final class ConventionStore
 {

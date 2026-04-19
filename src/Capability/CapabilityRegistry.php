@@ -13,10 +13,34 @@ final class CapabilityRegistry
     {
         return [
             new CommandCapability(
-                name: 'ai:capabilities',
+                name: 'ai:ask',
                 kind: 'introspection',
-                summary: 'List all available generator commands with their inputs, outputs, and usage guidance.',
-                use_when: 'Starting a new task that might involve code generation, or when unsure what generators exist.',
+                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, project, module, route, event, logs).',
+                use_when: 'Any agent read-only question: start here instead of the underlying dev:graph:* / logs:app commands.',
+                avoid_when: 'You are writing code or performing non-introspection work.',
+                required_inputs: [
+                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, project, module, route, event, logs'],
+                ],
+                optional_inputs: [
+                    'name' => ['type' => 'string', 'description' => 'Module/event name (for subject=module|event)'],
+                    'path' => ['type' => 'string', 'description' => 'Route path (for subject=route)'],
+                    'method' => ['type' => 'string', 'description' => 'HTTP method (for subject=route)'],
+                    'file' => ['type' => 'string', 'description' => 'Log file alias (for subject=logs)'],
+                    'lines' => ['type' => 'int', 'description' => 'Line count (for subject=logs)'],
+                    'grep' => ['type' => 'string', 'description' => 'Filter (for subject=logs)'],
+                    'json' => ['type' => 'flag', 'description' => 'Emit JSON envelope (target-dependent shape)', 'default' => false],
+                ],
+                outputs: [
+                    'envelope' => 'Forwarded output from the resolved target command (dev:graph:* or logs:app)',
+                ],
+                supports: ['--json'],
+                follow_up: [],
+            ),
+            new CommandCapability(
+                name: 'dev:graph:capabilities',
+                kind: 'introspection',
+                summary: 'List all available generator and introspection commands with inputs, outputs, and usage guidance.',
+                use_when: 'Starting a new task that might involve code generation, or when unsure what commands exist. Prefer `ai:ask capabilities`.',
                 avoid_when: 'You already know the exact command and flags to use.',
                 outputs: ['manifest' => 'JSON capability manifest (semitexa.ai-capabilities/v1)'],
                 supports: ['--json'],
@@ -244,10 +268,10 @@ final class CapabilityRegistry
                 follow_up: [],
             ),
             new CommandCapability(
-                name: 'describe:module',
+                name: 'dev:graph:module',
                 kind: 'introspection',
                 summary: 'Show full module structure: payloads, handlers, resources, services, contracts, events, listeners, commands, templates.',
-                use_when: 'Understanding a module before modifying it. Replaces 5-10 manual glob/grep queries.',
+                use_when: 'Understanding a module before modifying it. Replaces 5-10 manual glob/grep queries. Prefer `ai:ask module --name=…`.',
                 avoid_when: 'You already know the module structure.',
                 required_inputs: [
                     'name' => ['type' => 'string', 'description' => 'Module name (e.g., Catalog)'],
@@ -262,10 +286,10 @@ final class CapabilityRegistry
                 follow_up: [],
             ),
             new CommandCapability(
-                name: 'describe:route',
+                name: 'dev:graph:route',
                 kind: 'introspection',
                 summary: 'Show the full chain for one route: payload → handler → resource → template → auth status.',
-                use_when: 'Debugging or modifying an endpoint. Replaces 4-6 manual file lookups.',
+                use_when: 'Debugging or modifying an endpoint. Replaces 4-6 manual file lookups. Prefer `ai:ask route --path=…`.',
                 avoid_when: 'You need to list all routes (use routes:list instead).',
                 required_inputs: [
                     'path' => ['type' => 'string', 'description' => 'Route path (e.g., /pricing or /api/users/{id})'],
@@ -281,10 +305,10 @@ final class CapabilityRegistry
                 follow_up: [],
             ),
             new CommandCapability(
-                name: 'describe:project',
+                name: 'dev:graph:project',
                 kind: 'introspection',
                 summary: 'Show high-level project overview: all modules with route/service/contract/listener counts.',
-                use_when: 'Starting a new session — understand the project before diving into code. Run first.',
+                use_when: 'Starting a new session — understand the project before diving into code. Prefer `ai:ask project`.',
                 avoid_when: 'You already know the project structure from a recent session.',
                 optional_inputs: [
                     'json' => ['type' => 'flag', 'description' => 'Output as JSON (semitexa-dev.project-description/v1)', 'default' => false],
@@ -296,10 +320,10 @@ final class CapabilityRegistry
                 follow_up: ['ai:ask module'],
             ),
             new CommandCapability(
-                name: 'describe:event',
+                name: 'dev:graph:event',
                 kind: 'introspection',
                 summary: 'Show all listeners for a given event (with execution mode, priority, module), or list all events.',
-                use_when: 'Tracing event-driven behavior: who listens, in what order, sync/async/queued.',
+                use_when: 'Tracing event-driven behavior: who listens, in what order, sync/async/queued. Prefer `ai:ask event [--name=…]`.',
                 avoid_when: 'You already know the listeners for this event.',
                 optional_inputs: [
                     'name' => ['type' => 'string', 'description' => 'Event class name (short or FQCN). Omit to list all events with listener counts.'],

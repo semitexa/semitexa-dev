@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Trace\Trace;
 use Semitexa\Dev\Ai\Trace\TraceEvent;
@@ -37,6 +38,9 @@ final class AiTraceCommand extends BaseCommand
     private const ACTION_SHOW   = 'show';
     private const ACTION_LIST   = 'list';
 
+    #[InjectAsReadonly]
+    protected TraceStore $traceStore;
+
     public function __construct()
     {
         parent::__construct('ai:trace');
@@ -59,7 +63,7 @@ final class AiTraceCommand extends BaseCommand
     {
         $action = (string) $input->getArgument('action');
         $jsonMode = (bool) $input->getOption('json');
-        $store = new TraceStore($this->getProjectRoot());
+        $store = $this->traceStore;
 
         return match ($action) {
             self::ACTION_START  => $this->start($input, $output, $store, $jsonMode),

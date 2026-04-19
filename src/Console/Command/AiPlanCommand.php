@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Plan\RiskScorer;
 use Semitexa\Dev\Ai\Recipe\RecipeRegistry;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -19,6 +19,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'ai:plan', description: 'Risk-score a recipe + change set (NDJSON, agent-facing)')]
 final class AiPlanCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected TraceAutoAppender $traceAppender;
+
     public function __construct()
     {
         parent::__construct('ai:plan');
@@ -96,8 +99,7 @@ final class AiPlanCommand extends BaseCommand
             'required_steps' => $assessment->required_steps,
             'files_in_scope' => count($files),
         ];
-        $appender = new TraceAutoAppender(new TraceStore($this->getProjectRoot()));
-        $appender->appendIfActive($input, $output, TraceEventKind::PLAN_DECISION, $summary, $payload);
+        $this->traceAppender->appendIfActive($input, $output, TraceEventKind::PLAN_DECISION, $summary, $payload);
 
         return self::SUCCESS;
     }

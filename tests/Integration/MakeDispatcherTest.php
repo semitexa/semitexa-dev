@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Container\PropertyInjector;
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
+use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Console\Command\MakeCommand;
+use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -23,11 +28,62 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 class MakeDispatcherTest extends TestCase
 {
+    private string $tmpRoot;
+    private ?string $originalCwd = null;
+
+    protected function setUp(): void
+    {
+        $this->tmpRoot = sys_get_temp_dir() . '/semitexa-make-dispatch-' . uniqid();
+        mkdir($this->tmpRoot . '/src/modules', 0755, true);
+        file_put_contents($this->tmpRoot . '/composer.json', '{"name":"temp/project"}');
+        $this->originalCwd = getcwd() ?: null;
+        chdir($this->tmpRoot);
+        ProjectRoot::reset();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->originalCwd !== null) {
+            chdir($this->originalCwd);
+        }
+        ProjectRoot::reset();
+        $this->removeDir($this->tmpRoot);
+    }
+
+    private function newMakeCommand(): MakeCommand
+    {
+        $traceStore = new TraceStore();
+        $traceAppender = new TraceAutoAppender();
+        PropertyInjector::inject($traceAppender, new ArrayContainer([
+            TraceStore::class => $traceStore,
+        ]));
+        $make = new MakeCommand();
+        PropertyInjector::inject($make, new ArrayContainer([
+            TraceAutoAppender::class => $traceAppender,
+        ]));
+        return $make;
+    }
+
+    private function removeDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $items = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($items as $item) {
+            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+        }
+        rmdir($dir);
+    }
+
     public function test_runs_recipe_chain_in_order_with_shared_args(): void
     {
         $invocations = [];
         $app = new Application();
-        $app->add(new MakeCommand());
+        $app->add($this->newMakeCommand());
         foreach (['make:payload', 'make:handler', 'make:resource'] as $name) {
             $app->add(new class($name, $invocations) extends Command {
                 public function __construct(string $name, private array &$log) {
@@ -77,7 +133,7 @@ class MakeDispatcherTest extends TestCase
     public function test_rejects_unknown_recipe(): void
     {
         $app = new Application();
-        $app->add(new MakeCommand());
+        $app->add($this->newMakeCommand());
         $tester = new CommandTester($app->find('make'));
         $exit = $tester->execute(['--recipe' => 'does_not_exist']);
         $this->assertSame(1, $exit);
@@ -87,7 +143,7 @@ class MakeDispatcherTest extends TestCase
     public function test_rejects_recipe_with_empty_generator_chain(): void
     {
         $app = new Application();
-        $app->add(new MakeCommand());
+        $app->add($this->newMakeCommand());
         $tester = new CommandTester($app->find('make'));
         $exit = $tester->execute(['--recipe' => 'rename_symbol']);
         $this->assertSame(1, $exit);
@@ -98,7 +154,7 @@ class MakeDispatcherTest extends TestCase
     {
         $invocations = 0;
         $app = new Application();
-        $app->add(new MakeCommand());
+        $app->add($this->newMakeCommand());
         $app->add(new class('make:payload', $invocations) extends Command {
             public function __construct(string $name, private int &$count) {
                 parent::__construct($name);

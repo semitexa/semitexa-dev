@@ -13,9 +13,10 @@ final class RemoteScenarioResolverTest extends TestCase
     public function testResolvesUbuntuScenarioDirectory(): void
     {
         $resolver = new RemoteScenarioResolver();
+        $packageRoot = dirname(__DIR__, 3);
         $path = $resolver->resolve(
             new RemoteOsInfo('ubuntu', '22.04', 'Ubuntu 22.04 LTS'),
-            '/home/taras/Documents/Projects/semitexa.dev/packages/semitexa-dev',
+            $packageRoot,
         );
 
         self::assertStringEndsWith('/resources/remote-deploy/ubuntu/22.04', $path);

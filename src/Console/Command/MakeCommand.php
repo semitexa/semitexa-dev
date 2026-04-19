@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Recipe\Recipe;
 use Semitexa\Dev\Ai\Recipe\RecipeRegistry;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputInterface;
@@ -39,6 +39,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make', description: 'Recipe-driven scaffold dispatcher — runs a recipe\'s generator_chain end-to-end')]
 final class MakeCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected TraceAutoAppender $traceAppender;
+
     public function __construct()
     {
         parent::__construct('make');
@@ -134,8 +137,7 @@ final class MakeCommand extends BaseCommand
             $envelope['status'],
             count($stepResults),
         );
-        $appender = new TraceAutoAppender(new TraceStore($this->getProjectRoot()));
-        $appender->appendIfActive($input, $output, TraceEventKind::SCAFFOLD_ACTION, $summary, $envelope);
+        $this->traceAppender->appendIfActive($input, $output, TraceEventKind::SCAFFOLD_ACTION, $summary, $envelope);
     }
 
     /**

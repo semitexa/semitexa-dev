@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Context\ContextPacker;
 use Semitexa\Dev\Ai\Recipe\Recipe;
 use Semitexa\Dev\Ai\Recipe\RecipeRegistry;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -20,6 +20,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'ai:context', description: 'Pack prior art + signals for a recipe (NDJSON, agent-facing)')]
 final class AiContextCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected TraceAutoAppender $traceAppender;
+
     public function __construct()
     {
         parent::__construct('ai:context');
@@ -110,8 +113,7 @@ final class AiContextCommand extends BaseCommand
                 'score' => $i->score,
             ], $top),
         ];
-        $appender = new TraceAutoAppender(new TraceStore($this->getProjectRoot()));
-        $appender->appendIfActive($input, $output, TraceEventKind::CONTEXT_SUMMARY, $summary, $payload);
+        $this->traceAppender->appendIfActive($input, $output, TraceEventKind::CONTEXT_SUMMARY, $summary, $payload);
     }
 
     private function emitConventions(OutputInterface $output, Recipe $recipe): void

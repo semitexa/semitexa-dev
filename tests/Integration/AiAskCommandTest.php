@@ -15,7 +15,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 /**
  * `ai:ask` is a thin subject dispatcher. These tests register a fake target
- * for every subject (ai:capabilities, describe:*, logs:app) that records
+ * for every subject (dev:graph:*, logs:app) that records
  * which options reached it, so we can prove the forwarding contract without
  * dragging in full project discovery.
  */
@@ -37,7 +37,7 @@ class AiAskCommandTest extends TestCase
         $this->assertContains('logs', $decoded['subjects']);
     }
 
-    public function test_capabilities_subject_delegates_to_ai_capabilities(): void
+    public function test_capabilities_subject_delegates_to_dev_graph_capabilities(): void
     {
         $log = new \ArrayObject();
         $tester = $this->newAskWithFakes($log);
@@ -45,17 +45,17 @@ class AiAskCommandTest extends TestCase
 
         $this->assertSame(0, $exit);
         $this->assertCount(1, $log);
-        $this->assertSame('ai:capabilities', $log[0]['command']);
+        $this->assertSame('dev:graph:capabilities', $log[0]['command']);
         $this->assertTrue($log[0]['options']['json']);
     }
 
-    public function test_project_subject_delegates_to_describe_project(): void
+    public function test_project_subject_delegates_to_dev_graph_project(): void
     {
         $log = new \ArrayObject();
         $tester = $this->newAskWithFakes($log);
         $tester->execute(['subject' => 'project']);
 
-        $this->assertSame('describe:project', $log[0]['command']);
+        $this->assertSame('dev:graph:project', $log[0]['command']);
     }
 
     public function test_module_subject_forwards_name_option(): void
@@ -64,7 +64,7 @@ class AiAskCommandTest extends TestCase
         $tester = $this->newAskWithFakes($log);
         $tester->execute(['subject' => 'module', '--name' => 'Billing', '--json' => true]);
 
-        $this->assertSame('describe:module', $log[0]['command']);
+        $this->assertSame('dev:graph:module', $log[0]['command']);
         $this->assertSame('Billing', $log[0]['options']['name']);
         $this->assertTrue($log[0]['options']['json']);
     }
@@ -80,7 +80,7 @@ class AiAskCommandTest extends TestCase
             '--json'   => true,
         ]);
 
-        $this->assertSame('describe:route', $log[0]['command']);
+        $this->assertSame('dev:graph:route', $log[0]['command']);
         $this->assertSame('/billing/invoices/{id}', $log[0]['options']['path']);
         $this->assertSame('POST', $log[0]['options']['method']);
     }
@@ -91,7 +91,7 @@ class AiAskCommandTest extends TestCase
         $tester = $this->newAskWithFakes($log);
         $tester->execute(['subject' => 'event', '--name' => 'InvoicePaid']);
 
-        $this->assertSame('describe:event', $log[0]['command']);
+        $this->assertSame('dev:graph:event', $log[0]['command']);
         $this->assertSame('InvoicePaid', $log[0]['options']['name']);
     }
 
@@ -136,7 +136,7 @@ class AiAskCommandTest extends TestCase
     {
         $app = new Application();
         $app->add(new AiAskCommand());
-        $app->add(new class('describe:project') extends Command {
+        $app->add(new class('dev:graph:project') extends Command {
             public function __construct(string $name) { parent::__construct($name); }
             protected function configure(): void {
                 $this->addOption('json', null, InputOption::VALUE_NONE);
@@ -169,18 +169,18 @@ class AiAskCommandTest extends TestCase
     private static function targetOptionMap(): array
     {
         return [
-            'ai:capabilities' => ['json' => InputOption::VALUE_NONE],
-            'describe:project' => ['json' => InputOption::VALUE_NONE],
-            'describe:module' => [
+            'dev:graph:capabilities' => ['json' => InputOption::VALUE_NONE],
+            'dev:graph:project' => ['json' => InputOption::VALUE_NONE],
+            'dev:graph:module' => [
                 'name' => InputOption::VALUE_REQUIRED,
                 'json' => InputOption::VALUE_NONE,
             ],
-            'describe:route' => [
+            'dev:graph:route' => [
                 'path'   => InputOption::VALUE_REQUIRED,
                 'method' => InputOption::VALUE_OPTIONAL,
                 'json'   => InputOption::VALUE_NONE,
             ],
-            'describe:event' => [
+            'dev:graph:event' => [
                 'name' => InputOption::VALUE_OPTIONAL,
                 'json' => InputOption::VALUE_NONE,
             ],

@@ -11,13 +11,11 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Phase 5 consolidation helper: thin forward of an incoming Input+Output to
- * a legacy command, copying only the options the target actually declares.
+ * Thin forward of an incoming Input+Output to another command, copying only
+ * the options the target actually declares.
  *
- * The goal is that `ai:ask` and `dev:graph:*` can ship as additive aliases
- * during the deprecation window without duplicating option wiring. Once the
- * logic migrates into the new surface, these wrappers will flip direction
- * (legacy → new) and the helper will still be the right shape.
+ * Used by `ai:ask` to dispatch to the dev:graph:* family and logs:app from
+ * a single subject argument.
  *
  * Non-goals: this is not a generic proxy. It understands Symfony option
  * types (NONE/REQUIRED/OPTIONAL/IS_ARRAY) and nothing else.
@@ -66,19 +64,6 @@ final class CommandDelegator
         $subInput = new ArrayInput($params);
         $subInput->setInteractive($input->isInteractive());
 
-        // Suppress the legacy command's deprecation banner: the caller is
-        // already on the new surface, so re-emitting the deprecation would
-        // be noise.
-        $prior = getenv(DeprecationBanner::SUPPRESS_ENV);
-        putenv(DeprecationBanner::SUPPRESS_ENV . '=1');
-        try {
-            return $target->run($subInput, $output);
-        } finally {
-            if ($prior === false) {
-                putenv(DeprecationBanner::SUPPRESS_ENV);
-            } else {
-                putenv(DeprecationBanner::SUPPRESS_ENV . '=' . $prior);
-            }
-        }
+        return $target->run($subInput, $output);
     }
 }

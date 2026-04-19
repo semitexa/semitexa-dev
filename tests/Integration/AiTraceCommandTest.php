@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Ai\Trace\TraceHeader;
+use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Console\Command\AiTraceCommand;
+use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -238,8 +241,12 @@ class AiTraceCommandTest extends TestCase
 
     private function newTester(): CommandTester
     {
+        $command = new AiTraceCommand();
+        PropertyInjector::inject($command, new ArrayContainer([
+            TraceStore::class => new TraceStore(),
+        ]));
         $app = new Application();
-        $app->add(new AiTraceCommand());
+        $app->add($command);
         return new CommandTester($app->find('ai:trace'));
     }
 

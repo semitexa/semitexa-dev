@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Ai\Trace;
 
+use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -21,13 +23,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  * ids / write failures become `trace_error`. The goal is that trace wiring
  * must not affect the primary exit code or output of any command.
  */
+#[AsService]
 final class TraceAutoAppender
 {
     public const ENV_VAR = 'SEMITEXA_AI_TRACE_ID';
 
-    public function __construct(
-        private readonly TraceStore $store,
-    ) {}
+    #[InjectAsReadonly]
+    protected TraceStore $store;
 
     public function resolveTraceId(InputInterface $input): ?string
     {

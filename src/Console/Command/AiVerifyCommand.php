@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\Command\BaseCommand;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Ai\Verify\VerificationExecutor;
@@ -41,6 +41,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'ai:verify', description: 'Run the precise lint+test subset for a diff/file list (NDJSON, agent-facing)')]
 final class AiVerifyCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected TraceAutoAppender $traceAppender;
+
     public function __construct()
     {
         parent::__construct('ai:verify');
@@ -130,8 +133,7 @@ final class AiVerifyCommand extends BaseCommand
             $counts['fail'] ?? 0,
             $counts['skipped'] ?? 0,
         );
-        $appender = new TraceAutoAppender(new TraceStore($this->getProjectRoot()));
-        $appender->appendIfActive($input, $output, TraceEventKind::VERIFY_RESULT, $summary, $envelope);
+        $this->traceAppender->appendIfActive($input, $output, TraceEventKind::VERIFY_RESULT, $summary, $envelope);
     }
 
     /**

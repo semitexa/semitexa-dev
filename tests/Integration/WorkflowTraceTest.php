@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Console\Command\AiContextCommand;
@@ -13,6 +15,7 @@ use Semitexa\Dev\Console\Command\AiTaskCommand;
 use Semitexa\Dev\Console\Command\AiTraceCommand;
 use Semitexa\Dev\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Console\Command\MakeCommand;
+use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -85,7 +88,7 @@ class WorkflowTraceTest extends TestCase
             '--json'  => true,
         ]);
 
-        $trace = (new TraceStore($this->tmpRoot))->read($traceId);
+        $trace = (new TraceStore())->read($traceId);
 
         $this->assertCount(4, $trace->events, 'each command should append exactly one event');
         $this->assertSame([1, 2, 3, 4], array_map(static fn($e) => $e->eventId, $trace->events));
@@ -133,7 +136,7 @@ class WorkflowTraceTest extends TestCase
             putenv('SEMITEXA_AI_TRACE_ID');
         }
 
-        $trace = (new TraceStore($this->tmpRoot))->read($traceId);
+        $trace = (new TraceStore())->read($traceId);
         $this->assertCount(2, $trace->events);
         $this->assertSame(
             [TraceEventKind::TASK_RESULT, TraceEventKind::VERIFY_RESULT],
@@ -159,12 +162,36 @@ class WorkflowTraceTest extends TestCase
 
     private function buildApplication(): Application
     {
+        $traceStore = new TraceStore();
+        $traceAppender = new TraceAutoAppender();
+        PropertyInjector::inject($traceAppender, new ArrayContainer([
+            TraceStore::class => $traceStore,
+        ]));
+
+        $traceCmdContainer = new ArrayContainer([TraceStore::class => $traceStore]);
+        $appenderContainer = new ArrayContainer([TraceAutoAppender::class => $traceAppender]);
+
+        $traceCommand = new AiTraceCommand();
+        PropertyInjector::inject($traceCommand, $traceCmdContainer);
+
+        $taskCommand = new AiTaskCommand();
+        PropertyInjector::inject($taskCommand, $appenderContainer);
+
+        $contextCommand = new AiContextCommand();
+        PropertyInjector::inject($contextCommand, $appenderContainer);
+
+        $makeCommand = new MakeCommand();
+        PropertyInjector::inject($makeCommand, $appenderContainer);
+
+        $verifyCommand = new AiVerifyCommand();
+        PropertyInjector::inject($verifyCommand, $appenderContainer);
+
         $app = new Application();
-        $app->add(new AiTraceCommand());
-        $app->add(new AiTaskCommand());
-        $app->add(new AiContextCommand());
-        $app->add(new MakeCommand());
-        $app->add(new AiVerifyCommand());
+        $app->add($traceCommand);
+        $app->add($taskCommand);
+        $app->add($contextCommand);
+        $app->add($makeCommand);
+        $app->add($verifyCommand);
 
         foreach (['make:payload', 'make:handler', 'make:resource'] as $name) {
             $app->add($this->fakeMakeCommand($name));

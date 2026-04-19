@@ -14,8 +14,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Agent-facing aggregator for read-only introspection. One entry point, one
- * argument (the "subject"), mapped to the legacy command that already knows
- * how to answer it.
+ * argument (the "subject"), forwarded to the underlying command that owns
+ * the implementation.
  *
  *   ai:ask capabilities [--json]
  *   ai:ask project      [--json]
@@ -24,28 +24,26 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   ai:ask event        [--name=InvoicePaid] [--json]
  *   ai:ask logs         [--file=app] [--lines=200] [--grep=…] [--json]
  *
- * Phase 5 step 1 is additive: this command is a thin pass-through to the
- * existing `ai:capabilities`, `describe:*`, `logs:app`. Output contracts are
- * unchanged — agents that already parsed those envelopes keep working.
- * When logic later migrates into `ai:ask`, the legacy commands will become
- * the thin alias instead.
+ * Output contracts (envelope shapes, JSON keys, exit codes) belong to the
+ * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
+ * commands own behavior.
  */
 #[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, project, module, route, event, logs)')]
 final class AiAskCommand extends BaseCommand
 {
     /**
-     * Subject → legacy command. Keeping the list short is the point: if a
-     * new read-only surface is needed, add it here rather than spawning
+     * Subject → underlying command. Keeping the list short is the point: if
+     * a new read-only surface is needed, add it here rather than spawning
      * another top-level command.
      *
      * @var array<string, string>
      */
     private const SUBJECT_MAP = [
-        'capabilities' => 'ai:capabilities',
-        'project'      => 'describe:project',
-        'module'       => 'describe:module',
-        'route'        => 'describe:route',
-        'event'        => 'describe:event',
+        'capabilities' => 'dev:graph:capabilities',
+        'project'      => 'dev:graph:project',
+        'module'       => 'dev:graph:module',
+        'route'        => 'dev:graph:route',
+        'event'        => 'dev:graph:event',
         'logs'         => 'logs:app',
     ];
 
