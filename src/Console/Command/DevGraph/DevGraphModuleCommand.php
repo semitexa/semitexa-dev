@@ -83,6 +83,7 @@ final class DevGraphModuleCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.module-description/v1',
                 'generated_at' => date('c'),
                 'module' => $description,
+                'next_command' => $this->buildNextCommands($description),
             ], JSON_UNESCAPED_SLASHES));
             return self::SUCCESS;
         }
@@ -119,6 +120,57 @@ final class DevGraphModuleCommand extends BaseCommand
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param array<string, mixed> $description
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildNextCommands(array $description): array
+    {
+        $moduleName = (string) $description['module'];
+        $out = [];
+
+        $handlers = $description['handlers'] ?? [];
+        if (is_array($handlers) && $handlers !== []) {
+            $out[] = [
+                'cmd'  => 'ai:ask',
+                'args' => ['route', '--path=<path>', '--json'],
+                'why'  => 'inspect one endpoint end-to-end (payload → handler → resource)',
+            ];
+        }
+
+        $contracts = $description['contracts'] ?? [];
+        if (is_array($contracts) && $contracts !== []) {
+            $out[] = [
+                'cmd'  => 'contracts:list',
+                'args' => ['--json'],
+                'why'  => 'see which implementations satisfy this module\'s contracts',
+            ];
+        }
+
+        $events = $description['events'] ?? [];
+        if (is_array($events) && $events !== []) {
+            $out[] = [
+                'cmd'  => 'ai:ask',
+                'args' => ['event', '--json'],
+                'why'  => 'list events and their listeners',
+            ];
+        }
+
+        $out[] = [
+            'cmd'  => 'ai:review-graph:impact',
+            'args' => ['<FQCN>', '--json'],
+            'why'  => 'blast radius of changing a class in ' . $moduleName,
+        ];
+
+        $out[] = [
+            'cmd'  => 'make:page',
+            'args' => ['--module=' . $moduleName, '--name=<Name>', '--path=/<p>', '--method=GET', '--dry-run', '--json'],
+            'why'  => 'scaffold a new page in this module (dry-run first)',
+        ];
+
+        return $out;
     }
 
     private function moduleRegistry(): ModuleRegistry

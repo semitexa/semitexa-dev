@@ -10,6 +10,7 @@ use Semitexa\Dev\Generation\Builder\ModulePlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
 use Semitexa\Dev\Generation\Writer\SafeFileWriter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -42,6 +43,7 @@ final class MakeModuleCommand extends BaseCommand
 
         $inflector = new NameInflector();
         $builder = new ModulePlanBuilder($inflector);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['name']);
 
         $plan = $builder->build([
             'name' => $input->getOption('name'),
@@ -53,6 +55,7 @@ final class MakeModuleCommand extends BaseCommand
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),
             next_steps: ['Re-run with --write to create files'],
+            replay_args: $replayArgs,
         );
 
         if ($plan->dryRun) {
@@ -85,6 +88,7 @@ final class MakeModuleCommand extends BaseCommand
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:module');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
+        $result = $result->withReplayArgs($replayArgs);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));

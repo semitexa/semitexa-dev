@@ -450,13 +450,64 @@ final class AiWorkCommand extends BaseCommand
     {
         if ($jsonMode) {
             $output->writeln(json_encode([
-                'artifact' => 'semitexa.ai-work.task/v1',
-                'task'     => $task->toArray(),
+                'artifact'     => 'semitexa.ai-work.task/v1',
+                'task'         => $task->toArray(),
+                'next_command' => $this->buildTaskNextCommands($task),
             ], JSON_UNESCAPED_SLASHES));
             return self::SUCCESS;
         }
         $output->writeln(json_encode(['kind' => $kind] + $task->toArray(), JSON_UNESCAPED_SLASHES));
         return self::SUCCESS;
+    }
+
+    /**
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildTaskNextCommands(Task $task): array
+    {
+        $out = [];
+        $status = $task->status->value;
+
+        if ($status === 'new') {
+            $out[] = [
+                'cmd'  => 'ai:work',
+                'args' => ['update', '--id=' . $task->id, '--status=in_progress', '--json'],
+                'why'  => 'mark the task started before editing',
+            ];
+        }
+
+        if ($status === 'in_progress' || $status === 'blocked') {
+            if ($task->contextRefs !== []) {
+                $out[] = [
+                    'cmd'  => 'ai:verify',
+                    'args' => ['--files=' . implode(',', $task->contextRefs), '--json'],
+                    'why'  => 'verify the current state of the files this task anchors to',
+                ];
+            }
+            if ($task->recipe !== '' && $task->recipe !== 'unknown_task') {
+                $out[] = [
+                    'cmd'  => 'ai:context',
+                    'args' => [$task->recipe, '--json'],
+                    'why'  => 'prior art for recipe ' . $task->recipe,
+                ];
+            }
+        }
+
+        if ($status === 'done') {
+            $out[] = [
+                'cmd'  => 'ai:orient',
+                'args' => ['--json'],
+                'why'  => 'pick up the next task in the epic',
+            ];
+        }
+
+        $out[] = [
+            'cmd'  => 'ai:trace',
+            'args' => ['show', '--id=' . $task->traceId, '--json'],
+            'why'  => 'full trace history for this task',
+        ];
+
+        return $out;
     }
 
     /**

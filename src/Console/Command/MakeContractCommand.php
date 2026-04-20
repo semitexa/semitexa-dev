@@ -10,6 +10,7 @@ use Semitexa\Dev\Generation\Builder\ContractPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
 use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
@@ -50,6 +51,7 @@ final class MakeContractCommand extends BaseCommand
         $resolver = new TemplateResolver();
         $renderer = new TemplateRenderer();
         $builder = new ContractPlanBuilder($inflector, $resolver, $renderer);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'implementation']);
 
         $plan = $builder->build([
             'module' => $input->getOption('module'),
@@ -63,6 +65,7 @@ final class MakeContractCommand extends BaseCommand
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),
             next_steps: ['Re-run with --write to create files'],
+            replay_args: $replayArgs,
         );
 
         if ($plan->dryRun) {
@@ -113,6 +116,7 @@ final class MakeContractCommand extends BaseCommand
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:contract');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
+        $result = $result->withReplayArgs($replayArgs);
         $hasConflicts = $result->conflicts !== [];
 
         if ($input->getOption('json')) {

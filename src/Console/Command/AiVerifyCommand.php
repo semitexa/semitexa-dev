@@ -284,6 +284,41 @@ final class AiVerifyCommand extends BaseCommand
             'results'         => array_map(fn($r) => $this->serializeResult($r), $results),
             'verdict'         => $verdict,
             'counts'          => $this->countByStatus($results),
+            'next_command'    => $this->buildNextCommands($verdict, $results),
+        ];
+    }
+
+    /**
+     * @param list<VerificationResult> $results
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildNextCommands(string $verdict, array $results): array
+    {
+        if ($verdict === VerificationResult::STATUS_PASS) {
+            return [
+                ['cmd' => 'ai:work', 'args' => ['update', '--id=<task-id>', '--status=done', '--json'], 'why' => 'close the active task — verify passed'],
+                ['cmd' => 'ai:orient', 'args' => ['--json'], 'why' => 'pick up the next task'],
+            ];
+        }
+        if ($verdict === VerificationResult::STATUS_FAIL) {
+            $failingFile = null;
+            foreach ($results as $r) {
+                if ($r->status === VerificationResult::STATUS_FAIL && $r->target->filePath !== null) {
+                    $failingFile = $r->target->filePath;
+                    break;
+                }
+            }
+            $out = [
+                ['cmd' => 'ai:work', 'args' => ['update', '--id=<task-id>', '--status=blocked', '--note="verify failed"'], 'why' => 'record the block before iterating (§9.3)'],
+            ];
+            if ($failingFile !== null) {
+                $out[] = ['cmd' => 'ai:review-graph:impact', 'args' => [$failingFile, '--json'], 'why' => 'find callers affected by the failing file'];
+            }
+            $out[] = ['cmd' => 'logs:app', 'args' => ['--grep=error', '--lines=200', '--level=ERROR', '--json'], 'why' => 'runtime errors that might explain the failure'];
+            return $out;
+        }
+        return [
+            ['cmd' => 'ai:verify', 'args' => ['--scope=standard', '--json'], 'why' => 'no actionable verification ran — try standard scope'],
         ];
     }
 

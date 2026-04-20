@@ -49,7 +49,7 @@ final class CommandPlanBuilder
             'commandName' => $params['commandName'],
             'description' => $params['description'],
             'className' => $className,
-        ]);
+        ], 'make:command');
 
         $filePath = "src/modules/{$module}/Application/Command/{$className}.php";
 

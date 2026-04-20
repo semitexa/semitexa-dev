@@ -41,7 +41,7 @@ final class ContractPlanBuilder
         $interfaceContent = $this->renderer->render($interfaceTemplate, [
             'namespace' => $contractNamespace,
             'className' => $interfaceClass,
-        ]);
+        ], 'make:contract');
 
         // Implementation file
         $implImports = [
@@ -56,7 +56,7 @@ final class ContractPlanBuilder
             'imports' => implode("\n", $implImports),
             'interfaceClass' => $interfaceClass,
             'className' => $implName,
-        ]);
+        ], 'make:contract');
 
         $interfacePath = "src/modules/{$module}/Domain/Contract/{$interfaceClass}.php";
         $implPath = "src/modules/{$module}/Domain/Service/{$implName}.php";

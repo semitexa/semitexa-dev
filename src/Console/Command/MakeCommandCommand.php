@@ -10,6 +10,7 @@ use Semitexa\Dev\Generation\Builder\CommandPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
 use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
@@ -51,6 +52,7 @@ final class MakeCommandCommand extends BaseCommand
         $resolver = new TemplateResolver();
         $renderer = new TemplateRenderer();
         $builder = new CommandPlanBuilder($inflector, $resolver, $renderer);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'command-name', 'description']);
 
         $plan = $builder->build([
             'module' => $input->getOption('module'),
@@ -65,6 +67,7 @@ final class MakeCommandCommand extends BaseCommand
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),
             next_steps: ['Re-run with --write to create files'],
+            replay_args: $replayArgs,
         );
 
         if ($plan->dryRun) {
@@ -107,6 +110,7 @@ final class MakeCommandCommand extends BaseCommand
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:command');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
+        $result = $result->withReplayArgs($replayArgs);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
