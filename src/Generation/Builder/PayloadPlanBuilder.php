@@ -56,7 +56,7 @@ final class PayloadPlanBuilder
             'responseClass' => $responseClass,
             'className' => $payloadClass,
             'publicEndpoint' => $publicEndpoint,
-        ]);
+        ], 'make:payload');
 
         $filePath = "src/modules/{$module}/Application/Payload/Request/{$payloadClass}.php";
 

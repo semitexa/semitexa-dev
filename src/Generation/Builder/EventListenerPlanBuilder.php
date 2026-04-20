@@ -46,7 +46,7 @@ final class EventListenerPlanBuilder
             'eventClass' => $eventClass,
             'execution' => $execution,
             'className' => $className,
-        ]);
+        ], 'make:event-listener');
 
         $filePath = "src/modules/{$module}/Application/Handler/DomainListener/{$className}.php";
 

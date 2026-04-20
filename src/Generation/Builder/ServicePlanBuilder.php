@@ -40,7 +40,7 @@ final class ServicePlanBuilder
             'namespace' => $namespace,
             'imports' => implode("\n", $imports),
             'className' => $className,
-        ]);
+        ], 'make:service');
 
         $filePath = "src/modules/{$module}/Domain/Service/{$className}.php";
 

@@ -28,6 +28,7 @@ final class TaskClassifier
     private const WEIGHT_KEYWORD = 2;
     private const WEIGHT_LABEL_BIGRAM = 1;
     private const NOISE_FLOOR = 2;
+    private const UNKNOWN_RECIPE_ID = 'unknown_task';
 
     public function classify(string $description, ?string $hintModule = null): ClassificationResult
     {
@@ -37,6 +38,9 @@ final class TaskClassifier
 
         $scored = [];
         foreach (RecipeRegistry::all() as $recipe) {
+            if ($recipe->id === self::UNKNOWN_RECIPE_ID) {
+                continue;
+            }
             $scored[] = [
                 'recipe' => $recipe,
                 'score'  => $this->score($recipe, $tokens, $bigrams),
@@ -47,6 +51,20 @@ final class TaskClassifier
 
         /** @var array{recipe: Recipe, score: int} $top */
         $top = $scored[0];
+
+        if ($top['score'] < self::NOISE_FLOOR) {
+            $fallback = RecipeRegistry::find(self::UNKNOWN_RECIPE_ID);
+            if ($fallback !== null) {
+                return new ClassificationResult(
+                    recipe: $fallback,
+                    score: 0,
+                    reason: 'no recipe matched — description did not hit a known verb or keyword. Proceed manually via ai:ask + Edit; do not trust the recipe field.',
+                    suggested_module: $hintModule ?? $this->guessModule($description),
+                    alternatives: [],
+                );
+            }
+        }
+
         $reason = $this->explain($top['recipe'], $tokens);
 
         $alternatives = [];

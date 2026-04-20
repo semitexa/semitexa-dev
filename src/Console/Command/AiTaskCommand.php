@@ -64,6 +64,7 @@ final class AiTaskCommand extends BaseCommand
                 'risk_hint'        => $result->recipe->default_risk,
                 'generator_chain'  => $result->recipe->generator_chain,
                 'next'             => $this->buildNextHint($result),
+                'next_command'     => $this->buildNextCommands($result),
                 'alternatives'     => $result->alternatives,
             ], JSON_UNESCAPED_SLASHES));
             $this->appendToTrace($input, $output, $result, $description);
@@ -171,11 +172,100 @@ final class AiTaskCommand extends BaseCommand
         ], JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * Structured next-step suggestions. Same information as `next`, shaped for
+     * agents that want to execute without re-parsing prose.
+     *
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildNextCommands($result): array
+    {
+        $id = $result->recipe->id;
+
+        if ($id === 'unknown_task') {
+            return [
+                ['cmd' => 'ai:epic', 'args' => ['start', '--id=ep-<slug>', '--title="..."', '--goal="..."'], 'why' => 'decompose unfamiliar work into an epic first'],
+                ['cmd' => 'ai:ask', 'args' => ['project', '--json'], 'why' => 'structural overview before editing'],
+                ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--json'], 'why' => 'verify after every edit'],
+            ];
+        }
+
+        if ($result->recipe->generator_chain === []) {
+            return match ($id) {
+                'refactor_existing_code' => [
+                    ['cmd' => 'ai:review-graph:impact', 'args' => ['<FQCN>', '--json'], 'why' => 'blast radius before editing'],
+                    ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--json'], 'why' => 'verify after edits'],
+                ],
+                'debug_investigate' => [
+                    ['cmd' => 'logs:app', 'args' => ['--grep=<term>', '--lines=200', '--level=ERROR', '--json'], 'why' => 'recent errors'],
+                    ['cmd' => 'ai:ask', 'args' => ['route', '--path=<path>', '--json'], 'why' => 'full endpoint chain'],
+                    ['cmd' => 'ai:review-graph:impact', 'args' => ['<FQCN>', '--json'], 'why' => 'dependency graph'],
+                ],
+                'audit_codebase' => [
+                    ['cmd' => 'ai:ask', 'args' => ['project', '--json'], 'why' => 'module inventory'],
+                    ['cmd' => 'dev:graph:module', 'args' => ['--name=<Module>', '--json'], 'why' => 'per-module structure'],
+                    ['cmd' => 'routes:list', 'args' => ['--json'], 'why' => 'full route surface'],
+                    ['cmd' => 'contracts:list', 'args' => ['--json'], 'why' => 'interface → implementation map'],
+                ],
+                'migrate_or_upgrade' => [
+                    ['cmd' => 'ai:epic', 'args' => ['start', '--id=ep-<slug>', '--title="..."', '--goal="..."'], 'why' => 'high-risk work — epic required'],
+                    ['cmd' => 'orm:diff', 'args' => ['--json'], 'why' => 'schema delta if relevant'],
+                    ['cmd' => 'ai:verify', 'args' => ['--scope=broad', '--json'], 'why' => 'broad verification on close'],
+                ],
+                'document_or_explain' => [
+                    ['cmd' => 'docs:list', 'args' => ['--json'], 'why' => 'existing canonical docs map'],
+                ],
+                'optimize_performance' => [
+                    ['cmd' => 'logs:app', 'args' => ['--grep=<term>', '--lines=200', '--json'], 'why' => 'baseline measurements'],
+                    ['cmd' => 'ai:review-graph:impact', 'args' => ['<FQCN>', '--json'], 'why' => 'understand call chain'],
+                    ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--json'], 'why' => 'catch regressions'],
+                ],
+                default => [
+                    ['cmd' => 'ai:context', 'args' => [$id, '--json'], 'why' => 'prior art for this recipe'],
+                ],
+            };
+        }
+
+        $commands = [];
+        foreach ($result->recipe->generator_chain as $i => $step) {
+            $args = ['--write', '--json'];
+            if ($i === 0 && $result->suggested_module !== null) {
+                $args[] = "--module={$result->suggested_module}";
+            }
+            $commands[] = [
+                'cmd'  => $step,
+                'args' => $args,
+                'why'  => $i === 0 ? 'first step in the recipe chain' : "step " . ($i + 1) . " in the recipe chain",
+            ];
+        }
+        $commands[] = [
+            'cmd'  => 'ai:verify',
+            'args' => ['--json'],
+            'why'  => 'always verify after generators run',
+        ];
+        return $commands;
+    }
+
     private function buildNextHint($result): string
     {
-        if ($result->recipe->generator_chain === []) {
-            return "no scaffold available for {$result->recipe->id}; edit existing files and run ai:context {$result->recipe->id} for prior art.";
+        $id = $result->recipe->id;
+
+        if ($id === 'unknown_task') {
+            return 'no match — decompose via `ai:epic start` + `ai:work start`, explore with `ai:ask project|module|route`, edit with Edit/Write, verify with `ai:verify`. The recipe field is a placeholder and should not drive your next step.';
         }
+
+        if ($result->recipe->generator_chain === []) {
+            return match ($id) {
+                'refactor_existing_code' => 'refactor path: `ai:review-graph:impact <FQCN>` → read the blast radius, edit with Edit, then `ai:verify`. No generator.',
+                'debug_investigate'      => 'debug path: `logs:app --grep=…`, `ai:ask route --path=…` or `ai:ask module --name=…`, `ai:review-graph:impact <FQCN>` before changing. No generator.',
+                'audit_codebase'         => 'audit path: `ai:ask project` → `dev:graph:module` per target → `routes:list` / `contracts:list`. Report, do not generate.',
+                'migrate_or_upgrade'     => 'migration path: `ai:epic start` is required (risk=high). `orm:diff` for schema moves, targeted `ai:review-graph:impact` before each step, `ai:verify --scope=broad` at the end.',
+                'document_or_explain'    => 'docs path: update files under `packages/semitexa-docs/` or the target package `docs/`. Do not create root-level `*.md` unless explicitly asked.',
+                'optimize_performance'   => 'perf path: measure first (baseline), change second, re-measure. No generator — use `ai:ask` to locate hot paths and `ai:verify` to avoid regressions.',
+                default                  => "no scaffold available for {$id}; edit existing files and run `ai:context {$id}` for prior art.",
+            };
+        }
+
         $first = $result->recipe->generator_chain[0];
         $args = ['--write'];
         if ($result->suggested_module !== null) {

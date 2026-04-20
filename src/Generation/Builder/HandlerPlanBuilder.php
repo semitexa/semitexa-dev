@@ -63,7 +63,7 @@ final class HandlerPlanBuilder
             'resourceClass' => $resourceClass,
             'className' => $handlerClass,
             'injections' => $this->renderInjectionBlock($injections),
-        ]);
+        ], 'make:handler');
 
         $filePath = "src/modules/{$module}/Application/Handler/PayloadHandler/{$handlerClass}.php";
 

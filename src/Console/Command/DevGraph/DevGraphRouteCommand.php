@@ -75,16 +75,54 @@ final class DevGraphRouteCommand extends BaseCommand
         $description = $this->buildDescription($route);
 
         if ($input->getOption('json')) {
+            $handlerClass = null;
+            if (isset($description['handlers'][0]['class'])) {
+                $handlerClass = $description['handlers'][0]['class'];
+            }
             $output->writeln(json_encode([
                 'artifact' => 'semitexa-dev.route-description/v1',
                 'generated_at' => date('c'),
                 'route' => $description,
+                'next_command' => $this->buildNextCommands($description, $handlerClass),
             ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
 
         $this->renderHuman($io, $description);
         return Command::SUCCESS;
+    }
+
+    /**
+     * @param array<string, mixed> $description
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildNextCommands(array $description, ?string $handlerClass): array
+    {
+        $path = (string) ($description['path'] ?? '');
+        $out = [];
+        if ($handlerClass !== null && $handlerClass !== '') {
+            $out[] = [
+                'cmd'  => 'ai:review-graph:impact',
+                'args' => [$handlerClass, '--json'],
+                'why'  => 'blast radius of changing the handler',
+            ];
+            $out[] = [
+                'cmd'  => 'ai:invoke',
+                'args' => ['--handler=' . $handlerClass, '--payload=\'{}\'', '--json'],
+                'why'  => 'dry-run the handler without starting the server',
+            ];
+        }
+        $out[] = [
+            'cmd'  => 'logs:app',
+            'args' => ['--grep=' . $path, '--lines=200', '--level=ERROR', '--json'],
+            'why'  => 'recent errors for this route',
+        ];
+        $out[] = [
+            'cmd'  => 'ai:verify',
+            'args' => ['--files=' . ($description['payload']['file'] ?? '<path>'), '--json'],
+            'why'  => 'verify current state of the payload file',
+        ];
+        return $out;
     }
 
     private function buildDescription(array $route): array

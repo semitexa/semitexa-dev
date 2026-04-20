@@ -98,10 +98,27 @@ final class DevGraphEventCommand extends BaseCommand
         }
 
         if ($input->getOption('json')) {
+            $next = [];
+            if ($description['listeners'] !== []) {
+                $firstListener = $description['listeners'][0]['class'] ?? null;
+                if ($firstListener !== null) {
+                    $next[] = [
+                        'cmd'  => 'ai:review-graph:impact',
+                        'args' => [$firstListener, '--json'],
+                        'why'  => 'blast radius of changing the top listener',
+                    ];
+                }
+            }
+            $next[] = [
+                'cmd'  => 'make:event-listener',
+                'args' => ['--module=<Module>', '--name=<Name>', '--event=' . $eventClass, '--execution=Sync', '--dry-run', '--json'],
+                'why'  => 'add a new listener for this event',
+            ];
             $output->writeln(json_encode([
                 'artifact' => 'semitexa-dev.event-description/v1',
                 'generated_at' => date('c'),
                 'event' => $description,
+                'next_command' => $next,
             ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
@@ -187,6 +204,10 @@ final class DevGraphEventCommand extends BaseCommand
                 'generated_at' => date('c'),
                 'total_events' => count($events),
                 'events' => $events,
+                'next_command' => [
+                    ['cmd' => 'ai:ask', 'args' => ['event', '--name=<EventClass>', '--json'], 'why' => 'drill into one event\'s listeners'],
+                    ['cmd' => 'make:event-listener', 'args' => ['--module=<Module>', '--name=<Name>', '--event=<EventClass>', '--execution=Sync', '--dry-run', '--json'], 'why' => 'wire a new listener for an existing event'],
+                ],
             ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }

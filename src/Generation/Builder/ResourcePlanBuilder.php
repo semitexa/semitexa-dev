@@ -46,7 +46,7 @@ final class ResourcePlanBuilder
             'handle' => $params['handle'],
             'template' => $templatePath,
             'className' => $responseClass,
-        ]);
+        ], 'make:resource');
 
         $filePath = "src/modules/{$module}/Application/Resource/Response/{$responseClass}.php";
         $files = [new PlannedFile($filePath, $content, FileType::PhpClass)];

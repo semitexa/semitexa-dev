@@ -96,10 +96,16 @@ final class DevGraphProjectCommand extends BaseCommand
         ];
 
         if ($input->getOption('json')) {
+            $topModuleName = $this->pickMostActiveModule($moduleDetails);
             $output->writeln(json_encode([
                 'artifact' => 'semitexa-dev.project-description/v1',
                 'generated_at' => date('c'),
                 'project' => $description,
+                'next_command' => [
+                    ['cmd' => 'ai:ask', 'args' => ['module', '--name=' . ($topModuleName ?? '<Module>'), '--json'], 'why' => 'drill into a module'],
+                    ['cmd' => 'routes:list', 'args' => ['--json'], 'why' => 'full route surface (' . count($routes) . ' routes)'],
+                    ['cmd' => 'contracts:list', 'args' => ['--json'], 'why' => 'interface → implementation map'],
+                ],
             ], JSON_UNESCAPED_SLASHES));
             return Command::SUCCESS;
         }
@@ -193,6 +199,26 @@ final class DevGraphProjectCommand extends BaseCommand
         }
 
         return $this->classDiscovery;
+    }
+
+    /**
+     * @param list<array{name: string, routes: int, services: int, contracts: int, listeners: int, ...}> $modules
+     */
+    private function pickMostActiveModule(array $modules): ?string
+    {
+        $best = null;
+        $bestScore = -1;
+        foreach ($modules as $m) {
+            $score = ($m['routes'] ?? 0) * 3
+                + ($m['services'] ?? 0) * 2
+                + ($m['contracts'] ?? 0)
+                + ($m['listeners'] ?? 0);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $m['name'];
+            }
+        }
+        return $best;
     }
 
     /**
