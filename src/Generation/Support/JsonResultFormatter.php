@@ -24,11 +24,12 @@ final class JsonResultFormatter
     private function buildNextCommands(GenerationResult $result): array
     {
         $out = [];
+        $replayArgs = $result->replay_args;
 
         if ($result->status === 'dry_run') {
             $out[] = [
                 'cmd'  => $result->command,
-                'args' => ['--write', '--json'],
+                'args' => [...$replayArgs, '--write', '--json'],
                 'why'  => 'commit the planned files (dry-run succeeded)',
             ];
             return $out;
@@ -37,7 +38,7 @@ final class JsonResultFormatter
         if ($result->conflicts !== []) {
             $out[] = [
                 'cmd'  => $result->command,
-                'args' => ['--force', '--json'],
+                'args' => [...$replayArgs, '--force', '--json'],
                 'why'  => 'overwrite existing files after you\'ve reviewed the conflicts',
             ];
             $out[] = [

@@ -15,6 +15,7 @@ use Semitexa\Dev\Generation\Builder\HandlerPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
 use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
@@ -74,6 +75,7 @@ final class MakeHandlerCommand extends BaseCommand
         $handlerFqcn = "Semitexa\\Modules\\{$module}\\Application\\Handler\\PayloadHandler\\{$handlerClassName}";
         $payloadFqcn = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClassName}";
         $resourceFqcn = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response\\{$resourceClassName}";
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'payload', 'resource']);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());
         $gateExit = $duplicateGate->run(
@@ -104,6 +106,7 @@ final class MakeHandlerCommand extends BaseCommand
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),
             next_steps: ['Re-run with --write to create files'],
+            replay_args: $replayArgs,
         );
 
         if ($plan->dryRun) {
@@ -146,6 +149,7 @@ final class MakeHandlerCommand extends BaseCommand
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:handler');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
+        $result = $result->withReplayArgs($replayArgs);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));

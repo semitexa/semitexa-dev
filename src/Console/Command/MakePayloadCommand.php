@@ -14,6 +14,7 @@ use Semitexa\Dev\Generation\Builder\PayloadPlanBuilder;
 use Semitexa\Dev\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
 use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Generation\Support\TemplateResolver;
 use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
@@ -72,6 +73,7 @@ final class MakePayloadCommand extends BaseCommand
         $module = $inflector->toStudly($input->getOption('module'));
         $payloadClassName = $inflector->toPayloadClass($input->getOption('name'));
         $payloadFqcn = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClassName}";
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response'], ['public']);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());
         $gateExit = $duplicateGate->run(
@@ -102,6 +104,7 @@ final class MakePayloadCommand extends BaseCommand
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),
             next_steps: ['Re-run with --write to create files'],
+            replay_args: $replayArgs,
         );
 
         if ($plan->dryRun) {
@@ -144,6 +147,7 @@ final class MakePayloadCommand extends BaseCommand
         $writer = new SafeFileWriter($this->getProjectRoot(), 'make:payload');
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
+        $result = $result->withReplayArgs($replayArgs);
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));

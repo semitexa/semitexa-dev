@@ -108,7 +108,7 @@ final class DevGraphRouteCommand extends BaseCommand
             ];
             $out[] = [
                 'cmd'  => 'ai:invoke',
-                'args' => ['--handler=' . $handlerClass, '--payload=\'{}\'', '--json'],
+                'args' => ['--handler=' . $handlerClass, '--payload={}', '--json'],
                 'why'  => 'dry-run the handler without starting the server',
             ];
         }
