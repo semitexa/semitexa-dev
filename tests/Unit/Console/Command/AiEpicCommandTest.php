@@ -9,6 +9,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceStore;
+use Semitexa\Dev\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Ai\Work\EpicStore;
 use Semitexa\Dev\Ai\Work\TaskStore;
 use Semitexa\Dev\Console\Command\AiEpicCommand;
@@ -49,15 +50,26 @@ class AiEpicCommandTest extends TestCase
      * Build the command exactly the way the framework builds it at runtime:
      * no-arg constructor, then container-driven property injection.
      */
-    private function buildWiredCommand(EpicStore $epics, TraceAutoAppender $appender): AiEpicCommand
+    private function buildWiredCommand(EpicStore $epics, TaskStore $tasks, TraceAutoAppender $appender): AiEpicCommand
     {
         $container = new ArrayContainer([
             EpicStore::class         => $epics,
             TraceAutoAppender::class => $appender,
+            BacklogHygiene::class    => $this->newHygiene($epics, $tasks),
         ]);
         $command = new AiEpicCommand();
         PropertyInjector::inject($command, $container);
         return $command;
+    }
+
+    private function newHygiene(EpicStore $epics, TaskStore $tasks): BacklogHygiene
+    {
+        $hygiene = new BacklogHygiene();
+        PropertyInjector::inject($hygiene, new ArrayContainer([
+            EpicStore::class => $epics,
+            TaskStore::class => $tasks,
+        ]));
+        return $hygiene;
     }
 
     private function newEpicStore(TaskStore $tasks): EpicStore
@@ -85,7 +97,7 @@ class AiEpicCommandTest extends TestCase
         $tasks = new TaskStore();
         $epics = $this->newEpicStore($tasks);
         $traces = new TraceStore();
-        $command = $this->buildWiredCommand($epics, $this->newTraceAppender($traces));
+        $command = $this->buildWiredCommand($epics, $tasks, $this->newTraceAppender($traces));
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -109,13 +121,14 @@ class AiEpicCommandTest extends TestCase
         $tasks = new TaskStore();
         $epics = $this->newEpicStore($tasks);
         $traces = new TraceStore();
-        $command = $this->buildWiredCommand($epics, $this->newTraceAppender($traces));
+        $command = $this->buildWiredCommand($epics, $tasks, $this->newTraceAppender($traces));
 
         $start = new CommandTester($command);
         $start->execute([
             'action'  => 'start',
-            '--id'    => 'ep-b',
-            '--title' => 'Second',
+            '--id'    => 'ep-list-reads',
+            '--title' => 'Second initiative for the listing test',
+            '--goal'  => 'Verify that ai:epic list surfaces epics written to the store',
         ]);
         $this->assertSame(0, $start->getStatusCode());
 
@@ -130,7 +143,7 @@ class AiEpicCommandTest extends TestCase
         $this->assertIsArray($envelope);
         $this->assertSame('semitexa.ai-work.epic-list/v1', $envelope['artifact']);
         $this->assertSame(1, $envelope['epic_count']);
-        $this->assertSame('ep-b', $envelope['epics'][0]['id']);
+        $this->assertSame('ep-list-reads', $envelope['epics'][0]['id']);
     }
 
     private function removeDir(string $dir): void
