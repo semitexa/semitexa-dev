@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceStore;
+use Semitexa\Dev\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Ai\Work\Epic;
 use Semitexa\Dev\Ai\Work\EpicStatus;
 use Semitexa\Dev\Ai\Work\EpicStore;
@@ -58,14 +59,25 @@ class AiWorkCommandTest extends TestCase
         ResumeService $resume,
     ): AiWorkCommand {
         $container = new ArrayContainer([
-            TaskStore::class     => $tasks,
-            EpicStore::class     => $epics,
-            TraceStore::class    => $traces,
-            ResumeService::class => $resume,
+            TaskStore::class      => $tasks,
+            EpicStore::class      => $epics,
+            TraceStore::class     => $traces,
+            ResumeService::class  => $resume,
+            BacklogHygiene::class => $this->newHygiene($epics, $tasks),
         ]);
         $command = new AiWorkCommand();
         PropertyInjector::inject($command, $container);
         return $command;
+    }
+
+    private function newHygiene(EpicStore $epics, TaskStore $tasks): BacklogHygiene
+    {
+        $hygiene = new BacklogHygiene();
+        PropertyInjector::inject($hygiene, new ArrayContainer([
+            EpicStore::class => $epics,
+            TaskStore::class => $tasks,
+        ]));
+        return $hygiene;
     }
 
     private function newEpicStore(TaskStore $tasks): EpicStore
