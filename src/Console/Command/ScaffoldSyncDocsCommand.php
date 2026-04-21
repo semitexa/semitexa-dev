@@ -179,7 +179,7 @@ final class ScaffoldSyncDocsCommand extends BaseCommand
 
         // Walk up until we find a dir containing packages/semitexa-ultimate.
         $dir = $candidate;
-        for ($i = 0; $i < 6; $i++) {
+        while (true) {
             if (is_dir($dir . '/' . self::SCAFFOLD_DIR)) {
                 return $dir;
             }
