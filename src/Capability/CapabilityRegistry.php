@@ -162,16 +162,18 @@ final class CapabilityRegistry
                     'name' => ['type' => 'string', 'description' => 'Module name (e.g., Catalog)'],
                 ],
                 optional_inputs: [
-                    'dry-run' => ['type' => 'flag', 'description' => 'Show planned directories without creating', 'default' => false],
+                    'target' => ['type' => 'string', 'description' => 'Module target: custom for src/modules or package for packages/semitexa-{name}; package mode currently scaffolds the shell only', 'default' => 'custom'],
+                    'dry-run' => ['type' => 'flag', 'description' => 'Show planned files without creating', 'default' => false],
                     'force' => ['type' => 'flag', 'description' => 'Overwrite existing files', 'default' => false],
                     'json' => ['type' => 'flag', 'description' => 'Output as JSON GenerationResult', 'default' => false],
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'directories' => 'src/modules/{Module}/ with Application/{Payload,Handler,Resource,View,Command}/ and Domain/{Service,Contract,Event,Model}/',
+                    'custom_module' => 'src/modules/{Module}/ with Application/{Payload,Handler,Resource,View,Command}/ and Domain/{Service,Contract,Event,Model}/',
+                    'package_module' => 'packages/semitexa-{module}/composer.json plus src/Application/... and src/Domain/... skeleton',
                 ],
-                supports: ['--dry-run', '--force', '--json', '--llm-hints'],
-                follow_up: ['make:page', 'make:service', 'make:contract'],
+                supports: ['--target', '--dry-run', '--force', '--json', '--llm-hints'],
+                follow_up: [],
             ),
             new CommandCapability(
                 name: 'make:service',
