@@ -19,7 +19,7 @@ final class ModulePlanBuilder
     ) {}
 
     /**
-     * @param array{name: string, dryRun: bool, target?: string} $params
+     * @param array{name: string, dryRun?: bool, target?: string} $params
      */
     public function build(array $params): GenerationPlan
     {

@@ -24,13 +24,15 @@ final class MakeModuleCommand extends BaseCommand
     private const TARGET_CUSTOM = ModulePlanBuilder::TARGET_CUSTOM;
     private const TARGET_PACKAGE = ModulePlanBuilder::TARGET_PACKAGE;
 
+    private ?NameInflector $inflector = null;
+
     protected function configure(): void
     {
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module name (e.g., Catalog)')
             ->addOption('target', null, InputOption::VALUE_REQUIRED, 'Module target: custom (src/modules) or package (packages/semitexa-...)')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating (explicit)')
-            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create directories (dry-run is the default)')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without creating them (explicit)')
+            ->addOption('write', null, InputOption::VALUE_NONE, 'Actually write files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON')
             ->addOption('llm-hints', null, InputOption::VALUE_NONE, 'Output LLM hints envelope');
@@ -45,14 +47,14 @@ final class MakeModuleCommand extends BaseCommand
             return self::FAILURE;
         }
 
-        $inflector = new NameInflector();
-        $builder = new ModulePlanBuilder($inflector);
+        $this->inflector = new NameInflector();
+        $builder = new ModulePlanBuilder($this->inflector);
         $target = $this->resolveTarget($input, $io);
         if ($target === null) {
             return self::FAILURE;
         }
         $replayArgs = $this->buildReplayArgs($input, $target);
-        $module = $inflector->toStudly($input->getOption('name'));
+        $module = $this->inflector->toStudly($input->getOption('name'));
 
         $plan = $builder->build([
             'name' => $input->getOption('name'),
@@ -78,7 +80,7 @@ final class MakeModuleCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('module_scaffold', $plannedResult, [
                     'facts' => $this->buildFacts($module, $target),
-                    'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
+                    'suggested_next_prompt' => $this->buildSuggestedNextPrompt($module, $target),
                 ]));
                 return self::SUCCESS;
             }
@@ -104,7 +106,7 @@ final class MakeModuleCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('module_scaffold', $result, [
                 'facts' => $this->buildFacts($module, $target),
-                'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
+                'suggested_next_prompt' => $this->buildSuggestedNextPrompt($module, $target),
             ]));
             return self::SUCCESS;
         }
@@ -116,7 +118,7 @@ final class MakeModuleCommand extends BaseCommand
                 $target,
                 $this->targetRootLabel($module, $target),
             ));
-            $io->text('Next: use make:page, make:service, or make:contract to add code.');
+            $io->text($this->buildNextText($target));
         }
 
         return self::SUCCESS;
@@ -141,6 +143,7 @@ final class MakeModuleCommand extends BaseCommand
         $io->section('Choose module target');
         $io->text('`custom`: create a project-specific module in `src/modules/{Module}`. Choose this when the code belongs only to the current app and does not need package metadata.');
         $io->text('`package`: create a reusable module package in `packages/semitexa-{module}` with its own `composer.json`. Choose this when the module should be versioned, released, or shared across projects.');
+        $io->text('Package mode currently scaffolds the package shell only. Downstream generators like `make:page`, `make:service`, and `make:contract` still target `src/modules` until they become target-aware.');
         $io->text('Both options follow the same Semitexa module structure. The real difference is ownership and where the module lives.');
 
         return $io->choice(
@@ -173,6 +176,7 @@ final class MakeModuleCommand extends BaseCommand
                 sprintf('Source root: packages/semitexa-%s/src', $slug),
                 sprintf('Module namespace: Semitexa\\%s', $module),
                 'Use this when the module should be reusable, versioned, or shipped independently.',
+                'Package mode scaffolds the module shell only; downstream generators still target src/modules until package-aware follow-up support lands.',
             ];
         }
 
@@ -195,6 +199,24 @@ final class MakeModuleCommand extends BaseCommand
 
     private function moduleSlug(string $module): string
     {
-        return (new NameInflector())->toKebab($module);
+        return ($this->inflector ?? new NameInflector())->toKebab($module);
+    }
+
+    private function buildSuggestedNextPrompt(string $module, string $target): string
+    {
+        if ($target === self::TARGET_PACKAGE) {
+            return "Review the package scaffold for {$module} and add package-specific code manually until the downstream generators become target-aware.";
+        }
+
+        return "Use make:page, make:service, or make:contract to add code to the {$module} module.";
+    }
+
+    private function buildNextText(string $target): string
+    {
+        if ($target === self::TARGET_PACKAGE) {
+            return 'Next: package mode currently scaffolds the shell only; add files manually until the downstream generators support package targets.';
+        }
+
+        return 'Next: use make:page, make:service, or make:contract to add code.';
     }
 }

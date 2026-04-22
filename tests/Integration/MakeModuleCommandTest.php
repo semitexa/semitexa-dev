@@ -85,7 +85,23 @@ class MakeModuleCommandTest extends TestCase
         $this->assertStringContainsString('Choose module target', $display);
         $this->assertStringContainsString('project-specific module in `src/modules/{Module}`', $display);
         $this->assertStringContainsString('reusable module package in `packages/semitexa-{module}`', $display);
+        $this->assertStringContainsString('Package mode currently scaffolds the package shell only.', $display);
         $this->assertStringContainsString('packages/semitexa-catalog/composer.json', $display);
+    }
+
+    public function test_package_target_does_not_suggest_custom_module_generators(): void
+    {
+        $tester = new CommandTester(new MakeModuleCommand());
+        $exit = $tester->execute([
+            '--name' => 'Catalog',
+            '--target' => 'package',
+            '--write' => true,
+        ]);
+
+        $this->assertSame(0, $exit);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('package mode currently scaffolds the shell only', strtolower($display));
+        $this->assertStringNotContainsString('Next: use make:page, make:service, or make:contract to add code.', $display);
     }
 
     private function removeDir(string $dir): void
