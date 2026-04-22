@@ -104,6 +104,18 @@ class MakeModuleCommandTest extends TestCase
         $this->assertStringNotContainsString('Next: use make:page, make:service, or make:contract to add code.', $display);
     }
 
+    public function test_rejects_empty_target_value(): void
+    {
+        $tester = new CommandTester(new MakeModuleCommand());
+        $exit = $tester->execute([
+            '--name' => 'Catalog',
+            '--target' => '',
+        ]);
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('Invalid --target. Allowed values: custom, package.', $tester->getDisplay());
+    }
+
     private function removeDir(string $dir): void
     {
         if (!is_dir($dir)) {

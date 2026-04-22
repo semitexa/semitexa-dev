@@ -127,7 +127,12 @@ final class MakeModuleCommand extends BaseCommand
     private function resolveTarget(InputInterface $input, SymfonyStyle $io): ?string
     {
         $target = $input->getOption('target');
-        if (is_string($target) && $target !== '') {
+        if (is_string($target)) {
+            if ($target === '') {
+                $io->error('Invalid --target. Allowed values: custom, package.');
+                return null;
+            }
+
             if (in_array($target, [self::TARGET_CUSTOM, self::TARGET_PACKAGE], true)) {
                 return $target;
             }
