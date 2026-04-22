@@ -21,10 +21,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:module', description: 'Scaffold a new module with the standard directory structure')]
 final class MakeModuleCommand extends BaseCommand
 {
+    private const TARGET_CUSTOM = ModulePlanBuilder::TARGET_CUSTOM;
+    private const TARGET_PACKAGE = ModulePlanBuilder::TARGET_PACKAGE;
+
     protected function configure(): void
     {
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module name (e.g., Catalog)')
+            ->addOption('target', null, InputOption::VALUE_REQUIRED, 'Module target: custom (src/modules) or package (packages/semitexa-...)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned directories without creating (explicit)')
             ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create directories (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
@@ -43,10 +47,16 @@ final class MakeModuleCommand extends BaseCommand
 
         $inflector = new NameInflector();
         $builder = new ModulePlanBuilder($inflector);
-        $replayArgs = ReplayArgBuilder::fromInput($input, ['name']);
+        $target = $this->resolveTarget($input, $io);
+        if ($target === null) {
+            return self::FAILURE;
+        }
+        $replayArgs = $this->buildReplayArgs($input, $target);
+        $module = $inflector->toStudly($input->getOption('name'));
 
         $plan = $builder->build([
             'name' => $input->getOption('name'),
+            'target' => $target,
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
@@ -65,22 +75,17 @@ final class MakeModuleCommand extends BaseCommand
             }
 
             if ($input->getOption('llm-hints')) {
-                $module = $inflector->toStudly($input->getOption('name'));
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('module_scaffold', $plannedResult, [
-                    'facts' => [
-                        "Module namespace: Semitexa\\Modules\\{$module}",
-                        'All directories follow the standard convention and are auto-discovered',
-                        'No need to register the module or add PSR-4 entries to composer.json',
-                    ],
+                    'facts' => $this->buildFacts($module, $target),
                     'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
                 ]));
                 return self::SUCCESS;
             }
 
-            $io->title('Dry Run — Planned Directories');
+            $io->title('Dry Run — Planned Files');
             foreach ($plan->files as $file) {
-                $io->text(dirname($file->path));
+                $io->text($file->path);
             }
             return self::SUCCESS;
         }
@@ -95,25 +100,101 @@ final class MakeModuleCommand extends BaseCommand
             return self::SUCCESS;
         }
 
-        $module = $inflector->toStudly($input->getOption('name'));
         if ($input->getOption('llm-hints')) {
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('module_scaffold', $result, [
-                'facts' => [
-                    "Module namespace: Semitexa\\Modules\\{$module}",
-                    'All directories follow the standard convention and are auto-discovered',
-                    'No need to register the module or add PSR-4 entries to composer.json',
-                ],
+                'facts' => $this->buildFacts($module, $target),
                 'suggested_next_prompt' => "Use make:page, make:service, or make:contract to add code to the {$module} module",
             ]));
             return self::SUCCESS;
         }
 
         if ($result->created) {
-            $io->success("Module {$module} created with standard directory structure.");
+            $io->success(sprintf(
+                'Module %s created as a %s module in %s.',
+                $module,
+                $target,
+                $this->targetRootLabel($module, $target),
+            ));
             $io->text('Next: use make:page, make:service, or make:contract to add code.');
         }
 
         return self::SUCCESS;
+    }
+
+    private function resolveTarget(InputInterface $input, SymfonyStyle $io): ?string
+    {
+        $target = $input->getOption('target');
+        if (is_string($target) && $target !== '') {
+            if (in_array($target, [self::TARGET_CUSTOM, self::TARGET_PACKAGE], true)) {
+                return $target;
+            }
+
+            $io->error('Invalid --target. Allowed values: custom, package.');
+            return null;
+        }
+
+        if (!$input->isInteractive() || $input->getOption('json') || $input->getOption('llm-hints')) {
+            return self::TARGET_CUSTOM;
+        }
+
+        $io->section('Choose module target');
+        $io->text('`custom`: create a project-specific module in `src/modules/{Module}`. Choose this when the code belongs only to the current app and does not need package metadata.');
+        $io->text('`package`: create a reusable module package in `packages/semitexa-{module}` with its own `composer.json`. Choose this when the module should be versioned, released, or shared across projects.');
+        $io->text('Both options follow the same Semitexa module structure. The real difference is ownership and where the module lives.');
+
+        return $io->choice(
+            'Which target should `make:module` scaffold?',
+            [self::TARGET_CUSTOM, self::TARGET_PACKAGE],
+            self::TARGET_CUSTOM,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildReplayArgs(InputInterface $input, string $target): array
+    {
+        $args = ReplayArgBuilder::fromInput($input, ['name']);
+        $args[] = '--target=' . $target;
+
+        return $args;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildFacts(string $module, string $target): array
+    {
+        if ($target === self::TARGET_PACKAGE) {
+            $slug = $this->moduleSlug($module);
+            return [
+                sprintf('Composer package: semitexa/%s', $slug),
+                sprintf('Source root: packages/semitexa-%s/src', $slug),
+                sprintf('Module namespace: Semitexa\\%s', $module),
+                'Use this when the module should be reusable, versioned, or shipped independently.',
+            ];
+        }
+
+        return [
+            sprintf('Module namespace: Semitexa\\Modules\\%s', $module),
+            sprintf('Source root: src/modules/%s', $module),
+            'All directories follow the standard convention and are auto-discovered.',
+            'Use this when the module is app-specific and does not need its own package lifecycle.',
+        ];
+    }
+
+    private function targetRootLabel(string $module, string $target): string
+    {
+        if ($target === self::TARGET_PACKAGE) {
+            return sprintf('packages/semitexa-%s', $this->moduleSlug($module));
+        }
+
+        return sprintf('src/modules/%s', $module);
+    }
+
+    private function moduleSlug(string $module): string
+    {
+        return (new NameInflector())->toKebab($module);
     }
 }
