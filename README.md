@@ -6,7 +6,7 @@ Code generators and capability-aware CLI tooling for Semitexa development.
 
 Provides safe file generation utilities for scaffolding modules, payloads, handlers, and other framework components. Includes conflict detection, force-overwrite support, and the agent-facing `ai:*` workflow surface.
 
-This package is for **developer tooling only**. It does **not** own the production update lifecycle — package version detection, framework auto-deploy, remote bootstrap, and data patches live in [`semitexa/update`](../semitexa-update/README.md).
+This package is for **developer tooling only**. It does **not** own the production update lifecycle — package version detection, framework auto-deploy, remote bootstrap, and data patches live in [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md).
 
 ## Role in Semitexa
 
@@ -27,7 +27,7 @@ Depends on `semitexa/core`. Used during development to generate boilerplate and 
 
 | Concern | Owner |
 |---|---|
-| Schema migrations (table/column changes) | [`semitexa/orm`](../semitexa-orm/README.md) — `orm:diff`, `orm:sync` |
-| Data patches (post-schema data work) | [`semitexa/update`](../semitexa-update/README.md) — `#[AsDataPatch]`, `update` |
-| Framework auto-deploy + package updates | [`semitexa/update`](../semitexa-update/README.md) — `update:packages:auto`, `update:packages:check` |
-| Remote first-deployment bootstrap (SSH) | [`semitexa/update`](../semitexa-update/README.md) — `update:packages:bootstrap-remote` |
+| Schema migrations (table/column changes) | [`semitexa/orm`](https://github.com/semitexa/semitexa-orm/blob/master/README.md) — `orm:diff`, `orm:sync` |
+| Data patches (post-schema data work) | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `#[AsDataPatch]`, `update` |
+| Framework auto-deploy + package updates | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `update:packages:auto`, `update:packages:check` |
+| Remote first-deployment bootstrap (SSH) | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `update:packages:bootstrap-remote` |

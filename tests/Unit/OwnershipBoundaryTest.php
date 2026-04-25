@@ -22,11 +22,16 @@ final class OwnershipBoundaryTest extends TestCase
 {
     public function testDevDoesNotContainDeploymentNamespace(): void
     {
+        $root = __DIR__ . '/../../src';
+        self::assertDirectoryExists($root);
+
         $offending = $this->findFiles(
-            __DIR__ . '/../../src',
+            $root,
             static fn (string $relative): bool =>
                 str_contains($relative, '/Deployment/')
-                || str_contains($relative, '/RemoteDeployment/'),
+                || str_contains($relative, '/RemoteDeployment/')
+                || preg_match('/(^|\/)Deployment(\.php|\/)/', $relative) === 1
+                || preg_match('/(^|\/)RemoteDeployment(\.php|\/)/', $relative) === 1,
         );
 
         self::assertSame(
@@ -39,10 +44,13 @@ final class OwnershipBoundaryTest extends TestCase
 
     public function testDevDoesNotDeclareDeployCommands(): void
     {
+        $root = __DIR__ . '/../../src/Console/Command';
+        self::assertDirectoryExists($root);
+
         $offending = $this->findFiles(
-            __DIR__ . '/../../src/Console/Command',
+            $root,
             static fn (string $relative): bool =>
-                preg_match('/(^|\/)Deploy[A-Z][A-Za-z]*Command\.php$/', $relative) === 1,
+                preg_match('/(^|\/)Deploy(?:[A-Z][A-Za-z]*)?Command\.php$/', $relative) === 1,
         );
 
         self::assertSame(
@@ -74,9 +82,8 @@ final class OwnershipBoundaryTest extends TestCase
     private function findFiles(string $root, callable $matches): array
     {
         $rootReal = realpath($root);
-        if ($rootReal === false || !is_dir($rootReal)) {
-            return [];
-        }
+        self::assertNotFalse($rootReal, "Expected path to resolve: {$root}");
+        self::assertDirectoryExists($rootReal);
 
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($rootReal, RecursiveDirectoryIterator::SKIP_DOTS),
