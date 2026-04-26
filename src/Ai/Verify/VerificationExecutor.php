@@ -125,7 +125,7 @@ final class VerificationExecutor
         // living under `packages/*/tests/` matches nothing → exit 0 + "No tests
         // executed!" → false-pass. The positional path forces phpunit to load
         // the file regardless of <testsuite> config.
-        $command = [$binary, '--filter', $filter, '--no-output'];
+        $command = [$binary, '--filter', $filter];
         if ($target->filePath !== null && is_file($this->projectRoot . '/' . $target->filePath)) {
             $command[] = $target->filePath;
         }

@@ -177,6 +177,7 @@ class VerificationExecutorTest extends TestCase
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
 
+        $this->assertNotContains('--no-output', $runner->calls[0]['command']);
         $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
         $this->assertStringContainsString('matched no tests', $results[0]->signal);
     }
