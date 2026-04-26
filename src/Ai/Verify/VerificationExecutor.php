@@ -119,15 +119,39 @@ final class VerificationExecutor
         if ($binary === null) {
             return $this->skipped($target, 'phpunit binary not found (looked for vendor/bin/phpunit)');
         }
-        $r = $this->processRunner->run([$binary, '--filter', $filter, '--no-output'], $this->projectRoot);
+
+        // Pass the test file positionally when the planner knows it. phpunit.xml
+        // typically only includes `tests/`, so a bare `--filter` against a class
+        // living under `packages/*/tests/` matches nothing → exit 0 + "No tests
+        // executed!" → false-pass. The positional path forces phpunit to load
+        // the file regardless of <testsuite> config.
+        $command = [$binary, '--filter', $filter, '--no-output'];
+        if ($target->filePath !== null && is_file($this->projectRoot . '/' . $target->filePath)) {
+            $command[] = $target->filePath;
+        }
+
+        $r = $this->processRunner->run($command, $this->projectRoot);
+
+        // phpunit exits 0 when filter+suite resolve to zero tests. Treat that as
+        // a discovery failure rather than success — otherwise installer/scaffold
+        // changes can silently report "pass" while the suite would actually fail.
+        $noTestsExecuted = str_contains($r['output'], 'No tests executed!');
+
         $signal = $this->lastSignalLine($r['output']);
         if ($signal === '') {
             $signal = "phpunit --filter {$filter} → exit {$r['exit']}";
         }
+        if ($noTestsExecuted) {
+            $signal = "phpunit --filter {$filter} matched no tests (discovery gap, not a pass)";
+        }
+
+        $status = ($r['exit'] === 0 && ! $noTestsExecuted)
+            ? VerificationResult::STATUS_PASS
+            : VerificationResult::STATUS_FAIL;
 
         return new VerificationResult(
             target:   $target,
-            status:   $r['exit'] === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
+            status:   $status,
             exitCode: $r['exit'],
             signal:   $signal,
         );

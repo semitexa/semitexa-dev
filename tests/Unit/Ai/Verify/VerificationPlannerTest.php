@@ -111,6 +111,7 @@ class VerificationPlannerTest extends TestCase
         $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
         $this->assertCount(1, $phpunit);
         $this->assertSame('SomethingTest', $phpunit[0]->testFilter);
+        $this->assertSame('tests/Unit/Foo/SomethingTest.php', $phpunit[0]->filePath);
     }
 
     public function test_source_file_change_finds_matching_test_by_name(): void
@@ -125,6 +126,7 @@ class VerificationPlannerTest extends TestCase
         $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
         $this->assertCount(1, $phpunit);
         $this->assertSame('GetThingHandlerTest', $phpunit[0]->testFilter);
+        $this->assertSame('tests/Unit/Foo/GetThingHandlerTest.php', $phpunit[0]->filePath);
     }
 
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void

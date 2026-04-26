@@ -184,6 +184,7 @@ final class VerificationPlanner
                 id: "phpunit:{$className}",
                 reason: 'test file changed — running it directly',
                 triggeredBy: [$file->path],
+                filePath: $file->path,
                 testFilter: $className,
             );
             return;
@@ -200,6 +201,7 @@ final class VerificationPlanner
                     id: "phpunit:{$testClass}",
                     reason: $phpunitTargets[$testClass]->reason,
                     triggeredBy: array_values(array_unique([...$phpunitTargets[$testClass]->triggeredBy, $file->path])),
+                    filePath: $phpunitTargets[$testClass]->filePath ?? $testPath,
                     testFilter: $testClass,
                 );
                 continue;
@@ -209,6 +211,7 @@ final class VerificationPlanner
                 id: "phpunit:{$testClass}",
                 reason: "matching test found for {$this->classNameFromPath($file->path)}",
                 triggeredBy: [$file->path],
+                filePath: $testPath,
                 testFilter: $testClass,
             );
         }

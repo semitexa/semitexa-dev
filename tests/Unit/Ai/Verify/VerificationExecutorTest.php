@@ -134,6 +134,53 @@ class VerificationExecutorTest extends TestCase
         $this->assertContains('FooTest', $runner->calls[0]['command']);
     }
 
+    public function test_phpunit_target_passes_file_path_positionally_when_planner_supplies_it(): void
+    {
+        $bin = $this->root . '/vendor/bin';
+        mkdir($bin, 0755, true);
+        $binFile = $bin . '/phpunit';
+        file_put_contents($binFile, "#!/bin/sh\nexit 0\n");
+        chmod($binFile, 0755);
+        mkdir($this->root . '/packages/foo/tests', 0755, true);
+        file_put_contents($this->root . '/packages/foo/tests/FooTest.php', '<?php class FooTest {}');
+
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => 'OK (1 test, 1 assertion)']);
+        $plan = $this->planWith([
+            new VerificationTarget(
+                VerificationTarget::TYPE_PHPUNIT,
+                'phpunit:Foo',
+                'r',
+                [],
+                filePath: 'packages/foo/tests/FooTest.php',
+                testFilter: 'FooTest',
+            ),
+        ]);
+        (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+
+        $this->assertContains('packages/foo/tests/FooTest.php', $runner->calls[0]['command']);
+    }
+
+    public function test_phpunit_target_fails_when_no_tests_executed_despite_zero_exit(): void
+    {
+        $bin = $this->root . '/vendor/bin';
+        mkdir($bin, 0755, true);
+        $binFile = $bin . '/phpunit';
+        file_put_contents($binFile, "#!/bin/sh\nexit 0\n");
+        chmod($binFile, 0755);
+
+        $runner = new RecordingProcessRunner([
+            'exit' => 0,
+            'output' => "PHPUnit 10.5.x by Sebastian Bergmann.\n\nNo tests executed!\n",
+        ]);
+        $plan = $this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_PHPUNIT, 'phpunit:Foo', 'r', [], testFilter: 'FooTest'),
+        ]);
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertStringContainsString('matched no tests', $results[0]->signal);
+    }
+
     public function test_unknown_target_type_is_skipped(): void
     {
         $plan = $this->planWith([
