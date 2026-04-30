@@ -15,10 +15,16 @@ final readonly class VerificationResult
     public const STATUS_FAIL    = 'fail';
     public const STATUS_SKIPPED = 'skipped';
 
+    /**
+     * @param list<array<string, mixed>> $diagnostics structured per-target findings
+     *     (currently used by module_structure to emit one entry per
+     *     {@see \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureViolation})
+     */
     public function __construct(
         public VerificationTarget $target,
         public string $status,
         public int $exitCode,
         public string $signal,
+        public array $diagnostics = [],
     ) {}
 }

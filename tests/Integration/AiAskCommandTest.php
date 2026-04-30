@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Console\Command\AiAskCommand;
+use Semitexa\Dev\Application\Console\Command\AiAskCommand;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

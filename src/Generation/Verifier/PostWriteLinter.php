@@ -22,8 +22,8 @@ use Symfony\Component\Console\Output\BufferedOutput;
 final class PostWriteLinter
 {
     private const CHECKS = [
-        'handlers' => 'semitexa:lint:handlers',
-        'di'       => 'semitexa:lint:di',
+        'handlers' => 'lint:handlers',
+        'di'       => 'lint:di',
     ];
 
     public function __construct(

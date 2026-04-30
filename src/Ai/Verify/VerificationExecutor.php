@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Ai\Verify;
 
+use Semitexa\Dev\Ai\Verify\Phpstan\PhpstanRunner;
+use Semitexa\Dev\Ai\Verify\Phpstan\PhpstanRunResult;
+use Semitexa\Dev\Ai\Verify\Structure\DetectedModule;
+use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader;
+use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureValidator;
+use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureViolation;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -25,13 +31,22 @@ use Symfony\Component\Console\Output\BufferedOutput;
  */
 final class VerificationExecutor
 {
+    private readonly ModuleStructureSpecLoader $specLoader;
+
+    private readonly PhpstanRunner $phpstanRunner;
+
     public function __construct(
         private readonly Application $application,
         private readonly string $projectRoot,
         private readonly ProcessRunner $processRunner = new ShellProcessRunner(),
         private readonly ?string $phpBinary = null,
         private readonly ?string $phpunitBinary = null,
-    ) {}
+        ?ModuleStructureSpecLoader $specLoader = null,
+        ?PhpstanRunner $phpstanRunner = null,
+    ) {
+        $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
+        $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
+    }
 
     /**
      * @return list<VerificationResult>
@@ -41,10 +56,12 @@ final class VerificationExecutor
         $results = [];
         foreach ($plan->targets as $target) {
             $results[] = match ($target->type) {
-                VerificationTarget::TYPE_LINT    => $this->runLint($target),
-                VerificationTarget::TYPE_SYNTAX  => $this->runSyntax($target),
-                VerificationTarget::TYPE_PHPUNIT => $this->runPhpunit($target),
-                default                          => new VerificationResult(
+                VerificationTarget::TYPE_LINT             => $this->runLint($target),
+                VerificationTarget::TYPE_SYNTAX           => $this->runSyntax($target),
+                VerificationTarget::TYPE_PHPUNIT          => $this->runPhpunit($target),
+                VerificationTarget::TYPE_MODULE_STRUCTURE => $this->runModuleStructure($target),
+                VerificationTarget::TYPE_PHPSTAN_DI       => $this->runPhpstanDi($target),
+                default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
                     exitCode: 0,
@@ -112,22 +129,41 @@ final class VerificationExecutor
     private function runPhpunit(VerificationTarget $target): VerificationResult
     {
         $filter = $target->testFilter;
-        if ($filter === null) {
-            return $this->skipped($target, 'phpunit target missing testFilter');
+        $rel    = $target->filePath;
+
+        // Phase 6f.5: a phpunit target may be either:
+        //   - filtered: a single test class via `--filter Class file.php`,
+        //     or
+        //   - suite-scoped: a test directory via `phpunit <dir>` (no
+        //     filter), used by the fixture heuristic to run an entire
+        //     enclosing test sub-tree in one process. Suite-scoped
+        //     mode bypasses the cross-file-dependency fragility of
+        //     `--filter Class file.php` (helper classes declared in
+        //     sibling test files load correctly because phpunit walks
+        //     the directory).
+        if ($filter === null && $rel === null) {
+            return $this->skipped($target, 'phpunit target missing both testFilter and filePath');
         }
+
         $binary = $this->phpunitBinary ?? $this->discoverPhpunitBinary();
         if ($binary === null) {
             return $this->skipped($target, 'phpunit binary not found (looked for vendor/bin/phpunit)');
         }
 
-        // Pass the test file positionally when the planner knows it. phpunit.xml
-        // typically only includes `tests/`, so a bare `--filter` against a class
-        // living under `packages/*/tests/` matches nothing → exit 0 + "No tests
-        // executed!" → false-pass. The positional path forces phpunit to load
-        // the file regardless of <testsuite> config.
-        $command = [$binary, '--filter', $filter];
-        if ($target->filePath !== null && is_file($this->projectRoot . '/' . $target->filePath)) {
-            $command[] = $target->filePath;
+        $abs = $rel !== null ? $this->projectRoot . '/' . ltrim($rel, '/') : null;
+        $isDir = $abs !== null && is_dir($abs);
+
+        $command = [$binary];
+        if ($filter !== null) {
+            $command[] = '--filter';
+            $command[] = $filter;
+        }
+        if ($abs !== null && (is_file($abs) || $isDir)) {
+            $command[] = $rel;
+        } elseif ($filter === null) {
+            // Suite-scoped target lost its directory between plan and
+            // execute (e.g. file deleted on disk).
+            return $this->skipped($target, "phpunit target directory no longer exists: {$rel}");
         }
 
         $r = $this->processRunner->run($command, $this->projectRoot);
@@ -137,12 +173,13 @@ final class VerificationExecutor
         // changes can silently report "pass" while the suite would actually fail.
         $noTestsExecuted = str_contains($r['output'], 'No tests executed!');
 
+        $describe = $filter !== null ? "--filter {$filter}" : "<{$rel}>";
         $signal = $this->lastSignalLine($r['output']);
         if ($signal === '') {
-            $signal = "phpunit --filter {$filter} → exit {$r['exit']}";
+            $signal = "phpunit {$describe} → exit {$r['exit']}";
         }
         if ($noTestsExecuted) {
-            $signal = "phpunit --filter {$filter} matched no tests (discovery gap, not a pass)";
+            $signal = "phpunit {$describe} matched no tests (discovery gap, not a pass)";
         }
 
         $status = ($r['exit'] === 0 && ! $noTestsExecuted)
@@ -155,6 +192,111 @@ final class VerificationExecutor
             exitCode: $r['exit'],
             signal:   $signal,
         );
+    }
+
+    private function runModuleStructure(VerificationTarget $target): VerificationResult
+    {
+        $rel = $target->filePath;
+        if ($rel === null) {
+            return $this->skipped($target, 'module_structure target missing filePath (module root)');
+        }
+        $abs = $this->projectRoot . '/' . ltrim($rel, '/');
+        if (!is_dir($abs)) {
+            return $this->skipped($target, "module directory no longer exists: {$rel}");
+        }
+
+        $module = $this->reconstructDetectedModule($rel);
+        if ($module === null) {
+            return $this->skipped($target, "module path not under src/modules/ or packages/: {$rel}");
+        }
+
+        try {
+            $spec = $this->specLoader->load();
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'module_structure spec load failed: ' . $this->compress($e->getMessage()));
+        }
+
+        $validator = new ModuleStructureValidator($this->projectRoot, $spec);
+        $violations = $validator->validate($module);
+
+        $diagnostics = array_map(
+            static fn(ModuleStructureViolation $v) => $v->toArray(),
+            $violations,
+        );
+
+        $errorCount = count($violations);
+        if ($errorCount === 0) {
+            $signal = "module_structure {$rel} → 0 violations";
+        } else {
+            $first = $violations[0];
+            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}";
+        }
+
+        return new VerificationResult(
+            target:      $target,
+            status:      $errorCount === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
+            exitCode:    $errorCount === 0 ? 0 : 1,
+            signal:      $signal,
+            diagnostics: $diagnostics,
+        );
+    }
+
+    private function runPhpstanDi(VerificationTarget $target): VerificationResult
+    {
+        $files = $target->triggeredBy;
+        if ($files === []) {
+            return $this->skipped($target, 'phpstan_di target has no files');
+        }
+
+        $existing = [];
+        foreach ($files as $rel) {
+            if (is_file($this->projectRoot . '/' . ltrim($rel, '/'))) {
+                $existing[] = $rel;
+            }
+        }
+        if ($existing === []) {
+            return $this->skipped($target, 'phpstan_di: none of the changed files exist on disk');
+        }
+
+        $result = $this->phpstanRunner->run($existing);
+
+        return new VerificationResult(
+            target:      $target,
+            status:      $this->mapPhpstanStatus($result->status),
+            exitCode:    $result->status === PhpstanRunResult::STATUS_FAIL ? 1 : 0,
+            signal:      $result->rawSignal,
+            diagnostics: $result->diagnostics,
+        );
+    }
+
+    private function mapPhpstanStatus(string $phpstanStatus): string
+    {
+        return match ($phpstanStatus) {
+            PhpstanRunResult::STATUS_PASS    => VerificationResult::STATUS_PASS,
+            PhpstanRunResult::STATUS_FAIL    => VerificationResult::STATUS_FAIL,
+            PhpstanRunResult::STATUS_SKIPPED => VerificationResult::STATUS_SKIPPED,
+            default                          => VerificationResult::STATUS_SKIPPED,
+        };
+    }
+
+    private function reconstructDetectedModule(string $rel): ?DetectedModule
+    {
+        $parts = explode('/', trim($rel, '/'));
+        if (count($parts) === 3 && $parts[0] === 'src' && $parts[1] === 'modules') {
+            return new DetectedModule(
+                name: $parts[2],
+                relativePath: $rel,
+                kind: DetectedModule::KIND_APPLICATION,
+            );
+        }
+        if (count($parts) === 2 && $parts[0] === 'packages' && str_starts_with($parts[1], 'semitexa-')) {
+            return new DetectedModule(
+                name: substr($parts[1], strlen('semitexa-')),
+                relativePath: $rel,
+                kind: DetectedModule::KIND_PACKAGE,
+            );
+        }
+        return null;
     }
 
     private function discoverPhpunitBinary(): ?string

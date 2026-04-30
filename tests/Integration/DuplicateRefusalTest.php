@@ -6,7 +6,7 @@ namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Console\Command\MakeHandlerCommand;
+use Semitexa\Dev\Application\Console\Command\MakeHandlerCommand;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**

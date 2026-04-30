@@ -10,7 +10,7 @@ use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Ai\Trace\TraceStore;
-use Semitexa\Dev\Console\Command\AiTraceCommand;
+use Semitexa\Dev\Application\Console\Command\AiTraceCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;

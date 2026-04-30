@@ -9,7 +9,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceStore;
-use Semitexa\Dev\Console\Command\MakeCommand;
+use Semitexa\Dev\Application\Console\Command\MakeCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;

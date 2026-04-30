@@ -33,6 +33,58 @@ class ChangedFileClassifierTest extends TestCase
             'test_by_suffix' => ['src/modules/Foo/SomethingTest.php', ChangedFile::KIND_TEST],
             'php_other' => ['src/modules/Foo/Random.php', ChangedFile::KIND_PHP_OTHER],
             'non_php' => ['composer.json', ChangedFile::KIND_NON_PHP],
+
+            // Phase 6f.5: fixture / stub / helper / support code under
+            // a tests/ tree must NOT be classified as KIND_TEST,
+            // because the planner would then try to phpunit-invoke a
+            // class that doesn't extend TestCase. The regression that
+            // motivated this phase is RecordingAddressesResolver:
+            'fixture_under_tests' => [
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/RecordingAddressesResolver.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'fixture_singular' => [
+                'tests/Unit/Foo/Fixture/X.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'stubs_dir' => [
+                'tests/Unit/Foo/Stubs/X.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'stub_singular' => [
+                'tests/Unit/Foo/Stub/Y.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'support_dir' => [
+                'tests/Unit/Foo/Support/Helper.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'helpers_dir' => [
+                'tests/Unit/Foo/Helpers/Helper.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'traits_dir' => [
+                'tests/Unit/Foo/Traits/MakesFoo.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            'doubles_dir' => [
+                'tests/Unit/Foo/Doubles/FakeBar.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            // Loose helper directly under tests/ with no Test.php
+            // suffix → still fixture-like (e.g. tests/bootstrap.php).
+            'loose_helper_under_tests' => [
+                'tests/bootstrap.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ],
+            // A `*Test.php` file inside a Fixtures/ directory is the
+            // ambiguous edge case: filename wins because the planner
+            // treats `Test.php` suffix as the strongest signal of a
+            // real test class.
+            'test_suffix_in_fixture_dir_is_real_test' => [
+                'tests/Unit/Foo/Fixtures/EdgeCaseTest.php',
+                ChangedFile::KIND_TEST,
+            ],
         ];
     }
 

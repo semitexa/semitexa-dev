@@ -36,7 +36,7 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(VerificationPlan::SCOPE_STANDARD, $plan->effectiveScope);
         $commands = $this->lintCommandNames($plan);
         sort($commands);
-        $this->assertSame(['semitexa:lint:di', 'semitexa:lint:handlers'], $commands);
+        $this->assertSame(['lint:di', 'lint:handlers'], $commands);
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
         $this->assertSame([], $plan->expansions);
     }
@@ -49,8 +49,8 @@ class VerificationPlannerTest extends TestCase
         ], VerificationPlan::SCOPE_STANDARD);
 
         $commands = $this->lintCommandNames($plan);
-        $this->assertContains('semitexa:lint:responses', $commands);
-        $this->assertContains('semitexa:lint:di', $commands);
+        $this->assertContains('lint:responses', $commands);
+        $this->assertContains('lint:di', $commands);
     }
 
     public function test_minimal_scope_runs_only_syntax(): void
@@ -80,11 +80,11 @@ class VerificationPlannerTest extends TestCase
         $commands = $this->lintCommandNames($plan);
         sort($commands);
         $this->assertSame([
-            'semitexa:lint:di',
-            'semitexa:lint:handlers',
-            'semitexa:lint:responses',
-            'semitexa:lint:scoping',
-            'semitexa:lint:templates',
+            'lint:di',
+            'lint:handlers',
+            'lint:responses',
+            'lint:scoping',
+            'lint:templates',
         ], $commands);
     }
 
@@ -136,7 +136,14 @@ class VerificationPlannerTest extends TestCase
         ], VerificationPlan::SCOPE_STANDARD);
 
         $this->assertCount(1, $plan->changedFiles);
-        $this->assertSame([], $plan->targets);
+        // Deletion alone produces no syntax/lint/phpunit targets — the
+        // file is gone and there is nothing to lint. Module structure
+        // is the exception: removing the last file from a module may
+        // still leave the module in a structurally invalid state, so
+        // the structure target is still scheduled.
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_LINT));
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT));
     }
 
     public function test_dedupes_lint_targets_when_multiple_files_share_a_kind(): void
@@ -152,6 +159,214 @@ class VerificationPlannerTest extends TestCase
         foreach ($this->targetsOfType($plan, VerificationTarget::TYPE_LINT) as $t) {
             $this->assertCount(2, $t->triggeredBy);
         }
+    }
+
+    public function test_test_fixture_change_does_not_invoke_phpunit_directly_on_fixture(): void
+    {
+        // Recording the regression that motivated Phase 6f.5: a
+        // fixture under tests/Unit/Resource/Fixtures/ must not be
+        // scheduled as `phpunit:RecordingAddressesResolver`, because
+        // the class does not extend TestCase and phpunit would emit
+        // "does not extend PHPUnit\Framework\TestCase".
+        mkdir($this->root . '/packages/semitexa-core/tests/Unit/Resource/Fixtures', 0755, true);
+        // No real test files at all → no phpunit targets at all.
+
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/RecordingAddressesResolver.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        // No real test files set up under the synthetic root, so the
+        // fixture path produces zero phpunit targets — but the key
+        // invariant is that none of them target the fixture itself.
+        $this->assertSame([], $phpunit);
+        // Syntax check still runs for the changed file.
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
+    }
+
+    public function test_test_fixture_change_schedules_enclosing_test_suite_directory(): void
+    {
+        // Build a tiny tree mirroring the regression case:
+        //   tests/Unit/Resource/Fixtures/RecordingAddressesResolver.php  (fixture)
+        //   tests/Unit/Resource/Phase6eListResolverTest.php              (real test)
+        //   tests/Unit/Resource/Phase6fListParentBatchingTest.php        (real test)
+        $resourceDir = $this->root . '/packages/semitexa-core/tests/Unit/Resource';
+        mkdir($resourceDir . '/Fixtures', 0755, true);
+        file_put_contents($resourceDir . '/Phase6eListResolverTest.php', "<?php\nclass Phase6eListResolverTest {}\n");
+        file_put_contents($resourceDir . '/Phase6fListParentBatchingTest.php', "<?php\nclass Phase6fListParentBatchingTest {}\n");
+
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/RecordingAddressesResolver.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+
+        // ONE directory-scoped target, not N per-file ones. Running
+        // phpunit on the directory loads every Test.php in one
+        // process, which both halves the noise and resolves cross-
+        // file helper-class declarations sibling tests rely on.
+        $this->assertCount(1, $phpunit);
+        $this->assertNull($phpunit[0]->testFilter, 'fixture suite target runs without --filter');
+        $this->assertSame(
+            'packages/semitexa-core/tests/Unit/Resource',
+            $phpunit[0]->filePath,
+            'fixture suite target points at the enclosing test directory, not the fixture file',
+        );
+        $this->assertStringContainsString('test fixture changed', $phpunit[0]->reason);
+        $this->assertSame(
+            ['packages/semitexa-core/tests/Unit/Resource/Fixtures/RecordingAddressesResolver.php'],
+            $phpunit[0]->triggeredBy,
+        );
+    }
+
+    public function test_test_fixture_change_walks_up_when_immediate_parent_has_no_tests(): void
+    {
+        // Fixture is two levels deep below the closest test family.
+        $resourceDir = $this->root . '/packages/semitexa-core/tests/Unit/Resource';
+        mkdir($resourceDir . '/Fixtures/Nested', 0755, true);
+        file_put_contents($resourceDir . '/SomethingTest.php', "<?php\nclass SomethingTest {}\n");
+
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/Nested/Helper.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        $this->assertCount(1, $phpunit);
+        $this->assertNull($phpunit[0]->testFilter);
+        $this->assertSame('packages/semitexa-core/tests/Unit/Resource', $phpunit[0]->filePath);
+    }
+
+    public function test_two_fixtures_in_same_subtree_dedupe_to_single_target(): void
+    {
+        $resourceDir = $this->root . '/packages/semitexa-core/tests/Unit/Resource';
+        mkdir($resourceDir . '/Fixtures', 0755, true);
+        file_put_contents($resourceDir . '/SomethingTest.php', "<?php\nclass SomethingTest {}\n");
+
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/A.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/B.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        $this->assertCount(1, $phpunit, 'two fixtures sharing a suite collapse to one phpunit target');
+        $this->assertCount(2, $phpunit[0]->triggeredBy);
+    }
+
+    public function test_test_fixture_change_schedules_no_phpunit_target_when_no_enclosing_tests_exist(): void
+    {
+        // Stand-alone fixture tree with no real test files anywhere
+        // up the chain → no phpunit target. Syntax check still runs.
+        mkdir($this->root . '/packages/semitexa-core/tests/Unit/Resource/Fixtures', 0755, true);
+
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/Lonely.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT));
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
+    }
+
+    public function test_real_test_file_is_still_invoked_directly_after_fixture_split(): void
+    {
+        // Defends the existing behaviour for KIND_TEST: a real
+        // FooTest.php still produces a phpunit target keyed by class
+        // name with reason "test file changed — running it directly".
+        $plan = $this->planner()->plan([
+            new ChangedFile('tests/Unit/Foo/SomethingTest.php', ChangedFile::KIND_TEST),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        $this->assertCount(1, $phpunit);
+        $this->assertSame('SomethingTest', $phpunit[0]->testFilter);
+        $this->assertSame('test file changed — running it directly', $phpunit[0]->reason);
+    }
+
+    public function test_test_fixture_change_does_not_emit_lint_targets(): void
+    {
+        // Fixtures are pure test scaffolding — no production lint
+        // (lint:di, lint:handlers, …) applies to them.
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-core/tests/Unit/Resource/Fixtures/X.php',
+                ChangedFile::KIND_TEST_FIXTURE,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $this->assertSame([], $this->lintCommandNames($plan));
+    }
+
+    public function test_changed_php_files_schedule_one_phpstan_di_target_at_standard_scope(): void
+    {
+        // Single-file invocation (`ai:verify --files=<one .php file>`) must
+        // schedule a `phpstan_di` target so an AI agent that drops a
+        // ctor-injected command into a package gets the
+        // `semitexa.injectionViaConstructor` PHPStan error reported even when
+        // the project's project-wide `composer phpstan` is not run.
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'packages/semitexa-api/src/Application/Console/Command/DumpOpenApiCommand.php',
+                ChangedFile::KIND_PHP_OTHER,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $diTargets = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $diTargets, 'one batched phpstan_di target per verify run');
+        $this->assertSame(
+            ['packages/semitexa-api/src/Application/Console/Command/DumpOpenApiCommand.php'],
+            $diTargets[0]->triggeredBy,
+        );
+    }
+
+    public function test_multiple_changed_php_files_share_a_single_phpstan_di_target(): void
+    {
+        $plan = $this->planner()->plan([
+            new ChangedFile('src/modules/Foo/Application/Service/X.php', ChangedFile::KIND_SERVICE),
+            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/Y.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('packages/semitexa-api/src/Application/Console/Command/Z.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $diTargets = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $diTargets);
+        $this->assertCount(3, $diTargets[0]->triggeredBy);
+    }
+
+    public function test_phpstan_di_target_skipped_for_test_fixtures_and_templates(): void
+    {
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-core/tests/Unit/X.php', ChangedFile::KIND_TEST),
+            new ChangedFile('packages/semitexa-core/tests/Unit/Fixtures/F.php', ChangedFile::KIND_TEST_FIXTURE),
+            new ChangedFile('src/modules/Foo/Application/View/templates/pages/x.html.twig', ChangedFile::KIND_TEMPLATE),
+            new ChangedFile('docker/etc/nginx.conf', ChangedFile::KIND_NON_PHP),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI));
+    }
+
+    public function test_phpstan_di_target_skipped_at_minimal_scope(): void
+    {
+        $plan = $this->planner()->plan([
+            new ChangedFile('src/modules/Foo/Application/Service/X.php', ChangedFile::KIND_SERVICE),
+        ], VerificationPlan::SCOPE_MINIMAL);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI));
     }
 
     public function test_unknown_scope_falls_back_to_standard(): void

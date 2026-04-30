@@ -1,0 +1,258 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Console\Command\DevGraph;
+
+use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Discovery\AttributeDiscovery;
+use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Core\Discovery\RouteRegistry;
+use Semitexa\Core\ModuleRegistry;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+
+#[AsCommand(name: 'dev:graph:route', description: 'Show the full chain for a route: payload → handler → resource → template → auth')]
+final class DevGraphRouteCommand extends BaseCommand
+{
+    private ?AttributeDiscovery $attributeDiscovery;
+    private ?ModuleRegistry $moduleRegistry;
+    private ?ClassDiscovery $classDiscovery = null;
+
+    public function __construct(
+        ?AttributeDiscovery $attributeDiscovery = null,
+        ?ModuleRegistry $moduleRegistry = null,
+    ) {
+        $this->attributeDiscovery = $attributeDiscovery;
+        $this->moduleRegistry = $moduleRegistry;
+        parent::__construct('dev:graph:route');
+    }
+
+    protected function configure(): void
+    {
+        $this
+            ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path (e.g., /pricing)')
+            ->addOption('method', null, InputOption::VALUE_OPTIONAL, 'HTTP method (default: GET)', 'GET')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $io = new SymfonyStyle($input, $output);
+
+        if (!$input->getOption('path')) {
+            $io->error('Missing required option: --path');
+            return Command::FAILURE;
+        }
+
+        $this->attributeDiscovery()->initialize();
+
+        $path = $input->getOption('path');
+        $method = strtoupper($input->getOption('method') ?? 'GET');
+
+        $route = $this->attributeDiscovery()->findRoute($path, $method);
+
+        if ($route === null) {
+            $routes = $this->attributeDiscovery()->getRoutes();
+            foreach ($routes as $r) {
+                if (($r['path'] ?? '') === $path) {
+                    $methods = $r['methods'] ?? [$r['method'] ?? 'GET'];
+                    $route = $this->attributeDiscovery()->findRoute($path, $methods[0]);
+                    break;
+                }
+            }
+        }
+
+        if ($route === null) {
+            $io->error("Route not found: {$method} {$path}");
+            return Command::FAILURE;
+        }
+
+        $description = $this->buildDescription($route);
+
+        if ($input->getOption('json')) {
+            $handlerClass = null;
+            if (isset($description['handlers'][0]['class'])) {
+                $handlerClass = $description['handlers'][0]['class'];
+            }
+            $output->writeln(json_encode([
+                'artifact' => 'semitexa-dev.route-description/v1',
+                'generated_at' => date('c'),
+                'route' => $description,
+                'next_command' => $this->buildNextCommands($description, $handlerClass),
+            ], JSON_UNESCAPED_SLASHES));
+            return Command::SUCCESS;
+        }
+
+        $this->renderHuman($io, $description);
+        return Command::SUCCESS;
+    }
+
+    /**
+     * @param array<string, mixed> $description
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private function buildNextCommands(array $description, ?string $handlerClass): array
+    {
+        $path = (string) ($description['path'] ?? '');
+        $out = [];
+        if ($handlerClass !== null && $handlerClass !== '') {
+            $out[] = [
+                'cmd'  => 'ai:review-graph:impact',
+                'args' => [$handlerClass, '--json'],
+                'why'  => 'blast radius of changing the handler',
+            ];
+            $out[] = [
+                'cmd'  => 'ai:invoke',
+                'args' => ['--handler=' . $handlerClass, '--payload={}', '--json'],
+                'why'  => 'dry-run the handler without starting the server',
+            ];
+        }
+        $out[] = [
+            'cmd'  => 'logs:app',
+            'args' => ['--grep=' . $path, '--lines=200', '--level=ERROR', '--json'],
+            'why'  => 'recent errors for this route',
+        ];
+        $out[] = [
+            'cmd'  => 'ai:verify',
+            'args' => ['--files=' . ($description['payload']['file'] ?? '<path>'), '--json'],
+            'why'  => 'verify current state of the payload file',
+        ];
+        return $out;
+    }
+
+    private function buildDescription(array $route): array
+    {
+        $payloadClass = $route['class'] ?? '';
+        $methods = $route['methods'] ?? [$route['method'] ?? 'GET'];
+        $responseClass = $route['responseClass'] ?? null;
+        $handlers = $route['handlers'] ?? [];
+        $responseAttrs = $responseClass ? $this->attributeDiscovery()->getResolvedResponseAttributes($responseClass) : null;
+
+        $description = [
+            'path' => $route['path'] ?? '',
+            'methods' => $methods,
+            'name' => $route['name'] ?? null,
+            'public' => $route['public'] ?? true,
+            'payload' => [
+                'class' => $payloadClass,
+                'module' => $this->moduleRegistry()->getModuleNameForClass($payloadClass) ?? 'project',
+                'file' => $this->resolveRelativeFile($payloadClass),
+            ],
+            'resource' => null,
+            'handlers' => [],
+            'template' => null,
+        ];
+
+        if ($responseClass) {
+            $description['resource'] = [
+                'class' => $responseClass,
+                'module' => $this->moduleRegistry()->getModuleNameForClass($responseClass) ?? 'project',
+                'file' => $this->resolveRelativeFile($responseClass),
+                'handle' => $responseAttrs['handle'] ?? null,
+                'template' => $responseAttrs['template'] ?? null,
+            ];
+
+            if (!empty($responseAttrs['template'])) {
+                $description['template'] = $responseAttrs['template'];
+            }
+        }
+
+        usort($handlers, fn ($a, $b) => ($b['priority'] ?? 0) <=> ($a['priority'] ?? 0));
+        foreach ($handlers as $h) {
+            $description['handlers'][] = [
+                'class' => $h['class'],
+                'module' => $this->moduleRegistry()->getModuleNameForClass($h['class']) ?? 'project',
+                'file' => $this->resolveRelativeFile($h['class']),
+                'execution' => $h['execution'] ?? 'sync',
+                'priority' => $h['priority'] ?? 0,
+            ];
+        }
+
+        return $description;
+    }
+
+    private function renderHuman(SymfonyStyle $io, array $info): void
+    {
+        $methodStr = implode('|', $info['methods']);
+        $io->title("{$methodStr} {$info['path']}");
+
+        $authLabel = $info['public'] ? 'Public (no auth required)' : 'Protected (auth required)';
+        $io->text("Auth: {$authLabel}");
+        if ($info['name']) {
+            $io->text("Name: {$info['name']}");
+        }
+        $io->newLine();
+
+        $io->section('Chain');
+
+        $io->text("  Payload:  {$info['payload']['class']}");
+        $io->text("            {$info['payload']['file']}");
+
+        foreach ($info['handlers'] as $h) {
+            $io->text("  Handler:  {$h['class']} [{$h['execution']}]");
+            $io->text("            {$h['file']}");
+        }
+
+        if ($info['resource']) {
+            $io->text("  Resource: {$info['resource']['class']}");
+            $io->text("            {$info['resource']['file']}");
+        }
+
+        if ($info['template']) {
+            $io->text("  Template: {$info['template']}");
+        }
+    }
+
+    private function attributeDiscovery(): AttributeDiscovery
+    {
+        if ($this->attributeDiscovery === null) {
+            $this->attributeDiscovery = new AttributeDiscovery(
+                $this->classDiscovery(),
+                $this->moduleRegistry(),
+                new RouteRegistry(),
+            );
+        }
+
+        return $this->attributeDiscovery;
+    }
+
+    private function moduleRegistry(): ModuleRegistry
+    {
+        if ($this->moduleRegistry === null) {
+            $this->moduleRegistry = new ModuleRegistry();
+        }
+
+        return $this->moduleRegistry;
+    }
+
+    private function classDiscovery(): ClassDiscovery
+    {
+        if ($this->classDiscovery === null) {
+            $this->classDiscovery = new ClassDiscovery();
+        }
+
+        return $this->classDiscovery;
+    }
+
+    private function resolveRelativeFile(string $className): ?string
+    {
+        try {
+            $file = (new \ReflectionClass($className))->getFileName();
+            if ($file === false) {
+                return null;
+            }
+            $root = $this->getProjectRoot();
+            if (str_starts_with($file, $root)) {
+                return ltrim(substr($file, strlen($root)), '/');
+            }
+            return $file;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+}

@@ -10,11 +10,11 @@ use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Ai\Trace\TraceStore;
-use Semitexa\Dev\Console\Command\AiContextCommand;
-use Semitexa\Dev\Console\Command\AiTaskCommand;
-use Semitexa\Dev\Console\Command\AiTraceCommand;
-use Semitexa\Dev\Console\Command\AiVerifyCommand;
-use Semitexa\Dev\Console\Command\MakeCommand;
+use Semitexa\Dev\Application\Console\Command\AiContextCommand;
+use Semitexa\Dev\Application\Console\Command\AiTaskCommand;
+use Semitexa\Dev\Application\Console\Command\AiTraceCommand;
+use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
+use Semitexa\Dev\Application\Console\Command\MakeCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
@@ -197,11 +197,11 @@ class WorkflowTraceTest extends TestCase
             $app->add($this->fakeMakeCommand($name));
         }
         foreach ([
-            'semitexa:lint:handlers',
-            'semitexa:lint:di',
-            'semitexa:lint:scoping',
-            'semitexa:lint:responses',
-            'semitexa:lint:templates',
+            'lint:handlers',
+            'lint:di',
+            'lint:scoping',
+            'lint:responses',
+            'lint:templates',
         ] as $name) {
             $app->add($this->fakeLintCommand($name));
         }

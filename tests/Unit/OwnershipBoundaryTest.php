@@ -44,7 +44,9 @@ final class OwnershipBoundaryTest extends TestCase
 
     public function testDevDoesNotDeclareDeployCommands(): void
     {
-        $root = __DIR__ . '/../../src/Console/Command';
+        // Phase 6 migration: semitexa-dev's commands moved from
+        // src/Console/Command/ → src/Application/Console/Command/.
+        $root = __DIR__ . '/../../src/Application/Console/Command';
         self::assertDirectoryExists($root);
 
         $offending = $this->findFiles(

@@ -198,7 +198,7 @@ final class RecipeRegistry
                 arg_hints: [
                     '--module' => 'Module that will own the command.',
                     '--name'   => 'Command class name (StudlyCase).',
-                    '--cli'    => 'Command CLI name (e.g. semitexa:foo:bar).',
+                    '--cli'    => 'Command CLI name (e.g. lint:foo or domain:action).',
                 ],
                 default_risk: 'low',
             ),

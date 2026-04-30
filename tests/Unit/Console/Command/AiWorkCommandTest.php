@@ -14,7 +14,7 @@ use Semitexa\Dev\Ai\Work\EpicStatus;
 use Semitexa\Dev\Ai\Work\EpicStore;
 use Semitexa\Dev\Ai\Work\ResumeService;
 use Semitexa\Dev\Ai\Work\TaskStore;
-use Semitexa\Dev\Console\Command\AiWorkCommand;
+use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
 

@@ -12,7 +12,7 @@ use Semitexa\Dev\Ai\Trace\TraceStore;
 use Semitexa\Dev\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Ai\Work\EpicStore;
 use Semitexa\Dev\Ai\Work\TaskStore;
-use Semitexa\Dev\Console\Command\AiEpicCommand;
+use Semitexa\Dev\Application\Console\Command\AiEpicCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
 

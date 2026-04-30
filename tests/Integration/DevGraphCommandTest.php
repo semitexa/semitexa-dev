@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphCapabilitiesCommand;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphEventCommand;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphMineConventionsCommand;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphModuleCommand;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphProjectCommand;
-use Semitexa\Dev\Console\Command\DevGraph\DevGraphRouteCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphCapabilitiesCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphEventCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphMineConventionsCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphModuleCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphProjectCommand;
+use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphRouteCommand;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;
 

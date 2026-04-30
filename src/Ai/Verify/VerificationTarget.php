@@ -11,15 +11,25 @@ namespace Semitexa\Dev\Ai\Verify;
  * given lint fired — a core audit requirement of Phase 4.
  *
  * `type`:
- *   - `lint`     → dispatch via Application::find()->run()
- *   - `syntax`   → `php -l` on the file
- *   - `phpunit`  → invoke project phpunit with `--filter` on the test class
+ *   - `lint`             → dispatch via Application::find()->run()
+ *   - `syntax`           → `php -l` on the file
+ *   - `phpunit`          → invoke project phpunit with `--filter` on the test class
+ *   - `module_structure` → walk the named module dir and check it against
+ *                          the rule set in MODULE_STRUCTURE.md
+ *   - `phpstan_di`       → invoke PHPStan with the focused
+ *                          `phpstan-ai-verify.neon` config (loads only the
+ *                          Semitexa-owned DI rules) and re-emit each
+ *                          diagnostic verbatim, preserving the PHPStan
+ *                          identifier — single source of truth lives in
+ *                          `packages/semitexa-core/src/PHPStan/Rules/`
  */
 final readonly class VerificationTarget
 {
-    public const TYPE_LINT    = 'lint';
-    public const TYPE_SYNTAX  = 'syntax';
-    public const TYPE_PHPUNIT = 'phpunit';
+    public const TYPE_LINT             = 'lint';
+    public const TYPE_SYNTAX           = 'syntax';
+    public const TYPE_PHPUNIT          = 'phpunit';
+    public const TYPE_MODULE_STRUCTURE = 'module_structure';
+    public const TYPE_PHPSTAN_DI       = 'phpstan_di';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled
