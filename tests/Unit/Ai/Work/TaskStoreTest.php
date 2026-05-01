@@ -6,9 +6,9 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Ai\Work\Task;
-use Semitexa\Dev\Ai\Work\TaskStatus;
-use Semitexa\Dev\Ai\Work\TaskStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 
 class TaskStoreTest extends TestCase
 {

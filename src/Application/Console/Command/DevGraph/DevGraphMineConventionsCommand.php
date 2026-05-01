@@ -6,8 +6,8 @@ namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Ai\Convention\ConventionMiner;
-use Semitexa\Dev\Ai\Convention\ConventionStore;
+use Semitexa\Dev\Application\Service\Ai\Convention\ConventionMiner;
+use Semitexa\Dev\Application\Service\Ai\Convention\ConventionStore;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;

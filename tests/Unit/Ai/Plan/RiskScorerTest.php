@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Plan;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Plan\RiskScorer;
-use Semitexa\Dev\Ai\Recipe\Recipe;
-use Semitexa\Dev\Ai\Recipe\RecipeRegistry;
+use Semitexa\Dev\Application\Service\Ai\Plan\RiskScorer;
+use Semitexa\Dev\Application\Service\Ai\Recipe\Recipe;
+use Semitexa\Dev\Application\Service\Ai\Recipe\RecipeRegistry;
 
 final class RiskScorerTest extends TestCase
 {

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\ChangedFile;
-use Semitexa\Dev\Ai\Verify\Structure\DetectedModule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureTargetResolver;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
 
 class ModuleStructureTargetResolverTest extends TestCase
 {

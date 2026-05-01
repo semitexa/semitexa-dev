@@ -6,19 +6,19 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Ai\Similarity\DuplicateDetector;
-use Semitexa\Dev\Ai\Similarity\DuplicateGate;
-use Semitexa\Dev\Ai\Similarity\DuplicateQuery;
-use Semitexa\Dev\Ai\Similarity\SimilarityIndexBuilder;
-use Semitexa\Dev\Generation\Builder\EventListenerPlanBuilder;
-use Semitexa\Dev\Generation\Support\JsonResultFormatter;
-use Semitexa\Dev\Generation\Support\LlmHintsFormatter;
-use Semitexa\Dev\Generation\Support\NameInflector;
-use Semitexa\Dev\Generation\Support\ReplayArgBuilder;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
-use Semitexa\Dev\Generation\Support\TemplateResolver;
-use Semitexa\Dev\Generation\Verifier\PostWriteLinter;
-use Semitexa\Dev\Generation\Writer\SafeFileWriter;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
+use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
+use Semitexa\Dev\Application\Service\Generation\Builder\EventListenerPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
+use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Support\ReplayArgBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Application\Service\Generation\Verifier\PostWriteLinter;
+use Semitexa\Dev\Application\Service\Generation\Writer\SafeFileWriter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -102,7 +102,7 @@ final class MakeEventListenerCommand extends BaseCommand
             return $gateExit;
         }
 
-        $plannedResult = new \Semitexa\Dev\Generation\Data\GenerationResult(
+        $plannedResult = new \Semitexa\Dev\Application\Service\Generation\Data\GenerationResult(
             command: 'make:event-listener',
             status: 'dry_run',
             created: array_map(static fn($file): string => $file->path, $plan->files),

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Data\CapabilityManifest;
-use Semitexa\Dev\Generation\Data\CommandCapability;
-use Semitexa\Dev\Generation\Support\CapabilityManifestFormatter;
+use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
+use Semitexa\Dev\Application\Service\Generation\Data\CommandCapability;
+use Semitexa\Dev\Application\Service\Generation\Support\CapabilityManifestFormatter;
 
 class CapabilityManifestFormatterTest extends TestCase
 {

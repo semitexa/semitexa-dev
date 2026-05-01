@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Generation\Builder;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Builder\ModulePlanBuilder;
-use Semitexa\Dev\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Builder\ModulePlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 
 class ModulePlanBuilderTest extends TestCase
 {

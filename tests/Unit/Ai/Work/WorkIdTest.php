@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Work\WorkId;
+use Semitexa\Dev\Application\Service\Ai\Work\WorkId;
 
 class WorkIdTest extends TestCase
 {

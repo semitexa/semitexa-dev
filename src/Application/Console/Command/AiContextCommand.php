@@ -7,11 +7,11 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Ai\Context\ContextPacker;
-use Semitexa\Dev\Ai\Recipe\Recipe;
-use Semitexa\Dev\Ai\Recipe\RecipeRegistry;
-use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
-use Semitexa\Dev\Ai\Trace\TraceEventKind;
+use Semitexa\Dev\Application\Service\Ai\Context\ContextPacker;
+use Semitexa\Dev\Application\Service\Ai\Recipe\Recipe;
+use Semitexa\Dev\Application\Service\Ai\Recipe\RecipeRegistry;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -90,7 +90,7 @@ final class AiContextCommand extends BaseCommand
     }
 
     /**
-     * @param list<\Semitexa\Dev\Ai\Context\PriorArtItem> $items
+     * @param list<\Semitexa\Dev\Application\Service\Ai\Context\PriorArtItem> $items
      */
     private function appendToTrace(InputInterface $input, OutputInterface $output, Recipe $recipe, ?string $module, array $items): void
     {

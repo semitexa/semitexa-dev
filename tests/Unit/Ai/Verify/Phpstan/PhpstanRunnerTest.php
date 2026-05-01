@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Phpstan;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\Phpstan\PhpstanRunner;
-use Semitexa\Dev\Ai\Verify\Phpstan\PhpstanRunResult;
-use Semitexa\Dev\Ai\Verify\ProcessRunner;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunResult;
+use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
 
 class PhpstanRunnerTest extends TestCase
 {

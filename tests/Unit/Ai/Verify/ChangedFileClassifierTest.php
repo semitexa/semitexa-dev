@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\ChangedFile;
-use Semitexa\Dev\Ai\Verify\ChangedFileClassifier;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 
 class ChangedFileClassifierTest extends TestCase
 {

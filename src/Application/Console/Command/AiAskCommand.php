@@ -6,7 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Application\Console\Command\Support\CommandDelegator;
+use Semitexa\Dev\Application\Service\Console\CommandDelegator;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -45,6 +45,10 @@ final class AiAskCommand extends BaseCommand
         'route'        => 'dev:graph:route',
         'event'        => 'dev:graph:event',
         'logs'         => 'logs:app',
+        // `path` explains a file/directory path using global module-structure
+        // rules + any package-local extension. Auto-selected when --path is
+        // passed without an explicit subject (see execute()).
+        'path'         => 'dev:graph:path',
     ];
 
     public function __construct()
@@ -55,12 +59,16 @@ final class AiAskCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addArgument('subject', InputArgument::REQUIRED, 'One of: ' . implode(', ', array_keys(self::SUBJECT_MAP)))
+            // Subject is now OPTIONAL: when omitted, the command auto-selects
+            // `path` if --path is provided (lets `ai:ask --path=…` work
+            // without naming a subject). Existing subjects keep their full
+            // routing behavior.
+            ->addArgument('subject', InputArgument::OPTIONAL, 'One of: ' . implode(', ', array_keys(self::SUBJECT_MAP)) . ' (omit if --path is provided to auto-select `path`)')
             // Union of options accepted by the delegated targets. Only the
             // ones the target actually declares are forwarded (see
             // CommandDelegator). Anything else is silently dropped.
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name (for subject=module|event)')
-            ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path (for subject=route)')
+            ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Path: route path (subject=route) | file/directory path (subject=path, default when --path used)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method (for subject=route)')
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file alias (for subject=logs)')
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'Line count (for subject=logs)')
@@ -75,7 +83,21 @@ final class AiAskCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $subject = (string) $input->getArgument('subject');
+        $subject = (string) ($input->getArgument('subject') ?? '');
+        // When subject is omitted but --path is provided, default to
+        // `path`. Keeps `ai:ask --path=foo` ergonomic for AI agents while
+        // preserving the explicit-subject flow for everyone else.
+        if ($subject === '' && (string) ($input->getOption('path') ?? '') !== '') {
+            $subject = 'path';
+        }
+        if ($subject === '') {
+            $output->writeln(json_encode([
+                'kind'     => 'error',
+                'error'    => 'missing subject (and no --path provided to auto-select)',
+                'subjects' => array_keys(self::SUBJECT_MAP),
+            ], JSON_UNESCAPED_SLASHES));
+            return self::FAILURE;
+        }
         $target = self::SUBJECT_MAP[$subject] ?? null;
         if ($target === null) {
             $output->writeln(json_encode([

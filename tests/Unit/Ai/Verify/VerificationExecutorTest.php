@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\ChangedFile;
-use Semitexa\Dev\Ai\Verify\ProcessRunner;
-use Semitexa\Dev\Ai\Verify\VerificationExecutor;
-use Semitexa\Dev\Ai\Verify\VerificationPlan;
-use Semitexa\Dev\Ai\Verify\VerificationResult;
-use Semitexa\Dev\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

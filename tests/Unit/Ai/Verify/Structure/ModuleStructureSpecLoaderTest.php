@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\Structure\FilePlacementRule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpec;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\FilePlacementRule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
 
 class ModuleStructureSpecLoaderTest extends TestCase
 {
@@ -76,20 +76,27 @@ class ModuleStructureSpecLoaderTest extends TestCase
             'Storage adapter list must be the official semitexa-orm adapter set',
         );
 
-        // Per-adapter shape: each adapter must declare exactly Model + Repository.
+        // Per-adapter shape: each adapter must declare exactly the three
+        // peer sub-trees Model + Mapper + Repository. Mapper/ is a peer of
+        // Model/, not a child of it — *Mapper.php belongs there.
         foreach (['MySQL', 'SQLite'] as $adapter) {
             $adapterRule = $spec->ruleFor('Application/Db/' . $adapter);
             $this->assertNotNull($adapterRule, $adapter . ' rule must exist');
             $this->assertSame(
-                ['Model', 'Repository'],
+                ['Model', 'Mapper', 'Repository'],
                 $adapterRule->allowedDirectories,
-                $adapter . ' must allow only Model + Repository',
+                $adapter . ' must allow only Model + Mapper + Repository',
             );
 
             $modelRule = $spec->ruleFor('Application/Db/' . $adapter . '/Model');
             $this->assertNotNull($modelRule);
             $this->assertFalse($modelRule->allowAnyFile, "{$adapter}/Model must NOT permit arbitrary files");
             $this->assertNotEmpty($modelRule->allowedFilePatterns, "{$adapter}/Model must declare file patterns");
+
+            $mapperRule = $spec->ruleFor('Application/Db/' . $adapter . '/Mapper');
+            $this->assertNotNull($mapperRule, "{$adapter}/Mapper must be declared as a peer of Model/");
+            $this->assertFalse($mapperRule->allowAnyFile, "{$adapter}/Mapper must NOT permit arbitrary files");
+            $this->assertNotEmpty($mapperRule->allowedFilePatterns, "{$adapter}/Mapper must declare file patterns");
 
             $repoRule = $spec->ruleFor('Application/Db/' . $adapter . '/Repository');
             $this->assertNotNull($repoRule);
@@ -157,9 +164,9 @@ class ModuleStructureSpecLoaderTest extends TestCase
     private function buildSpecPhp(array $topLevel): string
     {
         $list = "['" . implode("', '", $topLevel) . "']";
-        return "<?php\nuse Semitexa\\Dev\\Ai\\Verify\\Structure\\FilePlacementRule;\n"
-            . "use Semitexa\\Dev\\Ai\\Verify\\Structure\\ModuleStructureRule;\n"
-            . "use Semitexa\\Dev\\Ai\\Verify\\Structure\\ModuleStructureSpec;\n"
+        return "<?php\nuse Semitexa\\Dev\\Application\\Service\\Ai\\Verify\\Structure\\FilePlacementRule;\n"
+            . "use Semitexa\\Dev\\Application\\Service\\Ai\\Verify\\Structure\\ModuleStructureRule;\n"
+            . "use Semitexa\\Dev\\Application\\Service\\Ai\\Verify\\Structure\\ModuleStructureSpec;\n"
             . "return new ModuleStructureSpec(\n"
             . "    codeRootRules: ['top_level' => new ModuleStructureRule(path: 'top_level', allowedDirectories: {$list})],\n"
             . "    packageRootRule: new ModuleStructureRule(path: 'package_root', allowedDirectories: ['src'], allowedFiles: ['composer.json']),\n"

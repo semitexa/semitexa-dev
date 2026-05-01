@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\Structure\DetectedModule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureValidator;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureViolation;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
 
 /**
  * The strict-allowlist module structure validator. Every test here builds a
@@ -463,20 +463,20 @@ class ModuleStructureValidatorTest extends TestCase
         // but the MODE remains a supported escape hatch for future
         // architectural areas. Synthesize a spec that uses opaque_internal
         // and confirm the validator still skips its contents.
-        $rule = new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule(
+        $rule = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
             path: 'top_level',
             allowedDirectories: ['Application', 'Frontier'],
         );
-        $opaqueRule = new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule(
+        $opaqueRule = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
             path: 'Frontier',
-            mode: \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+            mode: \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
             opaqueReason: 'Synthetic test fixture for opaque skip behaviour.',
             opaqueOwner: 'tests',
             opaqueTodo: 'Never — this is a test-only fixture.',
         );
-        $spec = new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpec(
+        $spec = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec(
             codeRootRules: ['top_level' => $rule, 'Frontier' => $opaqueRule],
-            packageRootRule: new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule(
+            packageRootRule: new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
                 path: 'package_root',
                 allowedDirectories: ['src'],
                 allowedFiles: ['composer.json'],
@@ -508,13 +508,13 @@ class ModuleStructureValidatorTest extends TestCase
         // codeRootRules entry exists for it, the validator must NOT silently
         // skip — it emits module_structure.opaque_marker_required so the
         // gap is visible. Synthesize the case with a custom spec.
-        $rule = new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule(
+        $rule = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
             path: 'top_level',
             allowedDirectories: ['Application', 'Custom'],
         );
-        $spec = new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpec(
+        $spec = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec(
             codeRootRules: ['top_level' => $rule],
-            packageRootRule: new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule(
+            packageRootRule: new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
                 path: 'package_root',
                 allowedDirectories: ['src'],
                 allowedFiles: ['composer.json'],
@@ -869,11 +869,11 @@ class ModuleStructureValidatorTest extends TestCase
         // Phase 2; this test asserts it has been switched to deep_validated
         // (or leaf_files_only), with explicit allowedFilePatterns, in the
         // executable spec. Future Phase 3 batches will tighten the rest.
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $rule = $spec->ruleFor($dir);
         $this->assertNotNull($rule, "Phase 3 directory '{$dir}' must have a rule");
         $this->assertNotSame(
-            \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+            \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
             $rule->mode,
             "Phase 3 directory '{$dir}' must NOT be opaque_internal anymore",
         );
@@ -1368,14 +1368,14 @@ class ModuleStructureValidatorTest extends TestCase
         // deep_validated / leaf_files_only rule. The opaque_internal MODE
         // remains in the spec as a supported escape hatch for future
         // architectural areas, but no spec entry currently uses it.
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $coreDirs = $spec->packageSpecificDirectories('core');
         $this->assertNotEmpty($coreDirs, 'sanity: core has per-package allowlist');
         foreach ($coreDirs as $dir) {
             $rule = $spec->ruleFor($dir);
             $this->assertNotNull($rule, "core-only directory '{$dir}' must have a rule");
             $this->assertNotSame(
-                \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+                \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
                 $rule->mode,
                 "core-only directory '{$dir}' must NOT be opaque_internal after Phase 4",
             );
@@ -1389,11 +1389,11 @@ class ModuleStructureValidatorTest extends TestCase
      */
     public function test_phase3_batch2_directory_is_no_longer_opaque(string $dir): void
     {
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $rule = $spec->ruleFor($dir);
         $this->assertNotNull($rule, "Phase 3 batch 2 directory '{$dir}' must have a rule");
         $this->assertNotSame(
-            \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+            \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
             $rule->mode,
             "Phase 3 batch 2 directory '{$dir}' must NOT be opaque_internal anymore",
         );
@@ -1717,11 +1717,11 @@ class ModuleStructureValidatorTest extends TestCase
      */
     public function test_phase3_batch3_directory_is_no_longer_opaque(string $dir): void
     {
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $rule = $spec->ruleFor($dir);
         $this->assertNotNull($rule, "Phase 3 batch 3 directory '{$dir}' must have a rule");
         $this->assertNotSame(
-            \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+            \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
             $rule->mode,
             "Phase 3 batch 3 directory '{$dir}' must NOT be opaque_internal anymore",
         );
@@ -1993,11 +1993,11 @@ class ModuleStructureValidatorTest extends TestCase
      */
     public function test_phase4_directory_is_no_longer_opaque(string $dir): void
     {
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $rule = $spec->ruleFor($dir);
         $this->assertNotNull($rule, "Phase 4 directory '{$dir}' must have a rule");
         $this->assertNotSame(
-            \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
+            \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_OPAQUE_INTERNAL,
             $rule->mode,
             "Phase 4 directory '{$dir}' must NOT be opaque_internal anymore",
         );
@@ -2056,7 +2056,7 @@ class ModuleStructureValidatorTest extends TestCase
         // vs <package>/src/Domain/Contract) and serve different purposes:
         // framework-level vs module-level interfaces. Both rules must
         // coexist cleanly.
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $framework = $spec->ruleFor('Contract');
         $domain    = $spec->ruleFor('Domain/Contract');
         $this->assertNotNull($framework, 'framework Contract rule must exist');
@@ -2250,7 +2250,7 @@ class ModuleStructureValidatorTest extends TestCase
     {
         // Phase 5: OpenApi's allowed children are now Schema/ + Route/
         // only (Attribute/ removed). Confirm the spec.
-        $spec = (new \Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
+        $spec = (new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader(dirname(__DIR__, 7)))->load();
         $openApi = $spec->ruleFor('OpenApi');
         $this->assertNotNull($openApi);
         $this->assertSame(
@@ -2564,10 +2564,12 @@ class ModuleStructureValidatorTest extends TestCase
     public function test_application_db_mysql_model_repository_passes_canonical_pattern(): void
     {
         // ACCEPTANCE 1-6 (Application/Db round): a package using the canonical
-        // persistence-implementation layer must pass cleanly.
+        // persistence-implementation layer must pass cleanly. Mapper/ is a
+        // peer of Model/, not a child of it.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Application/Db/MySQL/Model',
+            'src/Application/Db/MySQL/Mapper',
             'src/Application/Db/MySQL/Repository',
             'src/Domain/Model',
             'src/Domain/Contract',
@@ -2575,7 +2577,7 @@ class ModuleStructureValidatorTest extends TestCase
         // The actual MachineCredential filenames the user listed:
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/MachineCredentialResource.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/MachineCredentialResourceModel.php', "<?php\n");
-        $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/MachineCredentialMapper.php', "<?php\n");
+        $this->writePackageFile('api', 'src/Application/Db/MySQL/Mapper/MachineCredentialMapper.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Repository/MachineCredentialRepository.php', "<?php\n");
         // Domain remains clean (entity + interface only).
         $this->writePackageFile('api', 'src/Domain/Model/MachineCredential.php', "<?php\n");
@@ -2591,18 +2593,19 @@ class ModuleStructureValidatorTest extends TestCase
     public function test_every_supported_orm_adapter_passes_with_canonical_filenames(string $adapter): void
     {
         // ACCEPTANCE 1+2: every officially supported adapter must accept the
-        // canonical persistence-class filenames (Resource / ResourceModel /
-        // Mapper under Model/, Repository under Repository/).
+        // canonical persistence-class filenames (Resource / ResourceModel
+        // under Model/, Mapper under Mapper/, Repository under Repository/).
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Application/Db/' . $adapter . '/Model',
+            'src/Application/Db/' . $adapter . '/Mapper',
             'src/Application/Db/' . $adapter . '/Repository',
             'src/Domain/Model',
             'src/Domain/Contract',
         ], ['composer.json', 'LICENSE', 'README.md']);
         $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Model/UserResource.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Model/UserResourceModel.php', "<?php\n");
-        $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Model/UserMapper.php', "<?php\n");
+        $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Mapper/UserMapper.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Repository/UserRepository.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->package('api'));
@@ -2662,8 +2665,9 @@ class ModuleStructureValidatorTest extends TestCase
      */
     public function test_undeclared_subtree_under_supported_adapter_fails(string $adapter): void
     {
-        // ACCEPTANCE 4: Application/Db/<Adapter> accepts only Model/ + Repository/.
-        // Anything else fails — keeps the persistence layer narrowly scoped.
+        // ACCEPTANCE 4: Application/Db/<Adapter> accepts only Model/, Mapper/,
+        // and Repository/. Anything else fails — keeps the persistence layer
+        // narrowly scoped.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Application/Db/' . $adapter . '/Migration', // not in the allowlist
@@ -2683,9 +2687,10 @@ class ModuleStructureValidatorTest extends TestCase
     public function test_db_model_leaf_rejects_non_persistence_filenames(string $adapter, string $invalidFile): void
     {
         // ACCEPTANCE 5: Application/Db/<Adapter>/Model rejects anything that
-        // is not *Resource.php / *ResourceModel.php / *Mapper.php. This stops
-        // AI agents from dropping ad-hoc Service/Helper/Manager classes into
-        // the persistence model layer.
+        // is not *Resource.php / *ResourceModel.php. *Mapper.php belongs in
+        // the peer Mapper/ sub-tree. This stops AI agents from dropping
+        // ad-hoc Service/Helper/Manager classes into the persistence model
+        // layer AND from co-locating mappers next to resource models.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Application/Db/' . $adapter . '/Model',
@@ -2709,7 +2714,81 @@ class ModuleStructureValidatorTest extends TestCase
     {
         $cases = [];
         foreach (['MySQL', 'SQLite'] as $adapter) {
-            foreach (['SomeService.php', 'SomeManager.php', 'SomeHelper.php', 'SomeFactory.php', 'Helper.php', 'PlainClass.php'] as $bad) {
+            foreach ([
+                'SomeService.php',
+                'SomeManager.php',
+                'SomeHelper.php',
+                'SomeFactory.php',
+                'Helper.php',
+                'PlainClass.php',
+                // Canonical violation: mappers belong under
+                // Application/Db/<Adapter>/Mapper/, never under Model/.
+                'WorkflowInstanceMapper.php',
+                'UserMapper.php',
+                'Mapper.php',
+            ] as $bad) {
+                $cases[$adapter . ': ' . $bad] = [$adapter, $bad];
+            }
+        }
+        return $cases;
+    }
+
+    /**
+     * @dataProvider supported_orm_adapters
+     */
+    public function test_db_mapper_leaf_passes_canonical_pattern(string $adapter): void
+    {
+        // Application/Db/<Adapter>/Mapper/ accepts *Mapper.php files. This is
+        // the canonical home for persistence mappers, peer to Model/.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Application/Db/' . $adapter . '/Mapper',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+        $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Mapper/UserMapper.php', "<?php\n");
+        $this->writePackageFile('api', 'src/Application/Db/' . $adapter . '/Mapper/WorkflowInstanceMapper.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $this->assertEmpty($violations, "adapter '{$adapter}' Mapper/ canonical layout must pass — got:\n" . $this->renderViolations($violations));
+    }
+
+    /**
+     * @dataProvider db_mapper_invalid_filenames
+     */
+    public function test_db_mapper_leaf_rejects_non_mapper_filenames(string $adapter, string $invalidFile): void
+    {
+        // Mapper/ is a peer of Model/ — it accepts *Mapper.php only. Resource
+        // models and any other class drift fail with invalid_location.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Application/Db/' . $adapter . '/Mapper',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+        $this->writePackageFile(
+            'api',
+            'src/Application/Db/' . $adapter . '/Mapper/' . $invalidFile,
+            "<?php\n",
+        );
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $this->assertHasViolationAt(
+            $violations,
+            ModuleStructureViolation::CODE_INVALID_LOCATION,
+            'packages/semitexa-api/src/Application/Db/' . $adapter . '/Mapper/' . $invalidFile,
+        );
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function db_mapper_invalid_filenames(): array
+    {
+        $cases = [];
+        foreach (['MySQL', 'SQLite'] as $adapter) {
+            foreach ([
+                'UserResource.php',
+                'UserResourceModel.php',
+                'UserRepository.php',
+                'SomeService.php',
+                'SomeFactory.php',
+                'PlainClass.php',
+            ] as $bad) {
                 $cases[$adapter . ': ' . $bad] = [$adapter, $bad];
             }
         }
@@ -2759,12 +2838,14 @@ class ModuleStructureValidatorTest extends TestCase
         // Feature subgrouping (Customer/Order/...) is allowed AND the file
         // pattern still applies at any depth — UserResource.php deep inside
         // a feature group is OK; UserService.php deep inside fires.
+        // Mapper/ subgroups behave the same way (peer sub-tree).
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Application/Db/MySQL/Model/Customer/Order',
+            'src/Application/Db/MySQL/Mapper/Customer/Order',
         ], ['composer.json', 'LICENSE', 'README.md']);
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/Customer/Order/OrderResource.php', "<?php\n");
-        $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/Customer/Order/OrderMapper.php',   "<?php\n");
+        $this->writePackageFile('api', 'src/Application/Db/MySQL/Mapper/Customer/Order/OrderMapper.php',  "<?php\n");
 
         $violations = $this->validator()->validate($this->package('api'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -2805,17 +2886,19 @@ class ModuleStructureValidatorTest extends TestCase
 
     public function test_domain_model_holds_entities_application_db_holds_resources(): void
     {
-        // The split: Domain/Model = entity types; Application/Db = resources +
-        // mappers + concrete repos. A canonical package keeps both clean.
+        // The split: Domain/Model = entity types; Application/Db = resources
+        // (under Model/) + mappers (under Mapper/) + concrete repos. A
+        // canonical package keeps all three clean.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Domain/Model',
             'src/Application/Db/MySQL/Model',
+            'src/Application/Db/MySQL/Mapper',
         ], ['composer.json', 'LICENSE', 'README.md']);
         $this->writePackageFile('api', 'src/Domain/Model/Customer.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/CustomerResource.php', "<?php\n");
         $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/CustomerResourceModel.php', "<?php\n");
-        $this->writePackageFile('api', 'src/Application/Db/MySQL/Model/CustomerMapper.php', "<?php\n");
+        $this->writePackageFile('api', 'src/Application/Db/MySQL/Mapper/CustomerMapper.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->package('api'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -2931,9 +3014,11 @@ class ModuleStructureValidatorTest extends TestCase
 
     public function test_package_tests_directory_is_not_flagged_as_pollution(): void
     {
-        // ACCEPTANCE 6: packages/semitexa-api/tests/Demo (test fixtures) is
-        // the legitimate location for demo-named test scaffolding. The
-        // pollution scan deliberately skips the `tests/` sub-tree.
+        // ACCEPTANCE 6: the entire tests/ sub-tree is exempt from the
+        // production-package pollution scan. Test fixtures and test cases
+        // are free to use demo-named directories (e.g. tests/Fixtures/Demo
+        // for fixture classes, or a hypothetical tests/Demo for fixture-
+        // driven test cases) without tripping the rule.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'tests/Fixtures/Demo',

@@ -65,7 +65,7 @@ final class OwnershipBoundaryTest extends TestCase
 
     public function testDevCapabilityRegistryDoesNotAdvertiseUpdateLifecycle(): void
     {
-        $registry = file_get_contents(__DIR__ . '/../../src/Capability/CapabilityRegistry.php');
+        $registry = file_get_contents(__DIR__ . '/../../src/Application/Service/Capability/CapabilityRegistry.php');
         self::assertIsString($registry);
 
         foreach (['deploy:auto', 'deploy:check', 'deploy:bootstrap-remote', 'deploy:materialize-release-composer'] as $name) {

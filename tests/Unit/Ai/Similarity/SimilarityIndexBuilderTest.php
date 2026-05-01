@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Similarity;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Similarity\SimilarityIndexBuilder;
+use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
 
 class SimilarityIndexBuilderTest extends TestCase
 {

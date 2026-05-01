@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Similarity;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Similarity\DuplicateDetector;
-use Semitexa\Dev\Ai\Similarity\DuplicateGate;
-use Semitexa\Dev\Ai\Similarity\DuplicateQuery;
-use Semitexa\Dev\Ai\Similarity\IndexedArtifact;
-use Semitexa\Dev\Ai\Similarity\SimilarityIndex;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
+use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
+use Semitexa\Dev\Application\Service\Ai\Similarity\IndexedArtifact;
+use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndex;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;

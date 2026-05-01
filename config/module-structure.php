@@ -29,9 +29,9 @@ declare(strict_types=1);
  * the *approved* architecture, not the current state.
  */
 
-use Semitexa\Dev\Ai\Verify\Structure\FilePlacementRule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureRule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpec;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\FilePlacementRule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec;
 
 $rule = static fn (...$args): ModuleStructureRule => new ModuleStructureRule(...$args);
 
@@ -174,18 +174,21 @@ $codeRoot = [
     // holds the storage-specific classes that implement those contracts.
     //
     // Narrow allowlist: only adapter directories named in the
-    // `$persistenceAdapters` list above are permitted, and each adapter only
-    // carries `Model/` (resource models + mappers) and `Repository/` (concrete
-    // repository implementations). Anything else under Application/Db/ fails —
-    // adding a new adapter (e.g. `Postgres/`) requires shipping an adapter
-    // class in `semitexa-orm` AND adding it to `$persistenceAdapters` AND
-    // updating MODULE_STRUCTURE.md.
+    // `$persistenceAdapters` list above are permitted, and each adapter
+    // carries three peer sub-trees — `Model/` (resource models),
+    // `Mapper/` (persistence mappers), and `Repository/` (concrete repository
+    // implementations). Anything else under Application/Db/ fails — adding
+    // a new adapter (e.g. `Postgres/`) requires shipping an adapter class in
+    // `semitexa-orm` AND adding it to `$persistenceAdapters` AND updating
+    // MODULE_STRUCTURE.md.
     //
     // Leaf rules are tight: only the canonical filename patterns are
-    // permitted. `Application/Db/<Adapter>/Model/` accepts `*Resource.php`,
-    // `*ResourceModel.php`, `*Mapper.php` only — `SomeService.php`,
+    // permitted. `Application/Db/<Adapter>/Model/` accepts `*Resource.php`
+    // and `*ResourceModel.php` only — `*Mapper.php` belongs in the peer
+    // `Mapper/` sub-tree, never in `Model/`. `SomeService.php`,
     // `SomeHelper.php`, `SomeManager.php` etc. are rejected with
     // `module_structure.invalid_location`.
+    // `Application/Db/<Adapter>/Mapper/` accepts `*Mapper.php` only.
     // `Application/Db/<Adapter>/Repository/` accepts `*Repository.php` only.
     $rule(
         path: 'Application/Db',
@@ -195,21 +198,29 @@ $codeRoot = [
 ];
 
 // Derive per-adapter rules from the canonical list (single source of truth).
-$dbModelFilePatterns = ['/(Resource|ResourceModel|Mapper)\.php$/'];
+$dbModelFilePatterns = ['/(Resource|ResourceModel)\.php$/'];
+$dbMapperFilePatterns = ['/Mapper\.php$/'];
 $dbRepositoryFilePatterns = ['/Repository\.php$/'];
 
 foreach ($persistenceAdapters as $adapter) {
     $codeRoot[] = $rule(
         path: 'Application/Db/' . $adapter,
-        allowedDirectories: ['Model', 'Repository'],
-        rationale: $adapter . ' persistence adapter; only Model/ (resource models + mappers) and Repository/ (concrete repository implementations).',
+        allowedDirectories: ['Model', 'Mapper', 'Repository'],
+        rationale: $adapter . ' persistence adapter; three peer sub-trees: Model/ (resource models), Mapper/ (persistence mappers), Repository/ (concrete repository implementations).',
     );
     $codeRoot[] = $rule(
         path: 'Application/Db/' . $adapter . '/Model',
         allowFeatureGrouping: true,
         allowAnyFile: false,
         allowedFilePatterns: $dbModelFilePatterns,
-        rationale: 'Persistence model layer for ' . $adapter . ': only *Resource, *ResourceModel, *Mapper class files.',
+        rationale: 'Persistence model layer for ' . $adapter . ': only *Resource and *ResourceModel class files. *Mapper.php belongs in the peer Mapper/ sub-tree.',
+    );
+    $codeRoot[] = $rule(
+        path: 'Application/Db/' . $adapter . '/Mapper',
+        allowFeatureGrouping: true,
+        allowAnyFile: false,
+        allowedFilePatterns: $dbMapperFilePatterns,
+        rationale: 'Persistence mapper layer for ' . $adapter . ': only *Mapper class files. Resource models belong in the peer Model/ sub-tree.',
     );
     $codeRoot[] = $rule(
         path: 'Application/Db/' . $adapter . '/Repository',
@@ -963,6 +974,12 @@ $packageRoot = new ModuleStructureRule(
         '.phpunit.cache',
         'commands',
         'scaffold',
+        // `config/` is the canonical envelope slot for package-local
+        // module-structure extensions (`config/module-structure.php`).
+        // Loader: ModuleStructureSpecLoader merges any extension found
+        // there. NOT a wildcard for arbitrary package config — the only
+        // file the validator currently consumes here is module-structure.php.
+        'config',
     ],
     allowedFiles: [
         'composer.json',

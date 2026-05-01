@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Generation\Builder;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Convention\ConventionStore;
-use Semitexa\Dev\Ai\Convention\HandlerInjection;
-use Semitexa\Dev\Ai\Convention\ModuleConventions;
-use Semitexa\Dev\Generation\Builder\HandlerPlanBuilder;
-use Semitexa\Dev\Generation\Support\NameInflector;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
-use Semitexa\Dev\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Application\Service\Ai\Convention\ConventionStore;
+use Semitexa\Dev\Application\Service\Ai\Convention\HandlerInjection;
+use Semitexa\Dev\Application\Service\Ai\Convention\ModuleConventions;
+use Semitexa\Dev\Application\Service\Generation\Builder\HandlerPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
 
 class HandlerPlanBuilderTest extends TestCase
 {

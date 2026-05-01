@@ -6,9 +6,9 @@ namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Capability\CapabilityRegistry;
-use Semitexa\Dev\Generation\Data\CapabilityManifest;
-use Semitexa\Dev\Generation\Support\CapabilityManifestFormatter;
+use Semitexa\Dev\Application\Service\Capability\CapabilityRegistry;
+use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
+use Semitexa\Dev\Application\Service\Generation\Support\CapabilityManifestFormatter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;

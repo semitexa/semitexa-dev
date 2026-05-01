@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\Structure\DetectedModule;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureSpecLoader;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureValidator;
-use Semitexa\Dev\Ai\Verify\Structure\ModuleStructureViolation;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
 
 /**
  * Repo-wide crash test fixtures pinned to the synthetic-package model.

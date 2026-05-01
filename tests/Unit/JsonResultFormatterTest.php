@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Data\GenerationResult;
-use Semitexa\Dev\Generation\Support\JsonResultFormatter;
+use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
+use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 
 class JsonResultFormatterTest extends TestCase
 {

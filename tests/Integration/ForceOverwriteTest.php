@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Builder\PayloadPlanBuilder;
-use Semitexa\Dev\Generation\Data\PlannedFile;
-use Semitexa\Dev\Generation\Support\NameInflector;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
-use Semitexa\Dev\Generation\Support\TemplateResolver;
-use Semitexa\Dev\Generation\Writer\SafeFileWriter;
+use Semitexa\Dev\Application\Service\Generation\Builder\PayloadPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Application\Service\Generation\Writer\SafeFileWriter;
 
 class ForceOverwriteTest extends TestCase
 {
