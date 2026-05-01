@@ -121,12 +121,12 @@ final class MakePayloadCommand extends BaseCommand
                     'fill_targets' => [
                         "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                             'Add properties for request parameters',
-                            'Implement validation rules in validate()',
+                            'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                         ],
                     ],
                     'facts' => [
                         'Payload classes are auto-discovered via #[AsPayload] attribute',
-                        'ValidatablePayload::validate() runs before the handler',
+                        'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                     ],
                     'constraints' => [
                         'Do not add constructor — properties are hydrated via setters or public access',
@@ -162,12 +162,12 @@ final class MakePayloadCommand extends BaseCommand
                 'fill_targets' => [
                     "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                         'Add properties for request parameters',
-                        'Implement validation rules in validate()',
+                        'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                     ],
                 ],
                 'facts' => [
                     'Payload classes are auto-discovered via #[AsPayload] attribute',
-                    'ValidatablePayload::validate() runs before the handler',
+                    'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                 ],
                 'constraints' => [
                     'Do not add constructor — properties are hydrated via setters or public access',

@@ -877,14 +877,12 @@ $codeRoot[] = $rule(
 // implemented by the framework runtime. Domain/Contract is the canonical
 // home for module/domain-level interfaces (including repository
 // interfaces). See MODULE_STRUCTURE.md "Contract vs Domain/Contract" for
-// the distinction. Most files here end in Interface; ValidatablePayload
-// is the one non-Interface contract base.
+// the distinction. Every file here must end in `Interface.php`.
 $codeRoot[] = $rule(
     path: 'Contract',
     mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
     allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*Interface\.php$/'],
-    allowedFiles: ['ValidatablePayload.php'],
-    rationale: 'Framework-wide contracts (TypedHandlerInterface, ExceptionResponseMapperInterface, …). Leaf — *Interface.php basenames plus the ValidatablePayload contract base. NOT the same layer as Domain/Contract (module-level interfaces); see MODULE_STRUCTURE.md.',
+    rationale: 'Framework-wide contracts (TypedHandlerInterface, ExceptionResponseMapperInterface, …). Leaf — *Interface.php basenames only. NOT the same layer as Domain/Contract (module-level interfaces); see MODULE_STRUCTURE.md.',
 );
 
 // Locale — leaf for locale context types. Currently 2 files

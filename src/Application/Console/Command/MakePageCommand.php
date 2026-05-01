@@ -91,7 +91,7 @@ final class MakePageCommand extends BaseCommand
                     'fill_targets' => [
                         "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                             'Add properties for request parameters',
-                            'Implement validation rules in validate()',
+                            'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                         ],
                         "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                             'Implement business logic in handle()',
@@ -112,7 +112,7 @@ final class MakePageCommand extends BaseCommand
                     'constraints' => [
                         'Handler must be final class',
                         'Resource must extend HtmlResponse and implement ResourceInterface',
-                        'Payload must implement ValidatablePayload',
+                        'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                     ],
                     'suggested_next_prompt' => "Open the handler at src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
                 ]));
@@ -146,7 +146,7 @@ final class MakePageCommand extends BaseCommand
                 'fill_targets' => [
                     "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                         'Add properties for request parameters',
-                        'Implement validation rules in validate()',
+                        'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                     ],
                     "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                         'Implement business logic in handle()',
@@ -167,7 +167,7 @@ final class MakePageCommand extends BaseCommand
                 'constraints' => [
                     'Handler must be final class',
                     'Resource must extend HtmlResponse and implement ResourceInterface',
-                    'Payload must implement ValidatablePayload',
+                    'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                 ],
                 'suggested_next_prompt' => "Open the handler at src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
             ]));

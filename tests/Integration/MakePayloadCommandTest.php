@@ -39,7 +39,9 @@ class MakePayloadCommandTest extends TestCase
         $this->assertStringContainsString("methods: ['GET']", $file->content);
         $this->assertStringContainsString('PricingResponse::class', $file->content);
         $this->assertStringContainsString('#[PublicEndpoint]', $file->content);
-        $this->assertStringContainsString('implements ValidatablePayload', $file->content);
+        $this->assertStringNotContainsString('ValidatablePayload', $file->content);
+        $this->assertStringNotContainsString('PayloadValidationResult', $file->content);
+        $this->assertStringNotContainsString('public function validate(', $file->content);
         $this->assertPhpSyntaxValid($file->content);
     }
 

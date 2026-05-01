@@ -11,10 +11,6 @@ namespace {{namespace}};
     methods: ['{{method}}'],
     responseWith: {{responseClass}}::class,
 )]
-{{publicEndpoint}}class {{className}} implements ValidatablePayload
+{{publicEndpoint}}class {{className}}
 {
-    public function validate(): PayloadValidationResult
-    {
-        return new PayloadValidationResult(true, []);
-    }
 }

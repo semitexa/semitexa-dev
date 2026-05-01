@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Semitexa\Modules\Website\Application\Payload\Request;
 
 use Semitexa\Core\Attribute\AsPayload;
-use Semitexa\Core\Contract\ValidatablePayload;
-use Semitexa\Core\Http\PayloadValidationResult;
 use Semitexa\Modules\Website\Application\Resource\Response\ContactFormResponse;
 
 #[AsPayload(
@@ -14,10 +12,6 @@ use Semitexa\Modules\Website\Application\Resource\Response\ContactFormResponse;
     methods: ['POST'],
     responseWith: ContactFormResponse::class,
 )]
-class ContactFormPayload implements ValidatablePayload
+class ContactFormPayload
 {
-    public function validate(): PayloadValidationResult
-    {
-        return new PayloadValidationResult(true, []);
-    }
 }

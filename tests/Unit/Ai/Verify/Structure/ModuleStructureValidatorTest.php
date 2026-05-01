@@ -2022,13 +2022,13 @@ class ModuleStructureValidatorTest extends TestCase
     {
         // semitexa-core/src/Contract holds framework-level interfaces.
         // Distinct from Domain/Contract (module-level interfaces).
+        // Every file in this leaf must end in Interface.php.
         $this->scaffoldPackage('core', [
             'src/Application/Handler/PayloadHandler',
             'src/Contract',
         ], ['composer.json', 'LICENSE', 'README.md']);
         $this->writePackageFile('core', 'src/Contract/TypedHandlerInterface.php',         "<?php\n");
         $this->writePackageFile('core', 'src/Contract/RouteMetadataResolverInterface.php', "<?php\n");
-        $this->writePackageFile('core', 'src/Contract/ValidatablePayload.php',             "<?php\n");
 
         $violations = $this->validator()->validate($this->package('core'));
         $this->assertEmpty($violations, $this->renderViolations($violations));

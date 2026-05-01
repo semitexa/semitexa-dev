@@ -34,8 +34,6 @@ final class PayloadPlanBuilder
 
         $imports = [
             'use Semitexa\\Core\\Attribute\\AsPayload;',
-            'use Semitexa\\Core\\Contract\\ValidatablePayload;',
-            'use Semitexa\\Core\\Http\\PayloadValidationResult;',
             "use {$responseNamespace}\\{$responseClass};",
         ];
 
