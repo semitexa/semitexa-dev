@@ -26,7 +26,7 @@ final class PagePlanBuilder
     }
 
     /**
-     * @param array{module: string, name: string, path: string, method: string, layout?: string, public: bool, withAssets: bool, dryRun: bool} $params
+     * @param array{module: string, name: string, path: string, method: string, layout?: string, access: string, withAssets: bool, dryRun: bool} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -40,7 +40,7 @@ final class PagePlanBuilder
             'path' => $params['path'],
             'method' => $params['method'],
             'response' => $name,
-            'public' => $params['public'],
+            'access' => $params['access'],
             'dryRun' => false,
         ]);
 

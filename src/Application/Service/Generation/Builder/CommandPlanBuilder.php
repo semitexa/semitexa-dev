@@ -25,16 +25,19 @@ final class CommandPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
-        $className = $this->inflector->toStudly($params['name']);
-        if (!str_ends_with($className, 'Command')) {
-            $className .= 'Command';
-        }
+        // Single source of truth for command-class normalization. Handles
+        // every input shape (sync, sync-command, sync_command, syncCommand,
+        // SyncCommand, SYNC_COMMAND, synccommand) → SyncCommand, with no
+        // CommandCommand duplication. See NameInflector::withSuffix.
+        $className = $this->inflector->toCommandClass($params['name']);
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Command";
+        // Canonical: Application/Console/Command/ — required by the
+        // module-structure validator (see packages/semitexa-docs/docs/MODULE_STRUCTURE.md).
+        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Console\\Command";
 
         $imports = [
-            'use Semitexa\\Core\\Attributes\\AsCommand;',
-            'use Semitexa\\Core\\Console\\Command\\BaseCommand;',
+            'use Semitexa\\Core\\Attribute\\AsCommand;',
+            'use Semitexa\\Core\\Console\\BaseCommand;',
             'use Symfony\\Component\\Console\\Input\\InputInterface;',
             'use Symfony\\Component\\Console\\Output\\OutputInterface;',
             'use Symfony\\Component\\Console\\Style\\SymfonyStyle;',
@@ -51,7 +54,7 @@ final class CommandPlanBuilder
             'className' => $className,
         ], 'make:command');
 
-        $filePath = "src/modules/{$module}/Application/Command/{$className}.php";
+        $filePath = "src/modules/{$module}/Application/Console/Command/{$className}.php";
 
         return new GenerationPlan(
             command: 'make:command',

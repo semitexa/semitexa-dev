@@ -147,14 +147,15 @@ final class SimilarityIndexBuilder
     }
 
     /**
-     * Pull `path:` and `methods:` / `method:` from #[AsPayload(...)].
+     * Pull `path:` and `methods:` / `method:` from any payload-route attribute
+     * (#[AsPublicPayload], #[AsProtectedPayload], #[AsServicePayload]).
      *
      * @return array<string, string>
      */
     private function readPayloadExtras(string $source): array
     {
         $extras = [];
-        if (preg_match('/#\[\s*AsPayload\b(.*?)\]/s', $source, $m) === 1) {
+        if (preg_match('/#\[\s*As(?:Public|Protected|Service)Payload\b(.*?)\]/s', $source, $m) === 1) {
             $args = $m[1];
             if (preg_match("/path\s*:\s*['\"]([^'\"]+)['\"]/", $args, $pm) === 1) {
                 $extras['route_path'] = $pm[1];

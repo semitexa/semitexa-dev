@@ -41,7 +41,7 @@ class ForceOverwriteTest extends TestCase
             'path' => '/force-test',
             'method' => 'GET',
             'response' => 'ForceTest',
-            'public' => false,
+            'access' => 'protected',
             'dryRun' => false,
         ]);
 

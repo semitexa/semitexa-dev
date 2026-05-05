@@ -46,7 +46,7 @@ final class ModulePlanBuilder
             new PlannedFile("{$base}/Application/Handler/PayloadHandler/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Application/Resource/Response/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Application/Handler/DomainListener/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/Command/.gitkeep", $gitkeep, FileType::PhpClass),
+            new PlannedFile("{$base}/Application/Console/Command/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Application/View/templates/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Domain/Service/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Domain/Contract/.gitkeep", $gitkeep, FileType::PhpClass),

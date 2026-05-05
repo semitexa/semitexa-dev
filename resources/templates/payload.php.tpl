@@ -6,11 +6,11 @@ namespace {{namespace}};
 
 {{imports}}
 
-#[AsPayload(
+#[{{accessAttribute}}(
     path: '{{path}}',
     methods: ['{{method}}'],
     responseWith: {{responseClass}}::class,
 )]
-{{publicEndpoint}}class {{className}}
+class {{className}}
 {
 }

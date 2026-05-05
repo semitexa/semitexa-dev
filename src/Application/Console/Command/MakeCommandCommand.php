@@ -78,12 +78,11 @@ final class MakeCommandCommand extends BaseCommand
 
             if ($input->getOption('llm-hints')) {
                 $module = $inflector->toStudly($input->getOption('module'));
-                $name = $inflector->toStudly($input->getOption('name'));
-                $className = str_ends_with($name, 'Command') ? $name : $name . 'Command';
+                $className = $inflector->toCommandClass($input->getOption('name'));
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('command_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Command/{$className}.php" => [
+                        "src/modules/{$module}/Application/Console/Command/{$className}.php" => [
                             'Add arguments and options in configure()',
                             'Implement command logic in execute()',
                         ],
@@ -119,12 +118,11 @@ final class MakeCommandCommand extends BaseCommand
 
         if ($input->getOption('llm-hints')) {
             $module = $inflector->toStudly($input->getOption('module'));
-            $name = $inflector->toStudly($input->getOption('name'));
-            $className = str_ends_with($name, 'Command') ? $name : $name . 'Command';
+            $className = $inflector->toCommandClass($input->getOption('name'));
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('command_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Command/{$className}.php" => [
+                    "src/modules/{$module}/Application/Console/Command/{$className}.php" => [
                         'Add arguments and options in configure()',
                         'Implement command logic in execute()',
                     ],

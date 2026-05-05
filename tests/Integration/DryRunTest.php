@@ -26,7 +26,7 @@ class DryRunTest extends TestCase
             'path' => '/dry-run-test',
             'method' => 'GET',
             'response' => 'DryRunTest',
-            'public' => false,
+            'access' => 'protected',
             'dryRun' => true,
         ]);
 

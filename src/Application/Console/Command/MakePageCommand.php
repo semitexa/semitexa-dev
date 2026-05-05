@@ -31,7 +31,7 @@ final class MakePageCommand extends BaseCommand
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method')
             ->addOption('layout', null, InputOption::VALUE_REQUIRED, 'Layout template name')
-            ->addOption('public', null, InputOption::VALUE_NONE, 'Add #[PublicEndpoint]')
+            ->addOption('access', null, InputOption::VALUE_REQUIRED, 'Payload access type: public | protected | service', 'protected')
             ->addOption('with-assets', null, InputOption::VALUE_NONE, 'Generate CSS/JS/assets.json stubs')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
             ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
@@ -55,7 +55,7 @@ final class MakePageCommand extends BaseCommand
         $resolver = new TemplateResolver();
         $renderer = new TemplateRenderer();
         $builder = new PagePlanBuilder($inflector, $resolver, $renderer);
-        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'layout'], ['public', 'with-assets']);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'layout', 'access'], ['with-assets']);
 
         $plan = $builder->build([
             'module' => $input->getOption('module'),
@@ -63,7 +63,7 @@ final class MakePageCommand extends BaseCommand
             'path' => $input->getOption('path'),
             'method' => $input->getOption('method'),
             'layout' => $input->getOption('layout'),
-            'public' => (bool) $input->getOption('public'),
+            'access' => (string) $input->getOption('access'),
             'withAssets' => (bool) $input->getOption('with-assets'),
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);

@@ -16,5 +16,7 @@ interface NameInflectorInterface
 
     public function toResponseClass(string $input): string;
 
+    public function toCommandClass(string $input): string;
+
     public function toTemplateName(string $input): string;
 }

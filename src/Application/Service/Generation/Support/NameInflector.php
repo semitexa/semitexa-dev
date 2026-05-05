@@ -37,14 +37,32 @@ final class NameInflector implements NameInflectorInterface
         return $this->withSuffix($input, 'Response');
     }
 
+    public function toCommandClass(string $input): string
+    {
+        return $this->withSuffix($input, 'Command');
+    }
+
+    /**
+     * Strip a trailing $suffix case-insensitively, normalize the base via
+     * toStudly, and re-append the canonical $suffix. Always yields exactly
+     * one trailing $suffix, regardless of input casing or word separators.
+     *
+     * Examples (for $suffix = 'Command'):
+     *   sync, sync-command, sync_command, syncCommand, SyncCommand,
+     *   SYNC_COMMAND, synccommand                   → SyncCommand
+     *   UserImport, UserImportCommand, user-import  → UserImportCommand
+     *
+     * Edge case: when the input is the suffix itself (`Command` /
+     * `command`), the base is empty and the result is just the canonical
+     * suffix — never a doubled `CommandCommand`.
+     */
     private function withSuffix(string $input, string $suffix): string
     {
-        // If input already ends with the suffix (case-sensitive), return as-is after studly
-        if (str_ends_with($input, $suffix)) {
-            return $input;
+        $base = (string) preg_replace('/' . preg_quote($suffix, '/') . '$/i', '', $input);
+        if ($base === '') {
+            return $suffix;
         }
-
-        return $this->toStudly($input) . $suffix;
+        return $this->toStudly($base) . $suffix;
     }
 
     public function toTemplateName(string $input): string

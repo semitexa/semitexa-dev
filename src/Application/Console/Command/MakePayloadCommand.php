@@ -35,7 +35,7 @@ final class MakePayloadCommand extends BaseCommand
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method')
             ->addOption('response', null, InputOption::VALUE_REQUIRED, 'Response class name without suffix')
-            ->addOption('public', null, InputOption::VALUE_NONE, 'Add #[PublicEndpoint] attribute')
+            ->addOption('access', null, InputOption::VALUE_REQUIRED, 'Payload access type: public | protected | service', 'protected')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
             ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
@@ -66,14 +66,14 @@ final class MakePayloadCommand extends BaseCommand
             'path' => $input->getOption('path'),
             'method' => $input->getOption('method'),
             'response' => $input->getOption('response'),
-            'public' => (bool) $input->getOption('public'),
+            'access' => (string) $input->getOption('access'),
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         $module = $inflector->toStudly($input->getOption('module'));
         $payloadClassName = $inflector->toPayloadClass($input->getOption('name'));
         $payloadFqcn = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClassName}";
-        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response'], ['public']);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response', 'access'], []);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());
         $gateExit = $duplicateGate->run(
@@ -125,7 +125,7 @@ final class MakePayloadCommand extends BaseCommand
                         ],
                     ],
                     'facts' => [
-                        'Payload classes are auto-discovered via #[AsPayload] attribute',
+                        'Payload classes are auto-discovered via #[AsPublicPayload] / #[AsProtectedPayload] / #[AsServicePayload] (one is required)',
                         'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                     ],
                     'constraints' => [
@@ -166,7 +166,7 @@ final class MakePayloadCommand extends BaseCommand
                     ],
                 ],
                 'facts' => [
-                    'Payload classes are auto-discovered via #[AsPayload] attribute',
+                    'Payload classes are auto-discovered via #[AsPublicPayload] / #[AsProtectedPayload] / #[AsServicePayload] (one is required)',
                     'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                 ],
                 'constraints' => [

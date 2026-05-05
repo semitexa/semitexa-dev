@@ -59,7 +59,7 @@ final class CapabilityRegistry
                     'response' => ['type' => 'string', 'description' => 'Response class name without suffix (e.g., Pricing)'],
                 ],
                 optional_inputs: [
-                    'public' => ['type' => 'flag', 'description' => 'Add #[PublicEndpoint] attribute', 'default' => false],
+                    'access' => ['type' => 'string', 'description' => 'Payload access classification: public | protected | service', 'default' => 'protected'],
                     'dry-run' => ['type' => 'flag', 'description' => 'Show planned files without writing', 'default' => false],
                     'force' => ['type' => 'flag', 'description' => 'Overwrite existing files', 'default' => false],
                     'json' => ['type' => 'flag', 'description' => 'Output as JSON GenerationResult', 'default' => false],
@@ -136,7 +136,7 @@ final class CapabilityRegistry
                 ],
                 optional_inputs: [
                     'layout' => ['type' => 'string', 'description' => 'Layout template name'],
-                    'public' => ['type' => 'flag', 'description' => 'Add #[PublicEndpoint]', 'default' => false],
+                    'access' => ['type' => 'string', 'description' => 'Payload access classification: public | protected | service', 'default' => 'protected'],
                     'with-assets' => ['type' => 'flag', 'description' => 'Generate CSS/JS/assets.json stubs', 'default' => false],
                     'dry-run' => ['type' => 'flag', 'description' => 'Show planned files without writing', 'default' => false],
                     'force' => ['type' => 'flag', 'description' => 'Overwrite existing files', 'default' => false],
@@ -264,7 +264,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'command_class' => 'src/modules/{Module}/Application/Command/{Name}Command.php',
+                    'command_class' => 'src/modules/{Module}/Application/Console/Command/{Name}Command.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: [],

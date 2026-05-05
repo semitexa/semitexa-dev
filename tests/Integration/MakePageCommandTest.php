@@ -25,7 +25,7 @@ class MakePageCommandTest extends TestCase
             'name' => 'Pricing',
             'path' => '/pricing',
             'method' => 'GET',
-            'public' => true,
+            'access' => 'public',
             'withAssets' => false,
             'dryRun' => false,
         ]);
@@ -60,7 +60,7 @@ class MakePageCommandTest extends TestCase
             'name' => 'Pricing',
             'path' => '/pricing',
             'method' => 'GET',
-            'public' => false,
+            'access' => 'protected',
             'withAssets' => true,
             'dryRun' => false,
         ]);

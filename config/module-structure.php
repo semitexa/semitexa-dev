@@ -561,11 +561,16 @@ $codeRoot[] = $rule(
     rationale: 'Generic supporting utility classes (CodeExporter, ProjectRoot, Str, …). Leaf — no subdirectories. Helper/Util/Manager/Misc/Common-suffixed filenames are explicitly rejected to stop Support from becoming a dumping ground.',
 );
 
-// Validation — only `Trait/` is allowed; Trait holds *Trait.php classes.
+// Validation — PascalCase value-object/support classes at root +
+// traits under Trait/. Files at root must NOT end in Trait.php (those
+// live under Trait/) and must NOT carry Helper/Util/Manager/Misc/Common
+// suffixes that erode the namespace into a dumping ground.
 $codeRoot[] = $rule(
     path: 'Validation',
     allowedDirectories: ['Trait'],
-    rationale: 'Framework validation primitives. Only Trait/ sub-tree.',
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Trait|Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Framework validation primitives. PascalCase root-level value objects (Path, …); traits under Trait/.',
 );
 $codeRoot[] = $rule(
     path: 'Validation/Trait',
