@@ -80,7 +80,7 @@ class AiVerifyCommandTest extends TestCase
 
     public function test_lint_failures_propagate_to_verdict_and_exit_code(): void
     {
-        $tester = $this->newTester(failingLints: ['lint:handlers']);
+        $tester = $this->newTester(failingLints: ['semitexa:lint:handlers']);
         $exit = $tester->execute([
             '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
         ]);
@@ -92,7 +92,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertSame(1, $verdict['counts']['fail']);
 
         $resultLines = array_values(array_filter($lines, static fn($l) => $l['kind'] === 'result'));
-        $failingLint = array_filter($resultLines, static fn($l) => $l['result']['id'] === 'lint:lint:handlers');
+        $failingLint = array_filter($resultLines, static fn($l) => $l['result']['id'] === 'lint:semitexa:lint:handlers');
         $this->assertNotEmpty($failingLint);
         $failingLint = array_values($failingLint)[0];
         $this->assertSame('fail', $failingLint['result']['status']);
@@ -132,7 +132,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertArrayHasKey('counts', $payload);
     }
 
-    public function test_minimal_scope_runs_only_syntax(): void
+    public function test_minimal_scope_runs_syntax_and_structure_but_no_production_lints(): void
     {
         $tester = $this->newTester();
         $tester->execute([
@@ -142,8 +142,9 @@ class AiVerifyCommandTest extends TestCase
         ]);
 
         $payload = json_decode(trim($tester->getDisplay()), true);
-        $types = array_column($payload['targets'], 'type');
-        $this->assertSame(['syntax'], array_unique($types));
+        $types = array_unique(array_column($payload['targets'], 'type'));
+        sort($types);
+        $this->assertSame(['module_structure', 'syntax'], $types);
     }
 
     public function test_no_inputs_returns_error_envelope(): void
@@ -423,11 +424,11 @@ class AiVerifyCommandTest extends TestCase
         $app->add($verifyCommand);
 
         foreach ([
-            'lint:handlers',
-            'lint:di',
-            'lint:scoping',
-            'lint:responses',
-            'lint:templates',
+            'semitexa:lint:handlers',
+            'semitexa:lint:di',
+            'semitexa:lint:scoping',
+            'semitexa:lint:responses',
+            'semitexa:lint:templates',
         ] as $name) {
             $app->add(new class($name, in_array($name, $failingLints, true)) extends Command {
                 public function __construct(string $name, private readonly bool $shouldFail) {

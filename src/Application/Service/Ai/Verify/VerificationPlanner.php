@@ -31,21 +31,21 @@ final class VerificationPlanner
      * only when scope is effectively `broad`.
      */
     private const KIND_LINT_MAP = [
-        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di'],
-        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
-        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
-        ChangedFile::KIND_RESOURCE => ['lint:responses'],
-        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
-        ChangedFile::KIND_CONTRACT => ['lint:di'],
-        ChangedFile::KIND_TEMPLATE => ['lint:templates'],
+        ChangedFile::KIND_HANDLER  => ['semitexa:lint:handlers', 'semitexa:lint:di'],
+        ChangedFile::KIND_LISTENER => ['semitexa:lint:di', 'semitexa:lint:scoping'],
+        ChangedFile::KIND_PAYLOAD  => ['semitexa:lint:responses', 'semitexa:lint:di'],
+        ChangedFile::KIND_RESOURCE => ['semitexa:lint:responses'],
+        ChangedFile::KIND_SERVICE  => ['semitexa:lint:di', 'semitexa:lint:scoping'],
+        ChangedFile::KIND_CONTRACT => ['semitexa:lint:di'],
+        ChangedFile::KIND_TEMPLATE => ['semitexa:lint:templates'],
     ];
 
     private const ALL_LINTS = [
-        'lint:handlers',
-        'lint:di',
-        'lint:scoping',
-        'lint:responses',
-        'lint:templates',
+        'semitexa:lint:handlers',
+        'semitexa:lint:di',
+        'semitexa:lint:scoping',
+        'semitexa:lint:responses',
+        'semitexa:lint:templates',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -61,7 +61,7 @@ final class VerificationPlanner
     /**
      * @param list<ChangedFile> $changedFiles
      */
-    public function plan(array $changedFiles, string $requestedScope): VerificationPlan
+    public function plan(array $changedFiles, string $requestedScope, bool $isRepoWide = false): VerificationPlan
     {
         [$effectiveScope, $expansions] = $this->resolveEffectiveScope($requestedScope, $changedFiles);
 
@@ -112,10 +112,17 @@ final class VerificationPlanner
         foreach ($phpunitTargets as $target) {
             $targets[] = $target;
         }
-        if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL) {
-            foreach ($this->moduleStructureTargets($changedFiles) as $target) {
-                $targets[] = $target;
-            }
+
+        // Module structure runs at every scope (including `minimal`):
+        // structure violations are cheap to detect and are the worst kind of
+        // drift to leave for later, so they are non-optional.
+        foreach ($this->moduleStructureTargets($changedFiles) as $target) {
+            $targets[] = $target;
+        }
+
+        // PHPStan DI verification is expensive. We skip it in `minimal` scope
+        // unless this is a repo-wide run (where we want full assurance).
+        if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL || $isRepoWide) {
             $phpstanTarget = $this->phpstanDiTarget($changedFiles);
             if ($phpstanTarget !== null) {
                 $targets[] = $phpstanTarget;

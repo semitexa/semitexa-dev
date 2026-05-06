@@ -93,7 +93,7 @@ final class AiVerifyCommand extends BaseCommand
         /** @var list<ChangedFile> $changed */
 
         $planner = new VerificationPlanner($projectRoot, $classifier);
-        $plan = $planner->plan($changed, $scope);
+        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'));
 
         $app = $this->getApplication();
         if ($app === null) {
