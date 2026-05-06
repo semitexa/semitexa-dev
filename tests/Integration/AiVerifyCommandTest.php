@@ -7,10 +7,10 @@ namespace Semitexa\Dev\Tests\Integration;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
-use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceStore;
-use Semitexa\Dev\Console\Command\AiVerifyCommand;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
@@ -132,7 +132,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertArrayHasKey('counts', $payload);
     }
 
-    public function test_minimal_scope_runs_only_syntax(): void
+    public function test_minimal_scope_runs_syntax_and_structure_but_no_production_lints(): void
     {
         $tester = $this->newTester();
         $tester->execute([
@@ -142,8 +142,9 @@ class AiVerifyCommandTest extends TestCase
         ]);
 
         $payload = json_decode(trim($tester->getDisplay()), true);
-        $types = array_column($payload['targets'], 'type');
-        $this->assertSame(['syntax'], array_unique($types));
+        $types = array_unique(array_column($payload['targets'], 'type'));
+        sort($types);
+        $this->assertSame(['module_structure', 'syntax'], $types);
     }
 
     public function test_no_inputs_returns_error_envelope(): void
@@ -223,6 +224,171 @@ class AiVerifyCommandTest extends TestCase
         $this->assertStringNotContainsString('"trace_skipped"', $display);
     }
 
+    public function test_module_structure_check_emits_violation_events_and_fails_verdict(): void
+    {
+        // Plant a real module with an undeclared Application/ child on the
+        // temp root. (Application/Db is canonical; Application/Endpoint is not.)
+        // The validator scans the whole module — touching one file in it must
+        // surface the structure error even though only that file is changed.
+        $this->scaffoldModule('SomeApp', [
+            'Application/Handler/PayloadHandler',
+            'Application/Endpoint/Bogus', // not in Application allowlist
+        ]);
+
+        $tester = $this->newTester();
+        $exit = $tester->execute([
+            '--files' => 'src/modules/SomeApp/Application/Handler/PayloadHandler/IndexHandler.php',
+            '--json'  => true,
+        ]);
+
+        $this->assertSame(1, $exit, 'verdict must be fail when structure violations exist');
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $this->assertSame('fail', $payload['verdict']);
+
+        $this->assertNotEmpty($payload['violations'] ?? [], 'violations array must be populated');
+        $first = $payload['violations'][0];
+        $this->assertSame('module_structure', $first['check']);
+        $this->assertSame('error', $first['severity']);
+        $this->assertSame('module_structure.unknown_directory', $first['rule']);
+        $this->assertSame('src/modules/SomeApp', $first['module']);
+        $this->assertSame('src/modules/SomeApp/Application/Endpoint', $first['path']);
+        $this->assertSame('packages/semitexa-docs/docs/MODULE_STRUCTURE.md', $first['doc_ref']);
+
+        // The module_structure target is added at standard scope (and broad).
+        $types = array_unique(array_column($payload['targets'], 'type'));
+        $this->assertContains('module_structure', $types);
+
+        // next_command should point at the spec when structure failed.
+        $nextCmds = array_column($payload['next_command'], 'cmd');
+        $this->assertContains('cat', $nextCmds);
+    }
+
+    public function test_module_structure_check_passes_for_canonical_layout(): void
+    {
+        $this->scaffoldModule('OkApp', [
+            'Application/Handler/PayloadHandler',
+            'Application/Payload/Request',
+            'Application/Resource/Response',
+            'Domain/Model',
+        ]);
+
+        $tester = $this->newTester();
+        $exit = $tester->execute([
+            '--files' => 'src/modules/OkApp/Application/Handler/PayloadHandler/Idx.php',
+            '--json'  => true,
+        ]);
+
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $this->assertSame(0, $exit, 'verdict must be pass for a canonical module');
+        $this->assertSame('pass', $payload['verdict']);
+        $this->assertEmpty($payload['violations'] ?? []);
+
+        // Module structure target was scheduled and resulted in pass.
+        $structureResults = array_filter(
+            $payload['results'],
+            static fn(array $r) => $r['type'] === 'module_structure',
+        );
+        $this->assertCount(1, $structureResults);
+        $this->assertSame('pass', array_values($structureResults)[0]['status']);
+    }
+
+    public function test_module_structure_target_emits_violation_ndjson_events(): void
+    {
+        // NDJSON mode (no --json) emits one `violation` event per diagnostic
+        // between the corresponding `result` event and `verdict`.
+        $this->scaffoldModule('SomeApp', [
+            'Application/Handler/PayloadHandler',
+            'Endpoint/Bogus',
+        ]);
+
+        $tester = $this->newTester();
+        $tester->execute([
+            '--files' => 'src/modules/SomeApp/Application/Handler/PayloadHandler/X.php',
+        ]);
+
+        $lines = $this->ndjsonLines($tester->getDisplay());
+        $violations = array_values(array_filter($lines, static fn(array $l) => ($l['kind'] ?? null) === 'violation'));
+        $this->assertNotEmpty($violations);
+        $first = $violations[0];
+        $this->assertSame('module_structure', $first['check']);
+        $this->assertSame('module_structure.unknown_directory', $first['rule']);
+        $this->assertSame('src/modules/SomeApp/Endpoint', $first['path']);
+        $this->assertSame('error', $first['severity']);
+        // target_id ties the event back to the structure target.
+        $this->assertStringStartsWith('module_structure:', $first['target_id']);
+    }
+
+    public function test_changed_files_outside_modules_skip_module_structure_target(): void
+    {
+        // Top-level docs/config files outside src/modules/* and
+        // packages/semitexa-* do not produce a module_structure target.
+        $tester = $this->newTester();
+        $tester->execute([
+            '--files' => 'docs/NOTES.md,composer.json',
+            '--json'  => true,
+        ]);
+
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $types = array_column($payload['targets'], 'type');
+        $this->assertNotContains('module_structure', $types);
+    }
+
+    public function test_package_root_schedules_module_structure_target(): void
+    {
+        $base = $this->tmpRoot . '/packages/semitexa-api';
+        mkdir($base . '/src/Application', 0755, true);
+        mkdir($base . '/tests', 0755, true);
+        file_put_contents($base . '/composer.json', '{}');
+        file_put_contents($base . '/LICENSE', '');
+        file_put_contents($base . '/README.md', '');
+
+        $tester = $this->newTester();
+        $exit = $tester->execute([
+            '--files' => 'packages/semitexa-api',
+            '--json'  => true,
+        ]);
+
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $this->assertSame(0, $exit);
+        $types = array_column($payload['targets'], 'type');
+        $this->assertContains('module_structure', $types);
+        $structure = array_values(array_filter(
+            $payload['results'],
+            static fn(array $r) => $r['type'] === 'module_structure',
+        ))[0] ?? null;
+        $this->assertNotNull($structure);
+        $this->assertSame('pass', $structure['status']);
+    }
+
+    public function test_full_module_is_validated_when_only_one_file_changes(): void
+    {
+        // The hard requirement: even if only one file is in the diff,
+        // validating that file's module must surface drift in any other
+        // part of the module. Demonstrates that the structure check is
+        // module-scoped, not file-scoped.
+        $this->scaffoldModule('DriftedApp', [
+            'Application/Payload/Request',
+            'Domain/Bogus', // R003 lives in a different sub-tree from the changed file
+        ]);
+
+        $tester = $this->newTester();
+        $tester->execute([
+            // Touch a file under Application/Payload/Request — far away
+            // from the offending Domain/Bogus directory.
+            '--files' => 'src/modules/DriftedApp/Application/Payload/Request/IndexPayload.php',
+            '--json'  => true,
+        ]);
+
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $this->assertSame('fail', $payload['verdict']);
+        $rules = array_column($payload['violations'] ?? [], 'rule');
+        $this->assertContains(
+            'module_structure.unknown_directory',
+            $rules,
+            'unrelated drift in the same module must be surfaced',
+        );
+    }
+
     public function test_files_option_accepts_multiple_comma_separated_paths(): void
     {
         $tester = $this->newTester();
@@ -295,6 +461,23 @@ class AiVerifyCommandTest extends TestCase
             }
         }
         return $lines;
+    }
+
+    /**
+     * @param list<string> $relativeDirs
+     */
+    private function scaffoldModule(string $name, array $relativeDirs): void
+    {
+        $base = $this->tmpRoot . '/src/modules/' . $name;
+        if (!is_dir($base)) {
+            mkdir($base, 0755, true);
+        }
+        foreach ($relativeDirs as $rel) {
+            $dir = $base . '/' . $rel;
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+        }
     }
 
     private function removeDir(string $dir): void

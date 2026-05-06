@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Verify\ChangedFile;
-use Semitexa\Dev\Ai\Verify\ProcessRunner;
-use Semitexa\Dev\Ai\Verify\VerificationExecutor;
-use Semitexa\Dev\Ai\Verify\VerificationPlan;
-use Semitexa\Dev\Ai\Verify\VerificationResult;
-use Semitexa\Dev\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -34,10 +34,10 @@ class VerificationExecutorTest extends TestCase
     public function test_lint_target_passes_when_command_exits_zero(): void
     {
         $app = new Application();
-        $app->add($this->fakeLintCommand('semitexa:lint:fake', 0, "Linting...\n[OK] all checks pass\n"));
+        $app->add($this->fakeLintCommand('lint:fake', 0, "Linting...\n[OK] all checks pass\n"));
 
         $plan = $this->planWith([
-            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:fake', 'r', [], commandName: 'semitexa:lint:fake'),
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:fake', 'r', [], commandName: 'lint:fake'),
         ]);
         $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
 
@@ -50,10 +50,10 @@ class VerificationExecutorTest extends TestCase
     public function test_lint_target_fails_with_signal_line_from_output(): void
     {
         $app = new Application();
-        $app->add($this->fakeLintCommand('semitexa:lint:fake', 1, "Linting...\n[ERROR] missing handler\n"));
+        $app->add($this->fakeLintCommand('lint:fake', 1, "Linting...\n[ERROR] missing handler\n"));
 
         $plan = $this->planWith([
-            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:fake', 'r', [], commandName: 'semitexa:lint:fake'),
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:fake', 'r', [], commandName: 'lint:fake'),
         ]);
         $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
 
@@ -65,7 +65,7 @@ class VerificationExecutorTest extends TestCase
     public function test_lint_target_skipped_when_command_not_registered(): void
     {
         $plan = $this->planWith([
-            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:nope', 'r', [], commandName: 'semitexa:lint:nope'),
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:nope', 'r', [], commandName: 'lint:nope'),
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, new RecordingProcessRunner()))->execute($plan);
 
@@ -180,6 +180,64 @@ class VerificationExecutorTest extends TestCase
         $this->assertNotContains('--no-output', $runner->calls[0]['command']);
         $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
         $this->assertStringContainsString('matched no tests', $results[0]->signal);
+    }
+
+    public function test_phpunit_target_runs_on_directory_without_filter_when_planner_supplies_dir_only(): void
+    {
+        // Phase 6f.5: fixture-suite targets carry a directory in
+        // `filePath` and no `testFilter`. The executor must run
+        // `phpunit <dir>` (no `--filter`) so phpunit walks the whole
+        // sub-tree and resolves any cross-file helper class
+        // declarations sibling tests rely on.
+        $bin = $this->root . '/vendor/bin';
+        mkdir($bin, 0755, true);
+        $binFile = $bin . '/phpunit';
+        file_put_contents($binFile, "#!/bin/sh\nexit 0\n");
+        chmod($binFile, 0755);
+        mkdir($this->root . '/packages/foo/tests/Unit/Resource', 0755, true);
+
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => 'OK (3 tests, 5 assertions)']);
+        $plan = $this->planWith([
+            new VerificationTarget(
+                VerificationTarget::TYPE_PHPUNIT,
+                'phpunit:packages/foo/tests/Unit/Resource',
+                'fixture changed — running enclosing suite',
+                [],
+                filePath: 'packages/foo/tests/Unit/Resource',
+                testFilter: null,
+            ),
+        ]);
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+
+        $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
+        $this->assertNotContains('--filter', $runner->calls[0]['command'], 'directory-scoped target must not pass --filter');
+        $this->assertContains('packages/foo/tests/Unit/Resource', $runner->calls[0]['command']);
+    }
+
+    public function test_phpunit_directory_target_skipped_when_directory_missing(): void
+    {
+        $bin = $this->root . '/vendor/bin';
+        mkdir($bin, 0755, true);
+        $binFile = $bin . '/phpunit';
+        file_put_contents($binFile, "#!/bin/sh\nexit 0\n");
+        chmod($binFile, 0755);
+
+        $runner = new RecordingProcessRunner();
+        $plan = $this->planWith([
+            new VerificationTarget(
+                VerificationTarget::TYPE_PHPUNIT,
+                'phpunit:vanished/dir',
+                'r',
+                [],
+                filePath: 'vanished/dir',
+                testFilter: null,
+            ),
+        ]);
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+
+        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertStringContainsString('no longer exists', $results[0]->signal);
+        $this->assertSame([], $runner->calls);
     }
 
     public function test_unknown_target_type_is_skipped(): void

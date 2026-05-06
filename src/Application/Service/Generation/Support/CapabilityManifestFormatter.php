@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Service\Generation\Support;
+
+use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
+
+final class CapabilityManifestFormatter
+{
+    public function format(CapabilityManifest $manifest): string
+    {
+        return json_encode($manifest->toArray(), JSON_UNESCAPED_SLASHES);
+    }
+}

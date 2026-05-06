@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Convention;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Convention\ConventionMiner;
-use Semitexa\Dev\Ai\Convention\HandlerInjection;
+use Semitexa\Dev\Application\Service\Ai\Convention\ConventionMiner;
+use Semitexa\Dev\Application\Service\Ai\Convention\HandlerInjection;
 
 class ConventionMinerTest extends TestCase
 {

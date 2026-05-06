@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Console\Command\AiAskCommand;
+use Semitexa\Dev\Application\Console\Command\AiAskCommand;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -132,6 +132,50 @@ class AiAskCommandTest extends TestCase
         $this->assertTrue($log[0]['options']['json']);
     }
 
+    public function test_path_subject_delegates_to_dev_graph_path(): void
+    {
+        $log = new \ArrayObject();
+        $tester = $this->newAskWithFakes($log);
+        $tester->execute([
+            'subject' => 'path',
+            '--path'  => 'packages/semitexa-orm/src/Adapter',
+            '--json'  => true,
+        ]);
+
+        $this->assertSame('dev:graph:path', $log[0]['command']);
+        $this->assertSame('packages/semitexa-orm/src/Adapter', $log[0]['options']['path']);
+        $this->assertTrue($log[0]['options']['json']);
+    }
+
+    public function test_subject_auto_defaults_to_path_when_only_path_provided(): void
+    {
+        $log = new \ArrayObject();
+        $tester = $this->newAskWithFakes($log);
+        $tester->execute([
+            // subject deliberately omitted; --path alone must auto-select 'path'
+            '--path' => 'packages/semitexa-orm/src/OrmManager.php',
+            '--json' => true,
+        ]);
+
+        $this->assertSame('dev:graph:path', $log[0]['command'], '--path without subject must route to dev:graph:path');
+        $this->assertSame('packages/semitexa-orm/src/OrmManager.php', $log[0]['options']['path']);
+    }
+
+    public function test_missing_subject_and_no_path_errors_clearly(): void
+    {
+        $app = new Application();
+        $app->add(new AiAskCommand());
+
+        $tester = new CommandTester($app->find('ai:ask'));
+        $exit = $tester->execute([]); // no subject, no --path
+
+        $this->assertSame(1, $exit);
+        $decoded = json_decode(trim($tester->getDisplay()), true);
+        $this->assertSame('error', $decoded['kind']);
+        $this->assertStringContainsString('missing subject', $decoded['error']);
+        $this->assertContains('path', $decoded['subjects']);
+    }
+
     public function test_target_command_exit_code_is_propagated(): void
     {
         $app = new Application();
@@ -194,6 +238,10 @@ class AiAskCommandTest extends TestCase
                 'context' => InputOption::VALUE_REQUIRED,
                 'list'    => InputOption::VALUE_NONE,
                 'json'    => InputOption::VALUE_NONE,
+            ],
+            'dev:graph:path' => [
+                'path' => InputOption::VALUE_REQUIRED,
+                'json' => InputOption::VALUE_NONE,
             ],
         ];
     }

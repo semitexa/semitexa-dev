@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Similarity;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Ai\Similarity\SimilarityIndexBuilder;
+use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
 
 class SimilarityIndexBuilderTest extends TestCase
 {
@@ -30,8 +30,8 @@ class SimilarityIndexBuilderTest extends TestCase
         file_put_contents($this->root . '/src/modules/Foo/Application/Payload/Request/GetThingPayload.php', <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Payload\\Request;
-use Semitexa\\Core\\Attribute\\AsPayload;
-#[AsPayload(path: '/foo/{id}', methods: ['GET'])]
+use Semitexa\\Authorization\\Attribute\\AsProtectedPayload;
+#[AsProtectedPayload(path: '/foo/{id}', methods: ['GET'])]
 final class GetThingPayload {}
 PHP);
         file_put_contents($this->root . '/src/modules/Foo/Application/Resource/Response/GetThingResponse.php', <<<PHP

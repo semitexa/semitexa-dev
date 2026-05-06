@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 class TemplateRendererTest extends TestCase
 {

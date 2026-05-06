@@ -7,12 +7,12 @@ namespace Semitexa\Dev\Tests\Unit\Console\Command;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Ai\Trace\TraceAutoAppender;
-use Semitexa\Dev\Ai\Trace\TraceStore;
-use Semitexa\Dev\Ai\Work\BacklogHygiene;
-use Semitexa\Dev\Ai\Work\EpicStore;
-use Semitexa\Dev\Ai\Work\TaskStore;
-use Semitexa\Dev\Console\Command\AiEpicCommand;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Work\BacklogHygiene;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
+use Semitexa\Dev\Application\Console\Command\AiEpicCommand;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
 

@@ -1,0 +1,29 @@
+## Focused PHPStan configuration used by `bin/semitexa ai:verify`.
+##
+## - level 0 — generic PHPStan checks are intentionally OFF; the project's
+##   own `phpstan.neon` runs them at level=max and is the home for that.
+## - Loads only the Semitexa-owned DI rules so ai:verify is the AI-facing
+##   shim around the same source of truth, not a parallel ruleset.
+## - No baseline is included: ai:verify must surface every DI violation on
+##   the changed file so an AI agent gets immediate, actionable feedback.
+## - Identifiers (`semitexa.injectionViaConstructor`, `semitexa.staticContainerAccess`,
+##   …) flow through to the NDJSON `violation` events verbatim.
+
+parameters:
+    level: 0
+    reportUnmatchedIgnoredErrors: false
+
+    # Single source of truth for the autoloader — re-uses the project's
+    # vendor/autoload.php so PHPStan can reflect Semitexa attributes.
+    bootstrapFiles:
+        - %currentWorkingDirectory%/vendor/autoload.php
+
+rules:
+    - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
+    - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
+    - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
+    - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
+    - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
+    - Semitexa\Core\PHPStan\Rules\ConfigOnClassTypeRule
+    - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
+    - Semitexa\Core\PHPStan\Rules\TraitInjectionRule

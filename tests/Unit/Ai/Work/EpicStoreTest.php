@@ -7,12 +7,12 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Ai\Work\Epic;
-use Semitexa\Dev\Ai\Work\EpicStatus;
-use Semitexa\Dev\Ai\Work\EpicStore;
-use Semitexa\Dev\Ai\Work\Task;
-use Semitexa\Dev\Ai\Work\TaskStatus;
-use Semitexa\Dev\Ai\Work\TaskStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Epic;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 
 class EpicStoreTest extends TestCase

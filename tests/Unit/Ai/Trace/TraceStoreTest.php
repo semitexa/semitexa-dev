@@ -6,9 +6,9 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Trace;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Ai\Trace\TraceEventKind;
-use Semitexa\Dev\Ai\Trace\TraceHeader;
-use Semitexa\Dev\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 
 /**
  * TraceStore is now a constructor-less #[AsService] that resolves its

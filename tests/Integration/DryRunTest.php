@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Builder\PayloadPlanBuilder;
-use Semitexa\Dev\Generation\Support\NameInflector;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
-use Semitexa\Dev\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Application\Service\Generation\Builder\PayloadPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
 
 class DryRunTest extends TestCase
 {
@@ -26,7 +26,7 @@ class DryRunTest extends TestCase
             'path' => '/dry-run-test',
             'method' => 'GET',
             'response' => 'DryRunTest',
-            'public' => false,
+            'access' => 'protected',
             'dryRun' => true,
         ]);
 

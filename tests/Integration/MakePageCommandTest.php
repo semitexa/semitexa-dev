@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Builder\PagePlanBuilder;
-use Semitexa\Dev\Generation\Support\NameInflector;
-use Semitexa\Dev\Generation\Support\TemplateRenderer;
-use Semitexa\Dev\Generation\Support\TemplateResolver;
+use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
 
 class MakePageCommandTest extends TestCase
 {
@@ -25,7 +25,7 @@ class MakePageCommandTest extends TestCase
             'name' => 'Pricing',
             'path' => '/pricing',
             'method' => 'GET',
-            'public' => true,
+            'access' => 'public',
             'withAssets' => false,
             'dryRun' => false,
         ]);
@@ -60,7 +60,7 @@ class MakePageCommandTest extends TestCase
             'name' => 'Pricing',
             'path' => '/pricing',
             'method' => 'GET',
-            'public' => false,
+            'access' => 'protected',
             'withAssets' => true,
             'dryRun' => false,
         ]);

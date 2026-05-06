@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Generation\Data\FileType;
-use Semitexa\Dev\Generation\Data\PlannedFile;
-use Semitexa\Dev\Generation\Writer\SafeFileWriter;
+use Semitexa\Dev\Application\Service\Generation\Data\FileType;
+use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Writer\SafeFileWriter;
 
 class SafeFileWriterTest extends TestCase
 {
