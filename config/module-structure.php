@@ -78,9 +78,6 @@ $codeRoot = [
             'Domain',
             'Context',
             'Configuration',
-            'Update',
-            'Static',
-            'View',
             // Canonical home for package-wide exception classes
             // (`*Exception.php` leaf files only — see `Exception` rule below).
             // Allowed in both packages and application modules. Domain-only
