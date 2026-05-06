@@ -121,7 +121,7 @@ final class MakeHandlerCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('handler_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                             'Implement business logic in handle() method',
                             'Populate the resource with data via fluent setters',
                         ],
@@ -162,7 +162,7 @@ final class MakeHandlerCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('handler_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                         'Implement business logic in handle() method',
                         'Populate the resource with data via fluent setters',
                     ],

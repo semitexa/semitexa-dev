@@ -34,10 +34,10 @@ class MakePageCommandTest extends TestCase
         $this->assertCount(4, $plan->files);
 
         $paths = array_map(fn($f) => $f->path, $plan->files);
-        $this->assertContains('src/modules/Website/Application/Payload/Request/PricingPayload.php', $paths);
-        $this->assertContains('src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php', $paths);
-        $this->assertContains('src/modules/Website/Application/Resource/Response/PricingResponse.php', $paths);
-        $this->assertContains('src/modules/Website/Application/View/templates/pages/pricing.html.twig', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Payload/Request/PricingPayload.php', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Handler/PayloadHandler/PricingHandler.php', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Resource/Response/PricingResponse.php', $paths);
+        $this->assertContains('src/modules/Website/src/Application/View/templates/pages/pricing.html.twig', $paths);
 
         // Validate PHP syntax for all PHP files
         foreach ($plan->files as $file) {
@@ -69,9 +69,9 @@ class MakePageCommandTest extends TestCase
         $this->assertCount(7, $plan->files);
 
         $paths = array_map(fn($f) => $f->path, $plan->files);
-        $this->assertContains('src/modules/Website/Application/View/assets/pages/pricing.json', $paths);
-        $this->assertContains('src/modules/Website/Application/View/assets/pages/pricing.css', $paths);
-        $this->assertContains('src/modules/Website/Application/View/assets/pages/pricing.js', $paths);
+        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.json', $paths);
+        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.css', $paths);
+        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.js', $paths);
     }
 
     private function assertPhpSyntaxValid(string $code): void

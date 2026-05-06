@@ -56,7 +56,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $exit = $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+            '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
             '--scope' => 'standard',
         ]);
 
@@ -82,7 +82,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester(failingLints: ['semitexa:lint:handlers']);
         $exit = $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+            '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
         ]);
 
         $this->assertSame(1, $exit);
@@ -102,7 +102,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Domain/Contract/UserRepoInterface.php',
+            '--files' => 'src/modules/Foo/src/Domain/Contract/UserRepoInterface.php',
         ]);
 
         $lines = $this->ndjsonLines($tester->getDisplay());
@@ -119,7 +119,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Payload/Request/Get.php',
+            '--files' => 'src/modules/Foo/src/Application/Payload/Request/Get.php',
             '--json'  => true,
         ]);
 
@@ -136,7 +136,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+            '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
             '--scope' => 'minimal',
             '--json'  => true,
         ]);
@@ -165,7 +165,7 @@ class AiVerifyCommandTest extends TestCase
 
         $tester = $this->newTester();
         $exit = $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/A.php',
+            '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/A.php',
             '--trace' => 'ship-x',
             '--json'  => true,
         ]);
@@ -188,7 +188,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Payload/Request/Get.php',
+            '--files' => 'src/modules/Foo/src/Application/Payload/Request/Get.php',
             '--trace' => 'does-not-exist',
         ]);
 
@@ -203,7 +203,7 @@ class AiVerifyCommandTest extends TestCase
         try {
             $tester = $this->newTester();
             $tester->execute([
-                '--files' => 'src/modules/Foo/Application/Payload/Request/Get.php',
+                '--files' => 'src/modules/Foo/src/Application/Payload/Request/Get.php',
             ]);
             $this->assertStringContainsString('"trace_appended"', $tester->getDisplay());
             $trace = $store->read('env-trace');
@@ -217,7 +217,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Payload/Request/Get.php',
+            '--files' => 'src/modules/Foo/src/Application/Payload/Request/Get.php',
         ]);
         $display = $tester->getDisplay();
         $this->assertStringNotContainsString('"trace_appended"', $display);
@@ -237,7 +237,7 @@ class AiVerifyCommandTest extends TestCase
 
         $tester = $this->newTester();
         $exit = $tester->execute([
-            '--files' => 'src/modules/SomeApp/Application/Handler/PayloadHandler/IndexHandler.php',
+            '--files' => 'src/modules/SomeApp/src/Application/Handler/PayloadHandler/IndexHandler.php',
             '--json'  => true,
         ]);
 
@@ -251,7 +251,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertSame('error', $first['severity']);
         $this->assertSame('module_structure.unknown_directory', $first['rule']);
         $this->assertSame('src/modules/SomeApp', $first['module']);
-        $this->assertSame('src/modules/SomeApp/Application/Endpoint', $first['path']);
+        $this->assertSame('src/modules/SomeApp/src/Application/Endpoint', $first['path']);
         $this->assertSame('packages/semitexa-docs/docs/MODULE_STRUCTURE.md', $first['doc_ref']);
 
         // The module_structure target is added at standard scope (and broad).
@@ -274,7 +274,7 @@ class AiVerifyCommandTest extends TestCase
 
         $tester = $this->newTester();
         $exit = $tester->execute([
-            '--files' => 'src/modules/OkApp/Application/Handler/PayloadHandler/Idx.php',
+            '--files' => 'src/modules/OkApp/src/Application/Handler/PayloadHandler/Idx.php',
             '--json'  => true,
         ]);
 
@@ -303,7 +303,7 @@ class AiVerifyCommandTest extends TestCase
 
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/SomeApp/Application/Handler/PayloadHandler/X.php',
+            '--files' => 'src/modules/SomeApp/src/Application/Handler/PayloadHandler/X.php',
         ]);
 
         $lines = $this->ndjsonLines($tester->getDisplay());
@@ -375,7 +375,7 @@ class AiVerifyCommandTest extends TestCase
         $tester->execute([
             // Touch a file under Application/Payload/Request — far away
             // from the offending Domain/Bogus directory.
-            '--files' => 'src/modules/DriftedApp/Application/Payload/Request/IndexPayload.php',
+            '--files' => 'src/modules/DriftedApp/src/Application/Payload/Request/IndexPayload.php',
             '--json'  => true,
         ]);
 
@@ -393,7 +393,7 @@ class AiVerifyCommandTest extends TestCase
     {
         $tester = $this->newTester();
         $tester->execute([
-            '--files' => 'src/modules/Foo/Application/Handler/PayloadHandler/A.php,src/modules/Foo/Application/Payload/Request/B.php',
+            '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/A.php,src/modules/Foo/src/Application/Payload/Request/B.php',
             '--json'  => true,
         ]);
 
@@ -473,11 +473,18 @@ class AiVerifyCommandTest extends TestCase
             mkdir($base, 0755, true);
         }
         foreach ($relativeDirs as $rel) {
-            $dir = $base . '/' . $rel;
+            $dir = $base . '/' . $this->codeRelative($rel);
             if (!is_dir($dir)) {
                 mkdir($dir, 0755, true);
             }
         }
+    }
+
+    private function codeRelative(string $rel): string
+    {
+        $top = explode('/', $rel, 2)[0] ?? '';
+        $codeRoots = ['Application', 'Domain', 'Context', 'Configuration', 'Exception'];
+        return in_array($top, $codeRoots, true) ? 'src/' . $rel : $rel;
     }
 
     private function removeDir(string $dir): void

@@ -14,10 +14,10 @@ class SimilarityIndexBuilderTest extends TestCase
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/semitexa-similarity-index-' . uniqid();
-        mkdir($this->root . '/src/modules/Foo/Application/Handler/PayloadHandler', 0755, true);
-        mkdir($this->root . '/src/modules/Foo/Application/Handler/DomainListener', 0755, true);
-        mkdir($this->root . '/src/modules/Foo/Application/Payload/Request', 0755, true);
-        mkdir($this->root . '/src/modules/Foo/Application/Resource/Response', 0755, true);
+        mkdir($this->root . '/src/modules/Foo/src/Application/Handler/PayloadHandler', 0755, true);
+        mkdir($this->root . '/src/modules/Foo/src/Application/Handler/DomainListener', 0755, true);
+        mkdir($this->root . '/src/modules/Foo/src/Application/Payload/Request', 0755, true);
+        mkdir($this->root . '/src/modules/Foo/src/Application/Resource/Response', 0755, true);
     }
 
     protected function tearDown(): void
@@ -27,19 +27,19 @@ class SimilarityIndexBuilderTest extends TestCase
 
     public function test_indexes_each_kind_under_module(): void
     {
-        file_put_contents($this->root . '/src/modules/Foo/Application/Payload/Request/GetThingPayload.php', <<<PHP
+        file_put_contents($this->root . '/src/modules/Foo/src/Application/Payload/Request/GetThingPayload.php', <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Payload\\Request;
 use Semitexa\\Authorization\\Attribute\\AsProtectedPayload;
 #[AsProtectedPayload(path: '/foo/{id}', methods: ['GET'])]
 final class GetThingPayload {}
 PHP);
-        file_put_contents($this->root . '/src/modules/Foo/Application/Resource/Response/GetThingResponse.php', <<<PHP
+        file_put_contents($this->root . '/src/modules/Foo/src/Application/Resource/Response/GetThingResponse.php', <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Resource\\Response;
 final class GetThingResponse {}
 PHP);
-        file_put_contents($this->root . '/src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php', <<<PHP
+        file_put_contents($this->root . '/src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php', <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Handler\\PayloadHandler;
 use Semitexa\\Core\\Attribute\\AsPayloadHandler;
@@ -48,7 +48,7 @@ use Semitexa\\Modules\\Foo\\Application\\Resource\\Response\\GetThingResponse;
 #[AsPayloadHandler(payload: GetThingPayload::class, resource: GetThingResponse::class)]
 final class GetThingHandler {}
 PHP);
-        file_put_contents($this->root . '/src/modules/Foo/Application/Handler/DomainListener/OnUserRegistered.php', <<<PHP
+        file_put_contents($this->root . '/src/modules/Foo/src/Application/Handler/DomainListener/OnUserRegistered.php', <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Handler\\DomainListener;
 use Semitexa\\Core\\Attribute\\AsEventListener;
@@ -80,8 +80,8 @@ PHP);
 
     public function test_ignores_files_outside_known_fragments(): void
     {
-        mkdir($this->root . '/src/modules/Foo/Domain/Service', 0755, true);
-        file_put_contents($this->root . '/src/modules/Foo/Domain/Service/Whatever.php', "<?php\nclass Whatever {}\n");
+        mkdir($this->root . '/src/modules/Foo/src/Domain/Service', 0755, true);
+        file_put_contents($this->root . '/src/modules/Foo/src/Domain/Service/Whatever.php', "<?php\nclass Whatever {}\n");
 
         $index = (new SimilarityIndexBuilder($this->root, ['src/modules']))->build();
         $this->assertSame([], $index->all());

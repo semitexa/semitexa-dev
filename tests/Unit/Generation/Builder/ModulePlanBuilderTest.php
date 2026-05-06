@@ -19,9 +19,10 @@ class ModulePlanBuilderTest extends TestCase
             'dryRun' => true,
         ]);
 
-        $this->assertCount(10, $plan->files);
-        $this->assertSame('src/modules/Catalog/Application/Payload/Request/.gitkeep', $plan->files[0]->path);
-        $this->assertSame('src/modules/Catalog/Domain/Model/.gitkeep', $plan->files[9]->path);
+        $this->assertCount(11, $plan->files);
+        $this->assertSame('src/modules/Catalog/src/Application/Payload/Request/.gitkeep', $plan->files[0]->path);
+        $this->assertSame('src/modules/Catalog/src/Domain/Model/.gitkeep', $plan->files[9]->path);
+        $this->assertSame('src/modules/Catalog/tests/.gitkeep', $plan->files[10]->path);
     }
 
     public function test_builds_package_module_with_composer_manifest(): void
@@ -51,8 +52,8 @@ class ModulePlanBuilderTest extends TestCase
         $plan = $builder->build(['name' => 'Catalog']);
 
         $paths = array_map(static fn ($file) => $file->path, $plan->files);
-        $this->assertContains('src/modules/Catalog/Application/Console/Command/.gitkeep', $paths);
-        $this->assertNotContains('src/modules/Catalog/Application/Command/.gitkeep', $paths);
+        $this->assertContains('src/modules/Catalog/src/Application/Console/Command/.gitkeep', $paths);
+        $this->assertNotContains('src/modules/Catalog/src/Application/Command/.gitkeep', $paths);
     }
 
     public function test_skeleton_uses_canonical_console_command_path_for_package(): void

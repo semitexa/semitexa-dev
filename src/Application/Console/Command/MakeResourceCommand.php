@@ -86,7 +86,7 @@ final class MakeResourceCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('resource_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
                             'Add fluent with*() setter methods for template variables',
                             'Each setter should call $this->with($key, $value)',
                         ],
@@ -127,7 +127,7 @@ final class MakeResourceCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('resource_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
                         'Add fluent with*() setter methods for template variables',
                         'Each setter should call $this->with($key, $value)',
                     ],

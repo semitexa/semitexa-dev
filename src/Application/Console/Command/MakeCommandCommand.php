@@ -82,7 +82,7 @@ final class MakeCommandCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('command_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Console/Command/{$className}.php" => [
+                        "src/modules/{$module}/src/Application/Console/Command/{$className}.php" => [
                             'Add arguments and options in configure()',
                             'Implement command logic in execute()',
                         ],
@@ -122,7 +122,7 @@ final class MakeCommandCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('command_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Console/Command/{$className}.php" => [
+                    "src/modules/{$module}/src/Application/Console/Command/{$className}.php" => [
                         'Add arguments and options in configure()',
                         'Implement command logic in execute()',
                     ],

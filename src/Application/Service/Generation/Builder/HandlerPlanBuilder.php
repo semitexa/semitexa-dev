@@ -65,7 +65,7 @@ final class HandlerPlanBuilder
             'injections' => $this->renderInjectionBlock($injections),
         ], 'make:handler');
 
-        $filePath = "src/modules/{$module}/Application/Handler/PayloadHandler/{$handlerClass}.php";
+        $filePath = "src/modules/{$module}/src/Application/Handler/PayloadHandler/{$handlerClass}.php";
 
         return new GenerationPlan(
             command: 'make:handler',

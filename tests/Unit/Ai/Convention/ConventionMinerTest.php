@@ -15,7 +15,7 @@ class ConventionMinerTest extends TestCase
     protected function setUp(): void
     {
         $this->projectRoot = sys_get_temp_dir() . '/semitexa-miner-test-' . uniqid();
-        mkdir($this->projectRoot . '/src/modules/Foo/Application/Handler/PayloadHandler', 0755, true);
+        mkdir($this->projectRoot . '/src/modules/Foo/src/Application/Handler/PayloadHandler', 0755, true);
     }
 
     protected function tearDown(): void
@@ -62,9 +62,9 @@ class ConventionMinerTest extends TestCase
 
     public function test_ignores_files_outside_handler_layout(): void
     {
-        mkdir($this->projectRoot . '/src/modules/Bar/Application/Service', 0755, true);
+        mkdir($this->projectRoot . '/src/modules/Bar/src/Application/Service', 0755, true);
         file_put_contents(
-            $this->projectRoot . '/src/modules/Bar/Application/Service/Whatever.php',
+            $this->projectRoot . '/src/modules/Bar/src/Application/Service/Whatever.php',
             "<?php\nnamespace Semitexa\\Modules\\Bar\\Application\\Service;\nuse Semitexa\\Core\\Attribute\\InjectAsReadonly;\nuse Acme\\Service\\CatalogService;\nclass Whatever { #[InjectAsReadonly] protected CatalogService \$catalog; }\n",
         );
 
@@ -101,7 +101,7 @@ final class {$class} implements TypedHandlerInterface
 }
 PHP;
         file_put_contents(
-            $this->projectRoot . "/src/modules/Foo/Application/Handler/PayloadHandler/{$class}.php",
+            $this->projectRoot . "/src/modules/Foo/src/Application/Handler/PayloadHandler/{$class}.php",
             $php,
         );
     }

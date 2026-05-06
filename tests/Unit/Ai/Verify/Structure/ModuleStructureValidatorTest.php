@@ -73,7 +73,7 @@ class ModuleStructureValidatorTest extends TestCase
             'Application/Console/Command',
             'Application/Handler/PayloadHandler',
         ]);
-        $this->writeFile('src/modules/Hello/Application/Console/Command/SyncCommand.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Console/Command/SyncCommand.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -107,9 +107,9 @@ class ModuleStructureValidatorTest extends TestCase
             'Application/Service/Customer/Order',
             'Domain/Model/Customer',
         ]);
-        $this->writeFile('src/modules/Hello/Application/Service/Customer/SyncCustomerService.php', "<?php\n");
-        $this->writeFile('src/modules/Hello/Application/Service/Customer/Order/PlaceOrderService.php', "<?php\n");
-        $this->writeFile('src/modules/Hello/Domain/Model/Customer/Customer.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Service/Customer/SyncCustomerService.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Service/Customer/Order/PlaceOrderService.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Domain/Model/Customer/Customer.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -208,13 +208,13 @@ class ModuleStructureValidatorTest extends TestCase
         $this->scaffoldModule('Hello', [
             'Application/Service',
         ]);
-        $this->writeFile('src/modules/Hello/Application/Service/SyncCommand.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Service/SyncCommand.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertHasViolationAt(
             $violations,
             ModuleStructureViolation::CODE_COMMAND_WRONG_LOCATION,
-            'src/modules/Hello/Application/Service/SyncCommand.php',
+            'src/modules/Hello/src/Application/Service/SyncCommand.php',
         );
     }
 
@@ -233,7 +233,7 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertHasViolationAt(
             $violations,
             ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'src/modules/Hello/Application/Payload/Response',
+            'src/modules/Hello/src/Application/Payload/Response',
         );
     }
 
@@ -248,7 +248,7 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertHasViolationAt(
             $violations,
             ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'src/modules/Hello/Application/Handler/Custom',
+            'src/modules/Hello/src/Application/Handler/Custom',
         );
     }
 
@@ -965,7 +965,7 @@ class ModuleStructureValidatorTest extends TestCase
             'Application/Handler/PayloadHandler',
             'Exception',
         ]);
-        $this->writeFile('src/modules/Hello/Exception/HelloFlowException.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Exception/HelloFlowException.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -1060,13 +1060,13 @@ class ModuleStructureValidatorTest extends TestCase
             'Application/Handler/PayloadHandler',
             'Exception/Subdir',
         ]);
-        $this->writeFile('src/modules/Hello/Exception/Subdir/FooException.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Exception/Subdir/FooException.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertHasViolationAt(
             $violations,
             ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'src/modules/Hello/Exception/Subdir',
+            'src/modules/Hello/src/Exception/Subdir',
         );
     }
 
@@ -1153,7 +1153,7 @@ class ModuleStructureValidatorTest extends TestCase
             'Application/Handler/PayloadHandler',
             'Domain/Enum',
         ]);
-        $this->writeFile('src/modules/Hello/Domain/Enum/HelloFlowStatus.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Domain/Enum/HelloFlowStatus.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
         $this->assertEmpty($violations, $this->renderViolations($violations));
@@ -3127,8 +3127,26 @@ class ModuleStructureValidatorTest extends TestCase
         $base = $this->root . '/src/modules/' . $name;
         mkdir($base, 0755, true);
         foreach ($relativeDirs as $rel) {
-            mkdir($base . '/' . $rel, 0755, true);
+            mkdir($base . '/' . $this->codeRelative($rel), 0755, true);
         }
+    }
+
+    /**
+     * Application modules nest runtime PHP under `src/`. Canonical code-layer
+     * dirs (Application/, Domain/, Context/, Configuration/, Update/, Static/,
+     * View/, Component/, Db/) get a `src/` prefix automatically; other names
+     * (resources/, Exception/, Enum/, Attribute/, Auth/, Helper.php, ...) stay
+     * at module root for envelope-violation tests.
+     */
+    private function codeRelative(string $rel): string
+    {
+        $top = explode('/', $rel, 2)[0] ?? '';
+        // Top-level layers that the validator expects under the module's
+        // `src/` code root. Anything else (resources/, Attribute/, Helper.php,
+        // Enum/) stays at module root so envelope-violation tests continue
+        // to fire `unknown_directory` / `invalid_layer` / `invalid_root_file`.
+        $codeRoots = ['Application', 'Domain', 'Context', 'Configuration', 'Exception'];
+        return in_array($top, $codeRoots, true) ? 'src/' . $rel : $rel;
     }
 
     /**

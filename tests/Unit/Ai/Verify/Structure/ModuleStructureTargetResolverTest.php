@@ -31,7 +31,7 @@ class ModuleStructureTargetResolverTest extends TestCase
         $resolver = new ModuleStructureTargetResolver($this->root);
         $modules = $resolver->resolve([
             new ChangedFile(
-                'src/modules/Hello/Application/Console/Command/SyncCommand.php',
+                'src/modules/Hello/src/Application/Console/Command/SyncCommand.php',
                 ChangedFile::KIND_PHP_OTHER,
             ),
         ]);

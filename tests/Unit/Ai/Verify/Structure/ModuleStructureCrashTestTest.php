@@ -676,8 +676,21 @@ class ModuleStructureCrashTestTest extends TestCase
         $base = $this->root . '/src/modules/' . $name;
         mkdir($base, 0755, true);
         foreach ($relativeDirs as $rel) {
-            mkdir($base . '/' . $rel, 0755, true);
+            mkdir($base . '/' . $this->codeRelative($rel), 0755, true);
         }
+    }
+
+    /**
+     * Application modules nest runtime PHP under `src/`. Canonical code-layer
+     * dirs (Application/, Domain/, Context/, Configuration/, Exception/) get a
+     * `src/` prefix automatically; other names (resources/, Attribute/, Auth/,
+     * Console/, OpenApi/, ...) stay at module root for envelope-violation tests.
+     */
+    private function codeRelative(string $rel): string
+    {
+        $top = explode('/', $rel, 2)[0] ?? '';
+        $codeRoots = ['Application', 'Domain', 'Context', 'Configuration', 'Exception'];
+        return in_array($top, $codeRoots, true) ? 'src/' . $rel : $rel;
     }
 
     private function writePackageFile(string $name, string $relativeFile, string $contents): void

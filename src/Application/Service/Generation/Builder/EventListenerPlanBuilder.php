@@ -48,7 +48,7 @@ final class EventListenerPlanBuilder
             'className' => $className,
         ], 'make:event-listener');
 
-        $filePath = "src/modules/{$module}/Application/Handler/DomainListener/{$className}.php";
+        $filePath = "src/modules/{$module}/src/Application/Handler/DomainListener/{$className}.php";
 
         return new GenerationPlan(
             command: 'make:event-listener',

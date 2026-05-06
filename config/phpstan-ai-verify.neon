@@ -14,9 +14,13 @@ parameters:
     reportUnmatchedIgnoredErrors: false
 
     # Single source of truth for the autoloader — re-uses the project's
-    # vendor/autoload.php so PHPStan can reflect Semitexa attributes.
+    # vendor/autoload.php so PHPStan can reflect Semitexa attributes. The
+    # semitexa-core bootstrap registers PSR-4 for local modules
+    # (src/modules/<Name>/src), since runtime registration via the
+    # LocalModuleAutoloadPhase build phase never runs under PHPStan.
     bootstrapFiles:
         - %currentWorkingDirectory%/vendor/autoload.php
+        - %currentWorkingDirectory%/vendor/semitexa/core/bootstrap/phpstan.php
 
 rules:
     - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule

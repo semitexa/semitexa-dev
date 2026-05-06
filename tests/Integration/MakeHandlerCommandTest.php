@@ -30,7 +30,7 @@ class MakeHandlerCommandTest extends TestCase
 
         $this->assertCount(1, $plan->files);
         $file = $plan->files[0];
-        $this->assertSame('src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php', $file->path);
+        $this->assertSame('src/modules/Website/src/Application/Handler/PayloadHandler/PricingHandler.php', $file->path);
         $this->assertStringContainsString('final class PricingHandler implements TypedHandlerInterface', $file->content);
         $this->assertStringContainsString('#[AsPayloadHandler(payload: PricingPayload::class, resource: PricingResponse::class)]', $file->content);
         $this->assertStringContainsString('public function handle(PricingPayload $payload, PricingResponse $resource): PricingResponse', $file->content);

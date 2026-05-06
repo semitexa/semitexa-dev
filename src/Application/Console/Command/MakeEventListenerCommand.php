@@ -122,7 +122,7 @@ final class MakeEventListenerCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('event_listener_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Handler/DomainListener/{$name}.php" => [
+                        "src/modules/{$module}/src/Application/Handler/DomainListener/{$name}.php" => [
                             'Implement event handling logic in handle() method',
                             'Add #[InjectAsReadonly] properties for dependencies if needed',
                         ],
@@ -164,7 +164,7 @@ final class MakeEventListenerCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('event_listener_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Handler/DomainListener/{$name}.php" => [
+                    "src/modules/{$module}/src/Application/Handler/DomainListener/{$name}.php" => [
                         'Implement event handling logic in handle() method',
                         'Add #[InjectAsReadonly] properties for dependencies if needed',
                     ],

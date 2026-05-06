@@ -83,10 +83,10 @@ final class MakeContractCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('contract_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Domain/Contract/{$interfaceClass}.php" => [
+                        "src/modules/{$module}/src/Domain/Contract/{$interfaceClass}.php" => [
                             'Define interface methods',
                         ],
-                        "src/modules/{$module}/Domain/Service/{$implName}.php" => [
+                        "src/modules/{$module}/src/Domain/Service/{$implName}.php" => [
                             'Implement all interface methods',
                             'Add #[InjectAsReadonly] properties for dependencies',
                         ],
@@ -132,10 +132,10 @@ final class MakeContractCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('contract_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Domain/Contract/{$interfaceClass}.php" => [
+                    "src/modules/{$module}/src/Domain/Contract/{$interfaceClass}.php" => [
                         'Define interface methods',
                     ],
-                    "src/modules/{$module}/Domain/Service/{$implName}.php" => [
+                    "src/modules/{$module}/src/Domain/Service/{$implName}.php" => [
                         'Implement all interface methods',
                         'Add #[InjectAsReadonly] properties for dependencies',
                     ],

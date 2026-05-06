@@ -32,7 +32,7 @@ class MakePayloadCommandTest extends TestCase
 
         $this->assertCount(1, $plan->files);
         $file = $plan->files[0];
-        $this->assertSame('src/modules/Website/Application/Payload/Request/PricingPayload.php', $file->path);
+        $this->assertSame('src/modules/Website/src/Application/Payload/Request/PricingPayload.php', $file->path);
         $this->assertStringContainsString('declare(strict_types=1);', $file->content);
         $this->assertStringContainsString('#[AsPublicPayload(', $file->content);
         $this->assertStringContainsString('use Semitexa\\Core\\Attribute\\AsPublicPayload;', $file->content);

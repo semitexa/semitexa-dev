@@ -32,7 +32,7 @@ class MakeResourceCommandTest extends TestCase
 
         $this->assertCount(1, $plan->files);
         $file = $plan->files[0];
-        $this->assertSame('src/modules/Website/Application/Resource/Response/PricingResponse.php', $file->path);
+        $this->assertSame('src/modules/Website/src/Application/Resource/Response/PricingResponse.php', $file->path);
         $this->assertStringContainsString("handle: 'pricing'", $file->content);
         $this->assertStringContainsString('extends HtmlResponse implements ResourceInterface', $file->content);
         $this->assertPhpSyntaxValid($file->content);

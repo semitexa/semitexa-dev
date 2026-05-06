@@ -22,12 +22,12 @@ class ChangedFileClassifierTest extends TestCase
     public static function classificationProvider(): array
     {
         return [
-            'handler' => ['src/modules/Foo/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER],
-            'listener' => ['src/modules/Foo/Application/Handler/DomainListener/Y.php', ChangedFile::KIND_LISTENER],
-            'payload' => ['src/modules/Foo/Application/Payload/Request/Z.php', ChangedFile::KIND_PAYLOAD],
-            'resource' => ['src/modules/Foo/Application/Resource/Response/Z.php', ChangedFile::KIND_RESOURCE],
-            'service' => ['src/modules/Foo/Domain/Service/A.php', ChangedFile::KIND_SERVICE],
-            'contract' => ['src/modules/Foo/Domain/Contract/B.php', ChangedFile::KIND_CONTRACT],
+            'handler' => ['src/modules/Foo/src/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER],
+            'listener' => ['src/modules/Foo/src/Application/Handler/DomainListener/Y.php', ChangedFile::KIND_LISTENER],
+            'payload' => ['src/modules/Foo/src/Application/Payload/Request/Z.php', ChangedFile::KIND_PAYLOAD],
+            'resource' => ['src/modules/Foo/src/Application/Resource/Response/Z.php', ChangedFile::KIND_RESOURCE],
+            'service' => ['src/modules/Foo/src/Domain/Service/A.php', ChangedFile::KIND_SERVICE],
+            'contract' => ['src/modules/Foo/src/Domain/Contract/B.php', ChangedFile::KIND_CONTRACT],
             'template' => ['src/modules/Foo/Resources/views/page.html.twig', ChangedFile::KIND_TEMPLATE],
             'test_by_dir' => ['tests/Unit/Foo/SomethingTest.php', ChangedFile::KIND_TEST],
             'test_by_suffix' => ['src/modules/Foo/SomethingTest.php', ChangedFile::KIND_TEST],

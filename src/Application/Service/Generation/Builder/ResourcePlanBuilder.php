@@ -48,7 +48,7 @@ final class ResourcePlanBuilder
             'className' => $responseClass,
         ], 'make:resource');
 
-        $filePath = "src/modules/{$module}/Application/Resource/Response/{$responseClass}.php";
+        $filePath = "src/modules/{$module}/src/Application/Resource/Response/{$responseClass}.php";
         $files = [new PlannedFile($filePath, $content, FileType::PhpClass)];
 
         if ($params['withTemplate'] ?? false) {
@@ -58,7 +58,7 @@ final class ResourcePlanBuilder
                 'pageName' => $studlyName,
                 'kebabName' => $kebabName,
             ]);
-            $twigPath = "src/modules/{$module}/Application/View/templates/pages/{$kebabName}.html.twig";
+            $twigPath = "src/modules/{$module}/src/Application/View/templates/pages/{$kebabName}.html.twig";
             $files[] = new PlannedFile($twigPath, $twigContent, FileType::TwigTemplate);
         }
 
@@ -68,7 +68,7 @@ final class ResourcePlanBuilder
             $assetsJson = $this->templateResolver->resolve('page-assets.json.tpl');
             $assetsContent = $this->renderer->render($assetsJson, ['kebabName' => $kebabName]);
             $files[] = new PlannedFile(
-                "src/modules/{$module}/Application/View/assets/pages/{$kebabName}.json",
+                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.json",
                 $assetsContent,
                 FileType::JsonFile,
             );
@@ -76,7 +76,7 @@ final class ResourcePlanBuilder
             $cssTemplate = $this->templateResolver->resolve('page-css.css.tpl');
             $cssContent = $this->renderer->render($cssTemplate, ['pageName' => $studlyName, 'kebabName' => $kebabName]);
             $files[] = new PlannedFile(
-                "src/modules/{$module}/Application/View/assets/pages/{$kebabName}.css",
+                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.css",
                 $cssContent,
                 FileType::CssFile,
             );
@@ -84,7 +84,7 @@ final class ResourcePlanBuilder
             $jsTemplate = $this->templateResolver->resolve('page-js.js.tpl');
             $jsContent = $this->renderer->render($jsTemplate, ['pageName' => $studlyName, 'kebabName' => $kebabName]);
             $files[] = new PlannedFile(
-                "src/modules/{$module}/Application/View/assets/pages/{$kebabName}.js",
+                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.js",
                 $jsContent,
                 FileType::JsFile,
             );

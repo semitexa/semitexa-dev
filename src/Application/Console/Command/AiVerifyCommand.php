@@ -25,7 +25,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * syntax / phpunit / module-structure subset to run, executes it, and emits
  * an NDJSON envelope.
  *
- *   bin/semitexa ai:verify --files=src/modules/Foo/Application/Handler/PayloadHandler/Bar.php
+ *   bin/semitexa ai:verify --files=src/modules/Foo/src/Application/Handler/PayloadHandler/Bar.php
  *   bin/semitexa ai:verify --git-ref=HEAD~1 --scope=standard
  *   git diff --name-only HEAD~1 | bin/semitexa ai:verify --diff-stdin
  *
