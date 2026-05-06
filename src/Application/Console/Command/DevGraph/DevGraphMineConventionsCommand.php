@@ -33,24 +33,29 @@ final class DevGraphMineConventionsCommand extends BaseCommand
         $store = new ConventionStore($this->getProjectRoot());
         $byModule = $miner->mineAll();
 
+        $moduleFilter = $input->getOption('module');
+        $filtered = [];
+        foreach ($byModule as $module => $conv) {
+            if ($moduleFilter !== null && $module !== $moduleFilter) {
+                continue;
+            }
+            $filtered[$module] = $conv;
+        }
+
         $totalInjections = 0;
-        foreach ($byModule as $conv) {
+        foreach ($filtered as $conv) {
             $totalInjections += count($conv->handler_injections);
         }
 
         $output->writeln(json_encode([
             'kind'              => 'summary',
-            'modules_mined'     => count($byModule),
+            'modules_mined'     => count($filtered),
             'injections_total'  => $totalInjections,
             'dry_run'           => (bool) $input->getOption('dry-run'),
             'cache_path'        => $store->path(),
         ], JSON_UNESCAPED_SLASHES));
 
-        $moduleFilter = $input->getOption('module');
-        foreach ($byModule as $module => $conv) {
-            if ($moduleFilter !== null && $module !== $moduleFilter) {
-                continue;
-            }
+        foreach ($filtered as $module => $conv) {
             $recurring = $conv->recurringHandlerInjections();
             $output->writeln(json_encode([
                 'kind'                => 'module',

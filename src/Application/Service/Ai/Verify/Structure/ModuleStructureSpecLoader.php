@@ -298,7 +298,7 @@ final class ModuleStructureSpecLoader
             }
             $abs = $packagesDir . '/' . $entry . '/' . self::LOCAL_EXTENSION_REL_PATH;
             if (is_file($abs)) {
-                $parts[] = $entry . '@' . (int) @filemtime($abs);
+                $parts[] = sprintf('%s@%d:%d', $entry, (int) @filemtime($abs), (int) @filesize($abs));
             }
         }
         sort($parts);

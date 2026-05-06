@@ -935,9 +935,9 @@ $codeRoot[] = $rule(
     rationale: 'Framework Theme integration types (ThemeProviderInterface, …). Leaf — basenames must start with Theme so the layer cannot become a generic frontend dumping ground. Promote to DEEP_VALIDATED with explicit children if/when sub-tree grows.',
 );
 
-// Final state: zero opaque directories. The opaque_internal mode
-// remains available in the spec for future architectural areas, but no
-// directory currently uses it.
+// The `opaque_internal` mode remains in use for a few framework-runtime
+// sub-trees in semitexa-core (Container/, Console/Runtime) until their
+// child classes stabilise and explicit allowlists land in Phase 3/4.
 $coreOpaqueDirs = [];
 foreach ($coreOpaqueDirs as $dir => $purpose) {
     $codeRoot[] = $rule(

@@ -27,7 +27,7 @@ class ModuleStructureCrashTestTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->root = sys_get_temp_dir() . '/semitexa-crash-test-' . uniqid();
+        $this->root = sys_get_temp_dir() . '/semitexa-crash-test-' . bin2hex(random_bytes(8));
         mkdir($this->root, 0755, true);
     }
 
