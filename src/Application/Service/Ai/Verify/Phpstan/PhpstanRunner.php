@@ -118,37 +118,36 @@ final class PhpstanRunner
     {
         $rows = [];
         $files = $payload['files'] ?? [];
-        if (!is_array($files)) {
-            return [];
-        }
-        foreach ($files as $absPath => $info) {
-            if (!is_array($info)) {
-                continue;
-            }
-            $messages = $info['messages'] ?? [];
-            if (!is_array($messages)) {
-                continue;
-            }
-            $rel = $this->relativisePath((string) $absPath);
-            foreach ($messages as $msg) {
-                if (!is_array($msg)) {
+        if (is_array($files)) {
+            foreach ($files as $absPath => $info) {
+                if (!is_array($info)) {
                     continue;
                 }
-                $identifier = isset($msg['identifier']) && is_string($msg['identifier']) && $msg['identifier'] !== ''
-                    ? $msg['identifier']
-                    : 'phpstan.error';
-                $rows[] = [
-                    'check'         => 'phpstan_di',
-                    'severity'      => 'error',
-                    'rule'          => $identifier,
-                    'identifier'    => $identifier,
-                    'path'          => $rel,
-                    'line'          => (int) ($msg['line'] ?? 0),
-                    'message'       => isset($msg['message']) && is_string($msg['message']) ? $msg['message'] : '',
-                    'tip'           => isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '',
-                    'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
-                    'suggested_fix' => $this->suggestionFor($identifier),
-                ];
+                $messages = $info['messages'] ?? [];
+                if (!is_array($messages)) {
+                    continue;
+                }
+                $rel = $this->relativisePath((string) $absPath);
+                foreach ($messages as $msg) {
+                    if (!is_array($msg)) {
+                        continue;
+                    }
+                    $identifier = isset($msg['identifier']) && is_string($msg['identifier']) && $msg['identifier'] !== ''
+                        ? $msg['identifier']
+                        : 'phpstan.error';
+                    $rows[] = [
+                        'check'         => 'phpstan_di',
+                        'severity'      => 'error',
+                        'rule'          => $identifier,
+                        'identifier'    => $identifier,
+                        'path'          => $rel,
+                        'line'          => (int) ($msg['line'] ?? 0),
+                        'message'       => isset($msg['message']) && is_string($msg['message']) ? $msg['message'] : '',
+                        'tip'           => isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '',
+                        'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
+                        'suggested_fix' => $this->suggestionFor($identifier),
+                    ];
+                }
             }
         }
         // Top-level (path-less) errors — usually configuration / discovery issues.

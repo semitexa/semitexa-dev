@@ -65,12 +65,13 @@ final class ModuleStructureSpecLoader
             );
         }
 
-        // Cache key blends the global spec mtime with whether local discovery
-        // is requested AND a fingerprint of every local extension file's mtime
-        // so worker re-loads catch local edits without restart.
+        // Cache key blends the global spec mtime and size with whether local
+        // discovery is requested AND a fingerprint of every local extension
+        // file's mtime so worker re-loads catch local edits without restart.
         $globalMtime = (int) @filemtime($abs);
+        $globalSize  = (int) @filesize($abs);
         $localFingerprint = $this->discoverLocalExtensions ? $this->localExtensionFingerprint() : 'off';
-        $cacheKey = $abs . '|' . $globalMtime . '|' . $localFingerprint;
+        $cacheKey = $abs . '|' . $globalMtime . '|' . $globalSize . '|' . $localFingerprint;
         if (isset($this->cache[$cacheKey])) {
             return $this->cache[$cacheKey]['spec'];
         }

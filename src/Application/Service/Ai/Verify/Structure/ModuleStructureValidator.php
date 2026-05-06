@@ -107,7 +107,7 @@ final class ModuleStructureValidator
                     module: $module->relativePath,
                     path: $module->relativePath . '/' . $required,
                     message: sprintf(
-                        "Package '%s' is missing required entry '%s/'.",
+                        "Package '%s' is missing required entry '%s'.",
                         $module->relativePath,
                         $required,
                     ),

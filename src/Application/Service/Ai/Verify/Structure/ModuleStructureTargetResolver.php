@@ -52,7 +52,7 @@ final class ModuleStructureTargetResolver
         $normalised = ltrim(str_replace('\\', '/', $relPath), '/');
         $parts = explode('/', $normalised);
 
-        if (count($parts) >= 3 && $parts[0] === 'src' && $parts[1] === 'modules') {
+        if (count($parts) >= 4 && $parts[0] === 'src' && $parts[1] === 'modules') {
             $name = $parts[2];
             if ($name === '' || $name === '.' || $name === '..') {
                 return null;

@@ -955,6 +955,9 @@ foreach ($coreOpaqueDirs as $dir => $purpose) {
 // Indexed by path for the validator's O(1) lookup.
 $codeRootMap = [];
 foreach ($codeRoot as $r) {
+    if (isset($codeRootMap[$r->path])) {
+        throw new \LogicException("Duplicate module structure rule path: '{$r->path}'");
+    }
     $codeRootMap[$r->path] = $r;
 }
 
