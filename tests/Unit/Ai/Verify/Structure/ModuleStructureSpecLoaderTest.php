@@ -32,7 +32,7 @@ class ModuleStructureSpecLoaderTest extends TestCase
         $this->assertNotNull($top);
         $this->assertSame(
             [
-                'Application', 'Domain', 'Context', 'Configuration', 'Update', 'Static', 'View',
+                'Application', 'Domain', 'Context', 'Configuration',
                 'Exception',
                 'Attribute', 'Auth', 'Discovery', 'OpenApi', 'Pipeline',
             ],
