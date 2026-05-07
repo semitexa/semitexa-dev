@@ -281,7 +281,11 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         // Shelling out captures the same surface an operator sees on
         // their terminal. Test does not chdir, so the binary resolves
         // its project root via the host project's composer.json.
-        $output = (string) shell_exec('bin/semitexa orm:sync --dry-run 2>&1');
+        $output = shell_exec('bin/semitexa orm:sync --dry-run 2>&1');
+        if ($output === null) {
+            self::markTestSkipped('semitexa binary unavailable or not executable');
+        }
+        $output = (string) $output;
 
         self::assertStringContainsString(
             'webhook_inbox',
@@ -376,12 +380,14 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if ($host === false || $host === '') {
             self::markTestSkipped('DB_HOST not configured — MySQL backing not exercised');
         }
+        $orm = null;
         try {
             $orm = ContainerFactory::get()->get(OrmManager::class);
             $orm->getAdapter()->execute('SELECT 1');
         } catch (\Throwable $e) {
             self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
         }
+        assert($orm instanceof OrmManager);
 
         $orm->getAdapter()->execute(sprintf(
             'CREATE TABLE IF NOT EXISTS `%s` (

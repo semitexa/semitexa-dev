@@ -169,7 +169,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'custom_module' => 'src/modules/{Module}/ with Application/{Payload,Handler,Resource,View,Command}/ and Domain/{Service,Contract,Event,Model}/',
+                    'custom_module' => 'src/modules/{Module}/src/ with Application/{Payload,Handler,Resource,View,Command}/ and Domain/{Service,Contract,Event,Model}/',
                     'package_module' => 'packages/semitexa-{module}/composer.json plus src/Application/... and src/Domain/... skeleton',
                 ],
                 supports: ['--target', '--dry-run', '--force', '--json', '--llm-hints'],
