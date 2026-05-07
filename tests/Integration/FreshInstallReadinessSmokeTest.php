@@ -216,7 +216,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
     {
         $this->writeModuleAndAllPayloads();
 
-        $projectRoot = dirname(__DIR__, 4);
+        $projectRoot = $this->workspaceRoot();
         $spec = (new ModuleStructureSpecLoader($projectRoot))->load();
         $validator = new ModuleStructureValidator($this->tmpRoot, $spec);
 
@@ -437,7 +437,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
     #[Test]
     public function migration_guide_is_present_and_carries_canonical_examples(): void
     {
-        $projectRoot = dirname(__DIR__, 4);
+        $projectRoot = $this->workspaceRoot();
         $guide = $projectRoot . '/packages/semitexa-docs/docs/en/migration/post-hardening.md';
         if (!is_file($guide)) {
             self::markTestSkipped('post-hardening migration guide is not present in this repository checkout');
@@ -466,16 +466,17 @@ final class FreshInstallReadinessSmokeTest extends TestCase
     private function writeModule(): void
     {
         $this->enterTempProjectRoot();
-        (new CommandTester(new MakeModuleCommand()))->execute([
+        $exit = (new CommandTester(new MakeModuleCommand()))->execute([
             '--name' => self::MODULE_NAME,
             '--write' => true,
         ]);
+        self::assertSame(0, $exit, 'make:module failed');
     }
 
     private function writeModuleAndAllPayloads(): void
     {
         $this->writeModule();
-        (new CommandTester(new MakePageCommand()))->execute([
+        $exit = (new CommandTester(new MakePageCommand()))->execute([
             '--module' => self::MODULE_NAME,
             '--name' => 'Welcome',
             '--path' => '/fresh-install/welcome',
@@ -483,7 +484,9 @@ final class FreshInstallReadinessSmokeTest extends TestCase
             '--access' => 'public',
             '--write' => true,
         ]);
-        (new CommandTester(new MakePayloadCommand()))->execute([
+        self::assertSame(0, $exit, 'make:page failed');
+
+        $exit = (new CommandTester(new MakePayloadCommand()))->execute([
             '--module' => self::MODULE_NAME,
             '--name' => 'AccountStatus',
             '--path' => '/fresh-install/account-status',
@@ -492,7 +495,9 @@ final class FreshInstallReadinessSmokeTest extends TestCase
             '--access' => 'protected',
             '--write' => true,
         ]);
-        (new CommandTester(new MakePayloadCommand()))->execute([
+        self::assertSame(0, $exit, 'make:payload AccountStatus failed');
+
+        $exit = (new CommandTester(new MakePayloadCommand()))->execute([
             '--module' => self::MODULE_NAME,
             '--name' => 'PartnerPing',
             '--path' => '/fresh-install/partner-ping',
@@ -501,6 +506,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
             '--access' => 'service',
             '--write' => true,
         ]);
+        self::assertSame(0, $exit, 'make:payload PartnerPing failed');
     }
 
     private function assertGeneratedPayloadIsClean(string $content): void
@@ -522,103 +528,50 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         }
         try {
             $orm = ContainerFactory::get()->get(OrmManager::class);
-            $orm->getAdapter()->execute('SELECT 1');
-            // Cleanup needs the three tenant-scopable tables; if they're
-            // missing the test environment hasn't been sync'd. Ensure
-            // they exist with the minimum schema cleanup expects.
-            $this->ensureWebhookCleanupSchema($orm);
+            $adapter = $orm->getAdapter();
+            $adapter->execute('SELECT 1');
+
+            $requiredTables = [
+                'webhook_inbox',
+                'webhook_outbox',
+                'webhook_attempts',
+            ];
+            if (class_exists(MySqlWebhookReplayStore::class)) {
+                $requiredTables[] = MySqlWebhookReplayStore::TABLE;
+            }
+
+            foreach ($requiredTables as $table) {
+                if (!$this->tableExists($orm, $table)) {
+                    self::markTestSkipped(
+                        sprintf('Webhook cleanup schema is not synced: missing table %s.', $table),
+                    );
+                }
+            }
         } catch (\Throwable $e) {
             self::markTestSkipped('MySQL or webhook schema unavailable: ' . $e->getMessage());
         }
     }
 
-    private function ensureWebhookCleanupSchema(OrmManager $orm): void
+    private function tableExists(OrmManager $orm, string $table): bool
     {
         $adapter = $orm->getAdapter();
-        $adapter->execute(<<<'SQL'
-CREATE TABLE IF NOT EXISTS `webhook_inbox` (
-    id BINARY(16) NOT NULL,
-    endpoint_definition_id BINARY(16) NOT NULL,
-    provider_key VARCHAR(64) NOT NULL,
-    endpoint_key VARCHAR(191) NOT NULL,
-    tenant_id VARCHAR(64) NULL,
-    provider_event_id VARCHAR(255) NULL,
-    dedupe_key VARCHAR(255) NOT NULL,
-    signature_status VARCHAR(32) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    content_type VARCHAR(128) NULL,
-    http_method VARCHAR(16) NOT NULL,
-    request_uri VARCHAR(2048) NOT NULL,
-    headers_json LONGTEXT NULL,
-    raw_body LONGTEXT NULL,
-    raw_body_sha256 CHAR(64) NOT NULL,
-    parsed_event_type VARCHAR(191) NULL,
-    first_received_at DATETIME NOT NULL,
-    last_received_at DATETIME NOT NULL,
-    processing_started_at DATETIME NULL,
-    processed_at DATETIME NULL,
-    failed_at DATETIME NULL,
-    duplicate_count INT NOT NULL,
-    last_error LONGTEXT NULL,
-    metadata_json LONGTEXT NULL,
-    created_at DATETIME(6) NULL,
-    updated_at DATETIME(6) NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uniq_webhook_inbox_dedupe_key (dedupe_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL);
-        $adapter->execute(<<<'SQL'
-CREATE TABLE IF NOT EXISTS `webhook_outbox` (
-    id BINARY(16) NOT NULL,
-    endpoint_definition_id BINARY(16) NOT NULL,
-    endpoint_key VARCHAR(191) NOT NULL,
-    provider_key VARCHAR(64) NOT NULL,
-    tenant_id VARCHAR(64) NULL,
-    event_type VARCHAR(191) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    idempotency_key VARCHAR(255) NULL,
-    payload_json LONGTEXT NOT NULL,
-    headers_json LONGTEXT NULL,
-    signed_headers_json LONGTEXT NULL,
-    next_attempt_at DATETIME(6) NOT NULL,
-    last_attempt_at DATETIME(6) NULL,
-    delivered_at DATETIME(6) NULL,
-    attempt_count INT NOT NULL,
-    max_attempts INT NOT NULL,
-    initial_backoff_seconds INT NOT NULL,
-    max_backoff_seconds INT NOT NULL,
-    lease_owner VARCHAR(191) NULL,
-    lease_expires_at DATETIME(6) NULL,
-    last_response_status INT NULL,
-    last_response_headers_json LONGTEXT NULL,
-    last_response_body LONGTEXT NULL,
-    last_error LONGTEXT NULL,
-    source_ref VARCHAR(255) NULL,
-    metadata_json LONGTEXT NULL,
-    created_at DATETIME(6) NOT NULL,
-    updated_at DATETIME(6) NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uniq_webhook_outbox_endpoint_idempotency (endpoint_definition_id, idempotency_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL);
-        $adapter->execute(<<<'SQL'
-CREATE TABLE IF NOT EXISTS `webhook_attempts` (
-    id BINARY(16) NOT NULL,
-    direction VARCHAR(16) NOT NULL,
-    inbox_id BINARY(16) NULL,
-    outbox_id BINARY(16) NULL,
-    event_type VARCHAR(64) NOT NULL,
-    attempt_number INT NULL,
-    status_before VARCHAR(32) NULL,
-    status_after VARCHAR(32) NULL,
-    worker_id VARCHAR(128) NULL,
-    http_status INT NULL,
-    message VARCHAR(512) NULL,
-    details_json LONGTEXT NULL,
-    created_at DATETIME(6) NOT NULL,
-    PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL);
+        $result = $adapter->execute('SHOW TABLES LIKE :table', ['table' => $table]);
+        return $result->fetchOne() !== null;
+    }
+
+    private function workspaceRoot(): string
+    {
+        $packageRoot = dirname(__DIR__, 2);
+        $monorepoRoot = dirname($packageRoot, 2);
+
+        if (
+            basename(dirname($packageRoot)) === 'packages'
+            && is_file($monorepoRoot . '/packages/semitexa-dev/config/module-structure.php')
+        ) {
+            return $monorepoRoot;
+        }
+
+        return $packageRoot;
     }
 
     private function removeDir(string $dir): void

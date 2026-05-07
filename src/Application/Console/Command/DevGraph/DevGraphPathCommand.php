@@ -194,7 +194,7 @@ final class DevGraphPathCommand extends BaseCommand
                 'executable_rules_used' => $rulesUsed,
                 'warnings'    => $warnings,
                 'suggested_action' => null,
-                'rule'        => $this->serializeRule($isApplicationModule ? $this->effectiveTopLevelRule($spec, $module) : $spec->packageRootRule),
+                'rule'        => $this->serializeRule($isApplicationModule ? $this->applicationModuleEnvelopeRule() : $spec->packageRootRule),
             ];
         }
 
@@ -594,6 +594,16 @@ final class DevGraphPathCommand extends BaseCommand
             allowFeatureGrouping: $base->allowFeatureGrouping,
             allowAnyFile: $base->allowAnyFile,
             rationale: $base->rationale,
+        );
+    }
+
+    private function applicationModuleEnvelopeRule(): ModuleStructureRule
+    {
+        return new ModuleStructureRule(
+            path: 'application_module_root',
+            allowedDirectories: ['src', 'tests'],
+            allowedFiles: ['composer.json', '.gitkeep', 'README.md', 'README'],
+            rationale: 'Application-module envelope: only src/, tests/, and a small metadata file set are allowed at src/modules/{Module}/.',
         );
     }
 

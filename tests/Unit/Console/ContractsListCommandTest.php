@@ -30,7 +30,8 @@ class ContractsListCommandTest extends TestCase
 
         $input = new ArrayInput(['--json' => true]);
         $output = new BufferedOutput();
-        $command->run($input, $output);
+        $code = $command->run($input, $output);
+        $this->assertSame(0, $code);
 
         $out = $output->fetch();
         $decoded = json_decode($out, true);
@@ -51,7 +52,8 @@ class ContractsListCommandTest extends TestCase
 
         $input = new ArrayInput([]);
         $output = new BufferedOutput();
-        $command->run($input, $output);
+        $code = $command->run($input, $output);
+        $this->assertSame(0, $code);
 
         $out = $output->fetch();
         $this->assertStringContainsString('Contract', $out);
