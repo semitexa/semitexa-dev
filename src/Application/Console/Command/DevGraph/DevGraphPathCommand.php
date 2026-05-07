@@ -536,7 +536,7 @@ final class DevGraphPathCommand extends BaseCommand
         if ($module->isPackageModule()) {
             $codeRoot = $module->relativePath . '/src';
         } else {
-            $codeRoot = $module->relativePath;
+            $codeRoot = $module->relativePath . '/src';
         }
         if ($relPath === $codeRoot) {
             return ['', true, true];

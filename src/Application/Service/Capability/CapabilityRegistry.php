@@ -66,7 +66,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'payload_class' => 'src/modules/{Module}/Application/Payload/Request/{Name}Payload.php',
+                    'payload_class' => 'src/modules/{Module}/src/Application/Payload/Request/{Name}Payload.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: ['make:handler', 'make:resource'],
@@ -90,7 +90,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'handler_class' => 'src/modules/{Module}/Application/Handler/PayloadHandler/{Name}Handler.php',
+                    'handler_class' => 'src/modules/{Module}/src/Application/Handler/PayloadHandler/{Name}Handler.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: [],
@@ -116,8 +116,8 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'resource_class' => 'src/modules/{Module}/Application/Resource/Response/{Name}Response.php',
-                    'twig_template' => 'src/modules/{Module}/Application/View/templates/pages/{kebab-name}.html.twig (if --with-template)',
+                    'resource_class' => 'src/modules/{Module}/src/Application/Resource/Response/{Name}Response.php',
+                    'twig_template' => 'src/modules/{Module}/src/Application/View/templates/pages/{kebab-name}.html.twig (if --with-template)',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints', '--with-template', '--with-assets'],
                 follow_up: [],
@@ -144,10 +144,10 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'payload_class' => 'src/modules/{Module}/Application/Payload/Request/{Name}Payload.php',
-                    'handler_class' => 'src/modules/{Module}/Application/Handler/PayloadHandler/{Name}Handler.php',
-                    'resource_class' => 'src/modules/{Module}/Application/Resource/Response/{Name}Response.php',
-                    'twig_template' => 'src/modules/{Module}/Application/View/templates/pages/{kebab-name}.html.twig',
+                    'payload_class' => 'src/modules/{Module}/src/Application/Payload/Request/{Name}Payload.php',
+                    'handler_class' => 'src/modules/{Module}/src/Application/Handler/PayloadHandler/{Name}Handler.php',
+                    'resource_class' => 'src/modules/{Module}/src/Application/Resource/Response/{Name}Response.php',
+                    'twig_template' => 'src/modules/{Module}/src/Application/View/templates/pages/{kebab-name}.html.twig',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints', '--with-assets'],
                 follow_up: [],
@@ -192,7 +192,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'service_class' => 'src/modules/{Module}/Domain/Service/{Name}.php',
+                    'service_class' => 'src/modules/{Module}/src/Domain/Service/{Name}.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: [],
@@ -216,7 +216,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'listener_class' => 'src/modules/{Module}/Application/Handler/DomainListener/{Name}.php',
+                    'listener_class' => 'src/modules/{Module}/src/Application/Handler/DomainListener/{Name}.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: [],
@@ -239,8 +239,8 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'interface' => 'src/modules/{Module}/Domain/Contract/{Name}Interface.php',
-                    'implementation' => 'src/modules/{Module}/Domain/Service/{Implementation}.php',
+                    'interface' => 'src/modules/{Module}/src/Domain/Contract/{Name}Interface.php',
+                    'implementation' => 'src/modules/{Module}/src/Domain/Service/{Implementation}.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: ['contracts:list'],
@@ -264,7 +264,7 @@ final class CapabilityRegistry
                     'llm-hints' => ['type' => 'flag', 'description' => 'Output LLM hints envelope', 'default' => false],
                 ],
                 outputs: [
-                    'command_class' => 'src/modules/{Module}/Application/Console/Command/{Name}Command.php',
+                    'command_class' => 'src/modules/{Module}/src/Application/Console/Command/{Name}Command.php',
                 ],
                 supports: ['--dry-run', '--force', '--json', '--llm-hints'],
                 follow_up: [],
