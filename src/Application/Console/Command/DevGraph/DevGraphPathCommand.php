@@ -172,6 +172,7 @@ final class DevGraphPathCommand extends BaseCommand
         [$specPath, $insideCodeRoot, $isCodeRootRoot] = $this->locateInsideCodeRoot($module, $relPath);
 
         if (!$insideCodeRoot) {
+            $isApplicationModule = $module->isApplicationModule();
             return [
                 'kind'        => 'path_explanation',
                 'path'        => $relPath,
@@ -182,14 +183,18 @@ final class DevGraphPathCommand extends BaseCommand
                 'status'      => 'envelope',
                 'is_directory' => $isDir,
                 'is_file'     => $isFile,
-                'purpose'     => 'Path is at the package envelope (not inside src/). Validated against the global packageRoot rule.',
-                'reason'      => 'Package envelope holds metadata + canonical sub-roots (composer.json, src/, tests/, docs/, ...).',
+                'purpose'     => $isApplicationModule
+                    ? 'Path is at the application-module envelope (not inside src/). Validated against the application-module top-level rule.'
+                    : 'Path is at the package envelope (not inside src/). Validated against the global packageRoot rule.',
+                'reason'      => $isApplicationModule
+                    ? 'Application-module envelopes only allow src/, tests/, and the small metadata file set documented for local modules.'
+                    : 'Package envelope holds metadata + canonical sub-roots (composer.json, src/, tests/, docs/, ...).',
                 'public_api'  => null,
                 'docs_used'   => $docsUsed,
                 'executable_rules_used' => $rulesUsed,
                 'warnings'    => $warnings,
                 'suggested_action' => null,
-                'rule'        => $this->serializeRule($spec->packageRootRule),
+                'rule'        => $this->serializeRule($isApplicationModule ? $this->effectiveTopLevelRule($spec, $module) : $spec->packageRootRule),
             ];
         }
 
