@@ -78,7 +78,7 @@ final class MakeServiceCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('service_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Domain/Service/{$name}.php" => [
+                        "src/modules/{$module}/src/Domain/Service/{$name}.php" => [
                             'Add #[InjectAsReadonly] properties for dependencies',
                             'Implement service methods',
                         ],
@@ -119,7 +119,7 @@ final class MakeServiceCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('service_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Domain/Service/{$name}.php" => [
+                    "src/modules/{$module}/src/Domain/Service/{$name}.php" => [
                         'Add #[InjectAsReadonly] properties for dependencies',
                         'Implement service methods',
                     ],

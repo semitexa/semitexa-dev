@@ -68,12 +68,88 @@ final class ModuleStructureValidator
     private function validateApplicationModule(DetectedModule $module, string $absRoot): array
     {
         $violations = [];
-        $this->walkCodeRoot(
-            module: $module,
-            codeRootAbs: $absRoot,
-            isApplicationModule: true,
-            violations: $violations,
-        );
+
+        // 1. Module-root envelope: only `src/` (runtime) and `tests/` are
+        //    allowed at the application module root, plus a small set of
+        //    metadata/scaffold files. Anything else triggers a violation —
+        //    package-only layer names get the dedicated `invalid_layer`
+        //    code; everything else falls through to `unknown_directory` or
+        //    `invalid_root_file`.
+        $allowedRootDirs = ['src', 'tests'];
+        $allowedRootFiles = ['composer.json', '.gitkeep', 'README.md', 'README'];
+
+        foreach ($this->scanDirs($absRoot) as $dir) {
+            if (in_array($dir, $allowedRootDirs, true)) {
+                continue;
+            }
+            if ($this->spec->isPackageOnlyDirectory($dir)) {
+                $violations[] = new ModuleStructureViolation(
+                    code: ModuleStructureViolation::CODE_INVALID_LAYER,
+                    module: $module->relativePath,
+                    path: $module->relativePath . '/' . $dir,
+                    message: sprintf(
+                        "'%s/' is a package-only layer and is not allowed inside src/modules/.",
+                        $dir,
+                    ),
+                    expected: 'src/ or tests/ at the application module root.',
+                    actual: $dir . '/',
+                    suggestedFix: sprintf(
+                        "Move '%s/' contents into Application/ or Domain/ under src/. Application modules consume framework attributes/commands; they do not declare them.",
+                        $dir,
+                    ),
+                );
+                continue;
+            }
+            $violations[] = new ModuleStructureViolation(
+                code: ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
+                module: $module->relativePath,
+                path: $module->relativePath . '/' . $dir,
+                message: sprintf(
+                    "Unknown application-module-root directory: '%s/'.",
+                    $dir,
+                ),
+                expected: 'src/ (runtime) or tests/ at the application module root.',
+                actual: $dir . '/',
+                suggestedFix: sprintf(
+                    "Move '%s/' under src/ if it carries runtime PHP, or under tests/ if it carries tests. Application modules mirror the packages/ layout.",
+                    $dir,
+                ),
+            );
+        }
+
+        foreach ($this->scanFiles($absRoot) as $file) {
+            if (in_array($file, $allowedRootFiles, true)) {
+                continue;
+            }
+            $violations[] = new ModuleStructureViolation(
+                code: ModuleStructureViolation::CODE_INVALID_ROOT_FILE,
+                module: $module->relativePath,
+                path: $module->relativePath . '/' . $file,
+                message: sprintf(
+                    "Unknown application-module-root file: '%s'.",
+                    $file,
+                ),
+                expected: 'application-module metadata files only — see ' . ModuleStructureSpecLoader::SPEC_REL_PATH,
+                actual: $file,
+                suggestedFix: sprintf(
+                    "Move '%s' under src/ if it is runtime PHP, under tests/ if it belongs to tests, or remove it.",
+                    $file,
+                ),
+            );
+        }
+
+        // 2. Walk `src/` against the codeRootRules. If `src/` is missing the
+        //    module is empty/unscaffolded — nothing further to validate.
+        $srcAbs = $absRoot . '/src';
+        if (is_dir($srcAbs)) {
+            $this->walkCodeRoot(
+                module: $module,
+                codeRootAbs: $srcAbs,
+                isApplicationModule: true,
+                violations: $violations,
+            );
+        }
+
         return $violations;
     }
 
@@ -767,9 +843,9 @@ final class ModuleStructureValidator
 
     private function codeRootRelativeToProject(DetectedModule $module): string
     {
-        return $module->isPackageModule()
-            ? $module->relativePath . '/src'
-            : $module->relativePath;
+        // Both packages (`packages/<name>/src/`) and application modules
+        // (`src/modules/<Name>/src/`) keep runtime PHP under `src/`.
+        return $module->relativePath . '/src';
     }
 
     private function humaniseSpecPath(string $specPath): string

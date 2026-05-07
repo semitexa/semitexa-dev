@@ -27,7 +27,7 @@ final class ModulePlanBuilder
         $target = $this->normalizeTarget($params['target'] ?? self::TARGET_CUSTOM);
         $base = $target === self::TARGET_PACKAGE
             ? sprintf('packages/semitexa-%s/src', $this->inflector->toKebab($module))
-            : "src/modules/{$module}";
+            : "src/modules/{$module}/src";
 
         $gitkeep = "# This directory is part of the {$module} module.\n";
 
@@ -53,6 +53,14 @@ final class ModulePlanBuilder
             new PlannedFile("{$base}/Domain/Event/.gitkeep", $gitkeep, FileType::PhpClass),
             new PlannedFile("{$base}/Domain/Model/.gitkeep", $gitkeep, FileType::PhpClass),
         ]);
+
+        if ($target !== self::TARGET_PACKAGE) {
+            $files[] = new PlannedFile(
+                "src/modules/{$module}/tests/.gitkeep",
+                $gitkeep,
+                FileType::PhpClass,
+            );
+        }
 
         return new GenerationPlan(
             command: 'make:module',

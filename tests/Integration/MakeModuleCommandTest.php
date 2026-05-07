@@ -51,7 +51,7 @@ class MakeModuleCommandTest extends TestCase
 
         $decoded = json_decode(trim($tester->getDisplay()), true);
         $this->assertSame('semitexa-dev.generation-result/v1', $decoded['artifact']);
-        $this->assertContains('src/modules/Catalog/Application/Payload/Request/.gitkeep', $decoded['result']['created']);
+        $this->assertContains('src/modules/Catalog/src/Application/Payload/Request/.gitkeep', $decoded['result']['created']);
         $this->assertContains('--target=custom', $decoded['result']['replay_args']);
     }
 
@@ -70,11 +70,11 @@ class MakeModuleCommandTest extends TestCase
         // module_structure validator. This pins the regression so the
         // generator can never silently regress to Application/Command/.
         $this->assertContains(
-            'src/modules/Catalog/Application/Console/Command/.gitkeep',
+            'src/modules/Catalog/src/Application/Console/Command/.gitkeep',
             $created,
         );
         $this->assertNotContains(
-            'src/modules/Catalog/Application/Command/.gitkeep',
+            'src/modules/Catalog/src/Application/Command/.gitkeep',
             $created,
             'make:module must not emit the deprecated Application/Command/ path',
         );
@@ -132,8 +132,8 @@ class MakeModuleCommandTest extends TestCase
         ]);
         $this->assertSame(0, $exit, 'make:module --write must succeed');
 
-        $this->assertDirectoryExists($this->tmpRoot . '/src/modules/Catalog/Application/Console/Command');
-        $this->assertDirectoryDoesNotExist($this->tmpRoot . '/src/modules/Catalog/Application/Command');
+        $this->assertDirectoryExists($this->tmpRoot . '/src/modules/Catalog/src/Application/Console/Command');
+        $this->assertDirectoryDoesNotExist($this->tmpRoot . '/src/modules/Catalog/src/Application/Command');
 
         // Real project root holds the executable spec; the validator runs
         // against the temp $tmpRoot which holds the freshly generated module.
@@ -169,7 +169,7 @@ class MakeModuleCommandTest extends TestCase
         $this->assertSame(0, $exit);
         $display = $tester->getDisplay();
         $this->assertStringContainsString('Choose module target', $display);
-        $this->assertStringContainsString('project-specific module in `src/modules/{Module}`', $display);
+        $this->assertStringContainsString('project-specific module in `src/modules/{Module}/`', $display);
         $this->assertStringContainsString('reusable module package in `packages/semitexa-{module}`', $display);
         $this->assertStringContainsString('Package mode currently scaffolds the package shell only.', $display);
         $this->assertStringContainsString('packages/semitexa-catalog/composer.json', $display);

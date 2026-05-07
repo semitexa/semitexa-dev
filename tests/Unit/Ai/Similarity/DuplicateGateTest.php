@@ -25,7 +25,7 @@ class DuplicateGateTest extends TestCase
                 module: 'Foo',
                 className: 'DupeHandler',
                 fqcn: 'X\\DupeHandler',
-                relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/DupeHandler.php',
+                relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/DupeHandler.php',
                 extras: [],
             ),
         ]));
@@ -38,7 +38,7 @@ class DuplicateGateTest extends TestCase
                 module: 'Foo',
                 className: 'DupeHandler',
                 fqcn: 'X\\DupeHandler',
-                relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/DupeHandler.php',
+                relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/DupeHandler.php',
             ),
             $detector,
             $io,

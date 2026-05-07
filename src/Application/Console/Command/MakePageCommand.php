@@ -89,18 +89,18 @@ final class MakePageCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('page_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                             'Add properties for request parameters',
                             'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                         ],
-                        "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                             'Implement business logic in handle()',
                             'Populate resource via fluent setters',
                         ],
-                        "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
                             'Add fluent with*() setter methods',
                         ],
-                        "src/modules/{$module}/Application/View/templates/pages/{$kebab}.html.twig" => [
+                        "src/modules/{$module}/src/Application/View/templates/pages/{$kebab}.html.twig" => [
                             'Build the page HTML template',
                         ],
                     ],
@@ -114,7 +114,7 @@ final class MakePageCommand extends BaseCommand
                         'Resource must extend HtmlResponse and implement ResourceInterface',
                         'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                     ],
-                    'suggested_next_prompt' => "Open the handler at src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
+                    'suggested_next_prompt' => "Open the handler at src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
                 ]));
                 return self::SUCCESS;
             }
@@ -144,18 +144,18 @@ final class MakePageCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('page_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                         'Add properties for request parameters',
                         'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                     ],
-                    "src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php" => [
                         'Implement business logic in handle()',
                         'Populate resource via fluent setters',
                     ],
-                    "src/modules/{$module}/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Resource/Response/{$inflector->toResponseClass($name)}.php" => [
                         'Add fluent with*() setter methods',
                     ],
-                    "src/modules/{$module}/Application/View/templates/pages/{$kebab}.html.twig" => [
+                    "src/modules/{$module}/src/Application/View/templates/pages/{$kebab}.html.twig" => [
                         'Build the page HTML template',
                     ],
                 ],
@@ -169,7 +169,7 @@ final class MakePageCommand extends BaseCommand
                     'Resource must extend HtmlResponse and implement ResourceInterface',
                     'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                 ],
-                'suggested_next_prompt' => "Open the handler at src/modules/{$module}/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
+                'suggested_next_prompt' => "Open the handler at src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
             ]));
             return self::SUCCESS;
         }

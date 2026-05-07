@@ -486,6 +486,16 @@ $codeRoot[] = $rule(
     opaqueTodo: 'Enumerate runtime classes and add explicit rules when the surface stabilises.',
 );
 
+// `Boot/` (semitexa-core) — framework bootstrapping helpers that wire
+// wildcard module autoloading before the application kernel starts.
+// Leaf-only: root helper classes such as LocalModuleAutoloadRegistrar.php.
+$codeRoot[] = $rule(
+    path: 'Boot',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    rationale: 'semitexa-core bootstrapping helpers that prepare framework/runtime wiring before the kernel fully boots. Leaf — PascalCase helper classes only.',
+);
+
 // ----------------------------------------------------------------------
 // Phase 3 batch 1 (2026-04-30): converted from opaque_internal to
 // deep_validated. Each rule below pins the actual semitexa-core layout
@@ -935,9 +945,9 @@ $codeRoot[] = $rule(
     rationale: 'Framework Theme integration types (ThemeProviderInterface, …). Leaf — basenames must start with Theme so the layer cannot become a generic frontend dumping ground. Promote to DEEP_VALIDATED with explicit children if/when sub-tree grows.',
 );
 
-// Final state: zero opaque directories. The opaque_internal mode
-// remains available in the spec for future architectural areas, but no
-// directory currently uses it.
+// The `opaque_internal` mode remains in use for a few framework-runtime
+// sub-trees in semitexa-core (Container/, Console/Runtime) until their
+// child classes stabilise and explicit allowlists land in Phase 3/4.
 $coreOpaqueDirs = [];
 foreach ($coreOpaqueDirs as $dir => $purpose) {
     $codeRoot[] = $rule(
@@ -972,6 +982,10 @@ $packageRoot = new ModuleStructureRule(
         'tools',
         'public',
         'var',
+        // Package-owned bootstraps (for example phpunit bootstraps) live
+        // here. This is envelope-only: package `src/` still stays under the
+        // strict code-root allowlist.
+        'bootstrap',
         '.github',
         '.git',
         '.phpunit.cache',
@@ -1105,6 +1119,7 @@ $packageSpecificCodeRoot = [
         'directories' => [
             'Acl',
             'Authorization',
+            'Boot',
             'CodeGen',
             'Composer',
             'Config',

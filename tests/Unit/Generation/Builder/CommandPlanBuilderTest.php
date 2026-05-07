@@ -44,7 +44,7 @@ final class CommandPlanBuilderTest extends TestCase
 
         self::assertCount(1, $plan->files);
         self::assertSame(
-            'src/modules/Catalog/Application/Console/Command/ReindexCommand.php',
+            'src/modules/Catalog/src/Application/Console/Command/ReindexCommand.php',
             $plan->files[0]->path,
         );
     }
@@ -158,7 +158,7 @@ final class CommandPlanBuilderTest extends TestCase
 
         // 1. File path matches the canonical class name
         self::assertSame(
-            "src/modules/Catalog/Application/Console/Command/{$expected}.php",
+            "src/modules/Catalog/src/Application/Console/Command/{$expected}.php",
             $file->path,
             "input '{$input}' must produce file path ending in '{$expected}.php'",
         );

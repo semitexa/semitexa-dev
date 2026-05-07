@@ -5,20 +5,20 @@
         "command": "make:page",
         "status": "success",
         "created": [
-            "src/modules/Website/Application/Payload/Request/PricingPayload.php",
-            "src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php",
-            "src/modules/Website/Application/Resource/Response/PricingResponse.php",
-            "src/modules/Website/Application/View/templates/pages/pricing.html.twig"
+            "src/modules/Website/src/Application/Payload/Request/PricingPayload.php",
+            "src/modules/Website/src/Application/Handler/PayloadHandler/PricingHandler.php",
+            "src/modules/Website/src/Application/Resource/Response/PricingResponse.php",
+            "src/modules/Website/src/Application/View/templates/pages/pricing.html.twig"
         ],
         "skipped": [],
         "conflicts": [],
         "next_steps": []
     },
     "fill_targets": {
-        "src/modules/Website/Application/Handler/PayloadHandler/PricingHandler.php": [
+        "src/modules/Website/src/Application/Handler/PayloadHandler/PricingHandler.php": [
             "Implement business logic"
         ],
-        "src/modules/Website/Application/Resource/Response/PricingResponse.php": [
+        "src/modules/Website/src/Application/Resource/Response/PricingResponse.php": [
             "Add fluent setters"
         ]
     },

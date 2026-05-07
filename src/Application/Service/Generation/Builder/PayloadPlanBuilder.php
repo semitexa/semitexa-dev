@@ -68,7 +68,7 @@ final class PayloadPlanBuilder
             'className' => $payloadClass,
         ], 'make:payload');
 
-        $filePath = "src/modules/{$module}/Application/Payload/Request/{$payloadClass}.php";
+        $filePath = "src/modules/{$module}/src/Application/Payload/Request/{$payloadClass}.php";
 
         return new GenerationPlan(
             command: 'make:payload',

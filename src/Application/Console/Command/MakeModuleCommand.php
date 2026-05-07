@@ -146,7 +146,7 @@ final class MakeModuleCommand extends BaseCommand
         }
 
         $io->section('Choose module target');
-        $io->text('`custom`: create a project-specific module in `src/modules/{Module}`. Choose this when the code belongs only to the current app and does not need package metadata.');
+        $io->text('`custom`: create a project-specific module in `src/modules/{Module}/` with `src/` (runtime) and `tests/` siblings. Choose this when the code belongs only to the current app and does not need package metadata.');
         $io->text('`package`: create a reusable module package in `packages/semitexa-{module}` with its own `composer.json`. Choose this when the module should be versioned, released, or shared across projects.');
         $io->text('Package mode currently scaffolds the package shell only. Downstream generators like `make:page`, `make:service`, and `make:contract` still target `src/modules` until they become target-aware.');
         $io->text('Both options follow the same Semitexa module structure. The real difference is ownership and where the module lives.');
@@ -187,7 +187,8 @@ final class MakeModuleCommand extends BaseCommand
 
         return [
             sprintf('Module namespace: Semitexa\\Modules\\%s', $module),
-            sprintf('Source root: src/modules/%s', $module),
+            sprintf('Source root: src/modules/%s/src', $module),
+            sprintf('Tests root: src/modules/%s/tests', $module),
             'All directories follow the standard convention and are auto-discovered.',
             'Use this when the module is app-specific and does not need its own package lifecycle.',
         ];

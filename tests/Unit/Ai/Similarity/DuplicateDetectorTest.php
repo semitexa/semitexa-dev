@@ -21,7 +21,7 @@ class DuplicateDetectorTest extends TestCase
                 module: 'Foo',
                 className: 'GetThingHandler',
                 fqcn: 'Semitexa\\Modules\\Foo\\Application\\Handler\\PayloadHandler\\GetThingHandler',
-                relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+                relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
                 extras: [
                     'payload_fqcn' => 'Semitexa\\Modules\\Foo\\Application\\Payload\\Request\\GetThingPayload',
                     'resource_fqcn' => 'Semitexa\\Modules\\Foo\\Application\\Resource\\Response\\GetThingResponse',
@@ -34,7 +34,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'GetThingHandler',
             fqcn: 'Semitexa\\Modules\\Foo\\Application\\Handler\\PayloadHandler\\GetThingHandler',
-            relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+            relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
             extras: [
                 'payload_fqcn' => 'Semitexa\\Modules\\Foo\\Application\\Payload\\Request\\OtherPayload',
                 'resource_fqcn' => 'Semitexa\\Modules\\Foo\\Application\\Resource\\Response\\OtherResponse',
@@ -54,7 +54,7 @@ class DuplicateDetectorTest extends TestCase
                 module: 'Foo',
                 className: 'FirstHandler',
                 fqcn: 'X\\FirstHandler',
-                relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/FirstHandler.php',
+                relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/FirstHandler.php',
                 extras: [
                     'payload_fqcn' => 'X\\GetThingPayload',
                     'resource_fqcn' => 'X\\GetThingResponse',
@@ -67,7 +67,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'SecondHandler',
             fqcn: 'X\\SecondHandler',
-            relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/SecondHandler.php',
+            relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/SecondHandler.php',
             extras: [
                 'payload_fqcn' => 'X\\GetThingPayload',
                 'resource_fqcn' => 'X\\GetThingResponse',
@@ -88,7 +88,7 @@ class DuplicateDetectorTest extends TestCase
                 module: 'Bar',
                 className: 'OldPayload',
                 fqcn: 'X\\OldPayload',
-                relativePath: 'src/modules/Bar/Application/Payload/Request/OldPayload.php',
+                relativePath: 'src/modules/Bar/src/Application/Payload/Request/OldPayload.php',
                 extras: ['route_path' => '/foo/{id}', 'route_method' => 'GET'],
             ),
         ]));
@@ -98,7 +98,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'NewPayload',
             fqcn: 'X\\NewPayload',
-            relativePath: 'src/modules/Foo/Application/Payload/Request/NewPayload.php',
+            relativePath: 'src/modules/Foo/src/Application/Payload/Request/NewPayload.php',
             extras: ['route_path' => '/foo/{id}', 'route_method' => 'GET'],
         ));
 
@@ -116,7 +116,7 @@ class DuplicateDetectorTest extends TestCase
                 module: 'Foo',
                 className: 'GetUserPayload',
                 fqcn: 'X\\GetUserPayload',
-                relativePath: 'src/modules/Foo/Application/Payload/Request/GetUserPayload.php',
+                relativePath: 'src/modules/Foo/src/Application/Payload/Request/GetUserPayload.php',
                 extras: [],
             ),
         ]));
@@ -126,7 +126,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'GetUsrPayload',
             fqcn: 'X\\GetUsrPayload',
-            relativePath: 'src/modules/Foo/Application/Payload/Request/GetUsrPayload.php',
+            relativePath: 'src/modules/Foo/src/Application/Payload/Request/GetUsrPayload.php',
             extras: [],
         ));
 
@@ -143,7 +143,7 @@ class DuplicateDetectorTest extends TestCase
                 module: 'Foo',
                 className: 'ExistingListener',
                 fqcn: 'X\\ExistingListener',
-                relativePath: 'src/modules/Foo/Application/Handler/DomainListener/ExistingListener.php',
+                relativePath: 'src/modules/Foo/src/Application/Handler/DomainListener/ExistingListener.php',
                 extras: ['event_fqcn' => 'Y\\UserRegistered'],
             ),
         ]));
@@ -153,7 +153,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'NewListener',
             fqcn: 'X\\NewListener',
-            relativePath: 'src/modules/Foo/Application/Handler/DomainListener/NewListener.php',
+            relativePath: 'src/modules/Foo/src/Application/Handler/DomainListener/NewListener.php',
             extras: ['event_fqcn' => 'Y\\UserRegistered'],
         ));
 
@@ -170,7 +170,7 @@ class DuplicateDetectorTest extends TestCase
             module: 'Foo',
             className: 'BrandNewHandler',
             fqcn: 'X\\BrandNewHandler',
-            relativePath: 'src/modules/Foo/Application/Handler/PayloadHandler/BrandNewHandler.php',
+            relativePath: 'src/modules/Foo/src/Application/Handler/PayloadHandler/BrandNewHandler.php',
         ));
 
         $this->assertSame([], $findings);

@@ -54,7 +54,7 @@ final class CommandPlanBuilder
             'className' => $className,
         ], 'make:command');
 
-        $filePath = "src/modules/{$module}/Application/Console/Command/{$className}.php";
+        $filePath = "src/modules/{$module}/src/Application/Console/Command/{$className}.php";
 
         return new GenerationPlan(
             command: 'make:command',

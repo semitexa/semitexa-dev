@@ -119,7 +119,7 @@ final class MakePayloadCommand extends BaseCommand
                 $formatter = new LlmHintsFormatter();
                 $output->writeln($formatter->format('payload_scaffold', $plannedResult, [
                     'fill_targets' => [
-                        "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                        "src/modules/{$module}/src/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                             'Add properties for request parameters',
                             'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                         ],
@@ -160,7 +160,7 @@ final class MakePayloadCommand extends BaseCommand
             $formatter = new LlmHintsFormatter();
             $output->writeln($formatter->format('payload_scaffold', $result, [
                 'fill_targets' => [
-                    "src/modules/{$module}/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
+                    "src/modules/{$module}/src/Application/Payload/Request/{$inflector->toPayloadClass($name)}.php" => [
                         'Add properties for request parameters',
                         'Throw Semitexa\\Core\\Exception\\ValidationException from setters to reject invalid input',
                     ],

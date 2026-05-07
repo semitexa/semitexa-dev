@@ -24,11 +24,11 @@ class DuplicateRefusalTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpRoot = sys_get_temp_dir() . '/semitexa-dup-refusal-' . uniqid();
-        mkdir($this->tmpRoot . '/src/modules/Foo/Application/Handler/PayloadHandler', 0755, true);
+        mkdir($this->tmpRoot . '/src/modules/Foo/src/Application/Handler/PayloadHandler', 0755, true);
         file_put_contents($this->tmpRoot . '/composer.json', '{"name":"temp/project"}');
 
         file_put_contents(
-            $this->tmpRoot . '/src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php',
+            $this->tmpRoot . '/src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
             <<<PHP
 <?php
 namespace Semitexa\\Modules\\Foo\\Application\\Handler\\PayloadHandler;

@@ -30,7 +30,7 @@ class VerificationPlannerTest extends TestCase
     {
         $planner = $this->planner();
         $plan = $planner->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php', ChangedFile::KIND_HANDLER),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $this->assertSame(VerificationPlan::SCOPE_STANDARD, $plan->effectiveScope);
@@ -45,7 +45,7 @@ class VerificationPlannerTest extends TestCase
     {
         $planner = $this->planner();
         $plan = $planner->plan([
-            new ChangedFile('src/modules/Foo/Application/Payload/Request/GetThingPayload.php', ChangedFile::KIND_PAYLOAD),
+            new ChangedFile('src/modules/Foo/src/Application/Payload/Request/GetThingPayload.php', ChangedFile::KIND_PAYLOAD),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $commands = $this->lintCommandNames($plan);
@@ -57,8 +57,8 @@ class VerificationPlannerTest extends TestCase
     {
         $planner = $this->planner();
         $plan = $planner->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER),
-            new ChangedFile('src/modules/Foo/Application/Payload/Request/Y.php', ChangedFile::KIND_PAYLOAD),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Payload/Request/Y.php', ChangedFile::KIND_PAYLOAD),
         ], VerificationPlan::SCOPE_MINIMAL);
 
         $this->assertSame(VerificationPlan::SCOPE_MINIMAL, $plan->effectiveScope);
@@ -74,7 +74,7 @@ class VerificationPlannerTest extends TestCase
     {
         $planner = $this->planner();
         $plan = $planner->plan([
-            new ChangedFile('src/modules/Foo/Application/Service/X.php', ChangedFile::KIND_SERVICE),
+            new ChangedFile('src/modules/Foo/src/Application/Service/X.php', ChangedFile::KIND_SERVICE),
         ], VerificationPlan::SCOPE_MINIMAL, isRepoWide: true);
 
         $this->assertSame(VerificationPlan::SCOPE_MINIMAL, $plan->effectiveScope);
@@ -85,7 +85,7 @@ class VerificationPlannerTest extends TestCase
     {
         $planner = $this->planner();
         $plan = $planner->plan([
-            new ChangedFile('src/modules/Foo/Domain/Contract/UserRepoInterface.php', ChangedFile::KIND_CONTRACT),
+            new ChangedFile('src/modules/Foo/src/Domain/Contract/UserRepoInterface.php', ChangedFile::KIND_CONTRACT),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $this->assertSame(VerificationPlan::SCOPE_BROAD, $plan->effectiveScope);
@@ -106,7 +106,7 @@ class VerificationPlannerTest extends TestCase
     {
         $files = [];
         for ($i = 0; $i < 16; $i++) {
-            $files[] = new ChangedFile("src/modules/Foo/Domain/Service/S{$i}.php", ChangedFile::KIND_SERVICE);
+            $files[] = new ChangedFile("src/modules/Foo/src/Domain/Service/S{$i}.php", ChangedFile::KIND_SERVICE);
         }
         $plan = $this->planner()->plan($files, VerificationPlan::SCOPE_STANDARD);
 
@@ -134,7 +134,7 @@ class VerificationPlannerTest extends TestCase
         file_put_contents($this->root . '/tests/Unit/Foo/GetThingHandlerTest.php', "<?php\nclass GetThingHandlerTest {}\n");
 
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/GetThingHandler.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php', ChangedFile::KIND_HANDLER),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
@@ -146,7 +146,7 @@ class VerificationPlannerTest extends TestCase
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/Gone.php', ChangedFile::KIND_HANDLER, ChangedFile::STATUS_DELETED),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/Gone.php', ChangedFile::KIND_HANDLER, ChangedFile::STATUS_DELETED),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $this->assertCount(1, $plan->changedFiles);
@@ -163,8 +163,8 @@ class VerificationPlannerTest extends TestCase
     public function test_dedupes_lint_targets_when_multiple_files_share_a_kind(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/A.php', ChangedFile::KIND_HANDLER),
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/B.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/A.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/B.php', ChangedFile::KIND_HANDLER),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $commands = $this->lintCommandNames($plan);
@@ -352,8 +352,8 @@ class VerificationPlannerTest extends TestCase
     public function test_multiple_changed_php_files_share_a_single_phpstan_di_target(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Service/X.php', ChangedFile::KIND_SERVICE),
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/Y.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Service/X.php', ChangedFile::KIND_SERVICE),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/Y.php', ChangedFile::KIND_HANDLER),
             new ChangedFile('packages/semitexa-api/src/Application/Console/Command/Z.php', ChangedFile::KIND_PHP_OTHER),
         ], VerificationPlan::SCOPE_STANDARD);
 
@@ -367,7 +367,7 @@ class VerificationPlannerTest extends TestCase
         $plan = $this->planner()->plan([
             new ChangedFile('packages/semitexa-core/tests/Unit/X.php', ChangedFile::KIND_TEST),
             new ChangedFile('packages/semitexa-core/tests/Unit/Fixtures/F.php', ChangedFile::KIND_TEST_FIXTURE),
-            new ChangedFile('src/modules/Foo/Application/View/templates/pages/x.html.twig', ChangedFile::KIND_TEMPLATE),
+            new ChangedFile('src/modules/Foo/src/Application/View/templates/pages/x.html.twig', ChangedFile::KIND_TEMPLATE),
             new ChangedFile('docker/etc/nginx.conf', ChangedFile::KIND_NON_PHP),
         ], VerificationPlan::SCOPE_STANDARD);
 
@@ -377,7 +377,7 @@ class VerificationPlannerTest extends TestCase
     public function test_phpstan_di_target_skipped_at_minimal_scope(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Service/X.php', ChangedFile::KIND_SERVICE),
+            new ChangedFile('src/modules/Foo/src/Application/Service/X.php', ChangedFile::KIND_SERVICE),
         ], VerificationPlan::SCOPE_MINIMAL);
 
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI));
@@ -386,7 +386,7 @@ class VerificationPlannerTest extends TestCase
     public function test_unknown_scope_falls_back_to_standard(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('src/modules/Foo/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER),
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER),
         ], 'gibberish');
 
         $this->assertSame('gibberish', $plan->scope);

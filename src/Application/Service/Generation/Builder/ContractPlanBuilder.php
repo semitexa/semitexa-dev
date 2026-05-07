@@ -58,8 +58,8 @@ final class ContractPlanBuilder
             'className' => $implName,
         ], 'make:contract');
 
-        $interfacePath = "src/modules/{$module}/Domain/Contract/{$interfaceClass}.php";
-        $implPath = "src/modules/{$module}/Domain/Service/{$implName}.php";
+        $interfacePath = "src/modules/{$module}/src/Domain/Contract/{$interfaceClass}.php";
+        $implPath = "src/modules/{$module}/src/Domain/Service/{$implName}.php";
 
         return new GenerationPlan(
             command: 'make:contract',

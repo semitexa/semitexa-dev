@@ -83,7 +83,7 @@ class WorkflowTraceTest extends TestCase
         ]);
 
         $this->runCommand($app, 'ai:verify', [
-            '--files' => 'src/modules/Billing/Application/Handler/PayloadHandler/GetInvoiceHandler.php',
+            '--files' => 'src/modules/Billing/src/Application/Handler/PayloadHandler/GetInvoiceHandler.php',
             '--trace' => $traceId,
             '--json'  => true,
         ]);
@@ -129,7 +129,7 @@ class WorkflowTraceTest extends TestCase
                 '--module'    => 'billing',
             ]);
             $this->runCommand($app, 'ai:verify', [
-                '--files' => 'src/modules/Billing/Application/Handler/PayloadHandler/A.php',
+                '--files' => 'src/modules/Billing/src/Application/Handler/PayloadHandler/A.php',
                 '--json'  => true,
             ]);
         } finally {
@@ -150,7 +150,7 @@ class WorkflowTraceTest extends TestCase
 
         $this->runCommand($app, 'ai:task', ['description' => 'add page', '--module' => 'billing']);
         $this->runCommand($app, 'ai:verify', [
-            '--files' => 'src/modules/Billing/Application/Payload/Request/Get.php',
+            '--files' => 'src/modules/Billing/src/Application/Payload/Request/Get.php',
             '--json'  => true,
         ]);
 
