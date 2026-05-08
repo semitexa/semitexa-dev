@@ -33,6 +33,5 @@
         "scaffolding",
         "cli",
         "capabilities"
-    ],
-    "version": "v1.0.4"
+    ]
 }
