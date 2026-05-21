@@ -107,10 +107,11 @@ $codeRoot = [
             'Static',
             'View',
             'Component',
+            'DataProvider',
             'Db',
             'Enum',
         ],
-        rationale: 'Application orchestration layer; canonical sub-trees. `Db/` hosts the persistence implementation (resource models, mappers, concrete repositories) — Domain/ stays clean of infrastructure. `Application/Enum` is the canonical home for **application/runtime enums** — types that describe orchestration modes, runtime execution states, framework adapter modes, or pipeline phases. Domain enums live at `Domain/Enum/`. Top-level `src/Enum/` is intentionally NOT allowed.',
+        rationale: 'Application orchestration layer; canonical sub-trees. `Db/` hosts the persistence implementation (resource models, mappers, concrete repositories) — Domain/ stays clean of infrastructure. `Application/DataProvider` is the canonical home for **SSR DataProvider implementations** — classes that implement `Semitexa\\Ssr\\Domain\\Contract\\DataProviderInterface` and resolve display-ready data for deferred slots or `#[WithDataProvider]` components. `Application/Enum` is the canonical home for **application/runtime enums** — types that describe orchestration modes, runtime execution states, framework adapter modes, or pipeline phases. Domain enums live at `Domain/Enum/`. Top-level `src/Enum/` is intentionally NOT allowed.',
     ),
     $rule(
         path: 'Application/Payload',
@@ -138,6 +139,20 @@ $codeRoot = [
     $rule(path: 'Application/Service',   allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Update',    allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Component', allowFeatureGrouping: true, allowAnyFile: true),
+
+    // Application/DataProvider — SSR DataProvider implementations.
+    //
+    // Canonical home for classes implementing
+    // `Semitexa\Ssr\Domain\Contract\DataProviderInterface` (the deferred-slot
+    // and `#[WithDataProvider]` companion providers). Feature grouping is
+    // allowed (e.g. `Application/DataProvider/Articles/`); any *.php is
+    // accepted because providers commonly need helper / DTO / mapper peers.
+    $rule(
+        path: 'Application/DataProvider',
+        allowFeatureGrouping: true,
+        allowAnyFile: true,
+        rationale: 'SSR DataProvider implementations (DataProviderInterface). Feature grouping allowed; helper / DTO / mapper peers are accepted.',
+    ),
 
     // Application/Enum — application/runtime enums.
     //
