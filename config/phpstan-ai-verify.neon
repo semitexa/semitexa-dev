@@ -81,6 +81,23 @@ parameters:
         -
             identifier: class.notFound
             path: %currentWorkingDirectory%/packages/semitexa-ssr/src/Seo/Sitemap/SitemapUrlProviderInterface.php
+        # Inline class_alias() shims — the file declares the canonical
+        # class and then registers a runtime alias to a legacy FQCN
+        # inside the same file (rather than as a separate shim file).
+        # Same false-positive shape as the whole-file shims above:
+        # PHPStan cannot statically evaluate class_alias() so the
+        # legacy FQCN looks unresolvable. Functionally identical, just
+        # an alternate authoring style. Deletion tracked in the same
+        # backlog item (`delete deprecation shims once cutover
+        # confirmed`); cross-repo grep confirmed no consumers of the
+        # legacy Semitexa\Api\Attributes\ namespace in semitexa.dev or
+        # semitexa.pl, but other consumer apps may still reference it.
+        -
+            identifier: class.notFound
+            path: %currentWorkingDirectory%/packages/semitexa-api/src/Attribute/ApiVersion.php
+        -
+            identifier: class.notFound
+            path: %currentWorkingDirectory%/packages/semitexa-api/src/Attribute/ExternalApi.php
 
 rules:
     - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
