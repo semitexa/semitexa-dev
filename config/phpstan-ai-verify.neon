@@ -35,8 +35,17 @@ parameters:
     # be analysed against the host's composer install, never inside the
     # framework autoloader (e.g. the composer plugin pulls in
     # composer/composer which lives only on the host).
+    #
+    # Also exclude `semitexa-ultimate/src` — ultimate is a `type: project`
+    # consumer skeleton (the target of `composer create-project
+    # semitexa/ultimate`), not a library required by semitexa.dev. It is
+    # actively maintained, but it's circular to `require` a project
+    # skeleton from the dev environment that produces it. ai:verify in
+    # semitexa.dev gates framework + library code; ultimate is gated by
+    # its own release-readiness workflow.
     excludePaths:
         - %currentWorkingDirectory%/packages/semitexa-core/src/Composer/SemitexaPlugin.php
+        - %currentWorkingDirectory%/packages/semitexa-ultimate/src
 
     ignoreErrors:
         # PHPStan's own runtime-reflection diagnostic fires from inside
