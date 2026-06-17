@@ -36,6 +36,8 @@ final class MakePayloadCommand extends BaseCommand
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method')
             ->addOption('response', null, InputOption::VALUE_REQUIRED, 'Response class name without suffix')
             ->addOption('access', null, InputOption::VALUE_REQUIRED, 'Payload access type: public | protected | service', 'protected')
+            ->addOption('graphql', null, InputOption::VALUE_NONE, 'Opt the Payload into GraphQL discovery (emits a bare #[ExposeAsGraphql] marker)')
+            ->addOption('graphql-field', null, InputOption::VALUE_REQUIRED, 'Explicit GraphQL field name override (default: derived from the Payload class name)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show planned files without writing (explicit)')
             ->addOption('write', null, InputOption::VALUE_NONE, 'Actually create files (dry-run is the default)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing files')
@@ -67,13 +69,15 @@ final class MakePayloadCommand extends BaseCommand
             'method' => $input->getOption('method'),
             'response' => $input->getOption('response'),
             'access' => (string) $input->getOption('access'),
+            'graphql' => (bool) $input->getOption('graphql'),
+            'graphqlField' => $input->getOption('graphql-field'),
             'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
         ]);
 
         $module = $inflector->toStudly($input->getOption('module'));
         $payloadClassName = $inflector->toPayloadClass($input->getOption('name'));
         $payloadFqcn = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClassName}";
-        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response', 'access'], []);
+        $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response', 'access', 'graphql-field'], ['graphql']);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());
         $gateExit = $duplicateGate->run(
