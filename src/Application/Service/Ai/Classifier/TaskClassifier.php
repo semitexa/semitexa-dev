@@ -18,9 +18,11 @@ use Semitexa\Dev\Application\Service\Ai\Recipe\RecipeRegistry;
  *   keywords: 2 points per match (domain nouns)
  *   bigrams:  1 point per shared 2-word substring with the recipe label
  *
- * The classifier never returns "no match"; the lowest-confidence recipe is
- * the catch-all so the agent always gets a starting point. Callers should
- * inspect {@see ClassificationResult::$score} to decide whether to trust it.
+ * Every result carries an honest {@see ClassificationResult::$confidence}:
+ *   none — below the noise floor; recipe is the unknown_task placeholder.
+ *   low  — above the floor but weak/ambiguous; clarify before executing.
+ *   high — score ≥ 8 with a lead ≥ 3 over the runner-up (AGENTS.md §3 bar).
+ * Callers should branch on $confidence, not re-derive the threshold from $score.
  */
 final class TaskClassifier
 {
@@ -29,6 +31,16 @@ final class TaskClassifier
     private const WEIGHT_LABEL_BIGRAM = 1;
     private const NOISE_FLOOR = 2;
     private const UNKNOWN_RECIPE_ID = 'unknown_task';
+
+    /**
+     * Reliability bar for confidence=high. Mirrors AGENTS.md §3's inline-eligibility
+     * rule verbatim: "ai:task score ≥ 8 AND no alternative within 2 points" — i.e. a
+     * lead of at least 3 over the next-best recipe. Anything above the noise floor
+     * but below this bar is confidence=low: a best guess that must be clarified
+     * before it drives execution, not an authoritative classification.
+     */
+    private const RELIABLE_SCORE = 8;
+    private const RELIABLE_MARGIN = 3;
 
     public function classify(string $description, ?string $hintModule = null): ClassificationResult
     {
@@ -61,11 +73,14 @@ final class TaskClassifier
                     reason: 'no recipe matched — description did not hit a known verb or keyword. Proceed manually via ai:ask + Edit; do not trust the recipe field.',
                     suggested_module: $hintModule ?? $this->guessModule($description),
                     alternatives: [],
+                    confidence: ClassificationResult::CONFIDENCE_NONE,
                 );
             }
         }
 
-        $reason = $this->explain($top['recipe'], $tokens);
+        $secondScore = $scored[1]['score'] ?? 0;
+        $confidence = $this->confidence($top['score'], $secondScore);
+        $reason = $this->explain($top['recipe'], $tokens, $confidence);
 
         $alternatives = [];
         for ($i = 1, $n = count($scored); $i < $n; $i++) {
@@ -84,7 +99,23 @@ final class TaskClassifier
             reason: $reason,
             suggested_module: $hintModule ?? $this->guessModule($description),
             alternatives: $alternatives,
+            confidence: $confidence,
         );
+    }
+
+    /**
+     * Map a top score + its lead over the runner-up onto the honest confidence
+     * band. high only when the doctrine's reliability bar is met; everything
+     * else above the noise floor is a low-confidence guess.
+     *
+     * @return 'high'|'low'
+     */
+    private function confidence(int $top, int $second): string
+    {
+        if ($top >= self::RELIABLE_SCORE && ($top - $second) >= self::RELIABLE_MARGIN) {
+            return ClassificationResult::CONFIDENCE_HIGH;
+        }
+        return ClassificationResult::CONFIDENCE_LOW;
     }
 
     /**
@@ -116,8 +147,9 @@ final class TaskClassifier
 
     /**
      * @param list<string> $tokens
+     * @param 'high'|'low' $confidence
      */
-    private function explain(Recipe $recipe, array $tokens): string
+    private function explain(Recipe $recipe, array $tokens, string $confidence): string
     {
         $matchedVerbs = array_values(array_intersect(array_map('strtolower', $recipe->verbs), $tokens));
         $matchedKeywords = array_values(array_intersect(array_map('strtolower', $recipe->keywords), $tokens));
@@ -129,10 +161,14 @@ final class TaskClassifier
         if ($matchedKeywords !== []) {
             $parts[] = 'keywords(' . implode(',', $matchedKeywords) . ')';
         }
-        if ($parts === []) {
-            return 'no strong signals — fell back to default ordering';
+        $basis = $parts === []
+            ? 'no strong signals — fell back to default ordering'
+            : 'matched ' . implode(' + ', $parts);
+
+        if ($confidence === ClassificationResult::CONFIDENCE_LOW) {
+            return $basis . ' — low confidence: weak or ambiguous match, clarify the goal or confirm the recipe before executing (do not blindly run a generator).';
         }
-        return 'matched ' . implode(' + ', $parts);
+        return $basis;
     }
 
     /**

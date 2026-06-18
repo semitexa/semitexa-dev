@@ -39,6 +39,8 @@ class MakeDispatcherTest extends TestCase
         $this->originalCwd = getcwd() ?: null;
         chdir($this->tmpRoot);
         ProjectRoot::reset();
+        // Hermeticity against an inherited SEMITEXA_AI_TRACE_ID is handled once,
+        // process-wide, by the shared PHPUnit bootstrap (semitexa-testing).
     }
 
     protected function tearDown(): void

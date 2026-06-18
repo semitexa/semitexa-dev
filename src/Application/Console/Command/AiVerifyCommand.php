@@ -58,7 +58,7 @@ final class AiVerifyCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('files', null, InputOption::VALUE_REQUIRED, 'Comma-separated repo-relative paths to verify')
+            ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
@@ -149,7 +149,11 @@ final class AiVerifyCommand extends BaseCommand
     private function collectPaths(InputInterface $input): array
     {
         $sources = [];
-        if (($files = $input->getOption('files')) !== null && $files !== '') {
+        // --files is VALUE_IS_ARRAY: repeated flags arrive as a list, and each
+        // element may itself be a comma-separated batch. Both forms combine, so
+        // no path is ever silently dropped (the repeated-flag form previously
+        // kept only the last value and returned a false-green partial verify).
+        foreach ((array) $input->getOption('files') as $files) {
             foreach (explode(',', (string) $files) as $p) {
                 $p = trim($p);
                 if ($p !== '') {

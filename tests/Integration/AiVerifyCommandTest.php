@@ -41,6 +41,8 @@ class AiVerifyCommandTest extends TestCase
         $this->originalCwd = getcwd() ?: null;
         chdir($this->tmpRoot);
         ProjectRoot::reset();
+        // Hermeticity against an inherited SEMITEXA_AI_TRACE_ID is handled once,
+        // process-wide, by the shared PHPUnit bootstrap (semitexa-testing).
     }
 
     protected function tearDown(): void
@@ -130,6 +132,39 @@ class AiVerifyCommandTest extends TestCase
         $this->assertNotEmpty($payload['results']);
         $this->assertArrayHasKey('verdict', $payload);
         $this->assertArrayHasKey('counts', $payload);
+    }
+
+    /**
+     * The non-negotiable gate must never silently drop files. Both input forms —
+     * repeated flags and a comma-separated batch — must verify the full set. The
+     * repeated-flag form previously kept only the last value (VALUE_REQUIRED) and
+     * returned a false-green partial verification.
+     *
+     * @param list<string>|string $files
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('multiFileForms')]
+    public function test_every_files_input_form_verifies_the_full_set(array|string $files): void
+    {
+        $tester = $this->newTester();
+        $tester->execute(['--files' => $files, '--json' => true]);
+
+        $payload = json_decode(trim($tester->getDisplay()), true);
+        $paths = array_column($payload['changed_files'], 'path');
+
+        $this->assertContains('src/modules/Foo/src/Application/Payload/Request/Get.php', $paths);
+        $this->assertContains('src/modules/Bar/src/Application/Handler/PayloadHandler/RunHandler.php', $paths);
+        $this->assertCount(2, $paths);
+    }
+
+    /** @return iterable<string, array{list<string>|string}> */
+    public static function multiFileForms(): iterable
+    {
+        $a = 'src/modules/Foo/src/Application/Payload/Request/Get.php';
+        $b = 'src/modules/Bar/src/Application/Handler/PayloadHandler/RunHandler.php';
+
+        yield 'repeated flags' => [[$a, $b]];
+        yield 'comma-separated' => ["{$a},{$b}"];
+        yield 'comma batch + repeated flag combined' => [["{$a}", "{$b}"]];
     }
 
     public function test_minimal_scope_runs_syntax_and_structure_but_no_production_lints(): void
