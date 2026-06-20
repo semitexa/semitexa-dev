@@ -68,11 +68,12 @@ final class AiOrientCommand extends BaseCommand
 
         $git           = $this->collectGit();
         $epics         = $this->collectEpics();
-        $inProgress    = $this->collectInProgressTasks();
-        $activeEpicId  = $this->deriveActiveEpicId($inProgress, $epics);
+        $inProgress    = $this->collectTasksByStatus(TaskStatus::IN_PROGRESS);
+        $blocked       = $this->collectTasksByStatus(TaskStatus::BLOCKED);
+        $activeEpicId  = $this->deriveActiveEpicId($inProgress, $blocked, $epics);
         $recentTraces  = $this->collectRecentTraces($traceLimit);
         $lastVerify    = $this->findLastVerify($recentTraces);
-        $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $epics);
+        $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
 
         $envelope = [
             'artifact'     => 'semitexa.ai-orient/v1',
@@ -85,6 +86,8 @@ final class AiOrientCommand extends BaseCommand
                 'active_epic'           => $activeEpicId !== null ? $this->epicBrief($epics, $activeEpicId) : null,
                 'in_progress_tasks'     => array_map(fn(Task $t) => $this->taskBrief($t), $inProgress),
                 'in_progress_count'     => count($inProgress),
+                'blocked_tasks'         => array_map(fn(Task $t) => $this->taskBrief($t), $blocked),
+                'blocked_count'         => count($blocked),
             ],
             'recent_traces'  => $recentTraces,
             'last_verify'    => $lastVerify,
@@ -169,29 +172,43 @@ final class AiOrientCommand extends BaseCommand
     }
 
     /**
+     * Collect tasks of a single status, most-recently-updated first.
+     *
+     * IN_PROGRESS and BLOCKED are kept apart on purpose: a blocked task is NOT
+     * resumable work, so conflating the two made `in_progress_count` lie and
+     * made suggest_next promote a blocked task as the next action.
+     *
      * @return list<Task>
      */
-    private function collectInProgressTasks(): array
+    private function collectTasksByStatus(TaskStatus $status): array
     {
         $out = [];
-        foreach ([TaskStatus::IN_PROGRESS, TaskStatus::BLOCKED] as $status) {
-            try {
-                foreach ($this->taskStore->list(null, $status) as $task) {
-                    $out[] = $task;
-                }
-            } catch (\Throwable) {
-                // store not initialised yet — that's fine, return what we have
+        try {
+            foreach ($this->taskStore->list(null, $status) as $task) {
+                $out[] = $task;
             }
+        } catch (\Throwable) {
+            // store not initialised yet — that's fine, return what we have
         }
         usort($out, static fn(Task $a, Task $b) => strcmp($b->updatedAt, $a->updatedAt));
         return $out;
     }
 
     /**
+     * Choose the epic the agent should focus on, in priority order:
+     *   1. epic of the most-recent in-progress task (real WIP),
+     *   2. an epic whose own status is in_progress,
+     *   3. epic of the most-recent blocked task (stalled WIP — last resort, so
+     *      the dashboard still points somewhere instead of going blank).
+     *
+     * Blocked work never outranks live in-progress work, which is what the old
+     * recency-only rule got wrong.
+     *
      * @param list<Task> $inProgress
+     * @param list<Task> $blocked
      * @param list<Epic> $epics
      */
-    private function deriveActiveEpicId(array $inProgress, array $epics): ?string
+    private function deriveActiveEpicId(array $inProgress, array $blocked, array $epics): ?string
     {
         if ($inProgress !== []) {
             return $inProgress[0]->epicId;
@@ -200,6 +217,9 @@ final class AiOrientCommand extends BaseCommand
             if ($epic->status->value === 'in_progress') {
                 return $epic->id;
             }
+        }
+        if ($blocked !== []) {
+            return $blocked[0]->epicId;
         }
         return null;
     }
@@ -301,10 +321,11 @@ final class AiOrientCommand extends BaseCommand
     /**
      * @param array{is_repo: bool, dirty: ?bool, ...} $git
      * @param list<Task> $inProgress
+     * @param list<Task> $blocked
      * @param list<Epic> $epics
      * @return array{summary: string, commands: list<array{cmd: string, args: list<string>, why: string}>}
      */
-    private function suggestNext(array $git, ?string $activeEpicId, array $inProgress, array $epics): array
+    private function suggestNext(array $git, ?string $activeEpicId, array $inProgress, array $blocked, array $epics): array
     {
         $cmds = [];
         $parts = [];
@@ -320,6 +341,24 @@ final class AiOrientCommand extends BaseCommand
             if ($top->nextStep !== null && $top->nextStep !== '') {
                 $parts[] = 'Next step on record: ' . $top->nextStep;
             }
+        } elseif ($blocked !== []) {
+            // No live work — only blocked tasks. A blocked task is NOT resumable:
+            // surface it for unblocking, but steer the agent to pickable work.
+            $top = $blocked[0];
+            $n = count($blocked);
+            $parts[] = $n === 1
+                ? "No in-progress work. Task `{$top->id}` is blocked under epic `{$top->epicId}` — unblock it or pick new work."
+                : "No in-progress work. {$n} tasks are blocked (latest `{$top->id}`) — unblock one or pick new work.";
+            $cmds[] = [
+                'cmd'  => 'ai:work',
+                'args' => ['show', '--id=' . $top->id, '--json'],
+                'why'  => 'inspect why the blocked task is stuck',
+            ];
+            $cmds[] = [
+                'cmd'  => 'ai:work',
+                'args' => ['list', '--status=new', '--json'],
+                'why'  => 'find pickable (new) work instead',
+            ];
         } elseif ($activeEpicId !== null) {
             $parts[] = "Epic `{$activeEpicId}` has no in-progress tasks — pick one up.";
             $cmds[] = [
@@ -435,7 +474,8 @@ final class AiOrientCommand extends BaseCommand
 
         $backlog = $envelope['backlog'];
         $io->section('Backlog');
-        $io->writeln("  epics: {$backlog['total_epics']} total  in-progress tasks: {$backlog['in_progress_count']}");
+        $blockedCount = $backlog['blocked_count'] ?? 0;
+        $io->writeln("  epics: {$backlog['total_epics']} total  in-progress tasks: {$backlog['in_progress_count']}  blocked: {$blockedCount}");
         if ($backlog['active_epic'] !== null) {
             $ae = $backlog['active_epic'];
             $io->writeln("  active epic: {$ae['id']}  [{$ae['status']}]  — {$ae['title']}");
@@ -443,6 +483,9 @@ final class AiOrientCommand extends BaseCommand
         foreach ($backlog['in_progress_tasks'] as $t) {
             $next = $t['next_step'] !== null && $t['next_step'] !== '' ? "  — next: {$t['next_step']}" : '';
             $io->writeln("    • [{$t['status']}] {$t['id']}  ({$t['recipe']}/{$t['risk']})  {$t['title']}{$next}");
+        }
+        foreach ($backlog['blocked_tasks'] ?? [] as $t) {
+            $io->writeln("    ⊘ [blocked] {$t['id']}  ({$t['recipe']}/{$t['risk']})  {$t['title']}");
         }
 
         if ($envelope['recent_traces'] !== []) {
