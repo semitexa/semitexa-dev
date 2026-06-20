@@ -217,8 +217,13 @@ final class PhpstanRunner
         // and surface as `phpstan.error`. Pattern-match the canonical
         // missing-class phrasings so we still recognise the time-bomb shape.
         if ($rawIdentifier === 'phpstan.error' || $rawIdentifier === '') {
+            // A bare ` not found.` matches unrelated diagnostics (e.g. "Constant X
+            // not found."). Require a class-like keyword before "not found" so only
+            // missing-symbol errors are remapped to the broken-FQCN time-bomb shape.
+            if (preg_match('/\b(class|interface|trait|enum)\b.*\bnot found\b/i', $message) === 1) {
+                return 'semitexa.brokenFqcn';
+            }
             $needles = [
-                ' not found.',
                 'has unknown class ',
                 'unknown class ',
                 'unknown interface ',
@@ -226,7 +231,7 @@ final class PhpstanRunner
                 'has invalid return type ',
             ];
             foreach ($needles as $needle) {
-                if (str_contains($message, $needle)) {
+                if (str_contains(strtolower($message), strtolower($needle))) {
                     return 'semitexa.brokenFqcn';
                 }
             }

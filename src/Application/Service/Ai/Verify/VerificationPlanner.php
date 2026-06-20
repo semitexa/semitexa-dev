@@ -212,11 +212,7 @@ final class VerificationPlanner
             if (!str_ends_with($file->path, '.php')) {
                 continue;
             }
-            if ($file->kind === ChangedFile::KIND_TEST
-                || $file->kind === ChangedFile::KIND_TEST_FIXTURE
-                || $file->kind === ChangedFile::KIND_TEMPLATE
-                || $file->kind === ChangedFile::KIND_NON_PHP
-            ) {
+            if (self::isPhpstanDiIneligibleKind($file->kind)) {
                 continue;
             }
             $eligible[] = $file->path;
@@ -225,12 +221,17 @@ final class VerificationPlanner
         $eligibleSeen = array_flip($eligible);
         foreach ($contractMoves as $move) {
             foreach ($move->dependentFiles as $dependent) {
-                if (!isset($eligibleSeen[$dependent])
-                    && str_ends_with($dependent, '.php')
-                ) {
-                    $eligible[]              = $dependent;
-                    $eligibleSeen[$dependent] = true;
+                if (isset($eligibleSeen[$dependent]) || !str_ends_with($dependent, '.php')) {
+                    continue;
                 }
+                // Apply the SAME production-only eligibility as the changed files:
+                // a dependent test/fixture/template (.php) must not be injected
+                // into phpstan_di, or it produces noisy non-actionable DI failures.
+                if (self::isPhpstanDiIneligibleKind($this->classifier->classify($dependent)->kind)) {
+                    continue;
+                }
+                $eligible[]              = $dependent;
+                $eligibleSeen[$dependent] = true;
             }
         }
 
@@ -253,6 +254,15 @@ final class VerificationPlanner
             filePath: null,
             testFilter: null,
         );
+    }
+
+    /** A kind excluded from the production-only `phpstan_di` target. */
+    private static function isPhpstanDiIneligibleKind(string $kind): bool
+    {
+        return $kind === ChangedFile::KIND_TEST
+            || $kind === ChangedFile::KIND_TEST_FIXTURE
+            || $kind === ChangedFile::KIND_TEMPLATE
+            || $kind === ChangedFile::KIND_NON_PHP;
     }
 
     /**

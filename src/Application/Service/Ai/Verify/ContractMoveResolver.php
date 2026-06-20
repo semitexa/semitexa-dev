@@ -63,26 +63,35 @@ class ContractMoveResolver
             if (!$this->isContractMoveCandidate($file)) {
                 continue;
             }
-            $fqcn = $this->fqcnForPath($file->path);
-            if ($fqcn === null) {
-                continue;
-            }
-            if (isset($seenFqcns[$fqcn])) {
-                continue;
-            }
-            $seenFqcns[$fqcn] = true;
 
-            $dependents = $this->findDependentFiles($fqcn);
-            if ($dependents === []) {
-                continue;
+            // For a RENAME, `$file->path` is the NEW path → the NEW FQCN, but
+            // orphaned consumers reference the OLD symbol. Resolve BOTH the new
+            // path and (when present) the pre-rename path, so the old FQCN's
+            // consumers are queried too. A DELETE has only the (old) path.
+            $candidates = [['fqcn' => $this->fqcnForPath($file->path), 'file' => $file->path]];
+            if ($file->status === ChangedFile::STATUS_RENAMED && $file->originalPath !== null) {
+                $candidates[] = ['fqcn' => $this->fqcnForPath($file->originalPath), 'file' => $file->originalPath];
             }
 
-            $expansions[] = new ContractMoveExpansion(
-                contractFqcn:   $fqcn,
-                contractFile:   $file->path,
-                changeStatus:   $file->status,
-                dependentFiles: $dependents,
-            );
+            foreach ($candidates as $candidate) {
+                $fqcn = $candidate['fqcn'];
+                if ($fqcn === null || isset($seenFqcns[$fqcn])) {
+                    continue;
+                }
+                $seenFqcns[$fqcn] = true;
+
+                $dependents = $this->findDependentFiles($fqcn);
+                if ($dependents === []) {
+                    continue;
+                }
+
+                $expansions[] = new ContractMoveExpansion(
+                    contractFqcn:   $fqcn,
+                    contractFile:   $candidate['file'],
+                    changeStatus:   $file->status,
+                    dependentFiles: $dependents,
+                );
+            }
         }
 
         return $expansions;

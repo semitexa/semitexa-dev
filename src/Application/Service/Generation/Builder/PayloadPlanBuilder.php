@@ -62,6 +62,11 @@ final class PayloadPlanBuilder
         // case: field/rootType/output/list all derive (field from the Payload
         // class name). `graphqlField` is emitted only as an explicit override.
         $graphqlAttribute = '';
+        // Fail fast on a meaningless combination rather than silently dropping the
+        // override: `graphqlField` only takes effect when GraphQL exposure is on.
+        if (empty($params['graphql']) && trim((string) ($params['graphqlField'] ?? '')) !== '') {
+            throw new \InvalidArgumentException('`graphqlField` requires `graphql=true`.');
+        }
         if (!empty($params['graphql'])) {
             $imports[] = 'use ' . self::EXPOSE_AS_GRAPHQL_FQCN . ';';
             $graphqlAttribute = $this->renderGraphqlAttribute($params['graphqlField'] ?? null);

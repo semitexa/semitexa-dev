@@ -164,7 +164,10 @@ class AiVerifyCommandTest extends TestCase
 
         yield 'repeated flags' => [[$a, $b]];
         yield 'comma-separated' => ["{$a},{$b}"];
-        yield 'comma batch + repeated flag combined' => [["{$a}", "{$b}"]];
+        // One entry is comma-batched ("a,b") AND repeated alongside a plain "a",
+        // so this case actually exercises mixed parsing (the previous two plain
+        // entries just duplicated the repeated-flags case).
+        yield 'comma batch + repeated flag combined' => [["{$a},{$b}", $a]];
     }
 
     public function test_minimal_scope_runs_syntax_and_structure_but_no_production_lints(): void

@@ -87,7 +87,13 @@ final class AiVerifyCommand extends BaseCommand
         $projectRoot = $this->getProjectRoot();
         $classifier = new ChangedFileClassifier();
         $changed = array_map(
-            static fn(array $entry) => $classifier->classify($entry['path'], $entry['status']),
+            static function (array $entry) use ($classifier): ChangedFile {
+                $file = $classifier->classify($entry['path'], $entry['status']);
+                if (isset($entry['originalPath']) && $entry['originalPath'] !== '') {
+                    $file->originalPath = $entry['originalPath'];
+                }
+                return $file;
+            },
             $paths,
         );
         /** @var list<ChangedFile> $changed */
@@ -247,7 +253,7 @@ final class AiVerifyCommand extends BaseCommand
 
     /**
      * @param list<string> $lines git --name-status output OR plain `git diff --name-only` lines
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function parseNameStatus(array $lines): array
     {
@@ -266,9 +272,15 @@ final class AiVerifyCommand extends BaseCommand
                     'R' => ChangedFile::STATUS_RENAMED,
                     default => ChangedFile::STATUS_MODIFIED,
                 };
-                // For R entries, `git diff --name-status` emits OLD<TAB>NEW; take the new path.
+                // For R entries, `git diff --name-status` emits OLD<TAB>NEW; take the
+                // new path AND carry the old path so the broken-FQCN guard can query
+                // the renamed symbol's previous FQCN too.
                 $path = $parts[count($parts) - 1];
-                $out[] = ['path' => $path, 'status' => $status];
+                $entry = ['path' => $path, 'status' => $status];
+                if ($status === ChangedFile::STATUS_RENAMED && count($parts) >= 3) {
+                    $entry['originalPath'] = $parts[1];
+                }
+                $out[] = $entry;
                 continue;
             }
             $out[] = ['path' => $line, 'status' => ChangedFile::STATUS_MODIFIED];
