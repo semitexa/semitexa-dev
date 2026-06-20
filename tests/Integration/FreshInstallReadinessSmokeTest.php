@@ -277,31 +277,25 @@ final class FreshInstallReadinessSmokeTest extends TestCase
             self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
         }
 
-        // orm:sync --dry-run prints the operations plan to STDOUT.
-        // Shelling out captures the same surface an operator sees on
-        // their terminal. Test does not chdir, so the binary resolves
-        // its project root via the host project's composer.json.
+        // orm:sync --dry-run prints the operations plan to STDOUT. Shelling out
+        // captures the same surface an operator sees on their terminal — kept as a
+        // CLI smoke (it must run and produce a plan without crashing).
         $output = shell_exec('bin/semitexa orm:sync --dry-run 2>&1');
         if ($output === null) {
             self::markTestSkipped('semitexa binary unavailable or not executable');
         }
-        $output = (string) $output;
+        self::assertNotSame('', trim((string) $output), 'orm:sync --dry-run must produce a plan');
 
-        self::assertStringContainsString(
-            'webhook_inbox',
-            $output,
-            'orm:sync --dry-run plan must mention webhook_inbox',
-        );
-        self::assertStringContainsString(
-            'webhook_outbox',
-            $output,
-            'orm:sync --dry-run plan must mention webhook_outbox',
-        );
-        self::assertStringContainsString(
-            'webhook_replay_keys',
-            $output,
-            'orm:sync --dry-run plan must mention webhook_replay_keys',
-        );
+        // The webhook persistence tables must be DECLARED in the schema the planner
+        // derives from. Assert that, NOT their presence in the dry-run "create"
+        // plan: the create plan lists a table only when it is ABSENT, so in a suite
+        // that pre-syncs the schema (test:run Phase 1a) the tables already exist and
+        // are a no-op in the diff — making a plan-text assertion order/DB-state
+        // fragile. The collected schema is reflection-derived and DB-independent.
+        $declared = ContainerFactory::get()->get(OrmManager::class)->getSchemaCollector()->collect();
+        foreach (['webhook_inbox', 'webhook_outbox', 'webhook_replay_keys'] as $table) {
+            self::assertArrayHasKey($table, $declared, "schema must declare {$table}");
+        }
     }
 
     // ------------------------------------------------------------------
