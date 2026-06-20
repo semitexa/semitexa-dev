@@ -7,6 +7,8 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
+use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveExpansion;
+use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveResolver;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
@@ -393,9 +395,170 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(VerificationPlan::SCOPE_STANDARD, $plan->effectiveScope);
     }
 
-    private function planner(): VerificationPlanner
+    public function test_removed_contract_expands_phpstan_di_input_with_dependents(): void
     {
-        return new VerificationPlanner($this->root, new ChangedFileClassifier());
+        $resolver = $this->stubContractMoveResolver([
+            new ContractMoveExpansion(
+                contractFqcn:   'Semitexa\\Foo\\Domain\\Contract\\Removed',
+                contractFile:   'packages/semitexa-foo/src/Domain/Contract/Removed.php',
+                changeStatus:   ChangedFile::STATUS_DELETED,
+                dependentFiles: [
+                    'packages/semitexa-bar/src/Application/Service/Consumer.php',
+                    'src/modules/Hello/src/Application/Handler/PayloadHandler/H.php',
+                ],
+            ),
+        ]);
+
+        $plan = $this->planner($resolver)->plan([
+            new ChangedFile(
+                'packages/semitexa-foo/src/Domain/Contract/Removed.php',
+                ChangedFile::KIND_CONTRACT,
+                ChangedFile::STATUS_DELETED,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpstan = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $phpstan, 'Layer 1 must schedule one phpstan_di target even when only deleted files changed');
+        $this->assertEqualsCanonicalizing(
+            [
+                'packages/semitexa-bar/src/Application/Service/Consumer.php',
+                'src/modules/Hello/src/Application/Handler/PayloadHandler/H.php',
+            ],
+            $phpstan[0]->triggeredBy,
+            'orphan consumers must be folded into the phpstan_di scan input',
+        );
+        $this->assertStringContainsString('broken-FQCN guard', $phpstan[0]->reason);
+
+        $this->assertNotEmpty($plan->expansions);
+        $this->assertStringContainsString(
+            'Semitexa\\Foo\\Domain\\Contract\\Removed',
+            implode("\n", $plan->expansions),
+        );
+        $this->assertStringContainsString('removed', implode("\n", $plan->expansions));
+    }
+
+    public function test_renamed_contract_expands_phpstan_di_input(): void
+    {
+        $resolver = $this->stubContractMoveResolver([
+            new ContractMoveExpansion(
+                contractFqcn:   'Semitexa\\Foo\\Contract\\Old',
+                contractFile:   'packages/semitexa-foo/src/Contract/Old.php',
+                changeStatus:   ChangedFile::STATUS_RENAMED,
+                dependentFiles: ['packages/semitexa-bar/src/Service/Consumer.php'],
+            ),
+        ]);
+
+        $plan = $this->planner($resolver)->plan([
+            new ChangedFile(
+                'packages/semitexa-foo/src/Domain/Contract/New.php',
+                ChangedFile::KIND_CONTRACT,
+                ChangedFile::STATUS_RENAMED,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpstan = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $phpstan);
+        $this->assertContains(
+            'packages/semitexa-bar/src/Service/Consumer.php',
+            $phpstan[0]->triggeredBy,
+        );
+        $this->assertStringContainsString('renamed', implode("\n", $plan->expansions));
+    }
+
+    public function test_unrelated_change_set_produces_no_contract_move_expansion(): void
+    {
+        // Resolver returns empty: critical for false-positive control. ai:verify
+        // is shared infra; a spurious expansion would break every package's
+        // verify with unrelated phpstan_di scans.
+        $resolver = $this->stubContractMoveResolver([]);
+
+        $plan = $this->planner($resolver)->plan([
+            new ChangedFile(
+                'src/modules/Foo/src/Application/Service/Unrelated.php',
+                ChangedFile::KIND_SERVICE,
+                ChangedFile::STATUS_MODIFIED,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        // No expansions from the contract-move resolver.
+        $contractMoveExpansions = array_filter(
+            $plan->expansions,
+            static fn(string $note) => str_contains($note, 'broken-FQCN') || str_contains($note, 'dependent file'),
+        );
+        $this->assertSame([], array_values($contractMoveExpansions));
+
+        // phpstan_di still scopes to just the modified file — no orphans appended.
+        $phpstan = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $phpstan);
+        $this->assertSame(
+            ['src/modules/Foo/src/Application/Service/Unrelated.php'],
+            $phpstan[0]->triggeredBy,
+        );
+    }
+
+    public function test_dependent_file_already_in_change_set_is_not_duplicated(): void
+    {
+        $resolver = $this->stubContractMoveResolver([
+            new ContractMoveExpansion(
+                contractFqcn:   'Semitexa\\Foo\\Contract\\Removed',
+                contractFile:   'packages/semitexa-foo/src/Contract/Removed.php',
+                changeStatus:   ChangedFile::STATUS_DELETED,
+                dependentFiles: [
+                    'packages/semitexa-bar/src/Service/AlreadyChanged.php',
+                ],
+            ),
+        ]);
+
+        $plan = $this->planner($resolver)->plan([
+            new ChangedFile(
+                'packages/semitexa-foo/src/Contract/Removed.php',
+                ChangedFile::KIND_CONTRACT,
+                ChangedFile::STATUS_DELETED,
+            ),
+            new ChangedFile(
+                'packages/semitexa-bar/src/Service/AlreadyChanged.php',
+                ChangedFile::KIND_SERVICE,
+                ChangedFile::STATUS_MODIFIED,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpstan = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI);
+        $this->assertCount(1, $phpstan);
+        $triggers = $phpstan[0]->triggeredBy;
+        $this->assertCount(
+            1,
+            array_filter($triggers, static fn(string $p) => $p === 'packages/semitexa-bar/src/Service/AlreadyChanged.php'),
+            'a file already in the changed-file set must not be re-added by the resolver expansion',
+        );
+    }
+
+    private function planner(?ContractMoveResolver $contractMoveResolver = null): VerificationPlanner
+    {
+        return new VerificationPlanner(
+            $this->root,
+            new ChangedFileClassifier(),
+            null,
+            $contractMoveResolver ?? $this->stubContractMoveResolver([]),
+        );
+    }
+
+    /**
+     * @param list<ContractMoveExpansion> $expansions
+     */
+    private function stubContractMoveResolver(array $expansions): ContractMoveResolver
+    {
+        return new class($this->root, $expansions) extends ContractMoveResolver {
+            /** @param list<ContractMoveExpansion> $expansions */
+            public function __construct(string $root, private readonly array $expansions)
+            {
+                parent::__construct($root);
+            }
+
+            public function resolve(array $files): array
+            {
+                return $this->expansions;
+            }
+        };
     }
 
     /**

@@ -11,6 +11,6 @@ namespace {{namespace}};
     methods: ['{{method}}'],
     responseWith: {{responseClass}}::class,
 )]
-class {{className}}
+{{graphqlAttribute}}class {{className}}
 {
 }

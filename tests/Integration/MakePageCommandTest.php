@@ -30,14 +30,17 @@ class MakePageCommandTest extends TestCase
             'dryRun' => false,
         ]);
 
-        // Payload + Handler + Resource + Template = 4 files
-        $this->assertCount(4, $plan->files);
+        // The all-in-one ships tested by default:
+        // Payload + Handler + Resource + Template + PayloadContractTest + HandlerTest = 6 files
+        $this->assertCount(6, $plan->files);
 
         $paths = array_map(fn($f) => $f->path, $plan->files);
         $this->assertContains('src/modules/Website/src/Application/Payload/Request/PricingPayload.php', $paths);
         $this->assertContains('src/modules/Website/src/Application/Handler/PayloadHandler/PricingHandler.php', $paths);
         $this->assertContains('src/modules/Website/src/Application/Resource/Response/PricingResponse.php', $paths);
         $this->assertContains('src/modules/Website/src/Application/View/templates/pages/pricing.html.twig', $paths);
+        $this->assertContains('src/modules/Website/tests/Integration/PricingPayloadContractTest.php', $paths);
+        $this->assertContains('src/modules/Website/tests/Unit/PricingHandlerTest.php', $paths);
 
         // Validate PHP syntax for all PHP files
         foreach ($plan->files as $file) {
@@ -45,6 +48,31 @@ class MakePageCommandTest extends TestCase
                 $this->assertPhpSyntaxValid($file->content);
             }
         }
+    }
+
+    public function test_no_test_flag_omits_the_test_scaffolds(): void
+    {
+        $builder = new PagePlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Website',
+            'name' => 'Pricing',
+            'path' => '/pricing',
+            'method' => 'GET',
+            'access' => 'public',
+            'withAssets' => false,
+            'withTest' => false,
+            'dryRun' => false,
+        ]);
+
+        $this->assertCount(4, $plan->files);
+        $paths = array_map(fn($f) => $f->path, $plan->files);
+        $this->assertNotContains('src/modules/Website/tests/Integration/PricingPayloadContractTest.php', $paths);
+        $this->assertNotContains('src/modules/Website/tests/Unit/PricingHandlerTest.php', $paths);
     }
 
     public function test_generates_page_with_assets(): void
@@ -62,6 +90,7 @@ class MakePageCommandTest extends TestCase
             'method' => 'GET',
             'access' => 'protected',
             'withAssets' => true,
+            'withTest' => false,
             'dryRun' => false,
         ]);
 

@@ -103,6 +103,86 @@ class MakePayloadCommandTest extends TestCase
         $this->assertPhpSyntaxValid($file->content);
     }
 
+    public function test_graphql_flag_emits_bare_expose_as_graphql_marker(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ProductBySlug',
+            'path' => '/products/{slug}',
+            'method' => 'GET',
+            'response' => 'Product',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'graphql' => true,
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        // Bare marker — field/rootType/output all derive, so no params are emitted.
+        $this->assertStringContainsString("#[ExposeAsGraphql]\n", $content);
+        $this->assertStringNotContainsString('#[ExposeAsGraphql(', $content);
+        $this->assertStringContainsString('use Semitexa\\Graphql\\Attribute\\ExposeAsGraphql;', $content);
+        // Marker sits directly above the class with no blank gap.
+        $this->assertStringContainsString("#[ExposeAsGraphql]\nclass ProductBySlugPayload", $content);
+        $this->assertPhpSyntaxValid($content);
+    }
+
+    public function test_graphql_field_override_is_emitted_when_given(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ProductBySlug',
+            'path' => '/products/{slug}',
+            'method' => 'GET',
+            'response' => 'Product',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'graphql' => true,
+            'graphqlField' => 'productLookup',
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        $this->assertStringContainsString("#[ExposeAsGraphql(field: 'productLookup')]", $content);
+        $this->assertPhpSyntaxValid($content);
+    }
+
+    public function test_no_graphql_marker_without_the_flag(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ProductBySlug',
+            'path' => '/products/{slug}',
+            'method' => 'GET',
+            'response' => 'Product',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        $this->assertStringNotContainsString('ExposeAsGraphql', $content);
+        // The placeholder collapses cleanly: route attribute is followed directly
+        // by the class line, no stray blank line.
+        $this->assertStringContainsString(")]\nclass ProductBySlugPayload", $content);
+        $this->assertPhpSyntaxValid($content);
+    }
+
     public function test_unknown_access_type_is_rejected(): void
     {
         $builder = new PayloadPlanBuilder(

@@ -46,5 +46,9 @@ final readonly class ChangedFile
         public string $path,
         public string $kind,
         public string $status = self::STATUS_MODIFIED,
+        // For STATUS_RENAMED, the pre-rename (old) repo-relative path. The
+        // broken-FQCN guard resolves the OLD FQCN from this so consumers of the
+        // renamed symbol's previous name are still queried. Null otherwise.
+        public ?string $originalPath = null,
     ) {}
 }

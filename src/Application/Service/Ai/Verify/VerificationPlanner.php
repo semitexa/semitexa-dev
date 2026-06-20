@@ -50,12 +50,16 @@ final class VerificationPlanner
 
     private readonly ModuleStructureTargetResolver $targetResolver;
 
+    private readonly ContractMoveResolver $contractMoveResolver;
+
     public function __construct(
         private readonly string $projectRoot,
         private readonly ChangedFileClassifier $classifier = new ChangedFileClassifier(),
         ?ModuleStructureTargetResolver $targetResolver = null,
+        ?ContractMoveResolver $contractMoveResolver = null,
     ) {
         $this->targetResolver = $targetResolver ?? new ModuleStructureTargetResolver($projectRoot);
+        $this->contractMoveResolver = $contractMoveResolver ?? new ContractMoveResolver($projectRoot);
     }
 
     /**
@@ -64,6 +68,10 @@ final class VerificationPlanner
     public function plan(array $changedFiles, string $requestedScope, bool $isRepoWide = false): VerificationPlan
     {
         [$effectiveScope, $expansions] = $this->resolveEffectiveScope($requestedScope, $changedFiles);
+        $contractMoves = $this->contractMoveResolver->resolve($changedFiles);
+        foreach ($contractMoves as $move) {
+            $expansions[] = $move->reason();
+        }
 
         $lintsByCommand = [];
         $syntaxTargets = [];
@@ -123,7 +131,7 @@ final class VerificationPlanner
         // PHPStan DI verification is expensive. We skip it in `minimal` scope
         // unless this is a repo-wide run (where we want full assurance).
         if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL || $isRepoWide) {
-            $phpstanTarget = $this->phpstanDiTarget($changedFiles);
+            $phpstanTarget = $this->phpstanDiTarget($changedFiles, $contractMoves);
             if ($phpstanTarget !== null) {
                 $targets[] = $phpstanTarget;
             }
@@ -183,9 +191,18 @@ final class VerificationPlanner
      * `phpstan analyse FileN.php` invocations would multiply that by twenty
      * for no extra coverage.
      *
-     * @param list<ChangedFile> $files
+     * Layer-1 blast-radius expansion: if any changed file is a deleted /
+     * renamed contract whose FQCN is still referenced elsewhere in the
+     * project graph, those dependent files are added to the scan input.
+     * Composer's classmap supplies the FQCN → file mapping, so the joined
+     * paths are repo-canonical even when our packages are symlinked from
+     * vendor/. Without this, a vendor DDD rename can ship green because
+     * `phpstan_di` never sees the orphaned consumer files.
+     *
+     * @param list<ChangedFile>          $files
+     * @param list<ContractMoveExpansion> $contractMoves
      */
-    private function phpstanDiTarget(array $files): ?VerificationTarget
+    private function phpstanDiTarget(array $files, array $contractMoves = []): ?VerificationTarget
     {
         $eligible = [];
         foreach ($files as $file) {
@@ -195,28 +212,57 @@ final class VerificationPlanner
             if (!str_ends_with($file->path, '.php')) {
                 continue;
             }
-            if ($file->kind === ChangedFile::KIND_TEST
-                || $file->kind === ChangedFile::KIND_TEST_FIXTURE
-                || $file->kind === ChangedFile::KIND_TEMPLATE
-                || $file->kind === ChangedFile::KIND_NON_PHP
-            ) {
+            if (self::isPhpstanDiIneligibleKind($file->kind)) {
                 continue;
             }
             $eligible[] = $file->path;
+        }
+
+        $eligibleSeen = array_flip($eligible);
+        foreach ($contractMoves as $move) {
+            foreach ($move->dependentFiles as $dependent) {
+                if (isset($eligibleSeen[$dependent]) || !str_ends_with($dependent, '.php')) {
+                    continue;
+                }
+                // Apply the SAME production-only eligibility as the changed files:
+                // a dependent test/fixture/template (.php) must not be injected
+                // into phpstan_di, or it produces noisy non-actionable DI failures.
+                if (self::isPhpstanDiIneligibleKind($this->classifier->classify($dependent)->kind)) {
+                    continue;
+                }
+                $eligible[]              = $dependent;
+                $eligibleSeen[$dependent] = true;
+            }
         }
 
         if ($eligible === []) {
             return null;
         }
 
+        $reason = $contractMoves === []
+            ? 'validate Semitexa attribute-only DI via PHPStan rules (semitexa.injectionViaConstructor + siblings)'
+            : sprintf(
+                'validate Semitexa DI rules + broken-FQCN guard on consumers of %d removed/renamed contract(s) (ep-ai-verify-broken-fqcn-guard)',
+                count($contractMoves),
+            );
+
         return new VerificationTarget(
             type: VerificationTarget::TYPE_PHPSTAN_DI,
             id: 'phpstan_di:' . count($eligible) . '-files',
-            reason: 'validate Semitexa attribute-only DI via PHPStan rules (semitexa.injectionViaConstructor + siblings)',
+            reason: $reason,
             triggeredBy: $eligible,
             filePath: null,
             testFilter: null,
         );
+    }
+
+    /** A kind excluded from the production-only `phpstan_di` target. */
+    private static function isPhpstanDiIneligibleKind(string $kind): bool
+    {
+        return $kind === ChangedFile::KIND_TEST
+            || $kind === ChangedFile::KIND_TEST_FIXTURE
+            || $kind === ChangedFile::KIND_TEMPLATE
+            || $kind === ChangedFile::KIND_NON_PHP;
     }
 
     /**

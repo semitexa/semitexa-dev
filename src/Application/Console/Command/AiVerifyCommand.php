@@ -58,7 +58,7 @@ final class AiVerifyCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('files', null, InputOption::VALUE_REQUIRED, 'Comma-separated repo-relative paths to verify')
+            ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
@@ -87,7 +87,13 @@ final class AiVerifyCommand extends BaseCommand
         $projectRoot = $this->getProjectRoot();
         $classifier = new ChangedFileClassifier();
         $changed = array_map(
-            static fn(array $entry) => $classifier->classify($entry['path'], $entry['status']),
+            static function (array $entry) use ($classifier): ChangedFile {
+                $file = $classifier->classify($entry['path'], $entry['status']);
+                if (isset($entry['originalPath']) && $entry['originalPath'] !== '') {
+                    $file->originalPath = $entry['originalPath'];
+                }
+                return $file;
+            },
             $paths,
         );
         /** @var list<ChangedFile> $changed */
@@ -149,7 +155,11 @@ final class AiVerifyCommand extends BaseCommand
     private function collectPaths(InputInterface $input): array
     {
         $sources = [];
-        if (($files = $input->getOption('files')) !== null && $files !== '') {
+        // --files is VALUE_IS_ARRAY: repeated flags arrive as a list, and each
+        // element may itself be a comma-separated batch. Both forms combine, so
+        // no path is ever silently dropped (the repeated-flag form previously
+        // kept only the last value and returned a false-green partial verify).
+        foreach ((array) $input->getOption('files') as $files) {
             foreach (explode(',', (string) $files) as $p) {
                 $p = trim($p);
                 if ($p !== '') {
@@ -243,7 +253,7 @@ final class AiVerifyCommand extends BaseCommand
 
     /**
      * @param list<string> $lines git --name-status output OR plain `git diff --name-only` lines
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function parseNameStatus(array $lines): array
     {
@@ -262,9 +272,15 @@ final class AiVerifyCommand extends BaseCommand
                     'R' => ChangedFile::STATUS_RENAMED,
                     default => ChangedFile::STATUS_MODIFIED,
                 };
-                // For R entries, `git diff --name-status` emits OLD<TAB>NEW; take the new path.
+                // For R entries, `git diff --name-status` emits OLD<TAB>NEW; take the
+                // new path AND carry the old path so the broken-FQCN guard can query
+                // the renamed symbol's previous FQCN too.
                 $path = $parts[count($parts) - 1];
-                $out[] = ['path' => $path, 'status' => $status];
+                $entry = ['path' => $path, 'status' => $status];
+                if ($status === ChangedFile::STATUS_RENAMED && count($parts) >= 3) {
+                    $entry['originalPath'] = $parts[1];
+                }
+                $out[] = $entry;
                 continue;
             }
             $out[] = ['path' => $line, 'status' => ChangedFile::STATUS_MODIFIED];

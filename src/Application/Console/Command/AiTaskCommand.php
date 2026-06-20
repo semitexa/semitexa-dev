@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Ai\Classifier\ClassificationResult;
 use Semitexa\Dev\Application\Service\Ai\Classifier\TaskClassifier;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
@@ -59,6 +60,7 @@ final class AiTaskCommand extends BaseCommand
                 'recipe'           => $result->recipe->id,
                 'label'            => $result->recipe->label,
                 'score'            => $result->score,
+                'confidence'       => $result->confidence,
                 'reason'           => $result->reason,
                 'suggested_module' => $result->suggested_module,
                 'risk_hint'        => $result->recipe->default_risk,
@@ -74,7 +76,7 @@ final class AiTaskCommand extends BaseCommand
         $io = new SymfonyStyle($input, $output);
         $io->title("Task: {$description}");
         $io->definitionList(
-            ['Recipe' => "{$result->recipe->id} (score {$result->score})"],
+            ['Recipe' => "{$result->recipe->id} (score {$result->score}, confidence {$result->confidence})"],
             ['Label' => $result->recipe->label],
             ['Reason' => $result->reason],
             ['Risk hint' => $result->recipe->default_risk],
@@ -112,6 +114,7 @@ final class AiTaskCommand extends BaseCommand
             'recipe'           => $result->recipe->id,
             'label'            => $result->recipe->label,
             'score'            => $result->score,
+            'confidence'       => $result->confidence,
             'reason'           => $result->reason,
             'suggested_module' => $result->suggested_module,
             'risk_hint'        => $result->recipe->default_risk,
@@ -133,6 +136,7 @@ final class AiTaskCommand extends BaseCommand
             'recipe'           => $result->recipe->id,
             'label'            => $result->recipe->label,
             'score'            => $result->score,
+            'confidence'       => $result->confidence,
             'risk_hint'        => $result->recipe->default_risk,
             'suggested_module' => $result->suggested_module,
             'reason'           => $result->reason,
@@ -181,6 +185,20 @@ final class AiTaskCommand extends BaseCommand
     private function buildNextCommands($result): array
     {
         $id = $result->recipe->id;
+
+        // Low confidence is a guess, not a classification: steer to clarify/confirm
+        // before any generator runs, enforcing AGENTS.md §2[1]/§3 in the tool itself
+        // instead of leaving the threshold for each agent to re-derive.
+        if ($result->confidence === ClassificationResult::CONFIDENCE_LOW && $id !== 'unknown_task') {
+            $clarify = [
+                ['cmd' => 'ai:context', 'args' => [$id, '--json'], 'why' => "low confidence (score {$result->score}) — confirm `{$id}` actually fits before executing"],
+            ];
+            foreach ($result->alternatives as $alt) {
+                $clarify[] = ['cmd' => 'ai:context', 'args' => [$alt['recipe_id'], '--json'], 'why' => "weigh alternative `{$alt['recipe_id']}` (score {$alt['score']}) — the match was ambiguous"];
+            }
+            $clarify[] = ['cmd' => 'ai:ask', 'args' => ['project', '--json'], 'why' => 'or re-orient / clarify the goal with the operator before committing to a recipe'];
+            return $clarify;
+        }
 
         if ($id === 'unknown_task') {
             return [
@@ -249,6 +267,14 @@ final class AiTaskCommand extends BaseCommand
     private function buildNextHint($result): string
     {
         $id = $result->recipe->id;
+
+        if ($result->confidence === ClassificationResult::CONFIDENCE_LOW && $id !== 'unknown_task') {
+            return sprintf(
+                'low confidence (score %d) — `%s` is a best guess, not a reliable match. Clarify the goal or confirm the recipe (weigh the alternatives) before executing; do not blindly run a generator. Per AGENTS.md §2[1]/§3 this is the confidence<bar → clarify case.',
+                $result->score,
+                $id,
+            );
+        }
 
         if ($id === 'unknown_task') {
             return 'no match — decompose via `ai:epic start` + `ai:work start`, explore with `ai:ask project|module|route`, edit with Edit/Write, verify with `ai:verify`. The recipe field is a placeholder and should not drive your next step.';

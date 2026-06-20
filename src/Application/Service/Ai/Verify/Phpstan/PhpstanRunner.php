@@ -132,9 +132,11 @@ final class PhpstanRunner
                     if (!is_array($msg)) {
                         continue;
                     }
-                    $identifier = isset($msg['identifier']) && is_string($msg['identifier']) && $msg['identifier'] !== ''
+                    $rawIdentifier = isset($msg['identifier']) && is_string($msg['identifier']) && $msg['identifier'] !== ''
                         ? $msg['identifier']
                         : 'phpstan.error';
+                    $messageText = isset($msg['message']) && is_string($msg['message']) ? $msg['message'] : '';
+                    $identifier  = $this->namespaceBrokenFqcn($rawIdentifier, $messageText);
                     $rows[] = [
                         'check'         => 'phpstan_di',
                         'severity'      => 'error',
@@ -142,7 +144,7 @@ final class PhpstanRunner
                         'identifier'    => $identifier,
                         'path'          => $rel,
                         'line'          => (int) ($msg['line'] ?? 0),
-                        'message'       => isset($msg['message']) && is_string($msg['message']) ? $msg['message'] : '',
+                        'message'       => $messageText,
                         'tip'           => isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '',
                         'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
                         'suggested_fix' => $this->suggestionFor($identifier),
@@ -185,8 +187,56 @@ final class PhpstanRunner
             'semitexa.configOnClassType'         => 'Adjust the property type. #[Config] supports scalar (int, float, string, bool) and backed-enum types only.',
             'semitexa.unannotatedServiceProperty' => 'Add the appropriate #[InjectAsReadonly] / #[InjectAsMutable] / #[InjectAsFactory] attribute, or remove the property if it is not a service.',
             'semitexa.traitInjection'            => 'Move the injected property out of the trait. Container-managed classes must declare their injection points directly.',
+            'semitexa.brokenFqcn'                => 'Vendor migration likely — the referenced FQCN no longer resolves. Check whether the class moved namespaces (e.g. `Foo\\Contract\\X` → `Foo\\Domain\\Contract\\X`, or attribute relocations from `Core\\Attribute\\` to the owning package). Update the `use` statement, inline FQCN, or typehint to the new canonical FQCN. If this is a recently-renamed contract, run `bin/semitexa ai:review-graph:generate` to refresh the impact graph.',
             default                              => 'Fix the issue reported by PHPStan.',
         };
+    }
+
+    /**
+     * Remap PHPStan's native broken-class-reference identifiers (`class.notFound`,
+     * `interface.notFound`, `phpstan.error` with a "class not found" message
+     * shape, …) to a Semitexa-namespaced `semitexa.brokenFqcn`. Lets
+     * {@see self::suggestionFor()} return guidance tuned to the time-bomb
+     * scenario (vendor migration / DDD rename / contract move) instead of a
+     * generic "fix the issue PHPStan reported" — better DX, better blame
+     * surface in the NDJSON report. Original PHPStan identifier is captured
+     * via `rule` for callers who want to drill into the raw diagnostic.
+     */
+    private function namespaceBrokenFqcn(string $rawIdentifier, string $message): string
+    {
+        $brokenIdentifiers = [
+            'class.notFound'     => true,
+            'interface.notFound' => true,
+            'trait.notFound'     => true,
+            'enum.notFound'      => true,
+        ];
+        if (isset($brokenIdentifiers[$rawIdentifier])) {
+            return 'semitexa.brokenFqcn';
+        }
+        // Older PHPStan versions / some message shapes carry no identifier
+        // and surface as `phpstan.error`. Pattern-match the canonical
+        // missing-class phrasings so we still recognise the time-bomb shape.
+        if ($rawIdentifier === 'phpstan.error' || $rawIdentifier === '') {
+            // A bare ` not found.` matches unrelated diagnostics (e.g. "Constant X
+            // not found."). Require a class-like keyword before "not found" so only
+            // missing-symbol errors are remapped to the broken-FQCN time-bomb shape.
+            if (preg_match('/\b(class|interface|trait|enum)\b.*\bnot found\b/i', $message) === 1) {
+                return 'semitexa.brokenFqcn';
+            }
+            $needles = [
+                'has unknown class ',
+                'unknown class ',
+                'unknown interface ',
+                'has invalid type ',
+                'has invalid return type ',
+            ];
+            foreach ($needles as $needle) {
+                if (str_contains(strtolower($message), strtolower($needle))) {
+                    return 'semitexa.brokenFqcn';
+                }
+            }
+        }
+        return $rawIdentifier;
     }
 
     private function discoverPhpstanBinary(): ?string

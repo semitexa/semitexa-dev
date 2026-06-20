@@ -29,8 +29,10 @@ final class PayloadPlanBuilder
         private readonly TemplateRenderer $renderer,
     ) {}
 
+    private const EXPOSE_AS_GRAPHQL_FQCN = 'Semitexa\\Graphql\\Attribute\\ExposeAsGraphql';
+
     /**
-     * @param array{module: string, name: string, path: string, method: string, response: string, access: string, dryRun: bool} $params
+     * @param array{module: string, name: string, path: string, method: string, response: string, access: string, dryRun: bool, graphql?: bool, graphqlField?: ?string} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -55,6 +57,21 @@ final class PayloadPlanBuilder
             "use {$accessFqcn};",
             "use {$responseNamespace}\\{$responseClass};",
         ];
+
+        // Opt-in GraphQL exposure. The marker is intentionally bare in the common
+        // case: field/rootType/output/list all derive (field from the Payload
+        // class name). `graphqlField` is emitted only as an explicit override.
+        $graphqlAttribute = '';
+        // Fail fast on a meaningless combination rather than silently dropping the
+        // override: `graphqlField` only takes effect when GraphQL exposure is on.
+        if (empty($params['graphql']) && trim((string) ($params['graphqlField'] ?? '')) !== '') {
+            throw new \InvalidArgumentException('`graphqlField` requires `graphql=true`.');
+        }
+        if (!empty($params['graphql'])) {
+            $imports[] = 'use ' . self::EXPOSE_AS_GRAPHQL_FQCN . ';';
+            $graphqlAttribute = $this->renderGraphqlAttribute($params['graphqlField'] ?? null);
+        }
+
         sort($imports);
 
         $template = $this->templateResolver->resolve('payload.php.tpl');
@@ -66,6 +83,10 @@ final class PayloadPlanBuilder
             'method' => strtoupper($params['method']),
             'responseClass' => $responseClass,
             'className' => $payloadClass,
+            // Empty when GraphQL is off (placeholder collapses to nothing); the
+            // attribute line carries its OWN trailing newline so `class` stays on
+            // the next line with no blank gap.
+            'graphqlAttribute' => $graphqlAttribute,
         ], 'make:payload');
 
         $filePath = "src/modules/{$module}/src/Application/Payload/Request/{$payloadClass}.php";
@@ -77,5 +98,21 @@ final class PayloadPlanBuilder
             ],
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    /**
+     * Render the `#[ExposeAsGraphql]` line (with its own trailing newline). A
+     * blank/whitespace-only override field is treated as absent so the marker
+     * stays bare and the field derives from the class name.
+     */
+    private function renderGraphqlAttribute(?string $field): string
+    {
+        $field = $field !== null ? trim($field) : '';
+
+        if ($field === '') {
+            return "#[ExposeAsGraphql]\n";
+        }
+
+        return "#[ExposeAsGraphql(field: '" . addslashes($field) . "')]\n";
     }
 }
