@@ -1621,6 +1621,102 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
+    public function test_local_rule_shadowing_with_a_different_contract_is_reported(): void
+    {
+        // `ruleForInPackage` prefers the package-scoped map, so a local rule
+        // that shadows a global path with a DIFFERENT contract silently kills
+        // the global rule for that package (the Server/Lifecycle drift kept
+        // this suite red for weeks). The guard must name the extension file.
+        $this->scaffoldPackage('core', [
+            'src/Application/Handler/PayloadHandler',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $global = (new ModuleStructureSpecLoader($this->projectRoot))->load();
+        $scoped = $global->packageScopedRules;
+        $scoped['core']['Server/Lifecycle'] = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
+            path: 'Server/Lifecycle',
+            mode: \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+            allowedFilePatterns: ['/^Anything[A-Z][A-Za-z0-9_]*\.php$/'],
+        );
+        $spec = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec(
+            codeRootRules: $global->codeRootRules,
+            packageRootRule: $global->packageRootRule,
+            filePlacement: $global->filePlacement,
+            packageOnlyDirectories: $global->packageOnlyDirectories,
+            requiredPackageRootEntries: $global->requiredPackageRootEntries,
+            forbiddenInProductionPackages: $global->forbiddenInProductionPackages,
+            packageSpecificCodeRoot: $global->packageSpecificCodeRoot,
+            packageScopedRules: $scoped,
+            localExtensions: $global->localExtensions,
+        );
+
+        $violations = (new ModuleStructureValidator($this->root, $spec))->validate($this->package('core'));
+        $this->assertHasViolationAt(
+            $violations,
+            ModuleStructureViolation::CODE_LOCAL_RULE_DIVERGENCE,
+            'packages/semitexa-core/config/module-structure.php',
+        );
+    }
+
+    public function test_real_spec_has_zero_local_rule_divergences(): void
+    {
+        // Repo-wide pin: every package-local extension currently in the tree
+        // must be contract-identical to any global rule it shadows. When this
+        // fails, DO NOT loosen it — align the diverging pair (global spec +
+        // MODULE_STRUCTURE.md + local extension) in the same change.
+        $this->scaffoldPackage('core', [
+            'src/Application/Handler/PayloadHandler',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $violations = $this->validator()->validate($this->package('core'));
+
+        $divergences = array_values(array_filter(
+            $violations,
+            static fn(ModuleStructureViolation $v): bool => $v->code === ModuleStructureViolation::CODE_LOCAL_RULE_DIVERGENCE,
+        ));
+        $this->assertSame([], $divergences, $this->renderViolations($divergences));
+    }
+
+    public function test_identical_local_shadow_is_not_reported(): void
+    {
+        // Defense-in-depth duplication is legal: a local rule byte-identical
+        // in contract to the global one it shadows raises nothing.
+        $this->scaffoldPackage('core', [
+            'src/Application/Handler/PayloadHandler',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $global = (new ModuleStructureSpecLoader($this->projectRoot))->load();
+        $globalRule = $global->ruleFor('Server/Lifecycle');
+        $this->assertNotNull($globalRule, 'sanity: global Server/Lifecycle rule exists');
+
+        $scoped = $global->packageScopedRules;
+        $scoped['core']['Server/Lifecycle'] = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule(
+            path: 'Server/Lifecycle',
+            mode: $globalRule->mode,
+            allowedFilePatterns: $globalRule->allowedFilePatterns,
+            excludedFilePatterns: $globalRule->excludedFilePatterns,
+            rationale: 'different prose must not count as divergence',
+        );
+        $spec = new \Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec(
+            codeRootRules: $global->codeRootRules,
+            packageRootRule: $global->packageRootRule,
+            filePlacement: $global->filePlacement,
+            packageOnlyDirectories: $global->packageOnlyDirectories,
+            requiredPackageRootEntries: $global->requiredPackageRootEntries,
+            forbiddenInProductionPackages: $global->forbiddenInProductionPackages,
+            packageSpecificCodeRoot: $global->packageSpecificCodeRoot,
+            packageScopedRules: $scoped,
+            localExtensions: $global->localExtensions,
+        );
+
+        $violations = (new ModuleStructureValidator($this->root, $spec))->validate($this->package('core'));
+        $divergences = array_values(array_filter(
+            $violations,
+            static fn(ModuleStructureViolation $v): bool => $v->code === ModuleStructureViolation::CODE_LOCAL_RULE_DIVERGENCE,
+        ));
+        $this->assertSame([], $divergences, $this->renderViolations($divergences));
+    }
+
     public function test_resource_deep_passes_canonical_layout(): void
     {
         // Sanity: scaffold every declared sub-tree of Resource with one

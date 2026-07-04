@@ -55,11 +55,79 @@ final class ModuleStructureValidator
             return [];
         }
 
+        // Spec-integrity gate, reported from EVERY module run on purpose:
+        // a diverging shadow is global truth (the shadowed global rule is
+        // dead), and the drift can be introduced from either side (the local
+        // extension OR the global spec), so whichever module's edit scheduled
+        // this run must surface it.
+        $violations = $this->localRuleDivergences($module);
+
         if ($module->isPackageModule()) {
-            return $this->validatePackage($module, $absRoot);
+            return [...$violations, ...$this->validatePackage($module, $absRoot)];
         }
 
-        return $this->validateApplicationModule($module, $absRoot);
+        return [...$violations, ...$this->validateApplicationModule($module, $absRoot)];
+    }
+
+    /**
+     * The local-vs-global shadowing guard. `ruleForInPackage` prefers the
+     * package-scoped map, so a local rule for a path that ALSO has a global
+     * rule silently replaces it for that package. That is fine when the
+     * contracts are identical (defense-in-depth duplication) and a defect
+     * when they differ: the global rule — and every doc row and test pinning
+     * it — keeps describing behavior that no longer runs anywhere (this is
+     * exactly how the Server/Lifecycle drift kept a dev test red for weeks).
+     *
+     * @return list<ModuleStructureViolation>
+     */
+    private function localRuleDivergences(DetectedModule $module): array
+    {
+        $violations = [];
+        foreach ($this->spec->packageScopedRules as $packageName => $rules) {
+            foreach ($rules as $path => $localRule) {
+                $globalRule = $this->spec->ruleFor($path);
+                if ($globalRule === null || $localRule->contractEquals($globalRule)) {
+                    continue;
+                }
+
+                $extensionPath = sprintf('packages/semitexa-%s/config/module-structure.php', $packageName);
+                $violations[] = new ModuleStructureViolation(
+                    code: ModuleStructureViolation::CODE_LOCAL_RULE_DIVERGENCE,
+                    module: $module->relativePath,
+                    path: $extensionPath,
+                    message: sprintf(
+                        "Local rule for '%s' (package '%s') shadows the global rule with a DIFFERENT contract — the global rule is silently dead for that package.",
+                        $path,
+                        $packageName,
+                    ),
+                    expected: sprintf(
+                        "one contract for '%s': either make the local rule byte-identical to the global one, or change the global rule (+ %s + its pinning tests) in the same change",
+                        $path,
+                        ModuleStructureViolation::DOC_REF,
+                    ),
+                    actual: sprintf(
+                        'local(mode=%s, dirs=[%s], files=[%s], patterns=[%s], excluded=[%s]) vs global(mode=%s, dirs=[%s], files=[%s], patterns=[%s], excluded=[%s])',
+                        $localRule->mode,
+                        implode(', ', $localRule->allowedDirectories),
+                        implode(', ', $localRule->allowedFiles),
+                        implode(', ', $localRule->allowedFilePatterns),
+                        implode(', ', $localRule->excludedFilePatterns),
+                        $globalRule->mode,
+                        implode(', ', $globalRule->allowedDirectories),
+                        implode(', ', $globalRule->allowedFiles),
+                        implode(', ', $globalRule->allowedFilePatterns),
+                        implode(', ', $globalRule->excludedFilePatterns),
+                    ),
+                    suggestedFix: sprintf(
+                        "Align the two rules for '%s'. If the local loosening is intentional, move the loosened contract into the global spec (packages/semitexa-dev/config/module-structure.php), update %s and the ModuleStructureValidatorTest pin, then keep the local rule identical or remove it.",
+                        $path,
+                        ModuleStructureViolation::DOC_REF,
+                    ),
+                );
+            }
+        }
+
+        return $violations;
     }
 
     /**

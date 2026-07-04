@@ -32,6 +32,8 @@ final readonly class ModuleStructureViolation
     public const CODE_LOCAL_EXTENSION_INVALID         = 'module_structure.local_extension_invalid';
     /** A package-local module-structure extension tries to weaken or override a global forbidden / naming / production-pollution rule. */
     public const CODE_LOCAL_EXTENSION_FORBIDDEN_OVERRIDE = 'module_structure.local_extension_forbidden_override';
+    /** A package-local rule shadows a global rule for the same path with a DIFFERENT contract — the global rule (and everything documenting/pinning it) is silently dead for that package. Align both to one contract in the same change. */
+    public const CODE_LOCAL_RULE_DIVERGENCE           = 'module_structure.local_rule_divergence';
 
     public const DOC_REF = 'packages/semitexa-docs/docs/MODULE_STRUCTURE.md';
 
