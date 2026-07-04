@@ -137,6 +137,11 @@ final class VerificationPlanner
             }
         }
 
+        $liveTenancyTarget = $this->liveTenancyTarget($changedFiles);
+        if ($liveTenancyTarget !== null) {
+            $targets[] = $liveTenancyTarget;
+        }
+
         return new VerificationPlan(
             scope: $requestedScope,
             effectiveScope: $effectiveScope,
@@ -253,6 +258,43 @@ final class VerificationPlanner
             triggeredBy: $eligible,
             filePath: null,
             testFilter: null,
+        );
+    }
+
+    /**
+     * Schedule the cross-package live-tenancy join whenever production PHP
+     * changed. The guard is a single cheap discovery scan, but the defect it
+     * catches — a live-bound resource with no declared tenancy posture —
+     * is a silent cross-tenant read, so it runs at every scope, like
+     * `module_structure`. The join is global by nature (a payload in one
+     * package watches a resource in another), so there is no meaningful
+     * per-file narrowing.
+     *
+     * @param list<ChangedFile> $files
+     */
+    private function liveTenancyTarget(array $files): ?VerificationTarget
+    {
+        $triggeredBy = [];
+        foreach ($files as $file) {
+            if ($file->status === ChangedFile::STATUS_DELETED || !str_ends_with($file->path, '.php')) {
+                continue;
+            }
+            if (self::isPhpstanDiIneligibleKind($file->kind)) {
+                continue;
+            }
+            $triggeredBy[] = $file->path;
+        }
+
+        if ($triggeredBy === []) {
+            return null;
+        }
+
+        return new VerificationTarget(
+            type: VerificationTarget::TYPE_LIVE_TENANCY,
+            id: 'live_tenancy:project',
+            reason: 'every live-bound resource (#[WatchScopes]/watchScopes) must declare #[TenantScoped] or #[TenantExempt]; watched scopes must be backed',
+            triggeredBy: $triggeredBy,
+            filePath: null,
         );
     }
 

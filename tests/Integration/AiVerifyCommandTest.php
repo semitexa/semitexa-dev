@@ -182,7 +182,11 @@ class AiVerifyCommandTest extends TestCase
         $payload = json_decode(trim($tester->getDisplay()), true);
         $types = array_unique(array_column($payload['targets'], 'type'));
         sort($types);
-        $this->assertSame(['module_structure', 'syntax'], $types);
+        // `live_tenancy` joins `module_structure` in the every-scope tier:
+        // both are cheap scans guarding drift that must never wait for a
+        // wider scope (structure rot / cross-tenant live-grid leaks). The
+        // expensive production lints (phpstan_di) stay excluded here.
+        $this->assertSame(['live_tenancy', 'module_structure', 'syntax'], $types);
     }
 
     public function test_no_inputs_returns_error_envelope(): void

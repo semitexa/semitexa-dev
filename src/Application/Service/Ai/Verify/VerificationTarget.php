@@ -30,6 +30,7 @@ final readonly class VerificationTarget
     public const TYPE_PHPUNIT          = 'phpunit';
     public const TYPE_MODULE_STRUCTURE = 'module_structure';
     public const TYPE_PHPSTAN_DI       = 'phpstan_di';
+    public const TYPE_LIVE_TENANCY     = 'live_tenancy';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled
