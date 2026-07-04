@@ -730,8 +730,9 @@ $codeRoot[] = $rule(
 $codeRoot[] = $rule(
     path: 'Server/Lifecycle',
     mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
-    allowedFilePatterns: ['/^Server[A-Z][A-Za-z0-9_]*\.php$/'],
-    rationale: 'Server lifecycle phase classes (ServerBootstrapState, ServerLifecycleContext, …). Leaf — basenames start with Server.',
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Worker lifecycle subsystem: Server*-prefixed phases/context/invoker/registry PLUS core-owned lifecycle listeners and their collaborators (ClearWorkerTimersListener, WorkerTimerRegistry — the WorkerExit drain). PascalCase leaf with the standard drift deny-list; matches semitexa-core\'s local extension so the contract is identical with or without it.',
 );
 
 // Resource — deep with 9 declared sub-trees + many PascalCase root files.

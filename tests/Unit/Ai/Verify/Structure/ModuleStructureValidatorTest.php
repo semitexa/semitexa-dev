@@ -1580,19 +1580,44 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertEmpty($violations, $this->renderViolations($violations));
     }
 
-    public function test_server_lifecycle_leaf_requires_server_prefix(): void
+    public function test_server_lifecycle_leaf_accepts_pascal_case_and_rejects_drift(): void
     {
+        // The Server*-only basename rule was loosened when the WorkerExit
+        // drain landed: core-owned lifecycle listeners and collaborators
+        // (ClearWorkerTimersListener, WorkerTimerRegistry) legitimately live
+        // in the subsystem without the prefix. The contract now — identical
+        // in the global spec and semitexa-core's local extension — is
+        // PascalCase files with the standard drift deny-list.
         $this->scaffoldPackage('core', [
             'src/Application/Handler/PayloadHandler',
             'src/Server/Lifecycle',
         ], ['composer.json', 'LICENSE', 'README.md']);
         $this->writePackageFile('core', 'src/Server/Lifecycle/CustomPhase.php', "<?php\n");
+        $this->writePackageFile('core', 'src/Server/Lifecycle/WorkerTimerRegistry.php', "<?php\n");
+        $this->writePackageFile('core', 'src/Server/Lifecycle/LifecycleHelper.php', "<?php\n");
+        $this->writePackageFile('core', 'src/Server/Lifecycle/lowercase.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->package('core'));
+
+        $paths = array_map(static fn(ModuleStructureViolation $v): string => $v->path, $violations);
+        $this->assertNotContains(
+            'packages/semitexa-core/src/Server/Lifecycle/CustomPhase.php',
+            $paths,
+            'PascalCase lifecycle members are allowed (post-WorkerExit-drain contract).',
+        );
+        $this->assertNotContains(
+            'packages/semitexa-core/src/Server/Lifecycle/WorkerTimerRegistry.php',
+            $paths,
+        );
         $this->assertHasViolationAt(
             $violations,
             ModuleStructureViolation::CODE_INVALID_LOCATION,
-            'packages/semitexa-core/src/Server/Lifecycle/CustomPhase.php',
+            'packages/semitexa-core/src/Server/Lifecycle/LifecycleHelper.php',
+        );
+        $this->assertHasViolationAt(
+            $violations,
+            ModuleStructureViolation::CODE_INVALID_LOCATION,
+            'packages/semitexa-core/src/Server/Lifecycle/lowercase.php',
         );
     }
 
