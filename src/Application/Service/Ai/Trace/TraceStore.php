@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Trace;
 
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 
 /**
@@ -185,8 +186,14 @@ final class TraceStore
             }
             try {
                 $out[] = $this->readHeader($dir . '/' . $entry, $traceId);
-            } catch (\RuntimeException) {
-                // Skip malformed traces rather than crashing the list.
+            } catch (\RuntimeException $e) {
+                // Skip malformed traces rather than crashing the list — but log
+                // it so a corrupt/partially-written trace is diagnosable instead
+                // of silently missing from the listing.
+                StaticLoggerBridge::warning('dev', 'Skipping unreadable trace record', [
+                    'file' => $dir . '/' . $entry,
+                    'message' => $e->getMessage(),
+                ]);
                 continue;
             }
         }

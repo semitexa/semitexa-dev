@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
@@ -14,6 +15,7 @@ use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
+use Semitexa\Dev\Tests\Support\CapturingLogger;
 
 class EpicStoreTest extends TestCase
 {
@@ -116,6 +118,29 @@ class EpicStoreTest extends TestCase
         $store = $this->newEpicStore();
         $this->expectException(\InvalidArgumentException::class);
         $store->exists('BAD ID');
+    }
+
+    public function test_list_logs_and_skips_a_corrupt_record_instead_of_silently_dropping_it(): void
+    {
+        $store = $this->newEpicStore();
+        $now = '2026-04-19T00:00:00+00:00';
+        $store->save(new Epic('ep-ok', 'title', 'goal', EpicStatus::NEW, $now, $now));
+
+        file_put_contents($this->root . '/' . EpicStore::SUBDIR . '/ep-bad.json', '{ this is not json');
+
+        $logger = new CapturingLogger();
+        StaticLoggerBridge::set($logger);
+        try {
+            $epics = $store->list();
+        } finally {
+            StaticLoggerBridge::reset();
+        }
+
+        $this->assertSame(['ep-ok'], array_map(static fn(Epic $e) => $e->id, $epics));
+        $this->assertCount(1, $logger->warnings);
+        [$message, $context] = $logger->warnings[0];
+        $this->assertSame('Skipping unreadable epic record', $message);
+        $this->assertStringContainsString('ep-bad.json', (string) $context['file']);
     }
 
     private function removeDir(string $dir): void
