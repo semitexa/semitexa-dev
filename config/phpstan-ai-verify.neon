@@ -108,3 +108,4 @@ rules:
     - Semitexa\Core\PHPStan\Rules\ConfigOnClassTypeRule
     - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
     - Semitexa\Core\PHPStan\Rules\TraitInjectionRule
+    - Semitexa\Core\PHPStan\Rules\WorkerServiceConnectionHandleRule

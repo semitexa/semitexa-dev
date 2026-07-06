@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
+use Semitexa\Dev\Tests\Support\CapturingLogger;
 
 class TaskStoreTest extends TestCase
 {
@@ -149,6 +151,32 @@ class TaskStoreTest extends TestCase
         $this->assertSame('ep-a', $updated->epicId);
         $this->assertSame(TaskStatus::IN_PROGRESS, $updated->status);
         $this->assertSame('next', $updated->nextStep);
+    }
+
+    public function test_list_logs_and_skips_a_corrupt_record_instead_of_silently_dropping_it(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-04-19T00:00:00+00:00';
+        $store->save(new Task('tk-ok', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-ok', $now, $now));
+
+        // A partial write / hand-edit leaves a malformed file with a valid id name.
+        file_put_contents($this->root . '/' . TaskStore::SUBDIR . '/tk-bad.json', '{ this is not json');
+
+        $logger = new CapturingLogger();
+        StaticLoggerBridge::set($logger);
+        try {
+            $tasks = $store->list();
+        } finally {
+            StaticLoggerBridge::reset();
+        }
+
+        // The listing stays resilient — the good task is still returned...
+        $this->assertSame(['tk-ok'], array_map(static fn(Task $t) => $t->id, $tasks));
+        // ...but the corrupt one is surfaced, not silently missing.
+        $this->assertCount(1, $logger->warnings);
+        [$message, $context] = $logger->warnings[0];
+        $this->assertSame('Skipping unreadable task record', $message);
+        $this->assertStringContainsString('tk-bad.json', (string) $context['file']);
     }
 
     private function removeDir(string $dir): void

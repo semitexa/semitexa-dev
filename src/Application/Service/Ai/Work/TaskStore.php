@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Work;
 
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 
 /**
@@ -75,7 +76,15 @@ final class TaskStore
             }
             try {
                 $task = Task::fromArray(JsonFile::read($dir . '/' . $entry));
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $e) {
+                // Stay resilient — one corrupt file must not break the listing —
+                // but never drop it silently: a partial write / hand-edit would
+                // otherwise vanish from `ai:work list` leaving a clean shorter
+                // list with no signal.
+                StaticLoggerBridge::warning('dev', 'Skipping unreadable task record', [
+                    'file' => $dir . '/' . $entry,
+                    'message' => $e->getMessage(),
+                ]);
                 continue;
             }
             if ($epicId !== null && $task->epicId !== $epicId) {

@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Work;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 
 /**
@@ -76,7 +77,15 @@ final class EpicStore
             }
             try {
                 $epic = Epic::fromArray(JsonFile::read($dir . '/' . $entry));
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $e) {
+                // Stay resilient — one corrupt file must not break the listing —
+                // but never drop it silently: a partial write / hand-edit would
+                // otherwise vanish from `ai:epic list` leaving a clean shorter
+                // list with no signal.
+                StaticLoggerBridge::warning('dev', 'Skipping unreadable epic record', [
+                    'file' => $dir . '/' . $entry,
+                    'message' => $e->getMessage(),
+                ]);
                 continue;
             }
             $out[] = $epic->withTaskIds($this->taskStore->taskIdsForEpic($id));

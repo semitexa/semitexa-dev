@@ -73,6 +73,32 @@ final readonly class ModuleStructureRule
         public ?string $rationale = null,
     ) {}
 
+    /**
+     * Whether two rules enforce the SAME contract — everything that decides
+     * accept/reject (mode, flags, directory and file allow/deny sets, order-
+     * insensitive) — ignoring prose (`rationale`, opaque metadata) and `path`.
+     *
+     * Used by the local-vs-global shadowing guard: a package-local rule that
+     * shadows a global rule for the same path must be contract-identical,
+     * otherwise the global rule (and the docs/tests pinning it) is silently
+     * dead for that package.
+     */
+    public function contractEquals(self $other): bool
+    {
+        $sorted = static function (array $values): array {
+            sort($values);
+            return $values;
+        };
+
+        return $this->mode === $other->mode
+            && $this->allowFeatureGrouping === $other->allowFeatureGrouping
+            && $this->allowAnyFile === $other->allowAnyFile
+            && $sorted($this->allowedDirectories) === $sorted($other->allowedDirectories)
+            && $sorted($this->allowedFiles) === $sorted($other->allowedFiles)
+            && $sorted($this->allowedFilePatterns) === $sorted($other->allowedFilePatterns)
+            && $sorted($this->excludedFilePatterns) === $sorted($other->excludedFilePatterns);
+    }
+
     public function permitsDirectory(string $name): bool
     {
         if ($this->mode === self::MODE_LEAF_FILES_ONLY) {

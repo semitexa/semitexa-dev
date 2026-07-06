@@ -61,6 +61,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_PHPUNIT          => $this->runPhpunit($target),
                 VerificationTarget::TYPE_MODULE_STRUCTURE => $this->runModuleStructure($target),
                 VerificationTarget::TYPE_PHPSTAN_DI       => $this->runPhpstanDi($target),
+                VerificationTarget::TYPE_LIVE_TENANCY     => $this->runLiveTenancy($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -231,6 +232,34 @@ final class VerificationExecutor
             $first = $violations[0];
             $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}";
         }
+
+        return new VerificationResult(
+            target:      $target,
+            status:      $errorCount === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
+            exitCode:    $errorCount === 0 ? 0 : 1,
+            signal:      $signal,
+            diagnostics: $diagnostics,
+        );
+    }
+
+    private function runLiveTenancy(VerificationTarget $target): VerificationResult
+    {
+        try {
+            $validator = new \Semitexa\Dev\Application\Service\Ai\Verify\Tenancy\LiveResourceTenancyValidator();
+            $violations = $validator->validateProject(new \Semitexa\Core\Discovery\ClassDiscovery());
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'live_tenancy discovery failed: ' . $this->compress($e->getMessage()));
+        }
+
+        $diagnostics = array_map(
+            static fn(\Semitexa\Dev\Application\Service\Ai\Verify\Tenancy\LiveTenancyViolation $v) => $v->toArray(),
+            $violations,
+        );
+
+        $errorCount = count($violations);
+        $signal = $errorCount === 0
+            ? 'live_tenancy → 0 violations'
+            : "live_tenancy → {$errorCount} violation(s); first: {$violations[0]->code} {$violations[0]->scopeKey}";
 
         return new VerificationResult(
             target:      $target,

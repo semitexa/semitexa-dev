@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\Trace;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Tests\Support\CapturingLogger;
 
 /**
  * TraceStore is now a constructor-less #[AsService] that resolves its
@@ -181,6 +183,29 @@ class TraceStoreTest extends TestCase
         foreach ($lines as $line) {
             $this->assertNotFalse(json_decode($line, true), "line parses as JSON: {$line}");
         }
+    }
+
+    public function test_list_logs_and_skips_a_corrupt_trace_instead_of_silently_dropping_it(): void
+    {
+        $store = new TraceStore();
+        $store->openOrCreate('tr-ok', 'topic');
+
+        // A partially-written trace: a malformed header line.
+        file_put_contents($this->root . '/var/ai-traces/tr-bad.ndjson', "garbage not a header\n");
+
+        $logger = new CapturingLogger();
+        StaticLoggerBridge::set($logger);
+        try {
+            $headers = $store->list();
+        } finally {
+            StaticLoggerBridge::reset();
+        }
+
+        $this->assertSame(['tr-ok'], array_map(static fn(TraceHeader $h) => $h->traceId, $headers));
+        $this->assertCount(1, $logger->warnings);
+        [$message, $context] = $logger->warnings[0];
+        $this->assertSame('Skipping unreadable trace record', $message);
+        $this->assertStringContainsString('tr-bad.ndjson', (string) $context['file']);
     }
 
     private function removeDir(string $dir): void
