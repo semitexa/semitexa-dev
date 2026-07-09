@@ -266,13 +266,14 @@ $codeRoot = array_merge($codeRoot, [
     // Static + View — assets and templates.
     $rule(
         path: 'Application/Static',
-        allowedDirectories: ['css', 'js', 'img', 'fonts', 'svg'],
+        allowedDirectories: ['css', 'js', 'img', 'fonts', 'svg', 'audio'],
         allowedFiles: ['assets.json'],
     ),
     $rule(path: 'Application/Static/css',   allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/js',    allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/img',   allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/fonts', allowFeatureGrouping: true, allowAnyFile: true),
+    $rule(path: 'Application/Static/audio', allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/svg',   allowFeatureGrouping: true, allowAnyFile: true),
 
     $rule(
