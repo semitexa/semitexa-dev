@@ -110,6 +110,7 @@ $codeRoot = [
             'DataProvider',
             'Db',
             'Enum',
+            'Prompt',
         ],
         rationale: 'Application orchestration layer; canonical sub-trees. `Db/` hosts the persistence implementation (resource models, mappers, concrete repositories) — Domain/ stays clean of infrastructure. `Application/DataProvider` is the canonical home for **SSR DataProvider implementations** — classes that implement `Semitexa\\Ssr\\Domain\\Contract\\DataProviderInterface` and resolve display-ready data for deferred slots or `#[WithDataProvider]` components. `Application/Enum` is the canonical home for **application/runtime enums** — types that describe orchestration modes, runtime execution states, framework adapter modes, or pipeline phases. Domain enums live at `Domain/Enum/`. Top-level `src/Enum/` is intentionally NOT allowed.',
     ),
@@ -139,6 +140,12 @@ $codeRoot = [
     $rule(path: 'Application/Service',   allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Update',    allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Component', allowFeatureGrouping: true, allowAnyFile: true),
+
+    // Application/Prompt — #[AsPrompt] prompt-catalog definition classes (thin:
+    // metadata + optional few-shot; the Twig body lives in resources/prompts/).
+    // A #[AsPrompt] class is not a service, so it gets its own home rather than
+    // living under Application/Service/.
+    $rule(path: 'Application/Prompt', allowFeatureGrouping: true, allowAnyFile: true),
 
     // Application/DataProvider — SSR DataProvider implementations.
     //
