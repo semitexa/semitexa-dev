@@ -109,3 +109,5 @@ rules:
     - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
     - Semitexa\Core\PHPStan\Rules\TraitInjectionRule
     - Semitexa\Core\PHPStan\Rules\WorkerServiceConnectionHandleRule
+    - Semitexa\Core\PHPStan\Rules\NoOpMapperRule
+    - Semitexa\Core\PHPStan\Rules\DomainModelEncapsulationRule
