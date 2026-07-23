@@ -43,7 +43,9 @@ final class ScaffoldSyncCommand extends BaseCommand
         'Dockerfile' => 'Dockerfile',
         'docker-compose.yml' => 'docker-compose.yml',
         'docker-compose.ollama.yml' => 'docker-compose.ollama.yml',
-        '.gitignore' => 'gitignore',
+        // NOTE: no '.gitignore' => 'gitignore' mapping — the non-dot copy in
+        // ultimate was removed as orphan drift (no installer reads it; see
+        // ultimate config/module-structure.php).
     ];
 
     /** Scaffold-relative files mirrored to the project root as exact copies. */
@@ -84,8 +86,15 @@ final class ScaffoldSyncCommand extends BaseCommand
 
         foreach ($targets as [$src, $dst, $label]) {
             if (!is_file($src)) {
-                $io->writeln("  <comment>skip</comment>  {$label} (source missing)");
-                continue;
+                // A missing SSoT source is a broken scaffold, not a skippable
+                // detail — downstream copies would silently stop updating.
+                $drift++;
+                if ($check) {
+                    $io->writeln("  <comment>DRIFT</comment> {$label} (source missing from installer scaffold)");
+                    continue;
+                }
+                $io->error("Installer scaffold is missing {$label} — fix the SSoT before syncing.");
+                return Command::FAILURE;
             }
             if (is_file($dst) && hash_file('sha256', $src) === hash_file('sha256', $dst)) {
                 continue;
@@ -104,7 +113,7 @@ final class ScaffoldSyncCommand extends BaseCommand
             // bit), so preserve the destination's prior mode instead of
             // stamping the source's.
             $mode = is_file($dst) ? (fileperms($dst) & 0777) : (fileperms($src) & 0777);
-            $tmp = $dst . '.scaffold-sync.tmp';
+            $tmp = $dst . '.scaffold-sync.' . getmypid() . '.' . uniqid() . '.tmp';
             if (!copy($src, $tmp) || !chmod($tmp, $mode) || !rename($tmp, $dst)) {
                 @unlink($tmp);
                 $io->error("Failed to copy {$label}.");
@@ -123,6 +132,7 @@ final class ScaffoldSyncCommand extends BaseCommand
         }
 
         // 3 + 4. Delegate docs mirror and update-package mirror + manifest.
+        $manifestRegenerated = false;
         foreach ([
             ['scaffold:sync-docs', $check ? ['--check' => true] : []],
             ['update:scaffold:rebuild', $check ? null : []],
@@ -142,12 +152,17 @@ final class ScaffoldSyncCommand extends BaseCommand
                     return Command::FAILURE;
                 }
                 $drift++;
+                continue;
+            }
+            if ($name === 'update:scaffold:rebuild') {
+                $manifestRegenerated = true;
             }
         }
 
-        // In check mode, compare the update package's scaffold mirror by hash.
-        if ($check) {
-            $updateScaffold = $root . '/packages/semitexa-update/resources/scaffold';
+        // Compare the update package's scaffold mirror by hash — only when the
+        // update package is actually present (mirrors runSibling() behavior).
+        $updateScaffold = $root . '/packages/semitexa-update/resources/scaffold';
+        if ($check && is_dir($updateScaffold)) {
             foreach ($this->listFiles($scaffold) as $rel) {
                 $mirror = $updateScaffold . '/' . $rel;
                 if (!is_file($mirror) || hash_file('sha256', $scaffold . '/' . $rel) !== hash_file('sha256', $mirror)) {
@@ -159,14 +174,23 @@ final class ScaffoldSyncCommand extends BaseCommand
 
         if ($check) {
             if ($drift > 0) {
-                $io->error("{$drift} scaffold cop(ies) out of sync. Run: bin/semitexa scaffold:sync");
+                $io->error(sprintf(
+                    '%d scaffold %s out of sync. Run: bin/semitexa scaffold:sync',
+                    $drift,
+                    $drift === 1 ? 'copy is' : 'copies are',
+                ));
                 return Command::FAILURE;
             }
             $io->success('All scaffold copies match the installer SSoT.');
             return Command::SUCCESS;
         }
 
-        $io->success($drift > 0 ? "Scaffold propagated ({$drift} file(s) refreshed) and manifest regenerated." : 'Everything already in sync; manifest regenerated.');
+        $manifestNote = $manifestRegenerated
+            ? ' and manifest regenerated'
+            : ' (semitexa-update not installed — manifest NOT regenerated)';
+        $io->success($drift > 0
+            ? "Scaffold propagated ({$drift} file(s) refreshed){$manifestNote}."
+            : "Everything already in sync{$manifestNote}.");
         return Command::SUCCESS;
     }
 
