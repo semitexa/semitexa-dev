@@ -11,7 +11,9 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": "*"
+        "semitexa/core": "*",
+        "semitexa/orm": "*",
+        "semitexa/project-graph": "*"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.0"

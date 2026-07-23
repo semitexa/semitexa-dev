@@ -16,6 +16,9 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactProbe;
+use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactReport;
+use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -50,6 +53,11 @@ final class AiVerifyCommand extends BaseCommand
     #[InjectAsReadonly]
     protected TraceAutoAppender $traceAppender;
 
+    // Optional (nullable) so ai:verify still runs where no DB is bound
+    // (e.g. the command's own test harness); only --impact needs it.
+    #[InjectAsReadonly]
+    protected ?ConnectionRegistry $connections = null;
+
     public function __construct()
     {
         parent::__construct('ai:verify');
@@ -64,7 +72,8 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
-            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit a single JSON envelope instead of NDJSON');
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit a single JSON envelope instead of NDJSON')
+            ->addOption('impact', null, InputOption::VALUE_NONE, 'Annotate each changed file with a project-graph blast-radius band (low|medium|high). Read-only: does not change which checks run.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -112,11 +121,16 @@ final class AiVerifyCommand extends BaseCommand
         $verdict = $this->verdict($results);
         $exit = $verdict === VerificationResult::STATUS_FAIL ? self::FAILURE : self::SUCCESS;
 
-        $envelope = $this->buildEnvelope($plan, $results, $verdict);
+        $impact = null;
+        if ((bool) $input->getOption('impact')) {
+            $impact = $this->probeImpact($plan);
+        }
+
+        $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
         if ($jsonMode) {
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
         } else {
-            $this->emitNdjson($output, $plan, $results, $verdict);
+            $this->emitNdjson($output, $plan, $results, $verdict, $impact);
         }
 
         $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
@@ -335,9 +349,52 @@ final class AiVerifyCommand extends BaseCommand
      * @param list<VerificationResult> $results
      * @return array<string, mixed>
      */
-    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict): array
+    /**
+     * Read-only blast-radius probe. Never throws into the verify flow — a
+     * graph problem must degrade to an "unknown" band, not fail verification.
+     */
+    private function probeImpact(VerificationPlan $plan): ImpactReport
+    {
+        $paths = [];
+        foreach ($plan->changedFiles as $file) {
+            if (str_ends_with($file->path, '.php')) {
+                $paths[] = $file->path;
+            }
+        }
+        if ($paths === []) {
+            return ImpactReport::empty();
+        }
+
+        if ($this->connections === null) {
+            return ImpactReport::stale($paths, 'impact unavailable: no database connection bound in this context');
+        }
+
+        try {
+            return (new ImpactProbe($this->connections))->probe(array_values($paths));
+        } catch (\Throwable $e) {
+            return ImpactReport::stale($paths, 'impact probe failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * @return array<string, string> path → band, for merging into changed_files
+     */
+    private function bandsByPath(?ImpactReport $impact): array
+    {
+        if ($impact === null) {
+            return [];
+        }
+        $bands = [];
+        foreach ($impact->files as $file) {
+            $bands[$file->path] = $file->band;
+        }
+        return $bands;
+    }
+
+    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
     {
         $violations = $this->collectViolations($results);
+        $bands = $this->bandsByPath($impact);
         return [
             'artifact'        => 'semitexa-dev.verify-report/v1',
             'generated_at'    => date('c'),
@@ -345,7 +402,13 @@ final class AiVerifyCommand extends BaseCommand
             'effective_scope' => $plan->effectiveScope,
             'expansions'      => $plan->expansions,
             'changed_files'   => array_map(
-                static fn(ChangedFile $f) => ['path' => $f->path, 'kind' => $f->kind, 'status' => $f->status],
+                static function (ChangedFile $f) use ($bands): array {
+                    $entry = ['path' => $f->path, 'kind' => $f->kind, 'status' => $f->status];
+                    if (isset($bands[$f->path])) {
+                        $entry['impact'] = $bands[$f->path];
+                    }
+                    return $entry;
+                },
                 $plan->changedFiles,
             ),
             'targets'         => array_map(fn($t) => $this->serializeTarget($t), $plan->targets),
@@ -353,6 +416,7 @@ final class AiVerifyCommand extends BaseCommand
             'violations'      => $violations,
             'verdict'         => $verdict,
             'counts'          => $this->countByStatus($results),
+            'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
         ];
     }
@@ -432,7 +496,7 @@ final class AiVerifyCommand extends BaseCommand
     /**
      * @param list<VerificationResult> $results
      */
-    private function emitNdjson(OutputInterface $output, VerificationPlan $plan, array $results, string $verdict): void
+    private function emitNdjson(OutputInterface $output, VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): void
     {
         $output->writeln(json_encode([
             'kind'            => 'summary',
@@ -441,6 +505,14 @@ final class AiVerifyCommand extends BaseCommand
             'changed_files'   => count($plan->changedFiles),
             'targets'         => count($plan->targets),
         ], JSON_UNESCAPED_SLASHES));
+
+        if ($impact !== null) {
+            $output->writeln(json_encode([
+                'kind'   => 'impact',
+                'impact' => $impact->toSummary(),
+                'files'  => array_map(static fn ($f) => $f->toArray(), $impact->files),
+            ], JSON_UNESCAPED_SLASHES));
+        }
 
         foreach ($plan->expansions as $note) {
             $output->writeln(json_encode([
@@ -470,11 +542,15 @@ final class AiVerifyCommand extends BaseCommand
             }
         }
 
-        $output->writeln(json_encode([
+        $verdictLine = [
             'kind'    => 'verdict',
             'verdict' => $verdict,
             'counts'  => $this->countByStatus($results),
-        ], JSON_UNESCAPED_SLASHES));
+        ];
+        if ($impact !== null) {
+            $verdictLine['impact'] = $impact->toSummary();
+        }
+        $output->writeln(json_encode($verdictLine, JSON_UNESCAPED_SLASHES));
     }
 
     /**
