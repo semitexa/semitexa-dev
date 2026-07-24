@@ -657,19 +657,9 @@ $codeRoot[] = $rule(
 // allowed-children sets and pattern-driven file allowlists.
 // ----------------------------------------------------------------------
 
-// Acl — leaf, 3 PascalCase files (interfaces + null impl + checker).
+// Authorization — leaf, currently 1 file (SubjectInterface).
 // Drift deny-list (Helper/Util/Manager/Misc/Common) prevents the layer
 // from becoming a dumping ground for unrelated code.
-$codeRoot[] = $rule(
-    path: 'Acl',
-    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
-    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
-    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
-    rationale: 'Access-control primitives (HasRolesInterface, NullPermissionChecker, PermissionCheckerInterface). Leaf — no subdirectories. Drift filenames rejected.',
-);
-
-// Authorization — leaf, currently 1 file (SubjectInterface).
-// Same drift deny-list as Acl.
 $codeRoot[] = $rule(
     path: 'Authorization',
     mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
@@ -1118,7 +1108,7 @@ $filePlacement = [
  *     are core-only by architecture (the DI container, the Composer plugin,
  *     server lifecycle, framework console infrastructure, and the project's
  *     PHPStan rule sources).
- *   - `Acl`, `Authorization`, `CodeGen`, `Config`, `Contract`, `Cookie`,
+ *   - `Authorization`, `CodeGen`, `Config`, `Contract`, `Cookie`,
  *     `Csrf`, `Error`, `Event`, `Http`, `Locale`, `Log`, `Queue`, `Redis`,
  *     `Registry`, `Request`, `Resource`, `Server`, `Session`, `Support`,
  *     `Tenant`, `Theme`, `Validation` are framework primitives owned by
@@ -1141,7 +1131,6 @@ $filePlacement = [
 $packageSpecificCodeRoot = [
     'core' => [
         'directories' => [
-            'Acl',
             'Authorization',
             'Boot',
             'CodeGen',

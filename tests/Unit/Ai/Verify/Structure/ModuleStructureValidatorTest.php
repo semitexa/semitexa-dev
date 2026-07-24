@@ -1410,7 +1410,6 @@ class ModuleStructureValidatorTest extends TestCase
     public static function phase3_batch2_directories(): array
     {
         return [
-            'Acl'           => ['Acl'],
             'Authorization' => ['Authorization'],
             'Cookie'        => ['Cookie'],
             'Csrf'          => ['Csrf'],
@@ -1419,34 +1418,6 @@ class ModuleStructureValidatorTest extends TestCase
             'Server'        => ['Server'],
             'Resource'      => ['Resource'],
         ];
-    }
-
-    public function test_acl_leaf_accepts_existing_files_rejects_subdir(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-        $this->writePackageFile('core', 'src/Acl/PermissionCheckerInterface.php', "<?php\n");
-        $this->writePackageFile('core', 'src/Acl/NullPermissionChecker.php',      "<?php\n");
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertEmpty($violations, $this->renderViolations($violations));
-    }
-
-    public function test_acl_rejects_subdirectory(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl/Helpers',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertHasViolationAt(
-            $violations,
-            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'packages/semitexa-core/src/Acl/Helpers',
-        );
     }
 
     public function test_cookie_leaf_requires_cookie_prefix(): void
@@ -2073,23 +2044,7 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    // ----------------------- Tightening: Acl + Authorization drift guards ------------------------
-
-    public function test_acl_rejects_drift_filename(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-        $this->writePackageFile('core', 'src/Acl/SomeHelper.php', "<?php\n");
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertHasViolationAt(
-            $violations,
-            ModuleStructureViolation::CODE_INVALID_LOCATION,
-            'packages/semitexa-core/src/Acl/SomeHelper.php',
-        );
-    }
+    // ----------------------- Tightening: Authorization drift guard ------------------------
 
     public function test_authorization_rejects_drift_filename(): void
     {
@@ -2496,7 +2451,6 @@ class ModuleStructureValidatorTest extends TestCase
     public static function core_only_directories(): array
     {
         return [
-            'Acl'           => ['Acl'],
             'Authorization' => ['Authorization'],
             'CodeGen'       => ['CodeGen'],
             'Composer'      => ['Composer'],
@@ -2668,7 +2622,7 @@ class ModuleStructureValidatorTest extends TestCase
         // declared core-only top-level directories must pass cleanly. This
         // pins the spec.core list against a working reference layout.
         $coreOnlyDirs = array_keys(self::core_only_directories());
-        // Strip the data-provider's wrapper-array shape: ['Acl' => ['Acl']]
+        // Strip the data-provider's wrapper-array shape: ['Boot' => ['Boot']]
         // gives string keys we can use directly as directory names.
         $relativeDirs = ['src/Application/Handler/PayloadHandler'];
         foreach ($coreOnlyDirs as $dir) {
