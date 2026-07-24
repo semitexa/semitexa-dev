@@ -3109,6 +3109,57 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
+    public function test_package_resources_directory_is_not_flagged_as_pollution(): void
+    {
+        // ACCEPTANCE 7: resources/ carries non-code assets — sample payloads,
+        // fixture documents, example templates. The rule exists to keep demo
+        // CODE out of production packages; asset naming is not its business,
+        // and it already makes the same allowance for tests/.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'resources/examples',
+            'resources/samples/Demo',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $codes = array_map(static fn(ModuleStructureViolation $v) => $v->code, $violations);
+        $this->assertNotContains(
+            ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
+            $codes,
+            'resources/examples must NOT trip the pollution rule',
+        );
+    }
+
+    public function test_pollution_rule_still_guards_src_after_the_resources_allowance(): void
+    {
+        // The allowance is package-root only. Widening it to any directory
+        // named resources, or to src/ itself, would retire the rule.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Application/Demo',
+            'src/resources/Examples',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $polluted = array_values(array_filter(
+            $violations,
+            static fn(ModuleStructureViolation $v): bool
+                => $v->code === ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
+        ));
+        $paths = array_map(static fn(ModuleStructureViolation $v) => $v->path, $polluted);
+
+        $this->assertContains(
+            'packages/semitexa-api/src/Application/Demo',
+            $paths,
+            'a Demo directory under src/ must still be flagged',
+        );
+        $this->assertContains(
+            'packages/semitexa-api/src/resources/Examples',
+            $paths,
+            'the allowance must be package-root only, not any directory named resources',
+        );
+    }
+
     public function test_undeclared_top_level_in_package_still_fails(): void
     {
         // ACCEPTANCE 7: non-pollution undeclared folders still fail with

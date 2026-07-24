@@ -709,9 +709,12 @@ final class ModuleStructureValidator
      * home for local sandbox modules — that is where AI agents should put
      * demo code so production packages stay clean.
      *
-     * Skips the whole `tests/` subtree under the package: test fixtures and
-     * test cases are allowed to use words like `DemoArticleHandler` or live
-     * in `tests/Fixtures/Demo/` without tripping the rule.
+     * Skips the whole `tests/` and `resources/` subtrees under the package.
+     * Test fixtures are allowed to use words like `DemoArticleHandler` or live
+     * in `tests/Fixtures/Demo/`; `resources/` holds non-code assets — templates,
+     * fixtures, sample payloads — and the rule exists to keep demo *code* out of
+     * production packages, not to police asset naming. Both are package-root
+     * only: a `Demo/` directory anywhere under `src/` still fires.
      *
      * @param list<ModuleStructureViolation> $violations
      */
@@ -730,10 +733,11 @@ final class ModuleStructureValidator
         foreach ($this->scanDirs($absDir) as $childDir) {
             $childRel = $relInsidePackage === '' ? $childDir : $relInsidePackage . '/' . $childDir;
 
-            // tests/ is the legitimate home for fixtures named after demos.
-            // The package envelope rule decides whether tests/ is allowed at
-            // the top — pollution rule simply does not enter it.
-            if ($relInsidePackage === '' && $childDir === 'tests') {
+            // tests/ is the legitimate home for fixtures named after demos, and
+            // resources/ carries non-code assets. The package envelope rule
+            // decides whether either is allowed at the top — the pollution rule
+            // simply does not enter them.
+            if ($relInsidePackage === '' && in_array($childDir, ['tests', 'resources'], true)) {
                 continue;
             }
 
