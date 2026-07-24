@@ -613,14 +613,12 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    public function test_domain_repository_directory_itself_fails(): void
+    public function test_domain_repository_accepts_port_interfaces(): void
     {
-        // Phase 3 cleanup: Domain/Repository is REMOVED from the allowlist.
-        // Repository interfaces canonically live in Domain/Contract/;
-        // concrete implementations live in Application/Db/<Adapter>/Repository/.
-        // The audit (2026-04-30) found zero Domain/Repository/ files anywhere
-        // in the monorepo — the spec entry was a phantom that created
-        // ambiguity for AI agents.
+        // 2026-07-25: Domain/Repository is allowed again as the dedicated home
+        // for repository PORT interfaces. It had been folded into
+        // Domain/Contract by the Phase 3 cleanup; a separate directory keeps
+        // the persistence ports readable once a package has more than a few.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Domain/Repository',
@@ -628,10 +626,25 @@ class ModuleStructureValidatorTest extends TestCase
         $this->writePackageFile('api', 'src/Domain/Repository/FooRepositoryInterface.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->package('api'));
+        $this->assertEmpty($violations, $this->renderViolations($violations));
+    }
+
+    public function test_domain_repository_rejects_a_concrete_implementation(): void
+    {
+        // The directory holds ports only. A concrete class here would be
+        // infrastructure leaking into the domain layer — implementations stay
+        // in Application/Db/<Adapter>/Repository/.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Domain/Repository',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+        $this->writePackageFile('api', 'src/Domain/Repository/FooRepository.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->package('api'));
         $this->assertHasViolationAt(
             $violations,
-            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'packages/semitexa-api/src/Domain/Repository',
+            ModuleStructureViolation::CODE_INVALID_LOCATION,
+            'packages/semitexa-api/src/Domain/Repository/FooRepository.php',
         );
     }
 
