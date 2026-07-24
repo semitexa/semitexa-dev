@@ -62,15 +62,44 @@ class VerificationExecutorTest extends TestCase
         $this->assertStringContainsString('missing handler', $results[0]->signal);
     }
 
-    public function test_lint_target_skipped_when_command_not_registered(): void
+    public function test_lint_target_fails_when_command_not_registered(): void
     {
+        // This used to assert SKIPPED, which is how five lints planned under a
+        // stale semitexa: prefix went unrun for months while ai:verify kept
+        // reporting pass. A planned gate that does not exist is a defect in the
+        // plan; the run must go red, not quietly green.
         $plan = $this->planWith([
             new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:nope', 'r', [], commandName: 'lint:nope'),
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, new RecordingProcessRunner()))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame(1, $results[0]->exitCode);
         $this->assertStringContainsString('not registered', $results[0]->signal);
+    }
+
+    public function test_lint_target_fails_when_the_command_throws(): void
+    {
+        $app = new Application();
+        $app->add(new class extends Command {
+            public function __construct()
+            {
+                parent::__construct('lint:explodes');
+            }
+
+            protected function execute(InputInterface $input, OutputInterface $output): int
+            {
+                throw new \RuntimeException('lint blew up');
+            }
+        });
+
+        $plan = $this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:explodes', 'r', [], commandName: 'lint:explodes'),
+        ]);
+        $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertStringContainsString('lint blew up', $results[0]->signal);
     }
 
     public function test_syntax_target_invokes_php_l_against_real_file_path(): void

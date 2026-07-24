@@ -31,21 +31,21 @@ final class VerificationPlanner
      * only when scope is effectively `broad`.
      */
     private const KIND_LINT_MAP = [
-        ChangedFile::KIND_HANDLER  => ['semitexa:lint:handlers', 'semitexa:lint:di'],
-        ChangedFile::KIND_LISTENER => ['semitexa:lint:di', 'semitexa:lint:scoping'],
-        ChangedFile::KIND_PAYLOAD  => ['semitexa:lint:responses', 'semitexa:lint:di'],
-        ChangedFile::KIND_RESOURCE => ['semitexa:lint:responses'],
-        ChangedFile::KIND_SERVICE  => ['semitexa:lint:di', 'semitexa:lint:scoping'],
-        ChangedFile::KIND_CONTRACT => ['semitexa:lint:di'],
-        ChangedFile::KIND_TEMPLATE => ['semitexa:lint:templates'],
+        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di'],
+        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
+        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
+        ChangedFile::KIND_RESOURCE => ['lint:responses'],
+        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
+        ChangedFile::KIND_CONTRACT => ['lint:di'],
+        ChangedFile::KIND_TEMPLATE => ['lint:templates'],
     ];
 
     private const ALL_LINTS = [
-        'semitexa:lint:handlers',
-        'semitexa:lint:di',
-        'semitexa:lint:scoping',
-        'semitexa:lint:responses',
-        'semitexa:lint:templates',
+        'lint:handlers',
+        'lint:di',
+        'lint:scoping',
+        'lint:responses',
+        'lint:templates',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;

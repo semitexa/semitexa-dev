@@ -38,7 +38,7 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(VerificationPlan::SCOPE_STANDARD, $plan->effectiveScope);
         $commands = $this->lintCommandNames($plan);
         sort($commands);
-        $this->assertSame(['semitexa:lint:di', 'semitexa:lint:handlers'], $commands);
+        $this->assertSame(['lint:di', 'lint:handlers'], $commands);
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
         $this->assertSame([], $plan->expansions);
     }
@@ -51,8 +51,8 @@ class VerificationPlannerTest extends TestCase
         ], VerificationPlan::SCOPE_STANDARD);
 
         $commands = $this->lintCommandNames($plan);
-        $this->assertContains('semitexa:lint:responses', $commands);
-        $this->assertContains('semitexa:lint:di', $commands);
+        $this->assertContains('lint:responses', $commands);
+        $this->assertContains('lint:di', $commands);
     }
 
     public function test_minimal_scope_runs_syntax_and_structure_but_no_production_lints(): void
@@ -96,11 +96,11 @@ class VerificationPlannerTest extends TestCase
         $commands = $this->lintCommandNames($plan);
         sort($commands);
         $this->assertSame([
-            'semitexa:lint:di',
-            'semitexa:lint:handlers',
-            'semitexa:lint:responses',
-            'semitexa:lint:scoping',
-            'semitexa:lint:templates',
+            'lint:di',
+            'lint:handlers',
+            'lint:responses',
+            'lint:scoping',
+            'lint:templates',
         ], $commands);
     }
 

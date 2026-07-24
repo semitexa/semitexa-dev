@@ -82,7 +82,10 @@ final class VerificationExecutor
         try {
             $command = $this->application->find($commandName);
         } catch (CommandNotFoundException) {
-            return $this->skipped($target, "command {$commandName} is not registered");
+            // A planned gate that does not exist is a defect in the plan, not a
+            // reason to pass. Reporting it as skipped is how five lints named
+            // with a stale prefix went unrun while ai:verify kept saying pass.
+            return $this->failed($target, "command {$commandName} is not registered");
         }
 
         $buffer = new BufferedOutput();
@@ -92,7 +95,8 @@ final class VerificationExecutor
         try {
             $exit = $command->run($input, $buffer);
         } catch (\Throwable $e) {
-            return $this->skipped(
+            // Same reasoning: a gate that blew up did not clear the change.
+            return $this->failed(
                 $target,
                 "{$commandName} threw " . $e::class . ': ' . $this->compress($e->getMessage()),
             );
@@ -345,6 +349,20 @@ final class VerificationExecutor
             target:   $target,
             status:   VerificationResult::STATUS_SKIPPED,
             exitCode: 0,
+            signal:   $reason,
+        );
+    }
+
+    /**
+     * A gate that could not be run at all. Distinct from skipped: skipped means
+     * the target did not apply, failed means it applied and did not clear.
+     */
+    private function failed(VerificationTarget $target, string $reason): VerificationResult
+    {
+        return new VerificationResult(
+            target:   $target,
+            status:   VerificationResult::STATUS_FAIL,
+            exitCode: 1,
             signal:   $reason,
         );
     }

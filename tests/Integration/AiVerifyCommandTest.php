@@ -82,7 +82,7 @@ class AiVerifyCommandTest extends TestCase
 
     public function test_lint_failures_propagate_to_verdict_and_exit_code(): void
     {
-        $tester = $this->newTester(failingLints: ['semitexa:lint:handlers']);
+        $tester = $this->newTester(failingLints: ['lint:handlers']);
         $exit = $tester->execute([
             '--files' => 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php',
         ]);
@@ -94,7 +94,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertSame(1, $verdict['counts']['fail']);
 
         $resultLines = array_values(array_filter($lines, static fn($l) => $l['kind'] === 'result'));
-        $failingLint = array_filter($resultLines, static fn($l) => $l['result']['id'] === 'lint:semitexa:lint:handlers');
+        $failingLint = array_filter($resultLines, static fn($l) => $l['result']['id'] === 'lint:lint:handlers');
         $this->assertNotEmpty($failingLint);
         $failingLint = array_values($failingLint)[0];
         $this->assertSame('fail', $failingLint['result']['status']);
@@ -466,11 +466,11 @@ class AiVerifyCommandTest extends TestCase
         $app->add($verifyCommand);
 
         foreach ([
-            'semitexa:lint:handlers',
-            'semitexa:lint:di',
-            'semitexa:lint:scoping',
-            'semitexa:lint:responses',
-            'semitexa:lint:templates',
+            'lint:handlers',
+            'lint:di',
+            'lint:scoping',
+            'lint:responses',
+            'lint:templates',
         ] as $name) {
             $app->add(new class($name, in_array($name, $failingLints, true)) extends Command {
                 public function __construct(string $name, private readonly bool $shouldFail) {
