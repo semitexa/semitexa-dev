@@ -116,8 +116,10 @@ $codeRoot = [
     ),
     $rule(
         path: 'Application/Payload',
-        allowedDirectories: ['Request', 'Event', 'Part'],
+        allowedDirectories: ['Request', 'Event', 'Part', 'Session'],
+        rationale: 'Payload layer. `Session/` holds `#[SessionSegment]` classes and the value objects they carry — session state is payload-shaped data, not a service.',
     ),
+    $rule(path: 'Application/Payload/Session', allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Payload/Request', allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Payload/Event',   allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Payload/Part',    allowFeatureGrouping: true, allowAnyFile: true),
@@ -300,8 +302,8 @@ $codeRoot = array_merge($codeRoot, [
     // implementations live under `Application/Db/<Adapter>/Repository/`.
     $rule(
         path: 'Domain',
-        allowedDirectories: ['Model', 'Contract', 'Exception', 'Service', 'Event', 'Command', 'Enum'],
-        rationale: 'Domain layer. NOTE: `Domain/Repository` is intentionally NOT in this list — repository interfaces live in `Domain/Contract/`; concrete implementations live in `Application/Db/<Adapter>/Repository/`. `Domain/Command` is for CQRS-style **domain command DTOs** (immutable message objects describing an intent) — it is NOT for executable console commands; those live exclusively at `Application/Console/Command/`. `Domain/Enum` is the canonical home for **domain enums** — types that describe business/domain semantics (matching strategies, field-type taxonomies, scope semantics, status taxonomies). Application/runtime enums live at `Application/Enum/`. Top-level `src/Enum/` is intentionally NOT allowed — enums must be placed contextually.',
+        allowedDirectories: ['Model', 'Contract', 'Exception', 'Service', 'Event', 'Command', 'Enum', 'Repository'],
+        rationale: 'Domain layer. `Domain/Repository` is the canonical home for **repository port interfaces** (`*RepositoryInterface.php`); concrete implementations live in `Application/Db/<Adapter>/Repository/`. `Domain/Contract` remains the home for every other domain port. Repository ports were previously folded into `Domain/Contract` — that exclusion was lifted on 2026-07-25 because a dedicated directory keeps the persistence ports readable once a package has more than a handful. `Domain/Command` is for CQRS-style **domain command DTOs** (immutable message objects describing an intent) — it is NOT for executable console commands; those live exclusively at `Application/Console/Command/`. `Domain/Enum` is the canonical home for **domain enums** — types that describe business/domain semantics (matching strategies, field-type taxonomies, scope semantics, status taxonomies). Application/runtime enums live at `Application/Enum/`. Top-level `src/Enum/` is intentionally NOT allowed — enums must be placed contextually.',
     ),
     // Domain/Model — entities only. The excludedFilePatterns deny-list
     // rejects persistence-implementation filenames (*Resource.php,
@@ -321,7 +323,16 @@ $codeRoot = array_merge($codeRoot, [
         path: 'Domain/Contract',
         allowFeatureGrouping: true,
         allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*Interface\.php$/'],
-        rationale: 'Canonical (and only) home for domain interfaces — including repository interfaces. Basename ends in Interface.php. Concrete repository implementations live in Application/Db/<Adapter>/Repository/.',
+        rationale: 'Home for domain interfaces other than repository ports. Basename ends in Interface.php. Repository ports live in Domain/Repository/; concrete repository implementations live in Application/Db/<Adapter>/Repository/.',
+    ),
+    // Domain/Repository — repository PORT interfaces only. The concrete
+    // implementations stay in Application/Db/<Adapter>/Repository/, so this
+    // layer never holds infrastructure.
+    $rule(
+        path: 'Domain/Repository',
+        allowFeatureGrouping: true,
+        allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*RepositoryInterface\.php$/'],
+        rationale: 'Repository port interfaces. *RepositoryInterface.php only — a concrete class here would be infrastructure leaking into the domain layer.',
     ),
     // Domain/Exception — exception classes (basename ends in Exception.php).
     $rule(
@@ -657,19 +668,9 @@ $codeRoot[] = $rule(
 // allowed-children sets and pattern-driven file allowlists.
 // ----------------------------------------------------------------------
 
-// Acl — leaf, 3 PascalCase files (interfaces + null impl + checker).
+// Authorization — leaf, currently 1 file (SubjectInterface).
 // Drift deny-list (Helper/Util/Manager/Misc/Common) prevents the layer
 // from becoming a dumping ground for unrelated code.
-$codeRoot[] = $rule(
-    path: 'Acl',
-    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
-    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
-    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
-    rationale: 'Access-control primitives (HasRolesInterface, NullPermissionChecker, PermissionCheckerInterface). Leaf — no subdirectories. Drift filenames rejected.',
-);
-
-// Authorization — leaf, currently 1 file (SubjectInterface).
-// Same drift deny-list as Acl.
 $codeRoot[] = $rule(
     path: 'Authorization',
     mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
@@ -1118,7 +1119,7 @@ $filePlacement = [
  *     are core-only by architecture (the DI container, the Composer plugin,
  *     server lifecycle, framework console infrastructure, and the project's
  *     PHPStan rule sources).
- *   - `Acl`, `Authorization`, `CodeGen`, `Config`, `Contract`, `Cookie`,
+ *   - `Authorization`, `CodeGen`, `Config`, `Contract`, `Cookie`,
  *     `Csrf`, `Error`, `Event`, `Http`, `Locale`, `Log`, `Queue`, `Redis`,
  *     `Registry`, `Request`, `Resource`, `Server`, `Session`, `Support`,
  *     `Tenant`, `Theme`, `Validation` are framework primitives owned by
@@ -1141,7 +1142,6 @@ $filePlacement = [
 $packageSpecificCodeRoot = [
     'core' => [
         'directories' => [
-            'Acl',
             'Authorization',
             'Boot',
             'CodeGen',

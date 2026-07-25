@@ -79,14 +79,14 @@ class ModuleStructureCrashTestTest extends TestCase
             'packages/semitexa-api/src/Application/Services');
     }
 
-    public function test_adv_6_domain_repository_dir_in_api_fails(): void
+    public function test_adv_6_domain_repository_concrete_class_fails(): void
     {
-        // Phase 3 removed Domain/Repository. Concrete repos go in
-        // Application/Db/<Adapter>/Repository, interfaces in Domain/Contract.
+        // Domain/Repository is allowed again (2026-07-25) but holds ports only.
+        // Concrete repos still go in Application/Db/<Adapter>/Repository.
         $this->scaffoldPackage('api', ['src/Domain/Repository']);
-        $this->writePackageFile('api', 'src/Domain/Repository/FooRepositoryInterface.php', "<?php\n");
-        $this->assertFailsAt('api', ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'packages/semitexa-api/src/Domain/Repository');
+        $this->writePackageFile('api', 'src/Domain/Repository/FooRepository.php', "<?php\n");
+        $this->assertFailsAt('api', ModuleStructureViolation::CODE_INVALID_LOCATION,
+            'packages/semitexa-api/src/Domain/Repository/FooRepository.php');
     }
 
     public function test_adv_7_domain_model_resource_model_fails(): void

@@ -613,14 +613,12 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    public function test_domain_repository_directory_itself_fails(): void
+    public function test_domain_repository_accepts_port_interfaces(): void
     {
-        // Phase 3 cleanup: Domain/Repository is REMOVED from the allowlist.
-        // Repository interfaces canonically live in Domain/Contract/;
-        // concrete implementations live in Application/Db/<Adapter>/Repository/.
-        // The audit (2026-04-30) found zero Domain/Repository/ files anywhere
-        // in the monorepo — the spec entry was a phantom that created
-        // ambiguity for AI agents.
+        // 2026-07-25: Domain/Repository is allowed again as the dedicated home
+        // for repository PORT interfaces. It had been folded into
+        // Domain/Contract by the Phase 3 cleanup; a separate directory keeps
+        // the persistence ports readable once a package has more than a few.
         $this->scaffoldPackage('api', [
             'src/Application/Handler/PayloadHandler',
             'src/Domain/Repository',
@@ -628,10 +626,25 @@ class ModuleStructureValidatorTest extends TestCase
         $this->writePackageFile('api', 'src/Domain/Repository/FooRepositoryInterface.php', "<?php\n");
 
         $violations = $this->validator()->validate($this->package('api'));
+        $this->assertEmpty($violations, $this->renderViolations($violations));
+    }
+
+    public function test_domain_repository_rejects_a_concrete_implementation(): void
+    {
+        // The directory holds ports only. A concrete class here would be
+        // infrastructure leaking into the domain layer — implementations stay
+        // in Application/Db/<Adapter>/Repository/.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Domain/Repository',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+        $this->writePackageFile('api', 'src/Domain/Repository/FooRepository.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->package('api'));
         $this->assertHasViolationAt(
             $violations,
-            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'packages/semitexa-api/src/Domain/Repository',
+            ModuleStructureViolation::CODE_INVALID_LOCATION,
+            'packages/semitexa-api/src/Domain/Repository/FooRepository.php',
         );
     }
 
@@ -1410,7 +1423,6 @@ class ModuleStructureValidatorTest extends TestCase
     public static function phase3_batch2_directories(): array
     {
         return [
-            'Acl'           => ['Acl'],
             'Authorization' => ['Authorization'],
             'Cookie'        => ['Cookie'],
             'Csrf'          => ['Csrf'],
@@ -1419,34 +1431,6 @@ class ModuleStructureValidatorTest extends TestCase
             'Server'        => ['Server'],
             'Resource'      => ['Resource'],
         ];
-    }
-
-    public function test_acl_leaf_accepts_existing_files_rejects_subdir(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-        $this->writePackageFile('core', 'src/Acl/PermissionCheckerInterface.php', "<?php\n");
-        $this->writePackageFile('core', 'src/Acl/NullPermissionChecker.php',      "<?php\n");
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertEmpty($violations, $this->renderViolations($violations));
-    }
-
-    public function test_acl_rejects_subdirectory(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl/Helpers',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertHasViolationAt(
-            $violations,
-            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'packages/semitexa-core/src/Acl/Helpers',
-        );
     }
 
     public function test_cookie_leaf_requires_cookie_prefix(): void
@@ -2073,23 +2057,7 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    // ----------------------- Tightening: Acl + Authorization drift guards ------------------------
-
-    public function test_acl_rejects_drift_filename(): void
-    {
-        $this->scaffoldPackage('core', [
-            'src/Application/Handler/PayloadHandler',
-            'src/Acl',
-        ], ['composer.json', 'LICENSE', 'README.md']);
-        $this->writePackageFile('core', 'src/Acl/SomeHelper.php', "<?php\n");
-
-        $violations = $this->validator()->validate($this->package('core'));
-        $this->assertHasViolationAt(
-            $violations,
-            ModuleStructureViolation::CODE_INVALID_LOCATION,
-            'packages/semitexa-core/src/Acl/SomeHelper.php',
-        );
-    }
+    // ----------------------- Tightening: Authorization drift guard ------------------------
 
     public function test_authorization_rejects_drift_filename(): void
     {
@@ -2496,7 +2464,6 @@ class ModuleStructureValidatorTest extends TestCase
     public static function core_only_directories(): array
     {
         return [
-            'Acl'           => ['Acl'],
             'Authorization' => ['Authorization'],
             'CodeGen'       => ['CodeGen'],
             'Composer'      => ['Composer'],
@@ -2668,7 +2635,7 @@ class ModuleStructureValidatorTest extends TestCase
         // declared core-only top-level directories must pass cleanly. This
         // pins the spec.core list against a working reference layout.
         $coreOnlyDirs = array_keys(self::core_only_directories());
-        // Strip the data-provider's wrapper-array shape: ['Acl' => ['Acl']]
+        // Strip the data-provider's wrapper-array shape: ['Boot' => ['Boot']]
         // gives string keys we can use directly as directory names.
         $relativeDirs = ['src/Application/Handler/PayloadHandler'];
         foreach ($coreOnlyDirs as $dir) {
@@ -3152,6 +3119,57 @@ class ModuleStructureValidatorTest extends TestCase
             ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
             $codes,
             'tests/Demo and tests/Fixtures/Demo must NOT trip the pollution rule',
+        );
+    }
+
+    public function test_package_resources_directory_is_not_flagged_as_pollution(): void
+    {
+        // ACCEPTANCE 7: resources/ carries non-code assets — sample payloads,
+        // fixture documents, example templates. The rule exists to keep demo
+        // CODE out of production packages; asset naming is not its business,
+        // and it already makes the same allowance for tests/.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'resources/examples',
+            'resources/samples/Demo',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $codes = array_map(static fn(ModuleStructureViolation $v) => $v->code, $violations);
+        $this->assertNotContains(
+            ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
+            $codes,
+            'resources/examples must NOT trip the pollution rule',
+        );
+    }
+
+    public function test_pollution_rule_still_guards_src_after_the_resources_allowance(): void
+    {
+        // The allowance is package-root only. Widening it to any directory
+        // named resources, or to src/ itself, would retire the rule.
+        $this->scaffoldPackage('api', [
+            'src/Application/Handler/PayloadHandler',
+            'src/Application/Demo',
+            'src/resources/Examples',
+        ], ['composer.json', 'LICENSE', 'README.md']);
+
+        $violations = $this->validator()->validate($this->package('api'));
+        $polluted = array_values(array_filter(
+            $violations,
+            static fn(ModuleStructureViolation $v): bool
+                => $v->code === ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
+        ));
+        $paths = array_map(static fn(ModuleStructureViolation $v) => $v->path, $polluted);
+
+        $this->assertContains(
+            'packages/semitexa-api/src/Application/Demo',
+            $paths,
+            'a Demo directory under src/ must still be flagged',
+        );
+        $this->assertContains(
+            'packages/semitexa-api/src/resources/Examples',
+            $paths,
+            'the allowance must be package-root only, not any directory named resources',
         );
     }
 
