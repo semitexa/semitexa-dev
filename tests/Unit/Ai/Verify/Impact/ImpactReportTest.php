@@ -27,6 +27,28 @@ final class ImpactReportTest extends TestCase
     }
 
     #[Test]
+    public function all_unresolved_files_do_not_read_as_low_impact(): void
+    {
+        // Review finding on PR #39: seeding the search with 'low' meant a set of
+        // files that have no graph node at all reported max='low' — "safe" —
+        // when impact was never computed. Fail-closed means saying so.
+        $report = ImpactReport::of([
+            FileImpact::unresolved('config/app.php'),
+            FileImpact::unresolved('docs/readme.md'),
+        ]);
+
+        self::assertSame('unresolved', $report->maxBand());
+        self::assertFalse($report->stale);
+    }
+
+    #[Test]
+    public function an_empty_change_set_is_still_low(): void
+    {
+        // Nothing changed is genuinely low impact, not an unresolved lookup.
+        self::assertSame('low', ImpactReport::of([])->maxBand());
+    }
+
+    #[Test]
     public function stale_report_is_fail_closed_to_unknown(): void
     {
         $report = ImpactReport::stale(['a.php', 'b.php'], 'graph never generated');

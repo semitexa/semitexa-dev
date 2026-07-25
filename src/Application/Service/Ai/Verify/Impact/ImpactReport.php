@@ -70,7 +70,7 @@ final readonly class ImpactReport
             return 'unknown';
         }
 
-        $best = 'low';
+        $best = null;
         $rank = 0;
         foreach ($this->files as $file) {
             $r = self::RANK[$file->band] ?? 0;
@@ -80,7 +80,15 @@ final readonly class ImpactReport
             }
         }
 
-        return $best;
+        if ($best !== null) {
+            return $best;
+        }
+
+        // No file carried a ranked band. Seeding $best with 'low' used to make
+        // this case indistinguishable from a genuinely low-impact change — the
+        // report claimed "safe" when impact was never computed at all, which is
+        // the opposite of a fail-closed signal. Say which it is instead.
+        return $this->files === [] ? 'low' : 'unresolved';
     }
 
     public function hottest(): ?FileImpact
