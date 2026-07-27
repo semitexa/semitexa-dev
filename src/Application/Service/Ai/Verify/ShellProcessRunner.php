@@ -18,7 +18,11 @@ final class ShellProcessRunner implements ProcessRunner
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
-        $proc = proc_open($command, $descriptors, $pipes, $cwd);
+        // Silenced deliberately: a missing binary is an expected outcome here
+        // (callers probe for optional tools like `gh`), and it is already
+        // reported structurally below. The raw PHP warning added nothing and
+        // corrupted --json output by printing ahead of the envelope.
+        $proc = @proc_open($command, $descriptors, $pipes, $cwd);
         if (!is_resource($proc)) {
             return ['exit' => 1, 'output' => 'failed to spawn: ' . implode(' ', $command)];
         }
