@@ -107,7 +107,22 @@ final class AiReportCommand extends BaseCommand
             ], sprintf('Existing issue #%d covers this — added a sighting instead of a duplicate: %s', $first['number'], $first['url']));
         }
 
-        if (!$input->getOption('yes') && !$json) {
+        // --json must never imply consent. It is the flag an agent reaches for
+        // to get parseable output, and treating it as "no prompt needed" made
+        // the safety property this command advertises bypassable by the most
+        // common caller. In JSON mode consent has to be stated with --yes.
+        if (self::refusesUnattendedPublish($json, (bool) $input->getOption('yes'))) {
+            $path = $reporter->saveDraft($report, $repo);
+
+            return $this->fail(
+                $output,
+                true,
+                'Refusing to publish unattended: --json does not imply consent. '
+                . 'Re-run with --yes to publish, or file the draft kept at ' . $path,
+            );
+        }
+
+        if (!$input->getOption('yes')) {
             $output->writeln('');
             $output->writeln(sprintf('<info>About to open an issue in %s:</info>', $repo));
             $output->writeln('');
@@ -138,6 +153,23 @@ final class AiReportCommand extends BaseCommand
             'url'    => $result['url'],
             'repo'   => $repo,
         ], 'Reported: ' . $result['url']);
+    }
+
+    /**
+     * Whether an unattended publish must be refused.
+     *
+     * Extracted so the gate is provable on its own: without `gh` on PATH the
+     * draft branch short-circuits before this point is ever reached, which
+     * would leave a security property rated critical in review verifiable only
+     * by reading it.
+     *
+     * `--json` is the flag an agent reaches for to get parseable output.
+     * Treating it as "no prompt needed" is what made the guarantee this command
+     * advertises bypassable by its most likely caller.
+     */
+    public static function refusesUnattendedPublish(bool $json, bool $yes): bool
+    {
+        return $json && !$yes;
     }
 
     /**

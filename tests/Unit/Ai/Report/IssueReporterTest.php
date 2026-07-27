@@ -61,6 +61,45 @@ final class IssueReporterTest extends TestCase
         self::assertStringContainsString('Workaround applied', $contents);
     }
 
+    /**
+     * Review finding on PR #40: the draft filename came from the fingerprint,
+     * which is title-derived and deliberately collision-prone because that is
+     * what makes de-duplication work. Reusing it verbatim turned the same
+     * property into silent data loss — the exact failure this class exists to
+     * prevent.
+     */
+    #[Test]
+    public function a_second_draft_does_not_overwrite_the_first(): void
+    {
+        $reporter = new IssueReporter($this->root, new FakeRunner());
+
+        $first  = $reporter->saveDraft($this->report(), 'semitexa/semitexa-core');
+        $second = $reporter->saveDraft($this->report(), 'semitexa/semitexa-core');
+
+        self::assertNotSame($first, $second);
+        self::assertFileExists($first);
+        self::assertFileExists($second);
+    }
+
+    #[Test]
+    public function a_sighting_keeps_backticked_evidence_inside_its_fence(): void
+    {
+        // Sightings post automatically with no operator review, so the fence has
+        // to survive the content without anyone checking it.
+        $report = DefectReport::create(
+            title: 'Fence handling in sightings',
+            summary: 'Evidence containing a fenced block used to break out of the wrapper.',
+            evidence: "step one\n```\ninner fence\n```\nstep two",
+            workaround: 'Escaped it by hand.',
+        );
+        $runner = new FakeRunner(['gh issue comment' => ['exit' => 0, 'output' => 'ok']]);
+
+        (new IssueReporter($this->root, $runner))->addSighting($report, 'semitexa/semitexa-core', 7);
+
+        $body = $runner->lastCommandString();
+        self::assertStringContainsString('````', $body, 'the wrapper fence must outgrow the inner one');
+    }
+
     #[Test]
     public function an_existing_issue_is_found_so_a_duplicate_is_not_opened(): void
     {

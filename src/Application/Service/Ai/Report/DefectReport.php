@@ -83,7 +83,10 @@ final class DefectReport
             );
         }
 
-        foreach ([$title, $summary, $evidence, $workaround] as $field) {
+        // Every field that reaches toMarkdown() must be scanned, not just the
+        // free-text ones. $package is published verbatim, so leaving it out
+        // left an unscanned path straight to the public tracker.
+        foreach ([$title, $summary, $evidence, $workaround, (string) $package] as $field) {
             self::assertNoSecrets($field);
         }
 
@@ -126,8 +129,30 @@ final class DefectReport
         return implode(' ', array_slice(array_values($words), 0, 6));
     }
 
+    /**
+     * A fence long enough to survive the content it wraps.
+     *
+     * Tool output plausibly contains a run of three or more backticks; a fixed
+     * ``` fence would close early and spill the rest of the field into the
+     * issue as loose Markdown. CommonMark's rule is that the fence must be
+     * longer than any run inside, so measure rather than assume.
+     */
+    public static function fenceFor(string $content): string
+    {
+        $longest = 0;
+        if (preg_match_all('/`+/', $content, $matches) > 0) {
+            foreach ($matches[0] as $run) {
+                $longest = max($longest, strlen($run));
+            }
+        }
+
+        return str_repeat('`', max(3, $longest + 1));
+    }
+
     public function toMarkdown(): string
     {
+        $fence = self::fenceFor($this->evidence);
+
         $lines = [
             '## What broke',
             '',
@@ -135,9 +160,9 @@ final class DefectReport
             '',
             '## Evidence',
             '',
-            '```',
+            $fence,
             $this->evidence,
-            '```',
+            $fence,
             '',
             '## Workaround applied',
             '',

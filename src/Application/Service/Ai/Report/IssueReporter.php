@@ -127,9 +127,13 @@ final class IssueReporter
                 array_values($report->versions),
             ));
 
+        // Sightings post with no operator review, so the fence has to be right
+        // without anyone looking at it first.
+        $fence = DefectReport::fenceFor($report->evidence);
+
         $body = "Seen again on {$versions}.\n\n"
             . "**Workaround applied:** {$report->workaround}\n\n"
-            . "<details><summary>Evidence</summary>\n\n```\n{$report->evidence}\n```\n\n</details>";
+            . "<details><summary>Evidence</summary>\n\n{$fence}\n{$report->evidence}\n{$fence}\n\n</details>";
 
         $result = $this->runner->run([
             'gh', 'issue', 'comment', (string) $issueNumber,
@@ -157,7 +161,15 @@ final class IssueReporter
         $slug = (string) preg_replace('/[^a-z0-9]+/', '-', $report->fingerprint());
         $slug = trim($slug, '-');
         $slug = $slug === '' ? 'report' : mb_substr($slug, 0, 60);
+
+        // The fingerprint is title-derived and deliberately collision-prone —
+        // that is what makes de-duplication work. Reusing it verbatim as a
+        // filename turned the same property into silent data loss: a second
+        // unpublished draft would overwrite the first. Suffix instead.
         $path = sprintf('%s/%s.md', $dir, $slug);
+        for ($n = 2; file_exists($path); $n++) {
+            $path = sprintf('%s/%s-%d.md', $dir, $slug, $n);
+        }
 
         $contents = "# {$report->title}\n\n"
             . "> Draft — `gh` was unavailable or unauthenticated, so this was not published.\n"

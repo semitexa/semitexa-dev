@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Report;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Console\Command\AiReportCommand;
 use Semitexa\Dev\Application\Service\Ai\Report\DefectReport;
 
 final class DefectReportTest extends TestCase
@@ -80,6 +81,44 @@ final class DefectReportTest extends TestCase
         }
     }
 
+    /**
+     * Review finding on PR #40: $package is published verbatim by toMarkdown()
+     * but was left out of the scan, leaving an unscanned path to a public tracker.
+     */
+    #[Test]
+    public function the_package_field_is_scanned_for_credentials_too(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('credential');
+
+        $this->valid(['package' => 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345']);
+    }
+
+    /**
+     * Review finding on PR #40: tool output plausibly contains a run of three or
+     * more backticks, which closed the fixed fence early and spilled the rest of
+     * the evidence into the issue as loose Markdown.
+     */
+    #[Test]
+    public function evidence_containing_backticks_stays_inside_its_fence(): void
+    {
+        $evidence = "Output was:\n```\nnested fence inside the evidence\n```\nand then it failed.";
+        $markdown = $this->valid(['evidence' => $evidence])->toMarkdown();
+
+        $fence = DefectReport::fenceFor($evidence);
+        self::assertSame('````', $fence, 'a 3-backtick run needs a 4-backtick fence');
+        self::assertStringContainsString($fence . "\n" . $evidence . "\n" . $fence, $markdown);
+    }
+
+    #[Test]
+    public function the_fence_grows_with_the_longest_run(): void
+    {
+        self::assertSame('```', DefectReport::fenceFor('no backticks here'));
+        self::assertSame('```', DefectReport::fenceFor('a `single` and a ``double``'));
+        self::assertSame('````', DefectReport::fenceFor('a ``` triple'));
+        self::assertSame('``````', DefectReport::fenceFor('a ````` five'));
+    }
+
     #[Test]
     public function the_same_defect_from_two_projects_shares_a_fingerprint(): void
     {
@@ -87,6 +126,34 @@ final class DefectReportTest extends TestCase
         $b = $this->valid(['evidence' => 'completely different repro text here' . str_repeat('.', 20)]);
 
         self::assertSame($a->fingerprint(), $b->fingerprint());
+    }
+
+    /**
+     * Review finding on PR #40, rated critical: the consent gate read
+     * `!$yes && !$json`, so `--json` on its own satisfied "no prompt needed".
+     * An agent adding it purely for parseable output — which is what every
+     * other `ai:*` command trains it to do — published to a public tracker
+     * unattended.
+     */
+    #[Test]
+    public function json_alone_never_grants_consent_to_publish(): void
+    {
+        self::assertTrue(
+            AiReportCommand::refusesUnattendedPublish(json: true, yes: false),
+            '--json without --yes must be refused',
+        );
+        self::assertFalse(
+            AiReportCommand::refusesUnattendedPublish(json: true, yes: true),
+            '--json with an explicit --yes is consent',
+        );
+        self::assertFalse(
+            AiReportCommand::refusesUnattendedPublish(json: false, yes: false),
+            'interactive mode prompts rather than refusing',
+        );
+        self::assertFalse(
+            AiReportCommand::refusesUnattendedPublish(json: false, yes: true),
+            '--yes alone is consent',
+        );
     }
 
     #[Test]
