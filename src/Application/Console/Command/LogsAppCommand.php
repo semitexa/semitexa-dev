@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Server\SwooleLogRotation;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -63,6 +64,18 @@ final class LogsAppCommand extends BaseCommand
         }
 
         $filePath = $logDir . '/' . $filename;
+
+        // With SWOOLE_LOG_ROTATION on (the default), Swoole writes to
+        // 'swoole.log.<date>' and leaves 'swoole.log' as an empty placeholder.
+        // Reading the configured name would show an empty file and report the
+        // server as silent — worse than an error, because it looks like an answer.
+        if ($fileKey === 'swoole') {
+            $filePath = SwooleLogRotation::resolveActiveFile($filePath);
+            // Report the file that was actually read. Keeping the configured name
+            // while showing a rotated file's stats reads as a bug in the log, not
+            // in the reporting.
+            $filename = basename($filePath);
+        }
 
         if (!is_file($filePath)) {
             $io->error("Log file not found: {$filePath}");
@@ -133,7 +146,19 @@ final class LogsAppCommand extends BaseCommand
     private function listFiles(SymfonyStyle $io, InputInterface $input, string $logDir): int
     {
         $files = [];
-        foreach (glob($logDir . '/*.log') as $path) {
+        // '*.log' alone hides every rotated file, because Swoole names them
+        // 'swoole.log.<date>'. Listing only the placeholder would make a rotating
+        // server look like it stopped logging.
+        $paths = array_merge(
+            glob($logDir . '/*.log') ?: [],
+            array_filter(
+                glob($logDir . '/*.log.*') ?: [],
+                static fn(string $p) => preg_match('/\.log\.\d{6,14}$/', $p) === 1,
+            ),
+        );
+        sort($paths);
+
+        foreach ($paths as $path) {
             $name = basename($path);
             $stat = stat($path);
             if ($stat === false) {
