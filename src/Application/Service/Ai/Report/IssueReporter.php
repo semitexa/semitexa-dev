@@ -17,6 +17,18 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner;
  */
 final class IssueReporter
 {
+    /**
+     * Intake for reports whose owning package the reporter cannot identify —
+     * which is most of them, since an agent in a consumer project rarely knows
+     * whether a defect belongs to orm, ssr or core.
+     *
+     * A dedicated intake repository was considered and deliberately deferred:
+     * its advantages (one dedup surface, one page to read the backlog from) both
+     * scale with volume, and the whole organisation has seen four issues in its
+     * lifetime. An empty repository is maintenance without benefit. Revisit when
+     * reports arrive often enough that they crowd out core's own issues — the
+     * move is this constant plus a release.
+     */
     public const string DEFAULT_REPO = 'semitexa/semitexa-core';
 
     public function __construct(
