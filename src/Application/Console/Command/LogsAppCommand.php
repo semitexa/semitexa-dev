@@ -145,6 +145,8 @@ final class LogsAppCommand extends BaseCommand
 
     private function listFiles(SymfonyStyle $io, InputInterface $input, string $logDir): int
     {
+        $wantsEstimates = (bool) $input->getOption('json');
+
         $files = [];
         // '*.log' alone hides every rotated file, because Swoole names them
         // 'swoole.log.<date>'. Listing only the placeholder would make a rotating
@@ -170,7 +172,10 @@ final class LogsAppCommand extends BaseCommand
                 'size' => $this->formatSize($stat['size']),
                 'size_bytes' => $stat['size'],
                 'modified' => date('c', $stat['mtime']),
-                'lines_estimate' => $this->estimateLines($path),
+                // Only the JSON envelope carries this, and estimateLines() reads from
+                // disk per file. Now that rotated logs are listed too, computing it for
+                // the table output would be I/O nobody ever reads.
+                'lines_estimate' => $wantsEstimates ? $this->estimateLines($path) : null,
             ];
         }
 
