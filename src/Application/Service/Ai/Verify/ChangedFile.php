@@ -28,6 +28,15 @@ final readonly class ChangedFile
     public const KIND_SERVICE      = 'service';
     public const KIND_CONTRACT     = 'contract';
     public const KIND_TEMPLATE     = 'template';
+    /**
+     * Browser-side script shipped by a module or package.
+     *
+     * Split out of KIND_NON_PHP so an edit to client JavaScript can trigger the
+     * checks that only make sense for it, without a README change dragging the
+     * same work along. It behaves exactly like KIND_NON_PHP everywhere else:
+     * no PHPUnit target, no structural expansion.
+     */
+    public const KIND_CLIENT_SCRIPT = 'client_script';
     public const KIND_TEST         = 'test';
     /**
      * Phase 6f.5: support classes that live under a `tests/` tree but

@@ -98,6 +98,9 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame([
             'lint:di',
             'lint:handlers',
+            // Broad scope runs every lint, including the mechanism check that
+            // reports application code hand-rolling a framework capability.
+            'lint:mechanisms',
             'lint:responses',
             'lint:scoping',
             'lint:templates',

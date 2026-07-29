@@ -37,7 +37,10 @@ final class VerificationPlanner
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
         ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
-        ChangedFile::KIND_TEMPLATE => ['lint:templates'],
+        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms'],
+        // Client JavaScript is where a framework mechanism gets hand-rolled:
+        // a region fetched and injected instead of declared deferred.
+        ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
     ];
 
     private const ALL_LINTS = [
@@ -46,6 +49,7 @@ final class VerificationPlanner
         'lint:scoping',
         'lint:responses',
         'lint:templates',
+        'lint:mechanisms',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -304,7 +308,8 @@ final class VerificationPlanner
         return $kind === ChangedFile::KIND_TEST
             || $kind === ChangedFile::KIND_TEST_FIXTURE
             || $kind === ChangedFile::KIND_TEMPLATE
-            || $kind === ChangedFile::KIND_NON_PHP;
+            || $kind === ChangedFile::KIND_NON_PHP
+            || $kind === ChangedFile::KIND_CLIENT_SCRIPT;
     }
 
     /**
@@ -382,7 +387,9 @@ final class VerificationPlanner
             return;
         }
 
-        if ($file->kind === ChangedFile::KIND_NON_PHP || $file->kind === ChangedFile::KIND_TEMPLATE) {
+        if ($file->kind === ChangedFile::KIND_NON_PHP
+            || $file->kind === ChangedFile::KIND_CLIENT_SCRIPT
+            || $file->kind === ChangedFile::KIND_TEMPLATE) {
             return;
         }
 

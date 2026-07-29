@@ -38,6 +38,14 @@ final class LlmHintsFormatter
             $hints['constraints'] = $metadata['constraints'];
         }
 
+        // What the framework can already do for the thing just scaffolded.
+        // Emitted alongside the constraints rather than inside them: a
+        // constraint says what must not be done, this says what need not be
+        // built.
+        if (isset($metadata['mechanisms'])) {
+            $hints['mechanisms'] = $metadata['mechanisms'];
+        }
+
         if (isset($metadata['suggested_next_prompt'])) {
             $hints['suggested_next_prompt'] = $metadata['suggested_next_prompt'];
         }

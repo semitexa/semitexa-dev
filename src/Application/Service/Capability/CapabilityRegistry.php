@@ -15,11 +15,11 @@ final class CapabilityRegistry
             new CommandCapability(
                 name: 'ai:ask',
                 kind: 'introspection',
-                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, project, module, route, event, logs).',
+                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, mechanisms, project, module, route, event, path, logs).',
                 use_when: 'Any agent read-only question: start here instead of the underlying dev:graph:* / logs:app commands.',
                 avoid_when: 'You are writing code or performing non-introspection work.',
                 required_inputs: [
-                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, project, module, route, event, logs'],
+                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, mechanisms, project, module, route, event, path, logs'],
                 ],
                 optional_inputs: [
                     'name' => ['type' => 'string', 'description' => 'Module/event name (for subject=module|event)'],
@@ -28,6 +28,8 @@ final class CapabilityRegistry
                     'file' => ['type' => 'string', 'description' => 'Log file alias (for subject=logs)'],
                     'lines' => ['type' => 'int', 'description' => 'Line count (for subject=logs)'],
                     'grep' => ['type' => 'string', 'description' => 'Filter (for subject=logs)'],
+                    'id' => ['type' => 'string', 'description' => 'Capability id (for subject=mechanisms)'],
+                    'area' => ['type' => 'string', 'description' => 'Capability area, ssr|ui (for subject=mechanisms)'],
                     'json' => ['type' => 'flag', 'description' => 'Emit JSON envelope (target-dependent shape)', 'default' => false],
                 ],
                 outputs: [
@@ -43,6 +45,19 @@ final class CapabilityRegistry
                 use_when: 'Starting a new task that might involve code generation, or when unsure what commands exist. Prefer `ai:ask capabilities`.',
                 avoid_when: 'You already know the exact command and flags to use.',
                 outputs: ['manifest' => 'JSON capability manifest (semitexa.ai-capabilities/v1)'],
+                supports: ['--json'],
+            ),
+            new CommandCapability(
+                name: 'dev:graph:mechanisms',
+                kind: 'introspection',
+                summary: 'List what the installed FRAMEWORK can do - deferred rendering, components, live transport, UI behaviors - each with when to use it and when not to.',
+                use_when: 'Before building or changing a page, a region or an interaction. Answers "is there already a mechanism for this?" - which is the question that stops a capability being hand-rolled. Prefer `ai:ask mechanisms`.',
+                avoid_when: 'You want the list of CLI commands to run - that is `dev:graph:capabilities`, a different question.',
+                optional_inputs: [
+                    'id' => ['type' => 'string', 'description' => 'Single capability by id (e.g. ssr.deferred)'],
+                    'area' => ['type' => 'string', 'description' => 'Filter by area prefix (ssr, ui)'],
+                ],
+                outputs: ['envelope' => 'JSON mechanism catalog (semitexa.dev.mechanisms/v1), derived from #[Capability] across installed packages'],
                 supports: ['--json'],
             ),
             new CommandCapability(

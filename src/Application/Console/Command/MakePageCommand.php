@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -23,6 +26,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:page', description: 'Scaffold a complete page: Payload + Handler + Resource + template')]
 final class MakePageCommand extends BaseCommand
 {
+    #[InjectAsReadonly]
+    protected ClassDiscovery $classDiscovery;
+
     protected function configure(): void
     {
         $this
@@ -116,6 +122,7 @@ final class MakePageCommand extends BaseCommand
                         'Resource must extend HtmlResponse and implement ResourceInterface',
                         'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                     ],
+                    'mechanisms' => $this->mechanismHints(),
                     'suggested_next_prompt' => "Open the handler at src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
                 ]));
                 return self::SUCCESS;
@@ -126,6 +133,10 @@ final class MakePageCommand extends BaseCommand
                 $io->section($file->path);
                 $output->writeln($file->content);
             }
+
+            // Dry run is the default mode, so this is the branch most callers
+            // actually see — the nudge belongs here as much as after a write.
+            $this->announceMechanisms($output);
             return self::SUCCESS;
         }
 
@@ -171,6 +182,7 @@ final class MakePageCommand extends BaseCommand
                     'Resource must extend HtmlResponse and implement ResourceInterface',
                     'Payload setters throw Semitexa\\Core\\Exception\\ValidationException to reject invalid input at hydration time',
                 ],
+                'mechanisms' => $this->mechanismHints(),
                 'suggested_next_prompt' => "Open the handler at src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
             ]));
             return self::SUCCESS;
@@ -186,6 +198,87 @@ final class MakePageCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
+        $this->announceMechanisms($output);
+
         return self::SUCCESS;
+    }
+
+    /**
+     * The SSR mechanisms, or none when the catalog cannot be reached.
+     *
+     * Advice must never be the reason a generator fails. The collaborator is
+     * filled by the container at boot, so a directly constructed command — every
+     * scaffolding test does this — leaves the typed property uninitialised, and
+     * reading it blindly turned "we could not suggest anything" into "make:page
+     * is broken". Scaffolding is the job; the nudge is a bonus and degrades to
+     * silence.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function mechanismCatalog(): array
+    {
+        if (!isset($this->classDiscovery)) {
+            return [];
+        }
+
+        try {
+            return (new FrameworkCapabilityCatalog($this->classDiscovery))->inArea('ssr');
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Say what the framework can already do for a page, right after scaffolding
+     * one.
+     *
+     * This is the only one of the three capability surfaces that speaks BEFORE
+     * the mistake: the catalog answers when asked, the lint objects afterwards.
+     * Whatever a generator emits becomes the pattern copied for the rest of the
+     * project, so a generator that mentions no mechanism teaches that there are
+     * none.
+     *
+     * Derived from the installed packages rather than written here, so a
+     * mechanism added later is offered without touching this command.
+     */
+    private function announceMechanisms(OutputInterface $output): void
+    {
+        $catalog = $this->mechanismCatalog();
+        if ($catalog === []) {
+            return;
+        }
+
+        $output->writeln('');
+        $output->writeln('<info>Before filling this in — the framework already does:</info>');
+        foreach ($catalog as $capability) {
+            $output->writeln(sprintf(
+                '  <comment>%s</comment>  #[%s] — %s',
+                $capability['id'],
+                $capability['attribute_short'],
+                $capability['use_when'],
+            ));
+        }
+        $output->writeln('  <info>Details:</info> bin/semitexa ai:ask mechanisms --id=<id>');
+        $output->writeln('');
+    }
+
+    /**
+     * Mechanism list for the LLM hints envelope.
+     *
+     * @return list<array{capability: string, attribute: string, use_when: string, avoid_when: string}>
+     */
+    private function mechanismHints(): array
+    {
+        $out = [];
+        foreach ($this->mechanismCatalog() as $capability) {
+            $out[] = [
+                'capability' => (string) $capability['id'],
+                'attribute' => (string) $capability['attribute'],
+                'use_when' => (string) $capability['use_when'],
+                'avoid_when' => (string) $capability['avoid_when'],
+            ];
+        }
+
+        return $out;
     }
 }
