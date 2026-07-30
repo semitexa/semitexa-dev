@@ -120,7 +120,7 @@ final class LintMechanismsCommandTest extends TestCase
         self::assertSame('ssr.transport', $finding['capability']);
         self::assertNotSame('', $finding['summary'], 'summary must come from #[Capability]');
         self::assertNotSame('', $finding['avoid_when'], 'the counter-advice must survive into the finding');
-        self::assertSame('WithTransport', $finding['attribute_short']);
+        self::assertSame('WithTransport', $finding['declared_by_short']);
         self::assertStringContainsString('ai:ask mechanisms --id=ssr.transport', $finding['details_command']);
     }
 

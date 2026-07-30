@@ -125,7 +125,7 @@ final class LintMechanismsCommand extends BaseCommand
             $described = self::describe($finding, $catalog);
             $output->writeln(sprintf('<comment>%s:%d</comment>', $finding->file, $finding->line));
             $output->writeln('  ' . $described['evidence']);
-            $output->writeln(sprintf('  <info>Use instead:</info> %s  #[%s]', $finding->capabilityId, $described['attribute_short']));
+            $output->writeln(sprintf('  <info>Use instead:</info> %s  #[%s]', $finding->capabilityId, $described['declared_by_short']));
             if ($described['summary'] !== '') {
                 $output->writeln('  ' . $described['summary']);
             }
@@ -142,15 +142,15 @@ final class LintMechanismsCommand extends BaseCommand
     }
 
     /**
-     * @param array<string, array{summary: string, avoid_when: string, attribute_short: string}> $catalog
+     * @param array<string, array{summary: string, avoid_when: string, declared_by_short: string}> $catalog
      * @return array{file: string, line: int, capability: string, evidence: string, summary: string,
-     *               avoid_when: string, attribute_short: string, details_command: string}
+     *               avoid_when: string, declared_by_short: string, details_command: string}
      */
     private static function describe(MechanismFinding $finding, array $catalog): array
     {
         // A finding whose capability is not installed still reports: the
         // observation stands on its own, only the advice is unavailable.
-        $entry = $catalog[$finding->capabilityId] ?? ['summary' => '', 'avoid_when' => '', 'attribute_short' => ''];
+        $entry = $catalog[$finding->capabilityId] ?? ['summary' => '', 'avoid_when' => '', 'declared_by_short' => ''];
 
         return [
             'file' => $finding->file,
@@ -159,12 +159,12 @@ final class LintMechanismsCommand extends BaseCommand
             'evidence' => $finding->evidence,
             'summary' => $entry['summary'],
             'avoid_when' => $entry['avoid_when'],
-            'attribute_short' => $entry['attribute_short'],
+            'declared_by_short' => $entry['declared_by_short'],
             'details_command' => 'ai:ask mechanisms --id=' . $finding->capabilityId,
         ];
     }
 
-    /** @return array<string, array{summary: string, avoid_when: string, attribute_short: string}> */
+    /** @return array<string, array{summary: string, avoid_when: string, declared_by_short: string}> */
     private function catalog(): array
     {
         $out = [];
@@ -172,7 +172,7 @@ final class LintMechanismsCommand extends BaseCommand
             $out[(string) $entry['id']] = [
                 'summary' => (string) $entry['summary'],
                 'avoid_when' => (string) $entry['avoid_when'],
-                'attribute_short' => (string) $entry['attribute_short'],
+                'declared_by_short' => (string) $entry['declared_by_short'],
             ];
         }
 

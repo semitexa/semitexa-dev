@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
+use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -62,6 +65,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_MODULE_STRUCTURE => $this->runModuleStructure($target),
                 VerificationTarget::TYPE_PHPSTAN_DI       => $this->runPhpstanDi($target),
                 VerificationTarget::TYPE_LIVE_TENANCY     => $this->runLiveTenancy($target),
+                VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -271,6 +275,66 @@ final class VerificationExecutor
             exitCode:    $errorCount === 0 ? 0 : 1,
             signal:      $signal,
             diagnostics: $diagnostics,
+        );
+    }
+
+    /**
+     * Compare the shipped capability index against what the packages declare.
+     *
+     * Skipped rather than failed outside the monorepo: a checkout that cannot
+     * see every package cannot regenerate the file, so failing there would
+     * report a defect nobody in that project can fix. The planner already
+     * scopes this to `packages/`, but the executor states the same condition
+     * because a skip with a reason is what makes an unrun gate visible.
+     */
+    private function runCapabilityIndex(VerificationTarget $target): VerificationResult
+    {
+        if (!CapabilityIndex::isFullView($this->projectRoot)) {
+            return $this->skipped(
+                $target,
+                'capability_index: not the monorepo (fewer than '
+                . CapabilityIndex::MIN_PACKAGES_FOR_A_FULL_VIEW
+                . ' Semitexa packages on disk); the index can only be built where every package is present',
+            );
+        }
+
+        try {
+            $discovery = new ClassDiscovery();
+            $live = (new FrameworkCapabilityCatalog($discovery))->all();
+            $shipped = CapabilityIndex::read(CapabilityIndex::path($this->projectRoot));
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'capability_index discovery failed: ' . $this->compress($e->getMessage()));
+        }
+
+        if (CapabilityIndex::isInSync($live, $shipped)) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'capability_index → in sync (' . count($live) . ' capabilities)',
+            );
+        }
+
+        // Name the command that fixes it. A gate that only says "stale" costs
+        // the reader a search for the one command that regenerates the file.
+        $shippedCount = is_array($shipped['capabilities'] ?? null) ? count($shipped['capabilities']) : 0;
+
+        return new VerificationResult(
+            target:      $target,
+            status:      VerificationResult::STATUS_FAIL,
+            exitCode:    1,
+            signal:      sprintf(
+                'capability_index → stale (shipped %d, declared %d); run bin/semitexa dev:capability-index:build',
+                $shippedCount,
+                count($live),
+            ),
+            diagnostics: [[
+                'code' => 'CAPABILITY_INDEX_STALE',
+                'path' => CapabilityIndex::RELATIVE_PATH,
+                'message' => 'The shipped index no longer matches the #[Capability] declarations on disk. '
+                    . 'Consumer projects read it to learn about packages they have not installed, so a stale '
+                    . 'index advertises the wrong set. Regenerate with: bin/semitexa dev:capability-index:build',
+            ]],
         );
     }
 

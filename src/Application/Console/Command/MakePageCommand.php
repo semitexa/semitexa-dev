@@ -254,7 +254,7 @@ final class MakePageCommand extends BaseCommand
             $output->writeln(sprintf(
                 '  <comment>%s</comment>  #[%s] — %s',
                 $capability['id'],
-                $capability['attribute_short'],
+                $capability['declared_by_short'],
                 $capability['use_when'],
             ));
         }
@@ -273,7 +273,7 @@ final class MakePageCommand extends BaseCommand
         foreach ($this->mechanismCatalog() as $capability) {
             $out[] = [
                 'capability' => (string) $capability['id'],
-                'attribute' => (string) $capability['attribute'],
+                'attribute' => (string) $capability['declared_by'],
                 'use_when' => (string) $capability['use_when'],
                 'avoid_when' => (string) $capability['avoid_when'],
             ];

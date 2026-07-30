@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
 /**
  * Deterministic planner: changed file list + requested scope → VerificationPlan.
@@ -144,6 +145,11 @@ final class VerificationPlanner
         $liveTenancyTarget = $this->liveTenancyTarget($changedFiles);
         if ($liveTenancyTarget !== null) {
             $targets[] = $liveTenancyTarget;
+        }
+
+        $capabilityIndexTarget = $this->capabilityIndexTarget($changedFiles);
+        if ($capabilityIndexTarget !== null) {
+            $targets[] = $capabilityIndexTarget;
         }
 
         return new VerificationPlan(
@@ -297,6 +303,52 @@ final class VerificationPlanner
             type: VerificationTarget::TYPE_LIVE_TENANCY,
             id: 'live_tenancy:project',
             reason: 'every live-bound resource (#[WatchScopes]/watchScopes) must declare #[TenantScoped] or #[TenantExempt]; watched scopes must be backed',
+            triggeredBy: $triggeredBy,
+            filePath: null,
+        );
+    }
+
+    /**
+     * Schedule the capability-index freshness check when package code changed.
+     *
+     * The index is the only artifact that tells a consumer project about a
+     * package it has NOT installed, and it is a snapshot — it goes stale the
+     * moment a `#[Capability]` is added, edited or removed, with nothing in the
+     * working copy looking any different. `--check` existed from the start and
+     * was wired into nothing, which is the same as not existing.
+     *
+     * Scoped to `packages/`: that is where the declarations the index carries
+     * live, and it is also what makes this a monorepo-only gate. A consumer has
+     * no `packages/` directory, so the target is never planned there — which is
+     * the point, since a consumer cannot regenerate the file and failing their
+     * verify over it would be a bug.
+     *
+     * @param list<ChangedFile> $files
+     */
+    private function capabilityIndexTarget(array $files): ?VerificationTarget
+    {
+        $triggeredBy = [];
+        foreach ($files as $file) {
+            $path = ltrim($file->path, '/');
+            if (!str_starts_with($path, 'packages/')) {
+                continue;
+            }
+            // The index file itself counts: a hand-edit is exactly the drift
+            // the content hash is there to catch.
+            if (!str_ends_with($path, '.php') && $path !== CapabilityIndex::RELATIVE_PATH) {
+                continue;
+            }
+            $triggeredBy[] = $file->path;
+        }
+
+        if ($triggeredBy === []) {
+            return null;
+        }
+
+        return new VerificationTarget(
+            type: VerificationTarget::TYPE_CAPABILITY_INDEX,
+            id: 'capability_index:project',
+            reason: 'the shipped capability index must match what the packages declare — it is how a consumer learns about packages it has not installed',
             triggeredBy: $triggeredBy,
             filePath: null,
         );

@@ -33,8 +33,8 @@ final readonly class FrameworkCapabilityCatalog
 
     /**
      * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
-     *                    replaces: list<string>, see_also: string, attribute: string,
-     *                    attribute_short: string, package: string}>
+     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    declared_by: string, declared_by_short: string, package: string}>
      */
     public function all(): array
     {
@@ -59,9 +59,14 @@ final readonly class FrameworkCapabilityCatalog
                     'avoid_when' => $capability->avoidWhen,
                     'replaces' => array_values($capability->replaces),
                     'see_also' => $capability->seeAlso,
-                    'attribute' => $class,
-                    'attribute_short' => $reflection->getShortName(),
-                    'package' => self::packageOf($class),
+                    // A declaring class that is itself an attribute describes a
+                    // mechanism someone writes into their code; anything else
+                    // describes what a package offers. Derived rather than
+                    // declared, so the two cannot disagree.
+                    'kind' => $reflection->getAttributes(\Attribute::class) !== [] ? 'mechanism' : 'package',
+                    'declared_by' => $class,
+                    'declared_by_short' => $reflection->getShortName(),
+                    'package' => self::packageOf($reflection),
                 ];
             }
         }
@@ -95,8 +100,58 @@ final readonly class FrameworkCapabilityCatalog
         return $out;
     }
 
-    /** Best-effort package label from the namespace, for grouping only. */
-    private static function packageOf(string $class): string
+    /**
+     * The Composer package that actually ships the declaring class.
+     *
+     * Read from the owning `composer.json` rather than derived from the
+     * namespace, because the two do not agree and the disagreement is not
+     * cosmetic. `Semitexa\PlatformUi\` maps to `semitexa/platformui`, while the
+     * package installs as `semitexa/platform-ui` — and this string is what
+     * `dev:graph:mechanisms` prints to an agent under "Not installed: provided
+     * by …". A name that cannot be required sends whoever followed it back to
+     * hand-rolling the thing the capability exists to advertise.
+     *
+     * Walking up from the class file finds the right manifest wherever the
+     * package sits: `vendor/semitexa/ssr/` in a consumer, `packages/semitexa-ssr/`
+     * in the monorepo, no special case for either.
+     */
+    private static function packageOf(ReflectionClass $reflection): string
+    {
+        $file = $reflection->getFileName();
+
+        if (is_string($file)) {
+            $dir = dirname($file);
+            // The walk terminates on its own at the filesystem root, where
+            // dirname() becomes a fixed point. Bounded anyway: an unreadable
+            // tree must not spin a diagnostic command.
+            for ($depth = 0; $depth < 32; $depth++) {
+                $manifest = $dir . '/composer.json';
+                if (is_file($manifest)) {
+                    $decoded = json_decode((string) file_get_contents($manifest), true);
+                    // A manifest without a name is a project root, not a
+                    // package. Keep climbing rather than giving up: nothing
+                    // says the first composer.json found is the owning one.
+                    if (is_array($decoded) && is_string($decoded['name'] ?? null) && $decoded['name'] !== '') {
+                        return $decoded['name'];
+                    }
+                }
+
+                $parent = dirname($dir);
+                if ($parent === $dir) {
+                    break;
+                }
+                $dir = $parent;
+            }
+        }
+
+        // Nothing on disk to read — an eval'd or internal class. The namespace
+        // guess is wrong often enough that it is a label, not an install
+        // target, but it beats an empty column in a diagnostic.
+        return self::packageFromNamespace($reflection->getName());
+    }
+
+    /** Last-resort label for a class with no file behind it. */
+    private static function packageFromNamespace(string $class): string
     {
         $parts = explode('\\', $class);
 

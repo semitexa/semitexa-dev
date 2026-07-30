@@ -535,6 +535,42 @@ class VerificationPlannerTest extends TestCase
         );
     }
 
+    public function test_package_php_change_plans_the_capability_index_gate(): void
+    {
+        // The index is a snapshot of what every package declares, so any package
+        // PHP file is a candidate for having added or removed a #[Capability].
+        // Narrowing to "files that look like a Capabilities class" would miss
+        // the mechanism shape, which lives on arbitrary attribute classes.
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-ssr/src/Attribute/AsDeferred.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_MINIMAL);
+
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_INDEX));
+    }
+
+    public function test_hand_editing_the_shipped_index_plans_its_own_gate(): void
+    {
+        // Editing the artifact directly is the drift the content hash exists to
+        // catch, and a JSON file would otherwise trigger nothing at all.
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-dev/resources/capability-index.json', ChangedFile::KIND_NON_PHP),
+        ], VerificationPlan::SCOPE_MINIMAL);
+
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_INDEX));
+    }
+
+    public function test_application_code_does_not_plan_the_capability_index_gate(): void
+    {
+        // A consumer project has no packages/ directory and cannot regenerate
+        // the index. Planning the gate for their files would fail a verify over
+        // an artifact they do not own — so the trigger is package code only.
+        $plan = $this->planner()->plan([
+            new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/X.php', ChangedFile::KIND_HANDLER),
+        ], VerificationPlan::SCOPE_BROAD);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_INDEX));
+    }
+
     private function planner(?ContractMoveResolver $contractMoveResolver = null): VerificationPlanner
     {
         return new VerificationPlanner(

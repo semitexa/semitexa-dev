@@ -1,0 +1,760 @@
+{
+    "artifact": "semitexa.dev.capability-index/v1",
+    "generated_at": "2026-07-29T16:30:39+00:00",
+    "count": 48,
+    "packages": [
+        "semitexa/api",
+        "semitexa/auth",
+        "semitexa/authorization",
+        "semitexa/cache",
+        "semitexa/core",
+        "semitexa/demo",
+        "semitexa/dev",
+        "semitexa/docs",
+        "semitexa/files",
+        "semitexa/graphql",
+        "semitexa/ledger",
+        "semitexa/llm",
+        "semitexa/locale",
+        "semitexa/mail",
+        "semitexa/media",
+        "semitexa/music",
+        "semitexa/orm",
+        "semitexa/os",
+        "semitexa/platform-settings",
+        "semitexa/platform-ui",
+        "semitexa/project-graph",
+        "semitexa/prompt",
+        "semitexa/rbac",
+        "semitexa/scheduler",
+        "semitexa/search",
+        "semitexa/showcase-kit",
+        "semitexa/ssr",
+        "semitexa/storage",
+        "semitexa/tasks",
+        "semitexa/tenancy",
+        "semitexa/testing",
+        "semitexa/theme",
+        "semitexa/theme-sky",
+        "semitexa/tictactoe",
+        "semitexa/ultimate",
+        "semitexa/update",
+        "semitexa/weave",
+        "semitexa/webapps",
+        "semitexa/webhooks",
+        "semitexa/workflow"
+    ],
+    "content_hash": "491cd883350a9c7b83ee4820ee07aeb5c837e95b2686af8e17b72d04a71c2cec",
+    "capabilities": [
+        {
+            "id": "api.external",
+            "summary": "An external API surface: #[ExternalApi] routes with #[ApiVersion], machine credentials and collection contracts.",
+            "use_when": "Something outside your own frontend consumes these routes and needs a stable, versioned contract.",
+            "avoid_when": "The caller is your own SSR pages, which already share the payload and resource types.",
+            "replaces": [
+                "a parallel set of controllers duplicating handlers for machine callers",
+                "an API key check and a version prefix bolted onto each route by hand"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Api\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/api"
+        },
+        {
+            "id": "auth.authentication",
+            "summary": "Credential flows, sessions and access tokens behind an auth handler contract.",
+            "use_when": "The application needs to know who is calling before it decides anything else.",
+            "avoid_when": "The question is what a known subject may do - that is semitexa/authorization.",
+            "replaces": [
+                "a password_verify call and a $_SESSION write in a login handler",
+                "a token check copy-pasted into each protected route"
+            ],
+            "see_also": "semitexa/authorization",
+            "kind": "package",
+            "declared_by": "Semitexa\\Auth\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/auth"
+        },
+        {
+            "id": "authorization.access",
+            "summary": "Declarative access decisions: #[RequiresPermission] and #[RequiresCapability] on payloads, gated before hydration.",
+            "use_when": "Whether an action is allowed depends on the subject, and the answer must not be re-derived per handler.",
+            "avoid_when": "Everyone authenticated may do everything - a route-level auth level is enough.",
+            "replaces": [
+                "an if on the user role at the top of every handler",
+                "an access check that runs after the payload is hydrated, too late to be a gate"
+            ],
+            "see_also": "semitexa/rbac",
+            "kind": "package",
+            "declared_by": "Semitexa\\Authorization\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/authorization"
+        },
+        {
+            "id": "cache.store",
+            "summary": "A tenant-aware cache with namespaces and tag invalidation over Redis or per-worker memory.",
+            "use_when": "A result is expensive to compute and stays valid long enough to be worth keeping.",
+            "avoid_when": "The value changes every time it is read, or is cheap enough that a lookup costs more than a recompute.",
+            "replaces": [
+                "a static array that survives one request and leaks between coroutines",
+                "cache keys assembled by string concatenation, with the tenant forgotten in one place"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Cache\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/cache"
+        },
+        {
+            "id": "files.manager",
+            "summary": "An in-OS file manager that browses real files and folders through the local bridge.",
+            "use_when": "Users need to browse and manipulate actual files and folders from inside the application.",
+            "avoid_when": "You only need upload and download of user content - semitexa/storage and semitexa/media cover that without a local bridge.",
+            "replaces": [
+                "a bespoke file-browser UI plus custom endpoints for listing and reading directories",
+                "shelling out to the filesystem from a handler and rendering the result by hand"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Files\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/files"
+        },
+        {
+            "id": "graph.impact",
+            "summary": "A persistent graph of the codebase - real edges, not string matches - answering who uses a class and what a change touches.",
+            "use_when": "You need the blast radius of a change, or every caller of a contract, before editing it.",
+            "avoid_when": "You are looking for a literal string or a filename. Grep answers that directly.",
+            "replaces": [
+                "grep for a class name, missing every alias, subclass and interface reference",
+                "opening files one by one to reconstruct who calls what"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\ProjectGraph\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/project-graph"
+        },
+        {
+            "id": "graphql.operations",
+            "summary": "Opt-in GraphQL operations discovered from the same Payload DTO, handler and typed output contracts a route already uses.",
+            "use_when": "Clients need to choose the shape of what they fetch, or several views want different slices of the same data.",
+            "avoid_when": "The client needs one fixed shape. A typed payload/handler route is simpler, already discovered, and cheaper to reason about.",
+            "replaces": [
+                "a hand-written endpoint per view shape, each with its own serialiser",
+                "stitching several endpoint responses together in the browser"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Graphql\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/graphql"
+        },
+        {
+            "id": "ledger.events",
+            "summary": "An append-only, hash-chained event ledger with NATS JetStream propagation between nodes.",
+            "use_when": "What happened must stay provable after the fact, or several nodes must agree on an ordered history.",
+            "avoid_when": "A log line answers the question. Tamper evidence you do not need is cost you do.",
+            "replaces": [
+                "an audit table anyone with UPDATE can rewrite",
+                "a message broker wired up by hand, with ordering and replay reinvented per aggregate"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Ledger\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/ledger"
+        },
+        {
+            "id": "llm.skills",
+            "summary": "Model-facing skills declared with #[AsAiSkill] and personas with #[AsAiPersona], executed by a planner that keeps history and calls tools.",
+            "use_when": "The application should act on what a user asked in prose rather than on a form they filled in.",
+            "avoid_when": "The decision is deterministic. A rule you can write down does not need a model to reach it.",
+            "replaces": [
+                "direct HTTP calls to a provider with prompt strings inline in the handler",
+                "a hand-rolled loop parsing model output to decide which function to call"
+            ],
+            "see_also": "semitexa/prompt",
+            "kind": "package",
+            "declared_by": "Semitexa\\Llm\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/llm"
+        },
+        {
+            "id": "locale.translations",
+            "summary": "Locale resolution and translation with catalog files plus per-tenant database overrides.",
+            "use_when": "The interface is read in more than one language, or one tenant wants different wording.",
+            "avoid_when": "Single language, single tenant, and no plan for a second.",
+            "replaces": [
+                "translated strings selected by an if-branch on the current locale",
+                "a per-tenant copy of a template, forked to change three words"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Locale\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/locale"
+        },
+        {
+            "id": "mail.outbound",
+            "summary": "Outbound email with SMTP transport, Twig-rendered bodies, queue-safe delivery and storage-backed attachments.",
+            "use_when": "The application has to send mail a person will read - confirmations, notifications, reports.",
+            "avoid_when": "You need transactional delivery guarantees from a provider API you already integrate elsewhere.",
+            "replaces": [
+                "a mail() or raw SMTP call in a handler, blocking the response until the server answers",
+                "string concatenation for the body, and base64 attachment handling written by hand"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Mail\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/mail"
+        },
+        {
+            "id": "media.assets",
+            "summary": "Image-first asset management: uploads, async derived variants, tenant quotas and delivery URLs.",
+            "use_when": "Users upload images that must be resized, cropped or served in several formats.",
+            "avoid_when": "You only need to keep bytes and hand them back unchanged - semitexa/storage does that without a variant pipeline.",
+            "replaces": [
+                "an imagick resize in the upload handler, blocking the request on every image",
+                "a naming convention for thumbnail paths, regenerated by a script when it drifts"
+            ],
+            "see_also": "semitexa/storage",
+            "kind": "package",
+            "declared_by": "Semitexa\\Media\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/media"
+        },
+        {
+            "id": "orm.persistence",
+            "summary": "Attribute-driven persistence: tables, relations and queries derived from the domain model itself.",
+            "use_when": "Anything outlives the request - entities, relations, or a schema that has to keep up with the code.",
+            "avoid_when": "A single throwaway read against an existing table. A one-line query needs no mapping layer.",
+            "replaces": [
+                "hand-written PDO queries plus a bespoke row-to-object mapper",
+                "a migration file written by hand for every column added to a model"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Orm\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/orm"
+        },
+        {
+            "id": "os.shell",
+            "summary": "An intent-first environment shell running the Intent to Plan to Execute to Observe loop over Skills, generalised beyond the terminal.",
+            "use_when": "The product is an environment where users state what they want and the system plans and carries it out, rather than clicking through fixed navigation.",
+            "avoid_when": "The product is a conventional web application with a known set of screens. A shell adds a planning loop nobody asked for.",
+            "replaces": [
+                "a bespoke dashboard wiring every action to its own route and button",
+                "a command palette that maps typed text to a hard-coded list of actions"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Os\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/os"
+        },
+        {
+            "id": "prompt.catalog",
+            "summary": "Prompts as discoverable Twig templates declared with #[AsPrompt], composable and overridable per tenant.",
+            "use_when": "Prompt text has to be edited, reviewed or varied per tenant without touching PHP.",
+            "avoid_when": "One short fixed instruction used in exactly one place.",
+            "replaces": [
+                "heredoc prompt strings inside the service that sends them",
+                "a per-tenant if-branch selecting between copies of the same prompt"
+            ],
+            "see_also": "semitexa/llm",
+            "kind": "package",
+            "declared_by": "Semitexa\\Prompt\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/prompt"
+        },
+        {
+            "id": "rbac.roles",
+            "summary": "Roles granting permissions and capabilities, resolved into the grant set the authorizer asks for.",
+            "use_when": "Access depends on named roles that someone administers, not on properties of the record.",
+            "avoid_when": "Grants come from somewhere else already - ownership, a plan tier, an external identity provider.",
+            "replaces": [
+                "a roles column parsed into an array and compared by string in each check",
+                "a permission matrix kept in a config file and in a database, drifting apart"
+            ],
+            "see_also": "semitexa/authorization",
+            "kind": "package",
+            "declared_by": "Semitexa\\Rbac\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/rbac"
+        },
+        {
+            "id": "scheduler.jobs",
+            "summary": "Recurring and delayed background jobs declared with #[AsScheduledJob], leased so two workers never run one twice.",
+            "use_when": "Work has to happen on a clock rather than on a request - nightly reports, retries, cleanup sweeps.",
+            "avoid_when": "The work can finish inside the request that asked for it, or a queue consumer already covers it.",
+            "replaces": [
+                "crontab entries calling CLI scripts, with overlap handled by a lock file",
+                "a sleep loop in a worker process that re-checks the time"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Scheduler\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/scheduler"
+        },
+        {
+            "id": "search.queries",
+            "summary": "Declared search indexes with tenant-scoped queries, filters and sorting over an ORM backend.",
+            "use_when": "Users type free text and expect ranked matches across fields, with filters they can combine.",
+            "avoid_when": "An exact lookup by one column. A repository query is faster to write and faster to run.",
+            "replaces": [
+                "LIKE %term% concatenated into a query, with tenant scoping remembered per call site",
+                "a bespoke filter parser reinvented per screen"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Search\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/search"
+        },
+        {
+            "id": "settings.store",
+            "summary": "A settings store for modules, scoped per tenant and per user.",
+            "use_when": "A module needs values an operator can change at runtime, remembered per tenant or per user.",
+            "avoid_when": "The value is fixed at deploy time - environment configuration is simpler and reviewable.",
+            "replaces": [
+                "a settings table plus accessor written per module",
+                "configuration keys read from the environment and then overridden in the database anyway"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Platform\\Settings\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/platform-settings"
+        },
+        {
+            "id": "ssr.component",
+            "summary": "A reusable server-rendered component with its own template, optional client script and event triggers.",
+            "use_when": "The same block of markup appears on more than one page, or a block needs its own script and event wiring.",
+            "avoid_when": "The markup appears once and carries no behaviour - a plain template fragment is cheaper to read.",
+            "replaces": [
+                "the same Twig include copied across several templates",
+                "per-page <script> tags wiring one block by hand"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsComponent",
+            "declared_by_short": "AsComponent",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.component-metadata",
+            "summary": "Contributes metadata to components, in priority order.",
+            "use_when": "Components need attributes decided centrally rather than per component.",
+            "avoid_when": "The metadata concerns one component only - declare it on that component.",
+            "replaces": [
+                "repeating the same metadata in every component declaration"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsComponentMetadataProvider",
+            "declared_by_short": "AsComponentMetadataProvider",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.data-provider",
+            "summary": "Supplies the data for a given slot across the page handles it declares.",
+            "use_when": "The same data backs a region on several pages.",
+            "avoid_when": "The data is used by a single page - fetch it in that page handler instead.",
+            "replaces": [
+                "fetching the same data again in each page handler"
+            ],
+            "see_also": "ssr.with-data-provider",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsDataProvider",
+            "declared_by_short": "AsDataProvider",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.deferred",
+            "summary": "Renders a slot after the main page and streams it in when it is ready.",
+            "use_when": "A region is slow enough to delay first paint - an external call, a heavy query - and the rest of the page should not wait for it.",
+            "avoid_when": "The region is fast. Deferring adds a round trip and a visible skeleton, so it makes a quick region slower and jumpier.",
+            "replaces": [
+                "a client-side fetch() against a bespoke JSON route, with manual DOM insertion",
+                "blocking the whole page render on one slow dependency",
+                "a hand-written loading skeleton toggled by page JavaScript"
+            ],
+            "see_also": "ssr.transport",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsDeferred",
+            "declared_by_short": "AsDeferred",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.layout-slot",
+            "summary": "Binds a template into a named layout slot for a set of page handles, optionally deferred and cached.",
+            "use_when": "A region should appear on a set of pages without every page handler having to know about it.",
+            "avoid_when": "Only one page shows the region; binding it layout-wide hides a local concern in a global place.",
+            "replaces": [
+                "editing every page template to include the same block",
+                "threading a region data through handlers that have nothing to do with it"
+            ],
+            "see_also": "ssr.slot-resource",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsLayoutSlot",
+            "declared_by_short": "AsLayoutSlot",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.slot-handler",
+            "summary": "Server-side handler that populates a slot resource; handlers for one slot run in priority order.",
+            "use_when": "A slot content needs logic, or several parties must each contribute to the same region.",
+            "avoid_when": "The slot content is static, or exactly one party ever contributes to it and a resource alone would do.",
+            "replaces": [
+                "computing region content inside the page handler and passing it down",
+                "an if/else chain deciding what a shared region shows"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotHandler",
+            "declared_by_short": "AsSlotHandler",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.slot-resource",
+            "summary": "Declares a typed resource that fills a layout slot, with its template, transport mode, cache TTL and client modules.",
+            "use_when": "A slot needs a typed payload rather than an inline template fragment.",
+            "avoid_when": "The slot renders a static fragment with no data of its own.",
+            "replaces": [
+                "assembling a region markup as a string inside the page handler"
+            ],
+            "see_also": "ssr.slot-handler",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotResource",
+            "declared_by_short": "AsSlotResource",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.transport",
+            "summary": "Declares how a resource reaches the browser - plain HTTP or a live SSE stream - and whether it is deferred.",
+            "use_when": "Content should update after the page has loaded, without the user reloading.",
+            "avoid_when": "The content does not change after load. A live stream then costs an open connection per viewer for nothing.",
+            "replaces": [
+                "a hand-written EventSource or WebSocket client plus a bespoke endpoint",
+                "setInterval polling a JSON route"
+            ],
+            "see_also": "ssr.deferred",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\WithTransport",
+            "declared_by_short": "WithTransport",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.twig-extension",
+            "summary": "Registers a class as a Twig extension by discovery, with no boot-time wiring.",
+            "use_when": "Templates need a new function or filter.",
+            "avoid_when": "The logic belongs in a handler or resource; template helpers that carry business rules are hard to test.",
+            "replaces": [
+                "registering the extension manually during server boot"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsTwigExtension",
+            "declared_by_short": "AsTwigExtension",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.with-data-provider",
+            "summary": "Binds a specific data provider class to a resource.",
+            "use_when": "One resource needs a named provider rather than slot-wide resolution.",
+            "avoid_when": "Slot-wide provider resolution already picks the right provider.",
+            "replaces": [
+                "resolving the provider by hand inside the resource"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\WithDataProvider",
+            "declared_by_short": "WithDataProvider",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "storage.files",
+            "summary": "One file API over local disk and S3-compatible object stores.",
+            "use_when": "The application keeps files whose home should not be decided in the handler that writes them.",
+            "avoid_when": "The bytes are images needing variants - semitexa/media builds on this and adds that pipeline.",
+            "replaces": [
+                "file_put_contents against a path assembled in a handler, then an S3 SDK call once the disk fills",
+                "a driver switch written by hand in every place that touches a file"
+            ],
+            "see_also": "semitexa/media",
+            "kind": "package",
+            "declared_by": "Semitexa\\Storage\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/storage"
+        },
+        {
+            "id": "tasks.list",
+            "summary": "An ORM-backed task list with status, progress and deadlines, plus an assistant integration that reports auto-completed tasks.",
+            "use_when": "The application needs a task list users track, and something should notice when work completes rather than waiting to be asked.",
+            "avoid_when": "The work items belong to a domain aggregate with its own lifecycle - model them there instead of bolting a generic task onto them.",
+            "replaces": [
+                "a hand-rolled todo table with status columns and a cron job to notice completion",
+                "tracking in-flight work in a comment field nobody queries"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Tasks\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/tasks"
+        },
+        {
+            "id": "tenancy.multi-tenant",
+            "summary": "Tenant resolution and a scoped context that ORM, cache and live transport read from.",
+            "use_when": "One deployment serves several customers whose data must never meet.",
+            "avoid_when": "Single-tenant, and the isolation would be ceremony around a constant.",
+            "replaces": [
+                "a tenant_id argument threaded through every method and forgotten in one",
+                "a WHERE clause remembered per query, with no guard when it is missed"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Tenancy\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/tenancy"
+        },
+        {
+            "id": "testing.payload-contracts",
+            "summary": "Automated payload and contract testing: strategies and profiles that exercise a route from its declared types.",
+            "use_when": "Routes carry typed payload and resource contracts you want held to over time.",
+            "avoid_when": "The logic under test is a pure function - a plain unit test is closer to it.",
+            "replaces": [
+                "a hand-written request per field, rewritten whenever the payload changes",
+                "trusting that a typed payload cannot be violated by a real client"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Testing\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/testing"
+        },
+        {
+            "id": "theme.skins",
+            "summary": "A theme and skin resolver with layouts, partials and token-driven skins over one shared markup set.",
+            "use_when": "The same application has to look different per site, tenant or mode without forking its templates.",
+            "avoid_when": "One appearance, one stylesheet, no plan for a second.",
+            "replaces": [
+                "a forked copy of every template to change colours",
+                "a stylesheet per tenant, hand-kept in sync with the markup"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Theme\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/theme"
+        },
+        {
+            "id": "ui.behavior",
+            "summary": "A client-only interaction (dropdown, modal, tabs, tooltip) bound declaratively through a ui-<alias> markup attribute.",
+            "use_when": "An element needs interactive behaviour that carries no server state.",
+            "avoid_when": "The interaction needs server state or persistence - that is a component with an event handler, not a behavior.",
+            "replaces": [
+                "a bespoke ESM module wired by hand per page",
+                "inline onclick handlers, which the CSP forbids anyway"
+            ],
+            "see_also": "ui.primitive",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiBehavior",
+            "declared_by_short": "AsUiBehavior",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.collaborative-form",
+            "summary": "Declares a form as a live collaborative document and pins the concurrency mode it runs under.",
+            "use_when": "More than one person may edit the same record at the same time.",
+            "avoid_when": "The record has a single owner and concurrent editing cannot occur. The live document machinery is not free.",
+            "replaces": [
+                "a last-write-wins form that silently discards a concurrent edit",
+                "a hand-built polling or locking scheme over a plain form"
+            ],
+            "see_also": "ssr.transport",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\CollaborativeForm",
+            "declared_by_short": "CollaborativeForm",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.event-handler",
+            "summary": "Binds a separate service class to one (component, part, event) triple.",
+            "use_when": "The handler has dependencies, lives in another module, or would bloat a deliberately thin component.",
+            "avoid_when": "The handler is a few lines with no dependencies - keep it on the component.",
+            "replaces": [
+                "putting handler logic with its dependencies inside the component class"
+            ],
+            "see_also": "ui.event-intent",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\HandlesUiEvent",
+            "declared_by_short": "HandlesUiEvent",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.event-intent",
+            "summary": "Declares which (part, event) pair a component method is the intended handler for, and optionally the value path it updates.",
+            "use_when": "The handler logic belongs to the component itself.",
+            "avoid_when": "The handler needs services or belongs to another module - bind a service class instead.",
+            "replaces": [
+                "wiring an event listener in page JavaScript and posting to an ad-hoc route"
+            ],
+            "see_also": "ui.event-handler",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
+            "declared_by_short": "UiOn",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.part",
+            "summary": "Declares one named part of a component and binds it to a primitive, with defaults and an optional value path.",
+            "use_when": "A component is assembled from smaller primitives that callers may configure.",
+            "avoid_when": "The child markup is fixed and callers are never meant to configure it.",
+            "replaces": [
+                "hard-coding child markup inside the component template"
+            ],
+            "see_also": "ui.primitive",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiPart",
+            "declared_by_short": "UiPart",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.part-provider",
+            "summary": "Marks a component method as the single deterministic provider of one part prop map.",
+            "use_when": "A part props must be computed from the component props rather than passed in.",
+            "avoid_when": "The part props are supplied by the caller and need no derivation.",
+            "replaces": [
+                "computing part props inline in the template"
+            ],
+            "see_also": "ui.part",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\ProvidesUiPart",
+            "declared_by_short": "ProvidesUiPart",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.primitive",
+            "summary": "A named UI primitive with its own template, script and style, addressable from markup by a short alias.",
+            "use_when": "A basic element (button, input, badge) should look and behave the same everywhere.",
+            "avoid_when": "The element is used once in one template and has no shared identity.",
+            "replaces": [
+                "re-declaring the same markup and classes in every template"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiPrimitive",
+            "declared_by_short": "AsUiPrimitive",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.slot",
+            "summary": "Declares a caller-provided content hole inside a component template.",
+            "use_when": "Callers must supply their own markup inside a component.",
+            "avoid_when": "The content is decided by the component itself.",
+            "replaces": [
+                "passing markup as a pre-rendered HTML string prop"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiSlot",
+            "declared_by_short": "UiSlot",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "update.lifecycle",
+            "summary": "Framework update orchestration: version detection, deploy, and post-schema data patches via #[AsDataPatch].",
+            "use_when": "Installed deployments have to move to a newer framework version, and data has to be reshaped when they do.",
+            "avoid_when": "A single deployment you update by hand and can watch while it happens.",
+            "replaces": [
+                "a shell script that composer-updates and hopes the schema kept up",
+                "a one-off SQL file run manually on each environment, with no record of where it ran"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Update\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/update"
+        },
+        {
+            "id": "weave.graph",
+            "summary": "A knowledge and relationship graph data layer with typed nodes and edges.",
+            "use_when": "Relationships between records matter more than the containers they sit in, and the shape is not known upfront.",
+            "avoid_when": "The relationships are a fixed, known schema. Plain ORM relations are cheaper, queryable and easier to migrate.",
+            "replaces": [
+                "nested folder hierarchies used to express what is related to what",
+                "ad-hoc join tables added one at a time as new relationships appear"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Weave\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/weave"
+        },
+        {
+            "id": "webapps.registry",
+            "summary": "External sites registered as first-class OS apps, framed with a companion extension where headers forbid it.",
+            "use_when": "Users should reach an outside web application from inside the OS shell without leaving it.",
+            "avoid_when": "The tool is yours - build it as a UI-skill and skip the framing entirely.",
+            "replaces": [
+                "an iframe hard-coded into a template, blank because the site refuses to be framed",
+                "a link that drops the user out of the shell and loses their session context"
+            ],
+            "see_also": "semitexa/os",
+            "kind": "package",
+            "declared_by": "Semitexa\\WebApps\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/webapps"
+        },
+        {
+            "id": "webhooks.inbound",
+            "summary": "Verified, deduplicated receipt of webhooks from third parties.",
+            "use_when": "An external service posts events to you and replays or forged calls would be damaging.",
+            "avoid_when": "The caller is your own service inside the same trust boundary - an internal event is cheaper.",
+            "replaces": [
+                "a signature check copy-pasted per provider into each endpoint",
+                "a processed-ids table written by hand to survive redeliveries"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Webhooks\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/webhooks"
+        },
+        {
+            "id": "webhooks.outbound",
+            "summary": "Durable delivery of your events to subscriber endpoints, with retries and backoff.",
+            "use_when": "Someone else needs to hear about what happened here, and a dropped notification is a real loss.",
+            "avoid_when": "You control both ends - an in-process event listener is simpler and cannot fail in transit.",
+            "replaces": [
+                "a fire-and-forget HTTP call from the handler that raised the event",
+                "a retry loop and dead-letter table written per integration"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Webhooks\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/webhooks"
+        },
+        {
+            "id": "workflow.state-machine",
+            "summary": "Business processes as code-defined state machines with guarded transitions, side effects and history.",
+            "use_when": "An entity moves through named states and the legal moves between them are a rule worth enforcing in one place.",
+            "avoid_when": "A boolean flag covers it. Two states are not a workflow, and the machinery would outweigh the problem.",
+            "replaces": [
+                "a status column plus if-statements scattered across handlers",
+                "a hand-rolled transition table with no history and no guard on illegal moves"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Workflow\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/workflow"
+        }
+    ]
+}

@@ -119,6 +119,34 @@ final class DevGraphMechanismsCommandTest extends TestCase
     }
 
     #[Test]
+    public function an_unknown_id_says_the_index_was_searched_too(): void
+    {
+        // The wording is the whole point. "Not among the installed packages"
+        // leaves open that the capability exists somewhere out of view, and an
+        // agent reading that goes and builds the thing by hand — the outcome
+        // this catalog exists to prevent. The miss has to read as final.
+        $t = self::tester();
+        $t->execute(['--id' => 'nothing.here']);
+
+        self::assertStringContainsString('index', $t->getDisplay());
+        self::assertStringContainsString('neither', $t->getDisplay());
+    }
+
+    #[Test]
+    public function an_id_hidden_by_a_state_filter_is_not_reported_as_missing(): void
+    {
+        // "Not found" would be false: the capability is right there, excluded
+        // by the caller's own filter. Naming the state it has is the answer
+        // that lets them fix their own command.
+        $t = self::tester();
+        $exit = $t->execute(['--id' => 'ssr.deferred', '--state' => 'available']);
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('exists but was filtered out', $t->getDisplay());
+        self::assertStringContainsString('installed', $t->getDisplay());
+    }
+
+    #[Test]
     public function replaces_entries_survive_into_the_output(): void
     {
         // These are the hook the verify rules will key on, so their presence in
