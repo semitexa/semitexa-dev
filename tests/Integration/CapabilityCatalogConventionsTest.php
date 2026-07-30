@@ -270,4 +270,52 @@ final class CapabilityCatalogConventionsTest extends TestCase
             'a package declares something the index would not carry',
         );
     }
+
+    #[Test]
+    public function ids_stay_unique_once_uninstalled_packages_join_the_set(): void
+    {
+        // The uniqueness check above reads the live catalog, which is what this
+        // checkout installed. The shipped index is built from a wider set, and
+        // the widening is what makes a collision invisible: the merge keys by
+        // id and keeps the first, so a second package claiming `theme.sky`
+        // would be dropped from the artifact in silence rather than reported.
+        //
+        // Duplicates are counted from the flat list of declarations, not from
+        // the merged result — asking the merged result whether the merge lost
+        // anything is asking the wrong witness.
+        $root = ProjectRoot::get();
+        if (!CapabilityIndex::isFullView($root)) {
+            self::markTestSkipped('not the monorepo; the on-disk set is not visible');
+        }
+
+        $ids = [];
+        foreach ((array) glob($root . '/packages/semitexa-*/' . CapabilityIndex::DECLARATION_PATH) as $file) {
+            if (preg_match('/^namespace\s+([^;\s]+)\s*;/m', (string) file_get_contents((string) $file), $m) !== 1) {
+                continue;
+            }
+
+            // Required here rather than left to the autoloader, which by
+            // definition cannot resolve the uninstalled packages this test is
+            // about. Relying on class_exists() alone would make the result
+            // depend on whether some earlier test happened to load the file —
+            // and it would read as passing while checking nothing.
+            $class = $m[1] . '\\Capabilities';
+            if (!class_exists($class, false)) {
+                require_once (string) $file;
+            }
+            if (!class_exists($class, false)) {
+                continue;
+            }
+
+            foreach ((new \ReflectionClass($class))->getAttributes(\Semitexa\Core\Attribute\Capability::class) as $attribute) {
+                $ids[] = $attribute->newInstance()->id;
+            }
+        }
+
+        self::assertNotEmpty($ids, 'no declarations read; the check would be vacuous');
+
+        $duplicates = array_values(array_unique(array_diff_assoc($ids, array_unique($ids))));
+
+        self::assertSame([], $duplicates, 'two packages claim one capability id: ' . implode(', ', $duplicates));
+    }
 }
