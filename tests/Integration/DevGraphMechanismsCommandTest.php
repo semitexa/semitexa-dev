@@ -53,16 +53,23 @@ final class DevGraphMechanismsCommandTest extends TestCase
     #[Test]
     public function it_finds_capabilities_declared_by_other_packages(): void
     {
-        // semitexa-dev declares none of these itself. If this passes, the
-        // derivation genuinely crosses package boundaries, which is what makes
-        // `composer update` enough for a consumer project.
+        // If this passes, the derivation genuinely crosses package boundaries,
+        // which is what makes `composer update` enough for a consumer project.
+        //
+        // It used to assert that `semitexa/dev` appears nowhere, on the premise
+        // that the package declared nothing of its own. That premise expired the
+        // day it declared `dev.agent-tooling` — and "absent" was always a proxy
+        // for "not the only one", which is the property actually worth holding.
+        // The proxy would also have passed a catalog that found nothing at all.
         $t = self::tester();
         $t->execute(['--json' => true]);
         $data = self::json($t);
 
         self::assertGreaterThan(0, $data['count']);
         $packages = array_unique(array_column((array) $data['mechanisms'], 'package'));
-        self::assertNotContains('semitexa/dev', $packages, 'the catalog must not be limited to its own package');
+
+        $others = array_values(array_filter($packages, static fn (string $p): bool => $p !== 'semitexa/dev'));
+        self::assertNotEmpty($others, 'the catalog must not be limited to its own package');
         self::assertGreaterThanOrEqual(2, count($packages), 'capabilities should come from more than one package');
     }
 

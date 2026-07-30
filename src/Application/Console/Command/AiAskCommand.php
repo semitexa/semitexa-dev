@@ -28,7 +28,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
  * commands own behavior.
  */
-#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, project, module, route, event, logs)')]
+#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, project, module, route, event, path, logs)')]
 final class AiAskCommand extends BaseCommand
 {
     /**

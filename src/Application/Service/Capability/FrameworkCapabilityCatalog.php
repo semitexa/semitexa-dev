@@ -42,14 +42,31 @@ final readonly class FrameworkCapabilityCatalog
 
         $out = [];
         foreach ($this->classDiscovery->findClassesWithAttribute(Capability::class) as $class) {
-            // Discovery lists what the classmap claims. A class that cannot load
+            // Discovery lists what the classmap claims. A type that cannot load
             // — an optional package half-removed — must not take the catalog down
             // with it, because every caller here is a diagnostic surface.
-            if (!class_exists($class)) {
+            //
+            // All four kinds, not just classes: `Attribute::TARGET_CLASS` covers
+            // interfaces, traits and enums too, and `class_exists()` alone
+            // answers false for them — which would drop such a declaration from
+            // the catalog without a word.
+            if (!class_exists($class) && !interface_exists($class) && !trait_exists($class) && !enum_exists($class)) {
                 continue;
             }
 
-            foreach (self::describe(new ReflectionClass($class)) as $entry) {
+            // Same reasoning one level down. `newInstance()` runs the attribute
+            // constructor, so a single misdeclared #[Capability] in one
+            // installed package would otherwise take out every surface that
+            // speaks about mechanisms — the lint, the graph command, the page
+            // generator. A diagnostic that dies on the thing it is diagnosing
+            // is worth less than one that reports the rest.
+            try {
+                $described = self::describe(new ReflectionClass($class));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            foreach ($described as $entry) {
                 $out[] = $entry;
             }
         }
@@ -84,8 +101,20 @@ final readonly class FrameworkCapabilityCatalog
      */
     public function everythingOnDisk(string $projectRoot): array
     {
+        // Only what a Composer package owns. In the monorepo `ClassDiscovery`
+        // also reaches `src/modules/`, so an application module declaring
+        // `#[Capability]` would ride into the shipped index and advertise, to
+        // every consumer, something they cannot require — the index names a
+        // package to install, and this one would name the project it was built
+        // in. The module-structure spec permits the file there; this is the
+        // boundary where permitting it would actually cost something.
+        $packages = CapabilityIndex::packagesOnDisk($projectRoot);
+
         $byId = [];
         foreach ($this->all() as $entry) {
+            if (!in_array((string) $entry['package'], $packages, true)) {
+                continue;
+            }
             $byId[(string) $entry['id']] = $entry;
         }
 
@@ -144,7 +173,13 @@ final readonly class FrameworkCapabilityCatalog
                 continue;
             }
 
-            foreach (self::describe(new ReflectionClass($class)) as $entry) {
+            try {
+                $described = self::describe(new ReflectionClass($class));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            foreach ($described as $entry) {
                 $out[] = $entry;
             }
         }
@@ -175,8 +210,17 @@ final readonly class FrameworkCapabilityCatalog
      * the live catalog by hashing these arrays, so two ways of building one
      * would make the freshness gate fail on a difference nobody made.
      *
+     * The shape is spelled out rather than widened to `array<string, mixed>`.
+     * It used to be an array literal inside {@see all()}, where the analyser
+     * read the real shape whatever the docblock said; moving it here without
+     * carrying the shape along silently degraded every caller's inference —
+     * `make:page` alone picked up seven new `mixed` errors from a refactor that
+     * changed no behaviour.
+     *
      * @param ReflectionClass<object> $reflection
-     * @return list<array<string, mixed>>
+     * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
+     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    declared_by: string, declared_by_short: string, package: string}>
      */
     private static function describe(ReflectionClass $reflection): array
     {
@@ -205,7 +249,9 @@ final readonly class FrameworkCapabilityCatalog
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
+     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    declared_by: string, declared_by_short: string, package: string}>
      */
     public function inArea(string $area): array
     {

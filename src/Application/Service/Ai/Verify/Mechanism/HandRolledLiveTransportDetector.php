@@ -34,9 +34,10 @@ final class HandRolledLiveTransportDetector implements MechanismDetectorInterfac
      */
     private const POLL_PROXIMITY_LINES = 15;
 
-    public function extension(): string
+    /** @return non-empty-list<string> */
+    public function extensions(): array
     {
-        return 'js';
+        return ['js', 'mjs'];
     }
 
     /**

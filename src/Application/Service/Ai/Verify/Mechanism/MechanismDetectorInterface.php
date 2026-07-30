@@ -15,8 +15,18 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  */
 interface MechanismDetectorInterface
 {
-    /** File extension this detector reads, without the dot. */
-    public function extension(): string;
+    /**
+     * File extensions this detector reads, without the dot.
+     *
+     * A list rather than one string because the planner and the detectors have
+     * to agree on what a "client script" is. `ChangedFileClassifier` counts both
+     * `.js` and `.mjs`, so a single extension meant a changed `.mjs` scheduled
+     * this lint and the lint then scanned no files at all — a pass that had
+     * examined nothing, which is worse than not running.
+     *
+     * @return non-empty-list<string>
+     */
+    public function extensions(): array;
 
     /**
      * @param list<string> $lines

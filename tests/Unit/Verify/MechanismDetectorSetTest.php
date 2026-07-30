@@ -6,6 +6,8 @@ namespace Semitexa\Dev\Tests\Unit\Verify;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledDeferredDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledLiveTransportDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\InlineEventHandlerDetector;
@@ -145,8 +147,35 @@ final class MechanismDetectorSetTest extends TestCase
 
         foreach ($detectors as $detector) {
             self::assertInstanceOf(MechanismDetectorInterface::class, $detector);
-            self::assertNotSame('', $detector->extension());
-            self::assertStringNotContainsString('.', $detector->extension(), 'extension is given without the dot');
+            self::assertNotSame([], $detector->extensions());
+            foreach ($detector->extensions() as $extension) {
+                self::assertNotSame('', $extension);
+                self::assertStringNotContainsString('.', $extension, 'extension is given without the dot');
+            }
         }
+    }
+
+    #[Test]
+    public function the_js_detectors_cover_every_extension_the_planner_calls_a_client_script(): void
+    {
+        // The planner and the detectors have to agree on what a client script
+        // is. ChangedFileClassifier counts .js and .mjs alike, so a changed
+        // .mjs scheduled this lint and the lint then scanned nothing — it
+        // reported a pass having examined no files, which reads exactly like a
+        // clean result. Pinned here because the two live in different files and
+        // nothing else makes them meet.
+        foreach ([new HandRolledDeferredDetector(), new HandRolledLiveTransportDetector()] as $detector) {
+            self::assertSame(
+                ['js', 'mjs'],
+                $detector->extensions(),
+                $detector::class . ' must read every extension the classifier treats as a client script',
+            );
+        }
+
+        self::assertSame(
+            ChangedFile::KIND_CLIENT_SCRIPT,
+            (new ChangedFileClassifier())->classify('src/modules/Foo/public/js/app.mjs', 'M')->kind,
+            'the premise of this test: the planner does treat .mjs as a client script',
+        );
     }
 }

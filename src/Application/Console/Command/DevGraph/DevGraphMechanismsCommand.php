@@ -10,6 +10,7 @@ use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
+use Semitexa\Core\Console\BaseCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -35,7 +36,7 @@ use Symfony\Component\Console\Output\OutputInterface;
     name: 'dev:graph:mechanisms',
     description: 'List what the installed framework can do — deferred rendering, components, live transport, UI behaviors — with when to use and when not to.',
 )]
-final class DevGraphMechanismsCommand extends Command
+final class DevGraphMechanismsCommand extends BaseCommand
 {
     #[InjectAsReadonly]
     protected ClassDiscovery $classDiscovery;

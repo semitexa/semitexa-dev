@@ -20,9 +20,10 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  */
 final class InlineEventHandlerDetector implements MechanismDetectorInterface
 {
-    public function extension(): string
+    /** @return non-empty-list<string> */
+    public function extensions(): array
     {
-        return 'twig';
+        return ['twig'];
     }
 
     /**

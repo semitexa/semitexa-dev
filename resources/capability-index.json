@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-07-30T19:33:54+00:00",
+    "generated_at": "2026-07-30T20:17:12+00:00",
     "count": 59,
     "packages": [
         "semitexa/api",

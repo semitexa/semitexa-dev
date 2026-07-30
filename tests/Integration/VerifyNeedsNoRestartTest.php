@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * Verification does not need a restarted server, and now says so.
@@ -92,5 +94,54 @@ final class VerifyNeedsNoRestartTest extends TestCase
         self::assertArrayNotHasKey('before_browsing', self::advice([
             new ChangedFile('docs/readme.md', ChangedFile::KIND_NON_PHP),
         ]));
+    }
+
+    #[Test]
+    public function the_advice_reaches_the_default_output_and_not_only_the_json_envelope(): void
+    {
+        // It shipped in the `--json` envelope alone, and NDJSON is what an
+        // ordinary run prints — so the sentence written to correct a habit
+        // never appeared where the habit was being acted on. Advice the reader
+        // does not see is the same as no advice, with the added cost of looking
+        // handled.
+        $method = new ReflectionMethod(AiVerifyCommand::class, 'emitNdjson');
+        $method->setAccessible(true);
+
+        $output = new BufferedOutput();
+        $method->invoke(
+            new AiVerifyCommand(),
+            $output,
+            new VerificationPlan(
+                scope: VerificationPlan::SCOPE_MINIMAL,
+                effectiveScope: VerificationPlan::SCOPE_MINIMAL,
+                changedFiles: [new ChangedFile('packages/semitexa-dev/src/X.php', ChangedFile::KIND_PHP_OTHER)],
+                targets: [],
+                expansions: [],
+            ),
+            [],
+            'pass',
+        );
+
+        $kinds = [];
+        $restart = null;
+        foreach (explode("\n", trim($output->fetch())) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $decoded = json_decode($line, true);
+            $kinds[] = $decoded['kind'] ?? null;
+            if (($decoded['kind'] ?? null) === 'restart') {
+                $restart = $decoded;
+            }
+        }
+
+        self::assertContains('restart', $kinds, 'NDJSON carried no restart record');
+        self::assertFalse($restart['needed_for_verification'] ?? null);
+        // Ordered before the verdict: a reader who stops at the result never
+        // reaches a line printed after it.
+        self::assertLessThan(
+            array_search('verdict', $kinds, true),
+            array_search('restart', $kinds, true),
+        );
     }
 }

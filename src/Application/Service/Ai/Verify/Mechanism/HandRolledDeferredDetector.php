@@ -33,9 +33,10 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  */
 final class HandRolledDeferredDetector implements MechanismDetectorInterface
 {
-    public function extension(): string
+    /** @return non-empty-list<string> */
+    public function extensions(): array
     {
-        return 'js';
+        return ['js', 'mjs'];
     }
 
     /**

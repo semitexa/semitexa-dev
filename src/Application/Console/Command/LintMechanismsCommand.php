@@ -81,7 +81,7 @@ final class LintMechanismsCommand extends BaseCommand
         foreach ($roots as $relative) {
             $dir = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
             foreach (self::detectors() as $detector) {
-                foreach (self::filesWithExtension($dir, $detector->extension()) as $file) {
+                foreach (self::filesWithExtensions($dir, $detector->extensions()) as $file) {
                     $contents = file_get_contents($file);
                     if ($contents === false) {
                         continue;
@@ -167,8 +167,18 @@ final class LintMechanismsCommand extends BaseCommand
     /** @return array<string, array{summary: string, avoid_when: string, declared_by_short: string}> */
     private function catalog(): array
     {
+        // The advice half of a finding, not the finding itself. `describe()`
+        // already reports what it saw when the catalog has nothing to add, so
+        // a catalog that cannot be built must degrade to that rather than take
+        // the whole lint down — the observations are the part somebody acts on.
+        try {
+            $entries = (new FrameworkCapabilityCatalog($this->classDiscovery))->all();
+        } catch (\Throwable) {
+            return [];
+        }
+
         $out = [];
-        foreach ((new FrameworkCapabilityCatalog($this->classDiscovery))->all() as $entry) {
+        foreach ($entries as $entry) {
             $out[(string) $entry['id']] = [
                 'summary' => (string) $entry['summary'],
                 'avoid_when' => (string) $entry['avoid_when'],
@@ -193,8 +203,11 @@ final class LintMechanismsCommand extends BaseCommand
         ];
     }
 
-    /** @return list<string> */
-    private static function filesWithExtension(string $dir, string $extension): array
+    /**
+     * @param non-empty-list<string> $extensions
+     * @return list<string>
+     */
+    private static function filesWithExtensions(string $dir, array $extensions): array
     {
         if (!is_dir($dir)) {
             return [];
@@ -205,7 +218,7 @@ final class LintMechanismsCommand extends BaseCommand
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
         );
         foreach ($it as $entry) {
-            if ($entry->isFile() && $entry->getExtension() === $extension) {
+            if ($entry instanceof \SplFileInfo && $entry->isFile() && in_array($entry->getExtension(), $extensions, true)) {
                 $files[] = $entry->getPathname();
             }
         }

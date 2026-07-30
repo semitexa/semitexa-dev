@@ -595,6 +595,18 @@ final class AiVerifyCommand extends BaseCommand
             }
         }
 
+        // Before the verdict, so it is read rather than scrolled past.
+        //
+        // The advice existed only in the `--json` envelope, and NDJSON is the
+        // default — so the habit this was written to correct (wrapping every
+        // verify in a 16s server:restart) never met the sentence that corrects
+        // it. An unstated assumption is not fixed by being wrong somewhere the
+        // reader does not look.
+        $output->writeln((string) json_encode(
+            ['kind' => 'restart'] + $this->restartAdvice($plan->changedFiles),
+            JSON_UNESCAPED_SLASHES,
+        ));
+
         $verdictLine = [
             'kind'    => 'verdict',
             'verdict' => $verdict,

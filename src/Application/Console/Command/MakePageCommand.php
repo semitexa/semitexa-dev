@@ -213,7 +213,9 @@ final class MakePageCommand extends BaseCommand
      * is broken". Scaffolding is the job; the nudge is a bonus and degrades to
      * silence.
      *
-     * @return list<array<string, mixed>>
+     * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
+     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    declared_by: string, declared_by_short: string, package: string}>
      */
     private function mechanismCatalog(): array
     {
