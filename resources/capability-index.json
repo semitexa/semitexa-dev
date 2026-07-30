@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-07-30T20:17:12+00:00",
+    "generated_at": "2026-07-30T20:48:02+00:00",
     "count": 59,
     "packages": [
         "semitexa/api",
@@ -44,7 +44,7 @@
         "semitexa/webhooks",
         "semitexa/workflow"
     ],
-    "content_hash": "7c32706a570bfe6e10f1430a06eb21b97b08861d0cc9a5a7f4d2a097c1025892",
+    "content_hash": "b600692c99d9f4c7b63dc5a8dac6446e69bb72640fa098a444788d65e73fc469",
     "capabilities": [
         {
             "id": "api.external",
@@ -793,7 +793,7 @@
         {
             "id": "ui.part-provider",
             "summary": "Marks a component method as the single deterministic provider of one part prop map.",
-            "use_when": "A part props must be computed from the component props rather than passed in.",
+            "use_when": "A part's props must be computed from the component's props rather than passed in.",
             "avoid_when": "The part props are supplied by the caller and need no derivation.",
             "replaces": [
                 "computing part props inline in the template"

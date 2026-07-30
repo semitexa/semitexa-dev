@@ -369,7 +369,15 @@ final class VerificationExecutor
             );
         }
 
-        $missing = CapabilityIndex::packagesWithoutDeclaration($this->projectRoot);
+        // Degrades like the freshness gate next to it. An unreadable manifest or
+        // a permission error here is a fact about the working copy, not about
+        // whether the packages declare — failing the whole verify run over it
+        // would report a defect in the wrong place.
+        try {
+            $missing = CapabilityIndex::packagesWithoutDeclaration($this->projectRoot);
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'capability_coverage scan failed: ' . $this->compress($e->getMessage()));
+        }
 
         if ($missing === []) {
             return new VerificationResult(

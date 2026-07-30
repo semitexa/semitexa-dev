@@ -585,7 +585,11 @@ class VerificationPlannerTest extends TestCase
     public function test_deleting_a_declaration_plans_the_coverage_gate(): void
     {
         $plan = $this->planner()->plan([
-            new ChangedFile('packages/semitexa-ssr/src/Capabilities.php', ChangedFile::KIND_PHP_OTHER),
+            new ChangedFile(
+                'packages/semitexa-ssr/src/Capabilities.php',
+                ChangedFile::KIND_PHP_OTHER,
+                ChangedFile::STATUS_DELETED,
+            ),
         ], VerificationPlan::SCOPE_MINIMAL);
 
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));

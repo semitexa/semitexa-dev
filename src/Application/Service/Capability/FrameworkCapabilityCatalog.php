@@ -156,7 +156,7 @@ final readonly class FrameworkCapabilityCatalog
         // Same glob shape the package list already uses. Two ideas of which
         // directories count would put a package in one field of the index and
         // not the other.
-        foreach ((array) glob($projectRoot . '/packages/semitexa-*/src/Capabilities.php') as $file) {
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*/' . CapabilityIndex::DECLARATION_PATH) as $file) {
             $class = self::classIn((string) $file);
             if ($class === null) {
                 continue;
