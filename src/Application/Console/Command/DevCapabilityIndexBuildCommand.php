@@ -75,7 +75,11 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
             return Command::FAILURE;
         }
 
-        $capabilities = (new FrameworkCapabilityCatalog($this->classDiscovery))->all();
+        // Everything on disk, not everything installed: this checkout requires
+        // neither `theme-sky` nor `showcase-kit`, and an index built from the
+        // classmap would omit the packages least likely to be installed
+        // anywhere — which are the only ones it exists to advertise.
+        $capabilities = (new FrameworkCapabilityCatalog($this->classDiscovery))->everythingOnDisk($root);
         $payload = CapabilityIndex::build($capabilities, $packagesOnDisk);
         $path = CapabilityIndex::path($root);
 

@@ -1,7 +1,7 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-07-29T16:30:39+00:00",
-    "count": 48,
+    "generated_at": "2026-07-30T19:33:54+00:00",
+    "count": 59,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -44,7 +44,7 @@
         "semitexa/webhooks",
         "semitexa/workflow"
     ],
-    "content_hash": "491cd883350a9c7b83ee4820ee07aeb5c837e95b2686af8e17b72d04a71c2cec",
+    "content_hash": "7c32706a570bfe6e10f1430a06eb21b97b08861d0cc9a5a7f4d2a097c1025892",
     "capabilities": [
         {
             "id": "api.external",
@@ -105,6 +105,82 @@
             "declared_by": "Semitexa\\Cache\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/cache"
+        },
+        {
+            "id": "core.framework",
+            "summary": "The runtime every other package builds on: attribute discovery, the two-tier container, routing, events and the console kernel.",
+            "use_when": "Always. It is the floor of a Semitexa project rather than a choice made within one.",
+            "avoid_when": "Never, in a Semitexa project. Listed for completeness, not because the decision is live.",
+            "replaces": [
+                "a container and a route table wired by hand in a bootstrap file",
+                "a service locator resolving dependencies at the call site"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Core\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/core"
+        },
+        {
+            "id": "demo.showcase",
+            "summary": "The official showcase application: framework features as running pages, next to the source that produces them.",
+            "use_when": "A feature has to be seen working before it is adopted, or a convention needs a reference implementation to copy from.",
+            "avoid_when": "A production deployment. It is a teaching surface, with routes and fixtures nobody should ship to end users.",
+            "replaces": [
+                "a scratch module written to try a feature out and then left in the project",
+                "reading a package test suite to work out how the feature is meant to be assembled"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Demo\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/demo"
+        },
+        {
+            "id": "dev.agent-tooling",
+            "summary": "Generators, the project graph, and the ai:* surface an agent works through \u2014 classify, plan, verify, trace.",
+            "use_when": "Someone is building on Semitexa and the framework should answer structural questions itself instead of being grepped.",
+            "avoid_when": "A production image. These commands assume a writable working copy and belong in require-dev.",
+            "replaces": [
+                "copying an existing module by hand and renaming its classes",
+                "grepping for a class name to work out what a change would break",
+                "a bespoke shell script chaining lint and test over a diff"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Dev\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/dev"
+        },
+        {
+            "id": "dist.ultimate",
+            "summary": "The full-stack distribution: a project skeleton with the core packages, docs, container files and a working example module already wired.",
+            "use_when": "Starting a new Semitexa project, and the first commit should already boot, render and pass its tests.",
+            "avoid_when": "Adding Semitexa to an application that already exists \u2014 require the individual packages rather than adopting a skeleton around them.",
+            "replaces": [
+                "assembling the package set, container files and module layout by hand for each new project",
+                "copying the previous project and deleting whatever does not apply"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Ultimate\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/ultimate"
+        },
+        {
+            "id": "docs.official",
+            "summary": "The framework documentation shipped as an installed module and served by the project itself.",
+            "use_when": "The conventions have to be readable from inside a running project, at the version that project actually installed.",
+            "avoid_when": "A production site with no reason to serve framework docs \u2014 weight its end users never asked for.",
+            "replaces": [
+                "framework documentation pasted into the project, drifting from the version installed",
+                "reading package source to recover a convention nobody wrote down"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Docs\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/docs"
         },
         {
             "id": "files.manager",
@@ -242,6 +318,21 @@
             "package": "semitexa/orm"
         },
         {
+            "id": "os.music",
+            "summary": "The OS music player: a Music UI-skill with a bundled playlist of original, program-generated ambient tracks.",
+            "use_when": "The environment should be able to play something without sending the user to another tab, and without licensing audio first.",
+            "avoid_when": "A conventional application. A media player nobody asked for is a distraction with an audio element attached.",
+            "replaces": [
+                "an <audio> element wired into a bespoke route with its own playback state",
+                "sourcing and clearing background tracks before the feature can ship at all"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Music\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/music"
+        },
+        {
             "id": "os.shell",
             "summary": "An intent-first environment shell running the Intent to Plan to Execute to Observe loop over Skills, generalised beyond the terminal.",
             "use_when": "The product is an environment where users state what they want and the system plans and carries it out, rather than clicking through fixed navigation.",
@@ -255,6 +346,21 @@
             "declared_by": "Semitexa\\Os\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/os"
+        },
+        {
+            "id": "os.tictactoe",
+            "summary": "A tic-tac-toe UI-skill played against the assistant, where every opposing move is a real model call rather than a simulation.",
+            "use_when": "The environment needs a small, honest example of a leisure skill \u2014 one that exercises the skill loop instead of imitating it.",
+            "avoid_when": "Anything load-bearing. Every move costs a model call: that is the point of the demonstration, and the reason not to lean on it.",
+            "replaces": [
+                "a client-side minimax opponent that never touches the skill loop",
+                "a scripted game demo with no real turn taking behind the board"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\TicTacToe\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/tictactoe"
         },
         {
             "id": "prompt.catalog",
@@ -332,6 +438,21 @@
             "package": "semitexa/platform-settings"
         },
         {
+            "id": "site.showcase-kit",
+            "summary": "The shared structure behind a docs-backed feature site: layout, feature tree, and L1/L2/L3 feature pages driven by content.",
+            "use_when": "Building a second marketing or documentation site that differs from the first only in palette and content.",
+            "avoid_when": "A one-off site with its own information architecture. The kit is a shape, and fighting the shape costs more than writing the pages.",
+            "replaces": [
+                "a copy of the first site with its palette and text edited in place",
+                "a hand-maintained navigation tree that has to be touched every time a page is added"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "App\\Modules\\ShowcaseKit\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/showcase-kit"
+        },
+        {
             "id": "ssr.component",
             "summary": "A reusable server-rendered component with its own template, optional client script and event triggers.",
             "use_when": "The same block of markup appears on more than one page, or a block needs its own script and event wiring.",
@@ -403,6 +524,21 @@
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsLayoutSlot",
             "declared_by_short": "AsLayoutSlot",
+            "package": "semitexa/ssr"
+        },
+        {
+            "id": "ssr.rendering",
+            "summary": "Server-rendered pages: Twig templates, components, layout slots, an asset pipeline and deferred regions.",
+            "use_when": "The page should arrive already rendered, and interactivity is an enhancement rather than the delivery mechanism.",
+            "avoid_when": "The product is a client-owned application where the server only ever returns JSON.",
+            "replaces": [
+                "a JSON API paired with a separate frontend build that re-renders what the server already knew",
+                "a template loader and asset manifest hand-rolled once per project"
+            ],
+            "see_also": "ssr.deferred",
+            "kind": "package",
+            "declared_by": "Semitexa\\Ssr\\Capabilities",
+            "declared_by_short": "Capabilities",
             "package": "semitexa/ssr"
         },
         {
@@ -553,6 +689,21 @@
             "package": "semitexa/theme"
         },
         {
+            "id": "theme.sky",
+            "summary": "The Sky theme: a finished brand skin, base layout and header/footer partials built on the shared UI tokens.",
+            "use_when": "A project needs a coherent look immediately, and its brand can start from an existing palette rather than define one first.",
+            "avoid_when": "The brand is the product. Generate a skin instead of inheriting one that already looks like Semitexa.",
+            "replaces": [
+                "a base layout and header/footer partials written from scratch in each project",
+                "colours and spacing hard-coded into stylesheets where a token should have been read"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\ThemeSky\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/theme-sky"
+        },
+        {
             "id": "ui.behavior",
             "summary": "A client-only interaction (dropdown, modal, tabs, tooltip) bound declaratively through a ui-<alias> markup attribute.",
             "use_when": "An element needs interactive behaviour that carries no server state.",
@@ -608,6 +759,21 @@
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
             "declared_by_short": "UiOn",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.kit",
+            "summary": "The UI layer: design tokens, primitive components, a declarative behaviour grammar, and LLM-assisted skin generation.",
+            "use_when": "Screens are being assembled repeatedly and should look and behave alike without each one deciding again.",
+            "avoid_when": "A single page with a bespoke design. Tokens and primitives pay for themselves across screens, not on one.",
+            "replaces": [
+                "per-project CSS choosing colours and spacing again at every call site",
+                "hand-written JavaScript for behaviours the grammar already declares"
+            ],
+            "see_also": "ui.behavior",
+            "kind": "package",
+            "declared_by": "Semitexa\\PlatformUi\\Capabilities",
+            "declared_by_short": "Capabilities",
             "package": "semitexa/platform-ui"
         },
         {

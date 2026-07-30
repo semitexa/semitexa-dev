@@ -49,29 +49,157 @@ final readonly class FrameworkCapabilityCatalog
                 continue;
             }
 
-            $reflection = new ReflectionClass($class);
-            foreach ($reflection->getAttributes(Capability::class) as $attribute) {
-                $capability = $attribute->newInstance();
-                $out[] = [
-                    'id' => $capability->id,
-                    'summary' => $capability->summary,
-                    'use_when' => $capability->useWhen,
-                    'avoid_when' => $capability->avoidWhen,
-                    'replaces' => array_values($capability->replaces),
-                    'see_also' => $capability->seeAlso,
-                    // A declaring class that is itself an attribute describes a
-                    // mechanism someone writes into their code; anything else
-                    // describes what a package offers. Derived rather than
-                    // declared, so the two cannot disagree.
-                    'kind' => $reflection->getAttributes(\Attribute::class) !== [] ? 'mechanism' : 'package',
-                    'declared_by' => $class,
-                    'declared_by_short' => $reflection->getShortName(),
-                    'package' => self::packageOf($reflection),
-                ];
+            foreach (self::describe(new ReflectionClass($class)) as $entry) {
+                $out[] = $entry;
             }
         }
 
         usort($out, static fn (array $a, array $b): int => strcmp((string) $a['id'], (string) $b['id']));
+
+        return $out;
+    }
+
+    /**
+     * Every declaration in the monorepo, including packages this checkout has
+     * never installed.
+     *
+     * {@see all()} reflects over the classmap, which is the right answer to
+     * "what can I use here" and the wrong one for the shipped index. The index
+     * exists to advertise what a project has NOT installed — and the packages
+     * least likely to be installed anywhere are exactly `theme-sky`,
+     * `showcase-kit` and `demo`, which no working copy requires. Built from the
+     * classmap alone, the index silently omitted precisely the entries it
+     * exists to carry, while reporting all forty packages in its `packages`
+     * field: an artifact that looks complete and is not.
+     *
+     * So the sweep follows the same source the package list already does — the
+     * directories on disk. Only the conventional `src/Capabilities.php` is read:
+     * a mechanism lives on an attribute class that consumer code must be able to
+     * write anyway, so a package shipping one is a package somebody installs.
+     *
+     * Monorepo-only by construction — a consumer has no `packages/` tree, and
+     * would get an empty sweep and the live catalog unchanged.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function everythingOnDisk(string $projectRoot): array
+    {
+        $byId = [];
+        foreach ($this->all() as $entry) {
+            $byId[(string) $entry['id']] = $entry;
+        }
+
+        // Installed wins: the classmap is the loaded truth, and a file read off
+        // disk cannot know about a class the autoloader resolved elsewhere.
+        foreach (self::declarationsOnDisk($projectRoot) as $entry) {
+            $byId[(string) $entry['id']] ??= $entry;
+        }
+
+        $out = array_values($byId);
+        usort($out, static fn (array $a, array $b): int => strcmp((string) $a['id'], (string) $b['id']));
+
+        return $out;
+    }
+
+    /**
+     * `#[Capability]` read from each package's conventional declaration file.
+     *
+     * The file has to be required rather than autoloaded, because the whole
+     * point is that nothing has loaded it. That is safe only because the
+     * convention makes it safe: `Capabilities` carries no code, no
+     * dependencies, and one class per file. A package that puts logic there has
+     * broken a documented rule, and the module-structure spec is where that gets
+     * caught.
+     *
+     * It does leave a mark on the process, and the mark is not obvious: after
+     * this runs, `class_exists()` answers yes for classes the autoloader would
+     * have refused, so anything using it as a proxy for "is this package
+     * installed" starts lying. {@see all()} is unaffected — it reads the
+     * classmap, which a `require` does not join — but a test asserting on
+     * `class_exists` did fail this way, passing alone and failing in the suite.
+     * Ask the catalog what is installed; do not ask PHP what is loaded.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function declarationsOnDisk(string $projectRoot): array
+    {
+        $out = [];
+        // Same glob shape the package list already uses. Two ideas of which
+        // directories count would put a package in one field of the index and
+        // not the other.
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*/src/Capabilities.php') as $file) {
+            $class = self::classIn((string) $file);
+            if ($class === null) {
+                continue;
+            }
+
+            if (!class_exists($class, false)) {
+                require_once (string) $file;
+            }
+
+            // Still absent means the file did not declare what its namespace
+            // said it would. Skipping keeps a malformed package from taking down
+            // a release gate; the module-structure check is what reports it.
+            if (!class_exists($class, false)) {
+                continue;
+            }
+
+            foreach (self::describe(new ReflectionClass($class)) as $entry) {
+                $out[] = $entry;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The class a `Capabilities.php` declares, from its namespace alone.
+     *
+     * Cheaper and safer than loading the file to find out: reading it must not
+     * be what decides whether it is worth reading.
+     */
+    private static function classIn(string $file): ?string
+    {
+        $source = (string) file_get_contents($file);
+        if (preg_match('/^namespace\s+([^;\s]+)\s*;/m', $source, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1] . '\\Capabilities';
+    }
+
+    /**
+     * One declaring class rendered as catalog entries.
+     *
+     * Shared by both readers on purpose: the shipped index is compared against
+     * the live catalog by hashing these arrays, so two ways of building one
+     * would make the freshness gate fail on a difference nobody made.
+     *
+     * @param ReflectionClass<object> $reflection
+     * @return list<array<string, mixed>>
+     */
+    private static function describe(ReflectionClass $reflection): array
+    {
+        $out = [];
+        foreach ($reflection->getAttributes(Capability::class) as $attribute) {
+            $capability = $attribute->newInstance();
+            $out[] = [
+                'id' => $capability->id,
+                'summary' => $capability->summary,
+                'use_when' => $capability->useWhen,
+                'avoid_when' => $capability->avoidWhen,
+                'replaces' => array_values($capability->replaces),
+                'see_also' => $capability->seeAlso,
+                // A declaring class that is itself an attribute describes a
+                // mechanism someone writes into their code; anything else
+                // describes what a package offers. Derived rather than
+                // declared, so the two cannot disagree.
+                'kind' => $reflection->getAttributes(\Attribute::class) !== [] ? 'mechanism' : 'package',
+                'declared_by' => $reflection->getName(),
+                'declared_by_short' => $reflection->getShortName(),
+                'package' => self::packageOf($reflection),
+            ];
+        }
 
         return $out;
     }

@@ -82,6 +82,90 @@ final class CapabilityIndex
         return array_values(array_unique($names));
     }
 
+    /**
+     * The one file a package must carry to say what it offers.
+     *
+     * Named here because three places need the same string — the guard that
+     * checks it, the diagnostic that tells you to write it, and the sweep that
+     * reads it into the index.
+     */
+    public const DECLARATION_PATH = 'src/Capabilities.php';
+
+    /**
+     * Packages excused from declaring anything, by name, with the reason.
+     *
+     * Empty, and that is the intended steady state: every Composer package in
+     * the monorepo declares what it offers, including the two that are
+     * degenerate about it — `core`, which cannot be missed, and `ultimate`,
+     * which you are already inside. Both were written anyway, because a
+     * catalog with holes cannot tell a reader which absences were decided and
+     * which were forgotten, and that ambiguity is what this whole line of work
+     * exists to remove.
+     *
+     * A name belongs here only when the package cannot honestly answer the
+     * `replaces` question AND writing a degenerate entry would mislead rather
+     * than merely add a line. Put the reason next to the name; an allowlist
+     * without reasons becomes a place to hide.
+     *
+     * Directories with no `composer.json` never reach this list — they are not
+     * Composer packages, so nothing can install them and there is nothing to
+     * advertise. `semitexa-companion` (a browser extension) and
+     * `semitexa-installer` (the scaffold) are excluded that way, by what they
+     * are rather than by being named.
+     *
+     * @var list<string>
+     */
+    public const DECLARATION_EXEMPT = [];
+
+    /**
+     * Composer packages on disk with no `#[Capability]` declaration of their own.
+     *
+     * The freshness gate keeps the shipped index matching the declarations that
+     * exist; this answers the question that gate cannot — whether a declaration
+     * exists at all. Without it the convention holds only as long as everyone
+     * remembers it, and it already failed that test once: eleven packages had
+     * gone without, none of them by a decision anyone could point to afterwards.
+     *
+     * Returns the path each package should have written, taken from the
+     * directory actually found rather than derived from the package name. The
+     * two agree today; a derivation that agrees today is how a diagnostic ends
+     * up pointing at a file that was never going to exist.
+     *
+     * @return list<array{name: string, path: string}> sorted by name
+     */
+    public static function packagesWithoutDeclaration(string $projectRoot): array
+    {
+        $missing = [];
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*', GLOB_ONLYDIR) as $dir) {
+            $dir = (string) $dir;
+            $manifest = $dir . '/composer.json';
+            if (!is_file($manifest)) {
+                continue;
+            }
+
+            $composer = json_decode((string) file_get_contents($manifest), true);
+            if (!is_array($composer) || !is_string($composer['name'] ?? null) || $composer['name'] === '') {
+                continue;
+            }
+
+            $name = $composer['name'];
+            if (in_array($name, self::DECLARATION_EXEMPT, true)) {
+                continue;
+            }
+
+            if (!is_file($dir . '/' . self::DECLARATION_PATH)) {
+                $missing[] = [
+                    'name' => $name,
+                    'path' => 'packages/' . basename($dir) . '/' . self::DECLARATION_PATH,
+                ];
+            }
+        }
+
+        usort($missing, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+
+        return array_values($missing);
+    }
+
     /** Whether this working copy sees enough of the ecosystem to speak for it. */
     public static function isFullView(string $projectRoot): bool
     {

@@ -11,6 +11,7 @@ use ReflectionProperty;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphMechanismsCommand;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
+use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -146,16 +147,40 @@ final class CapabilityStatesTest extends TestCase
     }
 
     #[Test]
-    public function nothing_in_this_repository_is_reported_as_missing(): void
+    public function nothing_loadable_here_is_reported_as_missing(): void
     {
-        // The monorepo has every package on disk, so a stray "available" here
-        // would mean the merge is treating something present as absent.
-        $available = array_values(array_filter(
-            self::discover(),
-            static fn (array $c): bool => $c['state'] === 'available',
-        ));
+        // Originally: "the monorepo has every package on disk, so nothing should
+        // read as available". That premise died the day the index started being
+        // built from the packages directory rather than the classmap — the
+        // monorepo has `theme-sky`, `showcase-kit` and `demo` on disk and
+        // requires none of them, so the index now carries three entries this
+        // checkout genuinely cannot use. Reporting those as `available` is the
+        // feature working; the old assertion was reading a true statement as a
+        // defect.
+        //
+        // The invariant that actually holds, and the one worth guarding: the
+        // merge must never mark something absent that is loaded right here. On
+        // disk is not installed, and `available` is a statement about this
+        // project's autoloader.
+        // Asked of the live catalog, not of `class_exists`. The index builder
+        // reads uninstalled declarations by requiring their files, so once
+        // anything in the process has done that, `class_exists` answers yes for
+        // a class the autoloader never resolved — and this test fails or passes
+        // depending on which test ran before it. The catalog is the definition
+        // of installed rather than a proxy for it.
+        $discovery = new ClassDiscovery();
+        $discovery->initialize();
+        $installed = array_column((new FrameworkCapabilityCatalog($discovery))->all(), 'id');
+        self::assertNotEmpty($installed, 'no installed capabilities; the check would be vacuous');
 
-        self::assertSame([], array_column($available, 'id'));
+        $wronglyAbsent = [];
+        foreach (self::discover() as $capability) {
+            if ($capability['state'] === 'available' && in_array((string) $capability['id'], $installed, true)) {
+                $wronglyAbsent[] = (string) $capability['id'];
+            }
+        }
+
+        self::assertSame([], $wronglyAbsent, 'reported as not installed while the live catalog carries it');
     }
 
     #[Test]

@@ -152,6 +152,11 @@ final class VerificationPlanner
             $targets[] = $capabilityIndexTarget;
         }
 
+        $capabilityCoverageTarget = $this->capabilityCoverageTarget($changedFiles);
+        if ($capabilityCoverageTarget !== null) {
+            $targets[] = $capabilityCoverageTarget;
+        }
+
         return new VerificationPlan(
             scope: $requestedScope,
             effectiveScope: $effectiveScope,
@@ -349,6 +354,55 @@ final class VerificationPlanner
             type: VerificationTarget::TYPE_CAPABILITY_INDEX,
             id: 'capability_index:project',
             reason: 'the shipped capability index must match what the packages declare — it is how a consumer learns about packages it has not installed',
+            triggeredBy: $triggeredBy,
+            filePath: null,
+        );
+    }
+
+    /**
+     * Schedule the coverage guard when a package is added, renamed, or loses
+     * its declaration.
+     *
+     * Narrower than the freshness gate next to it, and deliberately so. That
+     * one has to react to any `#[Capability]` edit anywhere; this one only has
+     * to catch a package appearing without a declaration, or an existing one
+     * being deleted — so a `composer.json` (a package is born, or renamed) and
+     * the declaration file itself are the whole trigger set. Running it on
+     * every package `.php` change would add a passing line to almost every
+     * verify in the monorepo, and a gate that always appears and always passes
+     * is one people stop reading.
+     *
+     * Monorepo-scoped for the same reason as the freshness gate: a consumer has
+     * no `packages/` tree, so the target is never planned there.
+     *
+     * @param list<ChangedFile> $files
+     */
+    private function capabilityCoverageTarget(array $files): ?VerificationTarget
+    {
+        $triggeredBy = [];
+        foreach ($files as $file) {
+            $path = ltrim($file->path, '/');
+            if (!str_starts_with($path, 'packages/')) {
+                continue;
+            }
+
+            $isManifest = str_ends_with($path, '/composer.json');
+            $isDeclaration = str_ends_with($path, '/' . CapabilityIndex::DECLARATION_PATH);
+            if (!$isManifest && !$isDeclaration) {
+                continue;
+            }
+
+            $triggeredBy[] = $file->path;
+        }
+
+        if ($triggeredBy === []) {
+            return null;
+        }
+
+        return new VerificationTarget(
+            type: VerificationTarget::TYPE_CAPABILITY_COVERAGE,
+            id: 'capability_coverage:project',
+            reason: 'every Composer package must declare what it offers — a package that declares nothing is invisible to any project that has not installed it',
             triggeredBy: $triggeredBy,
             filePath: null,
         );

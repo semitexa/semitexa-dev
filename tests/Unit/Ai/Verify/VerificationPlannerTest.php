@@ -571,6 +571,47 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_INDEX));
     }
 
+    public function test_a_new_package_manifest_plans_the_coverage_gate(): void
+    {
+        // A composer.json arriving under packages/ is a package being born, and
+        // that is the exact moment the declaration can still be written cheaply.
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-newthing/composer.json', ChangedFile::KIND_NON_PHP),
+        ], VerificationPlan::SCOPE_MINIMAL);
+
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));
+    }
+
+    public function test_deleting_a_declaration_plans_the_coverage_gate(): void
+    {
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-ssr/src/Capabilities.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_MINIMAL);
+
+        $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));
+    }
+
+    public function test_ordinary_package_code_does_not_plan_the_coverage_gate(): void
+    {
+        // Coverage cannot change because a service was edited. Planning it there
+        // would put a line that always passes on nearly every verify in the
+        // monorepo, and gates nobody reads stop being gates.
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-ssr/src/Attribute/AsDeferred.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_BROAD);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));
+    }
+
+    public function test_application_code_does_not_plan_the_coverage_gate(): void
+    {
+        $plan = $this->planner()->plan([
+            new ChangedFile('composer.json', ChangedFile::KIND_NON_PHP),
+        ], VerificationPlan::SCOPE_BROAD);
+
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));
+    }
+
     private function planner(?ContractMoveResolver $contractMoveResolver = null): VerificationPlanner
     {
         return new VerificationPlanner(
