@@ -28,7 +28,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
  * commands own behavior.
  */
-#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, project, module, route, event, logs)')]
+#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, project, module, route, event, path, logs)')]
 final class AiAskCommand extends BaseCommand
 {
     /**
@@ -40,6 +40,12 @@ final class AiAskCommand extends BaseCommand
      */
     private const SUBJECT_MAP = [
         'capabilities' => 'dev:graph:capabilities',
+        // Distinct from `capabilities` on purpose: that one lists the CLI
+        // commands available to run, this one lists what the installed
+        // FRAMEWORK can do (deferred regions, components, live transport).
+        // Both answer "what can I do here"; merging them buries the handful of
+        // mechanisms under a wall of command help.
+        'mechanisms'   => 'dev:graph:mechanisms',
         'project'      => 'dev:graph:project',
         'module'       => 'dev:graph:module',
         'route'        => 'dev:graph:route',
@@ -78,6 +84,8 @@ final class AiAskCommand extends BaseCommand
             ->addOption('around', null, InputOption::VALUE_REQUIRED, 'Context timestamp (for subject=logs)')
             ->addOption('context', null, InputOption::VALUE_REQUIRED, 'Context radius (for subject=logs)')
             ->addOption('list', null, InputOption::VALUE_NONE, 'List available logs (for subject=logs)')
+            ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Capability id (for subject=mechanisms)')
+            ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Capability area prefix, e.g. ssr|ui (for subject=mechanisms)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (target-dependent shape)');
     }
 

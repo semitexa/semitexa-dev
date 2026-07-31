@@ -1,0 +1,298 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Service\Capability;
+
+/**
+ * Shape, location and hashing of the shipped capability index.
+ *
+ * Kept apart from the command that writes it because the freshness gate and the
+ * readers need the same answers — where the file lives, and whether two
+ * versions of it say the same thing. Two implementations of "same" would
+ * eventually disagree, and the one place that matters is a release gate.
+ */
+final class CapabilityIndex
+{
+    public const ARTIFACT = 'semitexa.dev.capability-index/v1';
+
+    /**
+     * Where the snapshot lives, relative to the monorepo root.
+     *
+     * Public because the verify planner has to recognise an edit to this exact
+     * file, and the failure diagnostic has to name it. Three copies of one path
+     * is the drift this class exists to prevent everywhere else.
+     */
+    public const RELATIVE_PATH = 'packages/semitexa-dev/resources/capability-index.json';
+
+    /**
+     * Below this many Semitexa packages on disk, the working copy is not the
+     * monorepo and the index cannot be built or judged from what is visible.
+     *
+     * Deliberately conservative. Building in a consumer project would silently
+     * DROP every capability that project has not installed — turning the one
+     * artifact that knows about uninstalled packages into a mirror of what is
+     * already visible. Checking there would be worse still: the freshness gate
+     * would fail every consumer's `ai:verify` for a file they cannot regenerate.
+     */
+    public const MIN_PACKAGES_FOR_A_FULL_VIEW = 10;
+
+    /**
+     * The file inside this package, resolved from wherever it is installed.
+     *
+     * In the monorepo that is the path above; in a consumer it sits under
+     * `vendor/semitexa/dev`. Resolving from this class's own location works in
+     * both without a special case.
+     */
+    public static function path(string $projectRoot): string
+    {
+        $monorepo = $projectRoot . '/' . self::RELATIVE_PATH;
+        if (is_file($monorepo) || is_dir(dirname($monorepo))) {
+            return $monorepo;
+        }
+
+        return dirname(__DIR__, 4) . '/resources/capability-index.json';
+    }
+
+    /**
+     * Semitexa package names present as directories, regardless of what this
+     * checkout has installed.
+     *
+     * Shared by the builder and the freshness gate: both have to decide whether
+     * this working copy can see the whole ecosystem, and two answers to that
+     * question would mean a gate failing what the builder refuses to fix.
+     *
+     * @return list<string>
+     */
+    public static function packagesOnDisk(string $projectRoot): array
+    {
+        $names = [];
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*', GLOB_ONLYDIR) as $dir) {
+            $manifest = (string) $dir . '/composer.json';
+            if (!is_file($manifest)) {
+                continue;
+            }
+            $composer = json_decode((string) file_get_contents($manifest), true);
+            if (is_array($composer) && is_string($composer['name'] ?? null)) {
+                $names[] = $composer['name'];
+            }
+        }
+        sort($names);
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * The one file a package must carry to say what it offers.
+     *
+     * Named here because three places need the same string — the guard that
+     * checks it, the diagnostic that tells you to write it, and the sweep that
+     * reads it into the index.
+     */
+    public const DECLARATION_PATH = 'src/Capabilities.php';
+
+    /**
+     * Packages excused from declaring anything, by name, with the reason.
+     *
+     * Empty, and that is the intended steady state: every Composer package in
+     * the monorepo declares what it offers, including the two that are
+     * degenerate about it — `core`, which cannot be missed, and `ultimate`,
+     * which you are already inside. Both were written anyway, because a
+     * catalog with holes cannot tell a reader which absences were decided and
+     * which were forgotten, and that ambiguity is what this whole line of work
+     * exists to remove.
+     *
+     * A name belongs here only when the package cannot honestly answer the
+     * `replaces` question AND writing a degenerate entry would mislead rather
+     * than merely add a line. Put the reason next to the name; an allowlist
+     * without reasons becomes a place to hide.
+     *
+     * Directories with no `composer.json` never reach this list — they are not
+     * Composer packages, so nothing can install them and there is nothing to
+     * advertise. `semitexa-companion` (a browser extension) and
+     * `semitexa-installer` (the scaffold) are excluded that way, by what they
+     * are rather than by being named.
+     *
+     * @var list<string>
+     */
+    public const DECLARATION_EXEMPT = [];
+
+    /**
+     * Composer packages on disk with no `#[Capability]` declaration of their own.
+     *
+     * The freshness gate keeps the shipped index matching the declarations that
+     * exist; this answers the question that gate cannot — whether a declaration
+     * exists at all. Without it the convention holds only as long as everyone
+     * remembers it, and it already failed that test once: eleven packages had
+     * gone without, none of them by a decision anyone could point to afterwards.
+     *
+     * Returns the path each package should have written, taken from the
+     * directory actually found rather than derived from the package name. The
+     * two agree today; a derivation that agrees today is how a diagnostic ends
+     * up pointing at a file that was never going to exist.
+     *
+     * @return list<array{name: string, path: string}> sorted by name
+     */
+    public static function packagesWithoutDeclaration(string $projectRoot): array
+    {
+        $missing = [];
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*', GLOB_ONLYDIR) as $dir) {
+            $dir = (string) $dir;
+            $manifest = $dir . '/composer.json';
+            if (!is_file($manifest)) {
+                continue;
+            }
+
+            $composer = json_decode((string) file_get_contents($manifest), true);
+            if (!is_array($composer) || !is_string($composer['name'] ?? null) || $composer['name'] === '') {
+                continue;
+            }
+
+            $name = $composer['name'];
+            if (in_array($name, self::DECLARATION_EXEMPT, true)) {
+                continue;
+            }
+
+            if (!is_file($dir . '/' . self::DECLARATION_PATH)) {
+                $missing[] = [
+                    'name' => $name,
+                    'path' => 'packages/' . basename($dir) . '/' . self::DECLARATION_PATH,
+                ];
+            }
+        }
+
+        usort($missing, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+
+        return array_values($missing);
+    }
+
+    /** Whether this working copy sees enough of the ecosystem to speak for it. */
+    public static function isFullView(string $projectRoot): bool
+    {
+        return count(self::packagesOnDisk($projectRoot)) >= self::MIN_PACKAGES_FOR_A_FULL_VIEW;
+    }
+
+    /**
+     * Whether the shipped file says what the code says.
+     *
+     * Hashes the shipped CONTENT, never the hash it claims for itself. Trusting
+     * the stored value means a hand-edited index passes: the first version of
+     * this check did exactly that, and a capability deleted straight out of the
+     * file went unnoticed. A gate that believes the artifact it is checking is
+     * not a gate.
+     *
+     * @param list<array<string, mixed>> $live
+     * @param array<string, mixed>|null $shipped decoded index file, or null when absent
+     */
+    public static function isInSync(array $live, ?array $shipped): bool
+    {
+        $capabilities = is_array($shipped['capabilities'] ?? null) ? $shipped['capabilities'] : null;
+        if ($capabilities === null) {
+            return false;
+        }
+
+        return self::hash(array_values($capabilities)) === self::hash($live);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $capabilities
+     * @param list<string> $packages
+     * @return array{artifact: string, generated_at: string, count: int, packages: list<string>,
+     *               content_hash: string, capabilities: list<array<string, mixed>>}
+     */
+    public static function build(array $capabilities, array $packages): array
+    {
+        return [
+            'artifact' => self::ARTIFACT,
+            // UTC, like every other timestamp the framework writes. Recorded so
+            // a reader can see how old the answer is rather than trusting it
+            // blindly — an index is a snapshot, and a silent snapshot is the
+            // failure mode.
+            'generated_at' => gmdate('c'),
+            'count' => count($capabilities),
+            'packages' => $packages,
+            'content_hash' => self::hash($capabilities),
+            'capabilities' => $capabilities,
+        ];
+    }
+
+    /**
+     * Fingerprint of the payload ALONE.
+     *
+     * `generated_at` changes on every run, so hashing the whole file would make
+     * a freshness check fail every time and the gate would be turned off within
+     * a week. Only the content anybody consumes is hashed.
+     *
+     * @param list<array<string, mixed>> $capabilities
+     */
+    public static function hash(array $capabilities): string
+    {
+        return hash('sha256', (string) json_encode($capabilities, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Combine what is installed with what the snapshot knows, marking each.
+     *
+     * Pure on purpose. Merging inside the command meant the only way to reach
+     * the "available" branch was a checkout missing a package — which the
+     * monorepo never is, so the tests covering it passed while doing nothing.
+     * Given both lists directly, the interesting case is one line of setup.
+     *
+     * Installed wins on conflict: the live declaration is the truth for
+     * anything present, and the index may be older than the code.
+     *
+     * @param list<array<string, mixed>> $live
+     * @param list<array<string, mixed>> $indexed
+     * @return list<array<string, mixed>>
+     */
+    public static function merge(array $live, array $indexed): array
+    {
+        $merged = [];
+        foreach ($live as $capability) {
+            if (!is_string($capability['id'] ?? null)) {
+                continue;
+            }
+            $capability['state'] = 'installed';
+            $merged[$capability['id']] = $capability;
+        }
+
+        foreach ($indexed as $capability) {
+            if (!is_string($capability['id'] ?? null) || isset($merged[$capability['id']])) {
+                continue;
+            }
+            $capability['state'] = 'available';
+            $merged[$capability['id']] = $capability;
+        }
+
+        $out = array_values($merged);
+        usort($out, static fn (array $a, array $b): int => strcmp((string) $a['id'], (string) $b['id']));
+
+        return $out;
+    }
+
+    /** @return array<string, mixed>|null */
+    public static function read(string $path): ?array
+    {
+        if (!is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /** @param array<string, mixed> $payload */
+    public static function write(string $path, array $payload): void
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o775, true);
+        }
+
+        file_put_contents(
+            $path,
+            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n",
+        );
+    }
+}

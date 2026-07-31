@@ -91,7 +91,17 @@ $codeRoot = [
             'OpenApi',
             'Pipeline',
         ],
-        rationale: 'Architectural top-level layers per Semitexa module structure §2.',
+        // `Capabilities.php` is the one source file the code root admits, and
+        // it holds no code: a class carrying only `#[Capability]` declarations
+        // that say what the package offers. The convention is deliberately a
+        // fixed name at a fixed place — the catalog guard checks exactly this
+        // class, and a declaration scattered under Application/ or Domain/
+        // would be a description of the package hiding inside its
+        // implementation. Named here rather than per package because it is a
+        // framework-wide convention; leaving it out is what made the first five
+        // packages that adopted it fail structure validation.
+        allowedFiles: ['Capabilities.php'],
+        rationale: 'Architectural top-level layers per Semitexa module structure §2, plus the package self-description class.',
     ),
 
     // ----- Application layer -----

@@ -418,7 +418,60 @@ final class AiVerifyCommand extends BaseCommand
             'counts'          => $this->countByStatus($results),
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
+            'restart'         => $this->restartAdvice($plan->changedFiles),
         ];
+    }
+
+    /**
+     * Whether a server restart is needed, and for what.
+     *
+     * Verification never needs one. Every check here runs in a fresh CLI
+     * process that rediscovers classes from disk, so a file saved a second ago
+     * is already visible — measured by having a brand-new class fail this
+     * command with no restart in between.
+     *
+     * Saying so matters because the habit is expensive and invisible. A
+     * consumer agent reported a 30-60s verify cycle as its single biggest time
+     * sink, having wrapped every run in `server:restart` + `cache:clear`. On
+     * this machine that is 16s of restart around 4s of actual verification —
+     * four fifths of the cycle spent on a step that changed nothing. Nothing in
+     * the output contradicted the assumption, so it never got questioned.
+     *
+     * A restart IS needed before exercising the RUNNING server, because Swoole
+     * workers hold discovered classes and compiled templates for the life of
+     * the worker. That is a different activity from verifying, and the advice
+     * only appears when the changed files are the kind the running server
+     * caches.
+     *
+     * @param list<ChangedFile> $changedFiles
+     * @return array{needed_for_verification: bool, note: string, before_browsing?: string}
+     */
+    private function restartAdvice(array $changedFiles): array
+    {
+        $advice = [
+            'needed_for_verification' => false,
+            'note' => 'Verification reads files from disk in a fresh process; '
+                . 'no restart was needed and none would have changed this result.',
+        ];
+
+        $affectsRunningServer = false;
+        foreach ($changedFiles as $file) {
+            if (in_array($file->kind, [
+                ChangedFile::KIND_TEMPLATE,
+                ChangedFile::KIND_CLIENT_SCRIPT,
+            ], true) || str_ends_with($file->path, '.php')) {
+                $affectsRunningServer = true;
+                break;
+            }
+        }
+
+        if ($affectsRunningServer) {
+            $advice['before_browsing'] = 'bin/semitexa server:restart — required only before exercising '
+                . 'the running server (browser, curl, E2E): workers cache discovered classes and '
+                . 'compiled templates for their lifetime.';
+        }
+
+        return $advice;
     }
 
     /**
@@ -541,6 +594,18 @@ final class AiVerifyCommand extends BaseCommand
                 ], JSON_UNESCAPED_SLASHES));
             }
         }
+
+        // Before the verdict, so it is read rather than scrolled past.
+        //
+        // The advice existed only in the `--json` envelope, and NDJSON is the
+        // default — so the habit this was written to correct (wrapping every
+        // verify in a 16s server:restart) never met the sentence that corrects
+        // it. An unstated assumption is not fixed by being wrong somewhere the
+        // reader does not look.
+        $output->writeln((string) json_encode(
+            ['kind' => 'restart'] + $this->restartAdvice($plan->changedFiles),
+            JSON_UNESCAPED_SLASHES,
+        ));
 
         $verdictLine = [
             'kind'    => 'verdict',

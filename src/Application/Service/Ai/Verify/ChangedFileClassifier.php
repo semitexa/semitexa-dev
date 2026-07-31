@@ -60,6 +60,9 @@ final class ChangedFileClassifier
         if (str_ends_with($path, '.twig')) {
             return ChangedFile::KIND_TEMPLATE;
         }
+        if (str_ends_with($path, '.js') || str_ends_with($path, '.mjs')) {
+            return ChangedFile::KIND_CLIENT_SCRIPT;
+        }
         if (!str_ends_with($path, '.php')) {
             return ChangedFile::KIND_NON_PHP;
         }

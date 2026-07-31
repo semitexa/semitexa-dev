@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
 /**
  * Deterministic planner: changed file list + requested scope → VerificationPlan.
@@ -37,7 +38,10 @@ final class VerificationPlanner
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
         ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
-        ChangedFile::KIND_TEMPLATE => ['lint:templates'],
+        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms'],
+        // Client JavaScript is where a framework mechanism gets hand-rolled:
+        // a region fetched and injected instead of declared deferred.
+        ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
     ];
 
     private const ALL_LINTS = [
@@ -46,6 +50,7 @@ final class VerificationPlanner
         'lint:scoping',
         'lint:responses',
         'lint:templates',
+        'lint:mechanisms',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -140,6 +145,16 @@ final class VerificationPlanner
         $liveTenancyTarget = $this->liveTenancyTarget($changedFiles);
         if ($liveTenancyTarget !== null) {
             $targets[] = $liveTenancyTarget;
+        }
+
+        $capabilityIndexTarget = $this->capabilityIndexTarget($changedFiles);
+        if ($capabilityIndexTarget !== null) {
+            $targets[] = $capabilityIndexTarget;
+        }
+
+        $capabilityCoverageTarget = $this->capabilityCoverageTarget($changedFiles);
+        if ($capabilityCoverageTarget !== null) {
+            $targets[] = $capabilityCoverageTarget;
         }
 
         return new VerificationPlan(
@@ -298,13 +313,109 @@ final class VerificationPlanner
         );
     }
 
+    /**
+     * Schedule the capability-index freshness check when package code changed.
+     *
+     * The index is the only artifact that tells a consumer project about a
+     * package it has NOT installed, and it is a snapshot — it goes stale the
+     * moment a `#[Capability]` is added, edited or removed, with nothing in the
+     * working copy looking any different. `--check` existed from the start and
+     * was wired into nothing, which is the same as not existing.
+     *
+     * Scoped to `packages/`: that is where the declarations the index carries
+     * live, and it is also what makes this a monorepo-only gate. A consumer has
+     * no `packages/` directory, so the target is never planned there — which is
+     * the point, since a consumer cannot regenerate the file and failing their
+     * verify over it would be a bug.
+     *
+     * @param list<ChangedFile> $files
+     */
+    private function capabilityIndexTarget(array $files): ?VerificationTarget
+    {
+        $triggeredBy = [];
+        foreach ($files as $file) {
+            $path = ltrim($file->path, '/');
+            if (!str_starts_with($path, 'packages/')) {
+                continue;
+            }
+            // The index file itself counts: a hand-edit is exactly the drift
+            // the content hash is there to catch.
+            if (!str_ends_with($path, '.php') && $path !== CapabilityIndex::RELATIVE_PATH) {
+                continue;
+            }
+            $triggeredBy[] = $file->path;
+        }
+
+        if ($triggeredBy === []) {
+            return null;
+        }
+
+        return new VerificationTarget(
+            type: VerificationTarget::TYPE_CAPABILITY_INDEX,
+            id: 'capability_index:project',
+            reason: 'the shipped capability index must match what the packages declare — it is how a consumer learns about packages it has not installed',
+            triggeredBy: $triggeredBy,
+            filePath: null,
+        );
+    }
+
+    /**
+     * Schedule the coverage guard when a package is added, renamed, or loses
+     * its declaration.
+     *
+     * Narrower than the freshness gate next to it, and deliberately so. That
+     * one has to react to any `#[Capability]` edit anywhere; this one only has
+     * to catch a package appearing without a declaration, or an existing one
+     * being deleted — so a `composer.json` (a package is born, or renamed) and
+     * the declaration file itself are the whole trigger set. Running it on
+     * every package `.php` change would add a passing line to almost every
+     * verify in the monorepo, and a gate that always appears and always passes
+     * is one people stop reading.
+     *
+     * Monorepo-scoped for the same reason as the freshness gate: a consumer has
+     * no `packages/` tree, so the target is never planned there.
+     *
+     * @param list<ChangedFile> $files
+     */
+    private function capabilityCoverageTarget(array $files): ?VerificationTarget
+    {
+        $triggeredBy = [];
+        foreach ($files as $file) {
+            $path = ltrim($file->path, '/');
+            if (!str_starts_with($path, 'packages/')) {
+                continue;
+            }
+
+            $isManifest = str_ends_with($path, '/composer.json');
+            $isDeclaration = str_ends_with($path, '/' . CapabilityIndex::DECLARATION_PATH);
+            if (!$isManifest && !$isDeclaration) {
+                continue;
+            }
+
+            $triggeredBy[] = $file->path;
+        }
+
+        if ($triggeredBy === []) {
+            return null;
+        }
+
+        return new VerificationTarget(
+            type: VerificationTarget::TYPE_CAPABILITY_COVERAGE,
+            id: 'capability_coverage:project',
+            reason: 'every Composer package must declare what it offers — a package that declares nothing is invisible to any project that has not installed it',
+            triggeredBy: $triggeredBy,
+            filePath: null,
+        );
+    }
+
     /** A kind excluded from the production-only `phpstan_di` target. */
     private static function isPhpstanDiIneligibleKind(string $kind): bool
     {
         return $kind === ChangedFile::KIND_TEST
             || $kind === ChangedFile::KIND_TEST_FIXTURE
             || $kind === ChangedFile::KIND_TEMPLATE
-            || $kind === ChangedFile::KIND_NON_PHP;
+            || $kind === ChangedFile::KIND_NON_PHP
+            || $kind === ChangedFile::KIND_CLIENT_SCRIPT;
     }
 
     /**
@@ -382,7 +493,9 @@ final class VerificationPlanner
             return;
         }
 
-        if ($file->kind === ChangedFile::KIND_NON_PHP || $file->kind === ChangedFile::KIND_TEMPLATE) {
+        if ($file->kind === ChangedFile::KIND_NON_PHP
+            || $file->kind === ChangedFile::KIND_CLIENT_SCRIPT
+            || $file->kind === ChangedFile::KIND_TEMPLATE) {
             return;
         }
 

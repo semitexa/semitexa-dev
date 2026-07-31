@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
+use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -62,6 +65,8 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_MODULE_STRUCTURE => $this->runModuleStructure($target),
                 VerificationTarget::TYPE_PHPSTAN_DI       => $this->runPhpstanDi($target),
                 VerificationTarget::TYPE_LIVE_TENANCY     => $this->runLiveTenancy($target),
+                VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
+                VerificationTarget::TYPE_CAPABILITY_COVERAGE => $this->runCapabilityCoverage($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -271,6 +276,145 @@ final class VerificationExecutor
             exitCode:    $errorCount === 0 ? 0 : 1,
             signal:      $signal,
             diagnostics: $diagnostics,
+        );
+    }
+
+    /**
+     * Compare the shipped capability index against what the packages declare.
+     *
+     * Skipped rather than failed outside the monorepo: a checkout that cannot
+     * see every package cannot regenerate the file, so failing there would
+     * report a defect nobody in that project can fix. The planner already
+     * scopes this to `packages/`, but the executor states the same condition
+     * because a skip with a reason is what makes an unrun gate visible.
+     */
+    private function runCapabilityIndex(VerificationTarget $target): VerificationResult
+    {
+        if (!CapabilityIndex::isFullView($this->projectRoot)) {
+            return $this->skipped(
+                $target,
+                'capability_index: not the monorepo (fewer than '
+                . CapabilityIndex::MIN_PACKAGES_FOR_A_FULL_VIEW
+                . ' Semitexa packages on disk); the index can only be built where every package is present',
+            );
+        }
+
+        try {
+            $discovery = new ClassDiscovery();
+            // The same reading the builder uses. Comparing an on-disk index
+            // against an installed-only catalog would report drift on every run
+            // for the packages this checkout does not require, and a gate that
+            // fails on nothing is a gate somebody switches off.
+            $live = (new FrameworkCapabilityCatalog($discovery))->everythingOnDisk($this->projectRoot);
+            $shipped = CapabilityIndex::read(CapabilityIndex::path($this->projectRoot));
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'capability_index discovery failed: ' . $this->compress($e->getMessage()));
+        }
+
+        if (CapabilityIndex::isInSync($live, $shipped)) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'capability_index → in sync (' . count($live) . ' capabilities)',
+            );
+        }
+
+        // Name the command that fixes it. A gate that only says "stale" costs
+        // the reader a search for the one command that regenerates the file.
+        $shippedCount = is_array($shipped['capabilities'] ?? null) ? count($shipped['capabilities']) : 0;
+
+        return new VerificationResult(
+            target:      $target,
+            status:      VerificationResult::STATUS_FAIL,
+            exitCode:    1,
+            signal:      sprintf(
+                'capability_index → stale (shipped %d, declared %d); run bin/semitexa dev:capability-index:build',
+                $shippedCount,
+                count($live),
+            ),
+            diagnostics: [[
+                'code' => 'CAPABILITY_INDEX_STALE',
+                'path' => CapabilityIndex::RELATIVE_PATH,
+                'message' => 'The shipped index no longer matches the #[Capability] declarations on disk. '
+                    . 'Consumer projects read it to learn about packages they have not installed, so a stale '
+                    . 'index advertises the wrong set. Regenerate with: bin/semitexa dev:capability-index:build',
+            ]],
+        );
+    }
+
+    /**
+     * Require every Composer package to say what it offers.
+     *
+     * The freshness gate next to this one keeps the shipped index matching the
+     * declarations that exist. Neither it nor anything else noticed a package
+     * that declared nothing at all — which is how eleven of them came to be
+     * silent, none by a decision anyone could point to afterwards. A convention
+     * with no gate is a convention that survives exactly as long as the memory
+     * of the session that introduced it.
+     *
+     * Filesystem-only, so it costs a stat per package and can run wherever the
+     * monorepo is visible. Skipped elsewhere for the same reason as the
+     * freshness gate: a consumer has no `packages/` tree to be right or wrong
+     * about.
+     */
+    private function runCapabilityCoverage(VerificationTarget $target): VerificationResult
+    {
+        if (!CapabilityIndex::isFullView($this->projectRoot)) {
+            return $this->skipped(
+                $target,
+                'capability_coverage: not the monorepo (fewer than '
+                . CapabilityIndex::MIN_PACKAGES_FOR_A_FULL_VIEW
+                . ' Semitexa packages on disk); package coverage can only be judged where every package is present',
+            );
+        }
+
+        // Degrades like the freshness gate next to it. An unreadable manifest or
+        // a permission error here is a fact about the working copy, not about
+        // whether the packages declare — failing the whole verify run over it
+        // would report a defect in the wrong place.
+        try {
+            $missing = CapabilityIndex::packagesWithoutDeclaration($this->projectRoot);
+        } catch (\Throwable $e) {
+            return $this->skipped($target, 'capability_coverage scan failed: ' . $this->compress($e->getMessage()));
+        }
+
+        if ($missing === []) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'capability_coverage → every package declares what it offers',
+            );
+        }
+
+        return new VerificationResult(
+            target:      $target,
+            status:      VerificationResult::STATUS_FAIL,
+            exitCode:    1,
+            signal:      sprintf(
+                'capability_coverage → %d package(s) declare nothing: %s',
+                count($missing),
+                implode(', ', array_column($missing, 'name')),
+            ),
+            // One diagnostic per package: the reader fixes them one at a time,
+            // and a single line naming five packages reads as one problem.
+            diagnostics: array_map(
+                static fn (array $package): array => [
+                    'code' => 'CAPABILITY_DECLARATION_MISSING',
+                    'path' => $package['path'],
+                    'message' => sprintf(
+                        '%s ships no %s, so nothing tells a project that has not installed it that it exists. '
+                        . 'Add the class with one #[Capability] naming what someone would otherwise build by hand '
+                        . '(see packages/semitexa-os/src/Capabilities.php), then run '
+                        . 'bin/semitexa dev:capability-index:build. If the package genuinely has nothing missable '
+                        . 'to offer, add it to CapabilityIndex::DECLARATION_EXEMPT with the reason.',
+                        $package['name'],
+                        CapabilityIndex::DECLARATION_PATH,
+                    ),
+                ],
+                $missing,
+            ),
         );
     }
 
