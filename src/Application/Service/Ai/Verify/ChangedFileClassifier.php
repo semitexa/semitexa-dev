@@ -20,6 +20,14 @@ final class ChangedFileClassifier
         '/Application/Handler/DomainListener/' => ChangedFile::KIND_LISTENER,
         '/Application/Payload/Request/'        => ChangedFile::KIND_PAYLOAD,
         '/Application/Resource/Response/'      => ChangedFile::KIND_RESOURCE,
+        // More specific than the generic Application/Service/ rule below, so it
+        // must stay above it: first match wins.
+        '/Application/Service/Server/Lifecycle/' => ChangedFile::KIND_LISTENER,
+        // Container-managed services live here by MODULE_STRUCTURE convention.
+        // Without this rule every #[AsService] class fell through to
+        // KIND_PHP_OTHER and never selected lint:di, so a service-only diff
+        // verified green while violating DI rules outright.
+        '/Application/Service/'                => ChangedFile::KIND_SERVICE,
         '/Domain/Service/'                     => ChangedFile::KIND_SERVICE,
         '/Domain/Contract/'                    => ChangedFile::KIND_CONTRACT,
     ];
