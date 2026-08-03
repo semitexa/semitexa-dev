@@ -279,6 +279,88 @@ class VerificationExecutorTest extends TestCase
         $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
     }
 
+    // ---- skill_copies ---------------------------------------------------
+
+    public function test_skill_copies_passes_when_the_sync_check_exits_zero(): void
+    {
+        $this->writeSkillsSyncFixture();
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => "All copies match.\n"]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        self::assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
+    }
+
+    public function test_skill_copies_fails_and_names_the_canonical_directory_on_drift(): void
+    {
+        $this->writeSkillsSyncFixture();
+        $runner = new RecordingProcessRunner([
+            'exit' => 1,
+            'output' => "DRIFT  ~/.codex/skills/codereview/scripts/pr-reply.sh\n\n1 file(s) out of sync.\n",
+        ]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringContainsString('DRIFT', $results[0]->signal);
+        // The operator has to be told where to edit, or the obvious move is to
+        // fix the copy the message just named - which is exactly the mistake.
+        self::assertStringContainsString('packages/semitexa-dev/resources/codereview/', $results[0]->signal);
+        self::assertStringContainsString('bin/skills-sync.sh', $results[0]->signal);
+    }
+
+    public function test_skill_copies_invokes_the_project_script_with_check(): void
+    {
+        $this->writeSkillsSyncFixture();
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+
+        (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        self::assertCount(1, $runner->calls);
+        self::assertSame(
+            $this->root . '/packages/semitexa-dev/resources/codereview/skills-sync.sh',
+            $runner->calls[0]['command'][0],
+        );
+        self::assertSame('--check', $runner->calls[0]['command'][1]);
+    }
+
+    public function test_skill_copies_skips_when_the_project_has_no_sync_script(): void
+    {
+        // A consumer install: semitexa/dev sits in vendor/, so walking up from
+        // the executor's own file would find a script there and run it against a
+        // root with no packages/ — the script would exit non-zero and the gate
+        // would fail a project that has nothing to keep in sync. No fixture is
+        // written here, so the project-relative path is genuinely absent.
+        $runner = new RecordingProcessRunner(['exit' => 1, 'output' => 'should never run']);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        self::assertSame([], $runner->calls, 'nothing may be executed when the script is absent');
+    }
+
+    private function writeSkillsSyncFixture(): void
+    {
+        $dir = $this->root . '/packages/semitexa-dev/resources/codereview';
+        mkdir($dir, 0755, true);
+        file_put_contents($dir . '/skills-sync.sh', "#!/usr/bin/env bash\nexit 0\n");
+        chmod($dir . '/skills-sync.sh', 0755);
+    }
+
+    private function skillCopiesTarget(): VerificationTarget
+    {
+        return new VerificationTarget(
+            VerificationTarget::TYPE_SKILL_COPIES,
+            'skill_copies:project',
+            'r',
+            [],
+        );
+    }
+
     /**
      * @param list<VerificationTarget> $targets
      */

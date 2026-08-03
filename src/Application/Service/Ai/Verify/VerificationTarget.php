@@ -33,6 +33,7 @@ final readonly class VerificationTarget
     public const TYPE_LIVE_TENANCY     = 'live_tenancy';
     public const TYPE_CAPABILITY_INDEX = 'capability_index';
     public const TYPE_CAPABILITY_COVERAGE = 'capability_coverage';
+    public const TYPE_SKILL_COPIES     = 'skill_copies';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled

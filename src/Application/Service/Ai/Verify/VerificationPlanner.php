@@ -157,6 +157,29 @@ final class VerificationPlanner
             $targets[] = $capabilityCoverageTarget;
         }
 
+        // Scheduled on every run, deliberately, where every other target here is
+        // triggered by a matching changed file.
+        //
+        // The codereview helper scripts exist as one canonical copy in
+        // semitexa-dev's resources and four fan-out copies, and the failure mode
+        // is someone editing a *copy*. Those copies live in bin/ and in the agent
+        // skill directories — none of which is inside a git repository, because
+        // the project root is not one. So the edit that this gate exists to catch
+        // is precisely the edit that can never appear in a changed-file list.
+        // Triggering on paths would guard only the case that was never the
+        // problem.
+        //
+        // It costs a cmp over ~26 small files and skips itself outside the
+        // monorepo, so an always-on target is affordable here in a way it would
+        // not be for phpunit or phpstan.
+        $targets[] = new VerificationTarget(
+            type: VerificationTarget::TYPE_SKILL_COPIES,
+            id: 'skill_copies:project',
+            reason: 'the codereview helper scripts are duplicated into bin/ and the agent skill directories, none of which is version-controlled; an edited copy is silently lost on the next sync',
+            triggeredBy: [],
+            filePath: null,
+        );
+
         return new VerificationPlan(
             scope: $requestedScope,
             effectiveScope: $effectiveScope,

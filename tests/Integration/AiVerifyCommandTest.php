@@ -186,7 +186,12 @@ class AiVerifyCommandTest extends TestCase
         // both are cheap scans guarding drift that must never wait for a
         // wider scope (structure rot / cross-tenant live-grid leaks). The
         // expensive production lints (phpstan_di) stay excluded here.
-        $this->assertSame(['live_tenancy', 'module_structure', 'syntax'], $types);
+        //
+        // `skill_copies` is in the same tier and is scheduled on every run rather
+        // than by a changed path: the copies it guards live outside any git
+        // repository, so the edit it exists to catch can never appear in a
+        // changed-file list. It is a cmp over ~26 small files.
+        $this->assertSame(['live_tenancy', 'module_structure', 'skill_copies', 'syntax'], $types);
     }
 
     public function test_no_inputs_returns_error_envelope(): void
