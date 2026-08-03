@@ -96,9 +96,14 @@ class ChangedFileClassifierTest extends TestCase
      * service-only diff could verify green at 11/11 with zero skipped while
      * violating DI rules outright. Two commits shipped that way.
      *
+     * This asserts only the classification — the kind each path resolves to,
+     * which is the half that was wrong. That the planner turns those kinds into
+     * lint:di is VerificationPlannerTest's job
+     * ({@see VerificationPlannerTest::test_handler_change_selects_handler_and_di_lints_plus_syntax}).
+     *
      * @dataProvider containerManagedPathProvider
      */
-    public function test_container_managed_paths_select_di_lint(string $path, string $expectedKind): void
+    public function test_container_managed_paths_get_their_expected_kind(string $path, string $expectedKind): void
     {
         $changed = (new ChangedFileClassifier())->classify($path);
 
