@@ -279,6 +279,73 @@ class VerificationExecutorTest extends TestCase
         $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
     }
 
+    // ---- skill_copies ---------------------------------------------------
+
+    public function test_skill_copies_passes_when_the_sync_check_exits_zero(): void
+    {
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => "All copies match.\n"]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        // The script lives beside the package, not beside $this->root, so in a
+        // checkout it is found and the runner is used; if some environment lacks
+        // it the target skips instead. Both are green - what must never happen is
+        // a fail on a clean tree.
+        self::assertContains(
+            $results[0]->status,
+            [VerificationResult::STATUS_PASS, VerificationResult::STATUS_SKIPPED],
+        );
+    }
+
+    public function test_skill_copies_fails_and_names_the_canonical_directory_on_drift(): void
+    {
+        $runner = new RecordingProcessRunner([
+            'exit' => 1,
+            'output' => "DRIFT  ~/.codex/skills/codereview/scripts/pr-reply.sh\n\n1 file(s) out of sync.\n",
+        ]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        if ($results[0]->status === VerificationResult::STATUS_SKIPPED) {
+            self::markTestSkipped('skills-sync.sh is not present in this checkout');
+        }
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringContainsString('DRIFT', $results[0]->signal);
+        // The operator has to be told where to edit, or the obvious move is to
+        // fix the copy the message just named - which is exactly the mistake.
+        self::assertStringContainsString('packages/semitexa-dev/resources/codereview/', $results[0]->signal);
+        self::assertStringContainsString('bin/skills-sync.sh', $results[0]->signal);
+    }
+
+    public function test_skill_copies_invokes_the_sync_script_with_check(): void
+    {
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        if ($results[0]->status === VerificationResult::STATUS_SKIPPED) {
+            self::markTestSkipped('skills-sync.sh is not present in this checkout');
+        }
+
+        self::assertCount(1, $runner->calls);
+        self::assertStringEndsWith('resources/codereview/skills-sync.sh', $runner->calls[0]['command'][0]);
+        self::assertSame('--check', $runner->calls[0]['command'][1]);
+    }
+
+    private function skillCopiesTarget(): VerificationTarget
+    {
+        return new VerificationTarget(
+            VerificationTarget::TYPE_SKILL_COPIES,
+            'skill_copies:project',
+            'r',
+            [],
+        );
+    }
+
     /**
      * @param list<VerificationTarget> $targets
      */

@@ -67,6 +67,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_LIVE_TENANCY     => $this->runLiveTenancy($target),
                 VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
                 VerificationTarget::TYPE_CAPABILITY_COVERAGE => $this->runCapabilityCoverage($target),
+                VerificationTarget::TYPE_SKILL_COPIES      => $this->runSkillCopies($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -484,6 +485,80 @@ final class VerificationExecutor
                 return $abs;
             }
         }
+        return null;
+    }
+
+    /**
+     * Are the fanned-out copies of the codereview helpers still identical to the
+     * canonical ones?
+     *
+     * Delegates to the same `skills-sync.sh --check` an operator runs by hand, so
+     * there is one implementation of "are these in sync" rather than a PHP
+     * reimplementation that can disagree with the shell one.
+     *
+     * Skips rather than fails when the script is absent: a consumer project that
+     * installs semitexa/dev has the package but no agent skill directories to
+     * keep in step, and a gate that fails on nothing relevant is a gate somebody
+     * switches off.
+     */
+    private function runSkillCopies(VerificationTarget $target): VerificationResult
+    {
+        $script = $this->skillsSyncScript();
+
+        if ($script === null) {
+            return $this->skipped(
+                $target,
+                'skill_copies: skills-sync.sh not found next to this package; nothing to keep in sync',
+            );
+        }
+
+        $r = $this->processRunner->run([$script, '--check'], $this->projectRoot);
+
+        if ($r['exit'] === 0) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'skill_copies → every copy matches the canonical scripts',
+            );
+        }
+
+        return new VerificationResult(
+            target:   $target,
+            status:   VerificationResult::STATUS_FAIL,
+            exitCode: $r['exit'],
+            signal:   'skill_copies → ' . $this->compress($r['output'])
+                . ' — edit packages/semitexa-dev/resources/codereview/, then run bin/skills-sync.sh',
+        );
+    }
+
+    /**
+     * Absolute path to the canonical skills-sync.sh, or null when it is missing.
+     *
+     * Found by walking up from this file to the package root (the first parent
+     * holding a composer.json) rather than by counting directory levels. Counting
+     * is what broke css:build after a relocation: dirname(__FILE__, 4) kept
+     * resolving, just to the wrong place, and produced a doubled path nobody
+     * noticed until a build failed.
+     */
+    private function skillsSyncScript(): ?string
+    {
+        $dir = __DIR__;
+
+        while ($dir !== '/' && $dir !== '') {
+            if (is_file($dir . '/composer.json')) {
+                $candidate = $dir . '/resources/codereview/skills-sync.sh';
+
+                return is_file($candidate) && is_executable($candidate) ? $candidate : null;
+            }
+
+            $parent = \dirname($dir);
+            if ($parent === $dir) {
+                break;
+            }
+            $dir = $parent;
+        }
+
         return null;
     }
 
