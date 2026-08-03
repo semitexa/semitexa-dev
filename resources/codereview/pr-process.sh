@@ -84,7 +84,17 @@ jq '
             if ($repo.worktreeDirty == 1) then "dirty-worktree" else empty end,
             if ($pr.mergeable == "CONFLICTING") then "merge-conflicts" else empty end,
             if ($pr.isDraft == true) then "draft-pr" else empty end,
-            if ($pr.baseRefName != "master") then "wrong-base-branch" else empty end
+            # Both default-branch names, not just master. Every Semitexa repo
+            # uses master today, so this changes nothing now — but the cost of
+            # being wrong differs sharply by direction: accepting main where no
+            # repo uses it is harmless, while rejecting it would block every PR
+            # in such a repo permanently, and the queue reports that as a fault
+            # of the PR rather than of this check. commit.sh already treats the
+            # two names alike.
+            #
+            # NB: this jq program is single-quoted, so an apostrophe anywhere in
+            # these comments terminates the shell string and breaks the file.
+            if ($pr.baseRefName != "master" and $pr.baseRefName != "main") then "wrong-base-branch" else empty end
         ];
     def warnings($repo; $pr):
         [

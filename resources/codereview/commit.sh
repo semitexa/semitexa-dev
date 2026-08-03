@@ -45,6 +45,17 @@ if [ ! -d "$repo/.git" ]; then
 fi
 
 branch="$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
+
+# `--abbrev-ref HEAD` answers with the literal string "HEAD" on a detached HEAD,
+# so the protected-branch case below would not match and staging would proceed.
+# The commit that follows becomes unreachable the moment anything checks out a
+# branch — the same "it reported success and the work is gone" shape this file
+# already guards against for the empty-index case.
+if [ "$branch" = "HEAD" ]; then
+    printf 'Refusing to stage on a detached HEAD in %s — the commit that follows would be unreachable once a branch is checked out.\n' "$repo" >&2
+    exit 1
+fi
+
 case "$branch" in
     master|main)
         printf 'Refusing to stage on protected branch: %s\n' "$branch" >&2

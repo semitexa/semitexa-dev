@@ -533,33 +533,22 @@ final class VerificationExecutor
     }
 
     /**
-     * Absolute path to the canonical skills-sync.sh, or null when it is missing.
+     * Absolute path to the canonical skills-sync.sh, or null when this is not a
+     * checkout that has one.
      *
-     * Found by walking up from this file to the package root (the first parent
-     * holding a composer.json) rather than by counting directory levels. Counting
-     * is what broke css:build after a relocation: dirname(__FILE__, 4) kept
-     * resolving, just to the wrong place, and produced a doubled path nobody
-     * noticed until a build failed.
+     * Resolved against the project being verified, NOT against __DIR__. Walking
+     * up from this file finds the script in a consumer install too — under
+     * vendor/semitexa/dev/ — and running it there is exactly wrong: the script
+     * needs a monorepo root (bin/semitexa plus packages/) and exits non-zero
+     * without one, so the target would fail on a project that has no agent skill
+     * directories to keep in sync at all. Anchoring on the monorepo path makes
+     * the absent case a skip, which is what runSkillCopies() promises.
      */
     private function skillsSyncScript(): ?string
     {
-        $dir = __DIR__;
+        $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/codereview/skills-sync.sh';
 
-        while ($dir !== '/' && $dir !== '') {
-            if (is_file($dir . '/composer.json')) {
-                $candidate = $dir . '/resources/codereview/skills-sync.sh';
-
-                return is_file($candidate) && is_executable($candidate) ? $candidate : null;
-            }
-
-            $parent = \dirname($dir);
-            if ($parent === $dir) {
-                break;
-            }
-            $dir = $parent;
-        }
-
-        return null;
+        return is_file($candidate) && is_executable($candidate) ? $candidate : null;
     }
 
     private function skipped(VerificationTarget $target, string $reason): VerificationResult

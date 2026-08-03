@@ -141,9 +141,14 @@ for dir in "$PACKAGES_DIR"/*/; do
         continue
     fi
 
+    # --limit is explicit because gh defaults to 30 and answers a longer list by
+    # truncating it silently. A dropped PR does not look like an error here; it
+    # looks like a repository with nothing left to review, which is the one
+    # wrong answer this queue must never give.
     prs_json="$(gh pr list \
         --repo "$repo_slug" \
         --state open \
+        --limit 200 \
         --json number,title,author,baseRefName,headRefName,url,createdAt,updatedAt,body,labels,reviewDecision \
         2>/dev/null || echo '[]')"
 
