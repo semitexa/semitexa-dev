@@ -88,6 +88,57 @@ class ChangedFileClassifierTest extends TestCase
         ];
     }
 
+    /**
+     * Regression pin. Container-managed services live in Application/Service/
+     * by MODULE_STRUCTURE convention, but the classifier only knew about
+     * Domain/Service/, so every #[AsService] class fell through to
+     * KIND_PHP_OTHER. The planner then never selected lint:di, and a
+     * service-only diff could verify green at 11/11 with zero skipped while
+     * violating DI rules outright. Two commits shipped that way.
+     *
+     * This asserts only the classification — the kind each path resolves to,
+     * which is the half that was wrong. That the planner turns those kinds into
+     * lint:di is VerificationPlannerTest's job
+     * ({@see VerificationPlannerTest::test_handler_change_selects_handler_and_di_lints_plus_syntax}).
+     *
+     * @dataProvider containerManagedPathProvider
+     */
+    public function test_container_managed_paths_get_their_expected_kind(string $path, string $expectedKind): void
+    {
+        $changed = (new ChangedFileClassifier())->classify($path);
+
+        $this->assertSame($expectedKind, $changed->kind, "path {$path}");
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function containerManagedPathProvider(): array
+    {
+        return [
+            'package service' => [
+                'packages/semitexa-ssr/src/Application/Service/Component/ComponentCatalog.php',
+                ChangedFile::KIND_SERVICE,
+            ],
+            'nested package service' => [
+                'packages/semitexa-ssr/src/Application/Service/Asset/AssetManifestRegistry.php',
+                ChangedFile::KIND_SERVICE,
+            ],
+            'module service' => [
+                'src/modules/Demo/Application/Service/Thing.php',
+                ChangedFile::KIND_SERVICE,
+            ],
+            'server lifecycle listener stays a listener' => [
+                'packages/semitexa-ssr/src/Application/Service/Server/Lifecycle/WireCoreInstancesListener.php',
+                ChangedFile::KIND_LISTENER,
+            ],
+            'domain service still classifies' => [
+                'src/modules/Demo/Domain/Service/Thing.php',
+                ChangedFile::KIND_SERVICE,
+            ],
+        ];
+    }
+
     public function test_default_status_is_modified(): void
     {
         $changed = (new ChangedFileClassifier())->classify('src/anything.php');

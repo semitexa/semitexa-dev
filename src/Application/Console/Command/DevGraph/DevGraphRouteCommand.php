@@ -137,7 +137,9 @@ final class DevGraphRouteCommand extends BaseCommand
             'path' => $route['path'] ?? '',
             'methods' => $methods,
             'name' => $route['name'] ?? null,
-            'public' => $route['public'] ?? true,
+            'public' => ((($route['accessType'] ?? null) instanceof \Semitexa\Core\Auth\PayloadAccessType)
+                ? $route['accessType']->value
+                : ($route['accessType'] ?? null)) === 'public',
             'payload' => [
                 'class' => $payloadClass,
                 'module' => $this->moduleRegistry()->getModuleNameForClass($payloadClass) ?? 'project',
