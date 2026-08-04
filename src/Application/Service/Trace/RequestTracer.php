@@ -7,7 +7,9 @@ namespace Semitexa\Dev\Application\Service\Trace;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Environment;
 use Semitexa\Core\Pipeline\RequestTracerInterface;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Orm\OrmManager;
 
 /**
  * Records one request's path through the framework, for a developer who asked
@@ -48,6 +50,9 @@ final class RequestTracer implements RequestTracerInterface
     /** @var array<string, float> open span name => start time in nanoseconds */
     private array $open = [];
 
+    #[InjectAsReadonly]
+    protected OrmManager $orm;
+
     public function begin(string $name, array $context = []): void
     {
         try {
@@ -57,6 +62,13 @@ final class RequestTracer implements RequestTracerInterface
                 $this->events = [];
                 $this->depth = 0;
                 $this->open = [];
+
+                if ($this->recording) {
+                    // Enabled per traced request and dropped again at the end, so
+                    // the unbounded query log cannot keep growing in a worker that
+                    // lives for days.
+                    $this->orm()->enableQueryLog();
+                }
             }
 
             if (!$this->recording || $this->failed) {
@@ -100,6 +112,7 @@ final class RequestTracer implements RequestTracerInterface
             ];
 
             if ($name === 'request') {
+                $this->appendQueries();
                 $this->flush();
             }
         } catch (\Throwable) {
@@ -170,6 +183,57 @@ final class RequestTracer implements RequestTracerInterface
         }
 
         return $out;
+    }
+
+    /**
+     * The OrmManager, injected under the container and built lazily otherwise -
+     * the same shape OrmBackedStore uses.
+     */
+    private function orm(): OrmManager
+    {
+        return $this->orm ??= new OrmManager();
+    }
+
+    /**
+     * Fold the recorded queries into the trace as marks, then stop recording.
+     *
+     * Queries appear as events rather than a separate section so they sit in the
+     * same timeline as the spans - the point is seeing that forty of them
+     * happened inside one handler, which a separate list would not show.
+     */
+    private function appendQueries(): void
+    {
+        try {
+            $queries = $this->orm()->drainQueryLog();
+            $this->orm()->disableQueryLog();
+        } catch (\Throwable) {
+            // No database configured, or ORM not booted. Not an error here: a
+            // trace without queries is still a useful trace.
+            return;
+        }
+
+        $total = 0.0;
+        foreach ($queries as $q) {
+            $total += $q['timeMs'];
+            $this->events[] = [
+                'type' => 'query',
+                'name' => 'orm.query',
+                'depth' => 1,
+                'atMs' => null,
+                'durationMs' => round($q['timeMs'], 3),
+                'context' => ['sql' => mb_substr($q['sql'], 0, 300), 'params' => count($q['params'])],
+            ];
+        }
+
+        if ($queries !== []) {
+            $this->events[] = [
+                'type' => 'mark',
+                'name' => 'orm.summary',
+                'depth' => 0,
+                'atMs' => $this->sinceStartMs(),
+                'context' => ['queries' => count($queries), 'totalMs' => round($total, 3)],
+            ];
+        }
     }
 
     private function sinceStartMs(): float
