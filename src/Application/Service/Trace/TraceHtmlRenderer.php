@@ -91,7 +91,7 @@ final class TraceHtmlRenderer
             $this->e($meta['recordedAt']),
         );
 
-        $body .= $this->flow($trace['spans'], $trace['marks'], $total);
+        $body .= $this->flow($trace['spans'], $trace['marks'], $total, $meta['file']);
 
         if ($trace['queries'] !== []) {
             $body .= $this->queries($trace['queries'], $total);
@@ -117,7 +117,7 @@ final class TraceHtmlRenderer
      * @param list<array<string, mixed>> $spans
      * @param list<array<string, mixed>> $marks
      */
-    private function flow(array $spans, array $marks, float $total): string
+    private function flow(array $spans, array $marks, float $total, string $from): string
     {
         $byCid = [];
         foreach ($spans as $s) {
@@ -144,7 +144,7 @@ final class TraceHtmlRenderer
             }
         }
 
-        return '<div class="flow">' . $this->column($rootCid, $byCid, $children, $total, 0) . '</div>';
+        return '<div class="flow">' . $this->column($rootCid, $byCid, $children, $total, 0, $from) . '</div>';
     }
 
     /**
@@ -154,7 +154,7 @@ final class TraceHtmlRenderer
      * @param array<int, list<array<string, mixed>>> $byCid
      * @param array<int, list<int>>                  $children
      */
-    private function column(int $cid, array $byCid, array $children, float $total, int $depth): string
+    private function column(int $cid, array $byCid, array $children, float $total, int $depth, string $from): string
     {
         if ($depth > 6) {
             return '<div class="col"><div class="node dim">deeper branches omitted</div></div>';
@@ -162,7 +162,7 @@ final class TraceHtmlRenderer
 
         $nodes = '';
         foreach ($byCid[$cid] ?? [] as $item) {
-            $nodes .= $this->node($item, $total);
+            $nodes .= $this->node($item, $total, $from);
 
             // A branch hangs off the spawn that created it, which is the point in
             // this column where the work left for another coroutine.
@@ -173,7 +173,7 @@ final class TraceHtmlRenderer
                     $children[$cid] = $kids;
                     $nodes .= '<div class="branch">'
                         . '<div class="branch-line" title="spawned coroutine ' . $kid . '"></div>'
-                        . $this->column($kid, $byCid, $children, $total, $depth + 1)
+                        . $this->column($kid, $byCid, $children, $total, $depth + 1, $from)
                         . '</div>';
                 }
             }
@@ -214,16 +214,17 @@ final class TraceHtmlRenderer
      *
      * @param array<string, mixed> $item
      */
-    private function node(array $item, float $total): string
+    private function node(array $item, float $total, string $from): string
     {
         $name = $this->sv($item, 'name');
         $durRaw = $item['durationMs'] ?? null;
         $dur = is_float($durRaw) || is_int($durRaw) ? (float) $durRaw : null;
         $isMark = ($item['kind'] ?? '') === 'mark';
         $share = $dur !== null ? $this->pct($dur, $total) : 0.0;
+        $context = (array) ($item['context'] ?? []);
 
         $detail = [];
-        foreach ((array) ($item['context'] ?? []) as $k => $v) {
+        foreach ($context as $k => $v) {
             if ($k === 'marker' || $v === null || $v === '' || $v === false) {
                 continue;
             }
@@ -234,19 +235,168 @@ final class TraceHtmlRenderer
         // every step is read once and never again.
         $tip = $detail === [] ? $name : $name . "\n" . implode("\n", $detail);
 
+        // A step that names a class becomes a link into the project graph. The
+        // trace says this class ran; the graph says what it is wired to, and that
+        // half is a property of the code, so it is resolved on the way out rather
+        // than frozen into the recording.
+        $class = $this->classIn($context);
+        $tag = $class === null ? 'div' : 'a';
+        $href = $class === null ? '' : sprintf(
+            ' href="/__trace/node?class=%s&amp;from=%s"',
+            rawurlencode($class),
+            rawurlencode($from),
+        );
+
+        if ($class !== null) {
+            $tip .= "\n\nClick to open " . $this->shortClass($class) . ' in the project graph';
+        }
+
         return sprintf(
-            '<div class="node%s" style="--hue:%d" title="%s">
+            '<%s class="node%s%s" style="--hue:%d" title="%s"%s>
                <span class="nname">%s</span>
                <span class="nbar"><i style="width:%s%%"></i></span>
                <span class="ndur">%s</span>
-             </div>',
+             </%s>',
+            $tag,
             $isMark ? ' mark' : '',
+            $class === null ? '' : ' linked',
             $this->hue($name),
             $this->e($tip),
+            $href,
             $this->e($name),
             $this->num($share),
             $dur === null ? ($isMark ? '' : '<span class="warn">open</span>') : $this->ms($dur) . ' ms',
+            $tag,
         );
+    }
+
+    /**
+     * The class a step points at, if it named one.
+     *
+     * Matched on shape rather than against a list of context keys, so a span
+     * added later — a new gate, a new pipeline phase — is linkable the day it is
+     * recorded instead of the day someone remembers to extend a list here.
+     *
+     * @param array<mixed, mixed> $context
+     */
+    private function classIn(array $context): ?string
+    {
+        $preferred = ['handler', 'payload', 'resource', 'gate'];
+
+        foreach ($preferred as $key) {
+            $value = $context[$key] ?? null;
+            if (is_string($value) && $this->looksLikeClass($value)) {
+                return $value;
+            }
+        }
+
+        foreach ($context as $value) {
+            if (is_string($value) && $this->looksLikeClass($value)) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function looksLikeClass(string $value): bool
+    {
+        return str_contains($value, '\\')
+            && preg_match('/^[A-Za-z_\x80-\xff][\w\x80-\xff]*(\\\\[A-Za-z_\x80-\xff][\w\x80-\xff]*)+$/', $value) === 1;
+    }
+
+    /**
+     * One class as the graph knows it: what it is, and what it is wired to.
+     *
+     * The trace answers "what ran". This answers "why that, and what else touches
+     * it" — the structural half, which lives in the graph and not in the
+     * recording.
+     *
+     * @param array{
+     *     fqcn: string, name: string, type: string, module: string,
+     *     file: string, line: int,
+     *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
+     *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
+     * }|null $node
+     */
+    public function renderNode(string $requested, ?array $node, string $from, bool $graphAvailable): string
+    {
+        $back = $from !== ''
+            ? '<a class="back" href="/__trace?file=' . rawurlencode($from) . '">&larr; back to the trace</a>'
+            : '<a class="back" href="/__trace">&larr; all traces</a>';
+
+        if ($node === null) {
+            return $this->page('Not in the graph', $back . $this->missingNode($requested, $graphAvailable));
+        }
+
+        $head = sprintf(
+            '<div class="head">%s
+               <h1>%s <span class="kind">%s</span></h1>
+               <div class="meta"><code>%s</code></div>
+               <div class="meta dim">%s &middot; %s:%d</div>
+             </div>',
+            $back,
+            $this->e($node['name']),
+            $this->e($node['type']),
+            $this->e($node['fqcn']),
+            $this->e($node['module'] !== '' ? $node['module'] : 'no module'),
+            $this->e($node['file']),
+            $node['line'],
+        );
+
+        // Outgoing first: "what this reaches for" is the question a reader arrives
+        // with, having just watched it run.
+        return $this->page(
+            $node['name'],
+            $head
+            . $this->edges('Reaches', $node['out'], $from, 'to')
+            . $this->edges('Reached by', $node['in'], $from, 'from'),
+        );
+    }
+
+    /**
+     * @param list<array{kind: string, fqcn: string, name: string, type: string}> $edges
+     */
+    private function edges(string $title, array $edges, string $from, string $direction): string
+    {
+        if ($edges === []) {
+            return '<h2>' . $this->e($title) . '</h2><p class="dim">No edges.</p>';
+        }
+
+        $rows = '';
+        foreach ($edges as $edge) {
+            $rows .= sprintf(
+                '<a class="erow" href="/__trace/node?class=%s&amp;from=%s">
+                   <span class="ekind">%s</span>
+                   <span class="ename">%s</span>
+                   <span class="etype">%s</span>
+                 </a>',
+                rawurlencode($edge['fqcn']),
+                rawurlencode($from),
+                $this->e(str_replace('_', ' ', $edge['kind'])),
+                $this->e($edge['name']),
+                $this->e($edge['type']),
+            );
+        }
+
+        return '<h2>' . $this->e($title) . ' <span class="dim">' . count($edges) . '</span></h2>'
+            . '<div class="edges" data-direction="' . $this->e($direction) . '">' . $rows . '</div>';
+    }
+
+    private function missingNode(string $requested, bool $graphAvailable): string
+    {
+        $what = $requested === ''
+            ? '<p>No class was given.</p>'
+            : '<p><code>' . $this->e($requested) . '</code> is not in the project graph.</p>';
+
+        $why = $graphAvailable
+            ? '<p class="dim">The graph is built but does not know this class — it may live outside the
+                 scanned tree, or the graph may predate it. Rebuild with
+                 <code>bin/semitexa ai:review-graph:generate</code>.</p>'
+            : '<p class="dim">No project graph was found. Build one with
+                 <code>bin/semitexa ai:review-graph:generate</code>, then reload.</p>';
+
+        return '<div class="empty"><h1>Not in the graph</h1>' . $what . $why . '</div>';
     }
 
     /**
@@ -354,6 +504,11 @@ code{font-family:var(--mono);font-size:12.5px}
   background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 12%,transparent);
   border-left:3px solid hsl(var(--hue) 70% 55%)}
 .node:hover{background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 22%,transparent)}
+/* A step that names a class goes somewhere; one that does not must not pretend to. */
+a.node{text-decoration:none;color:inherit;cursor:pointer}
+a.node .nname{text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);
+  text-underline-offset:3px}
+a.node:hover .nname{text-decoration-color:currentColor}
 .node.mark{background:transparent;border-left-style:dashed;opacity:.75}
 .nname{font-family:var(--mono);font-size:12px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
@@ -385,6 +540,17 @@ code{font-family:var(--mono);font-size:12.5px}
 .nplus{background:color-mix(in srgb,var(--warn) 12%,transparent);
   border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);
   border-radius:8px;padding:10px 14px;font-size:13px;margin:0 0 12px}
+
+.kind{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--dim);
+  border:1px solid var(--line);border-radius:4px;padding:2px 6px;vertical-align:middle}
+.edges{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.erow{display:grid;grid-template-columns:150px 1fr auto;gap:14px;align-items:baseline;
+  padding:9px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.erow:last-child{border-bottom:0}
+.erow:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.ekind{font-family:var(--mono);font-size:11px;color:var(--accent)}
+.ename{font-family:var(--mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.etype{font-size:11px;color:var(--dim)}
 
 .empty{text-align:center;padding:80px 20px}
 .empty h1{margin-bottom:12px}
