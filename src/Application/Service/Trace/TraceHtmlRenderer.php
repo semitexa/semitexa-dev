@@ -91,11 +91,7 @@ final class TraceHtmlRenderer
             $this->e($meta['recordedAt']),
         );
 
-        $body .= '<div class="waterfall">' . $this->spans($trace['spans'], $total) . '</div>';
-
-        if ($trace['marks'] !== []) {
-            $body .= $this->marks($trace['marks']);
-        }
+        $body .= $this->flow($trace['spans'], $trace['marks'], $total);
 
         if ($trace['queries'] !== []) {
             $body .= $this->queries($trace['queries'], $total);
@@ -105,71 +101,152 @@ final class TraceHtmlRenderer
     }
 
     /**
-     * @param list<array{name: string, depth: int, startMs: float, durationMs: float|null, context: array<string, mixed>}> $spans
+     * The flow: sequential steps stack downward, concurrent branches sit side by
+     * side.
+     *
+     * Concurrency is read off coroutine ids, not off overlapping clocks. Spans
+     * sharing a cid ran one after another; a span on a different cid whose parent
+     * is the current one is a branch. Timings that merely overlap prove nothing —
+     * two spans can overlap on the clock and still be the same coroutine
+     * suspending, which is sequential.
+     *
+     * A spawn is recorded as a mark, not a span: it returns immediately and the
+     * work happens elsewhere. So a branch attaches to the spawn point rather than
+     * nesting inside an enclosing span.
+     *
+     * @param list<array<string, mixed>> $spans
+     * @param list<array<string, mixed>> $marks
      */
-    private function spans(array $spans, float $total): string
+    private function flow(array $spans, array $marks, float $total): string
     {
-        $out = '';
+        $byCid = [];
         foreach ($spans as $s) {
-            $dur = $s['durationMs'];
-            $unclosed = $dur === null;
-            $width = $unclosed ? 100.0 - $this->pct($s['startMs'], $total) : $this->pct($dur, $total);
-            $share = $unclosed ? null : ($dur / $total) * 100;
+            $byCid[$this->iv($s, 'cid')][] = ['kind' => 'span'] + $s;
+        }
+        foreach ($marks as $m) {
+            $byCid[$this->iv($m, 'cid')][] = ['kind' => 'mark', 'startMs' => $this->fv($m, 'atMs'), 'durationMs' => null] + $m;
+        }
+        foreach ($byCid as &$items) {
+            usort($items, fn (array $a, array $b): int => $this->fv($a, 'startMs') <=> $this->fv($b, 'startMs'));
+        }
+        unset($items);
 
-            $detail = [];
-            foreach ($s['context'] as $k => $v) {
-                if ($k === 'marker' || $v === null || $v === '') {
-                    continue;
-                }
-                $detail[] = $this->e($k) . '=' . '<b>' . $this->e($this->shortClass((string) $this->stringify($v))) . '</b>';
-            }
-
-            $out .= sprintf(
-                '<div class="span%s" style="--indent:%dpx;--hue:%d">
-                   <div class="label" title="%s">%s</div>
-                   <div class="track">
-                     <div class="bar" style="left:%s%%;width:%s%%"></div>
-                   </div>
-                   <div class="dur">%s</div>
-                   <div class="share">%s</div>
-                   <div class="ctx">%s</div>
-                 </div>',
-                $unclosed ? ' unclosed' : '',
-                $s['depth'] * 14,
-                $this->hue($s['name']),
-                $this->e($s['name']),
-                $this->e($s['name']),
-                $this->num($this->pct($s['startMs'], $total)),
-                $this->num(max($width, 0.15)),
-                $unclosed ? '<span class="warn">never closed</span>' : $this->ms($dur) . ' ms',
-                $share === null ? '' : $this->num($share) . '%',
-                implode(' &middot; ', $detail),
-            );
+        $rootCid = $spans !== [] ? $this->iv($spans[0], 'cid') : array_key_first($byCid);
+        if ($rootCid === null) {
+            return '<p class="dim">Nothing recorded.</p>';
         }
 
-        return $out;
+        $children = [];
+        foreach ($byCid as $cid => $items) {
+            $parent = $this->iv($items[0], 'pcid');
+            if ($cid !== $rootCid) {
+                $children[$parent][] = $cid;
+            }
+        }
+
+        return '<div class="flow">' . $this->column($rootCid, $byCid, $children, $total, 0) . '</div>';
     }
 
     /**
-     * @param list<array{name: string, atMs: float, context: array<string, mixed>}> $marks
+     * One coroutine as a vertical column, with any coroutines it spawned rendered
+     * as columns beside it.
+     *
+     * @param array<int, list<array<string, mixed>>> $byCid
+     * @param array<int, list<int>>                  $children
      */
-    private function marks(array $marks): string
+    private function column(int $cid, array $byCid, array $children, float $total, int $depth): string
     {
-        $items = '';
-        foreach ($marks as $m) {
-            $ctx = [];
-            foreach ($m['context'] as $k => $v) {
-                $ctx[] = $this->e($k) . '=' . $this->e((string) $this->stringify($v));
-            }
-            $items .= sprintf(
-                '<li><span class="at">%s ms</span> <code>%s</code> <span class="dim">%s</span></li>',
-                $this->ms($m['atMs']),
-                $this->e($m['name']),
-                implode(' ', $ctx),
-            );
+        if ($depth > 6) {
+            return '<div class="col"><div class="node dim">deeper branches omitted</div></div>';
         }
 
-        return '<section><h2>Decisions</h2><ul class="marks">' . $items . '</ul></section>';
+        $nodes = '';
+        foreach ($byCid[$cid] ?? [] as $item) {
+            $nodes .= $this->node($item, $total);
+
+            // A branch hangs off the spawn that created it, which is the point in
+            // this column where the work left for another coroutine.
+            if (str_contains($this->sv($item, 'name'), 'spawn')) {
+                $kids = $children[$cid] ?? [];
+                if ($kids !== []) {
+                    $kid = array_shift($kids);
+                    $children[$cid] = $kids;
+                    $nodes .= '<div class="branch">'
+                        . '<div class="branch-line" title="spawned coroutine ' . $kid . '"></div>'
+                        . $this->column($kid, $byCid, $children, $total, $depth + 1)
+                        . '</div>';
+                }
+            }
+        }
+
+        return '<div class="col" data-cid="' . $cid . '"><div class="col-head">coroutine ' . $cid . '</div>' . $nodes . '</div>';
+    }
+
+    /** @param array<string, mixed> $a */
+    private function sv(array $a, string $k): string
+    {
+        $v = $a[$k] ?? null;
+
+        return is_string($v) ? $v : '';
+    }
+
+    /** @param array<string, mixed> $a */
+    private function iv(array $a, string $k): int
+    {
+        $v = $a[$k] ?? null;
+
+        return is_int($v) ? $v : 0;
+    }
+
+    /** @param array<string, mixed> $a */
+    private function fv(array $a, string $k): float
+    {
+        $v = $a[$k] ?? null;
+
+        return is_float($v) || is_int($v) ? (float) $v : 0.0;
+    }
+
+    /**
+     * One step. Fixed height with the number beside it, plus a thin proportional
+     * indicator — height cannot carry duration here, because a step taking 96% of
+     * the request would be three screens tall and everything else an unreadable
+     * sliver.
+     *
+     * @param array<string, mixed> $item
+     */
+    private function node(array $item, float $total): string
+    {
+        $name = $this->sv($item, 'name');
+        $durRaw = $item['durationMs'] ?? null;
+        $dur = is_float($durRaw) || is_int($durRaw) ? (float) $durRaw : null;
+        $isMark = ($item['kind'] ?? '') === 'mark';
+        $share = $dur !== null ? $this->pct($dur, $total) : 0.0;
+
+        $detail = [];
+        foreach ((array) ($item['context'] ?? []) as $k => $v) {
+            if ($k === 'marker' || $v === null || $v === '' || $v === false) {
+                continue;
+            }
+            $detail[] = $k . ': ' . $this->shortClass((string) $this->stringify($v));
+        }
+
+        // Detail goes in the title, not on the page: six lines of small print under
+        // every step is read once and never again.
+        $tip = $detail === [] ? $name : $name . "\n" . implode("\n", $detail);
+
+        return sprintf(
+            '<div class="node%s" style="--hue:%d" title="%s">
+               <span class="nname">%s</span>
+               <span class="nbar"><i style="width:%s%%"></i></span>
+               <span class="ndur">%s</span>
+             </div>',
+            $isMark ? ' mark' : '',
+            $this->hue($name),
+            $this->e($tip),
+            $this->e($name),
+            $this->num($share),
+            $dur === null ? ($isMark ? '' : '<span class="warn">open</span>') : $this->ms($dur) . ' ms',
+        );
     }
 
     /**
@@ -267,28 +344,29 @@ code{font-family:var(--mono);font-size:12.5px}
 .num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
 .when{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
 
-.waterfall{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:6px 0}
-.span{display:grid;
-  grid-template-columns:minmax(150px,210px) 1fr 82px 54px;
-  grid-template-areas:"label track dur share" "ctx ctx ctx ctx";
-  gap:0 12px;align-items:center;padding:7px 16px;border-bottom:1px solid transparent}
-.span:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
-.label{grid-area:label;padding-left:var(--indent);font-family:var(--mono);font-size:12.5px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.track{grid-area:track;position:relative;height:16px;border-radius:4px;
-  background:color-mix(in srgb,var(--line) 55%,transparent)}
-.bar{position:absolute;top:0;height:16px;border-radius:4px;
-  background:linear-gradient(90deg,
-    hsl(var(--hue) 70% 58%),
-    hsl(calc(var(--hue) + 18) 70% 50%));
-  box-shadow:0 0 0 1px hsl(var(--hue) 70% 40% / .35) inset}
-.dur{grid-area:dur;font-family:var(--mono);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
-.share{grid-area:share;font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
-.ctx{grid-area:ctx;font-size:11.5px;color:var(--dim);padding-left:calc(var(--indent) + 0px);
-  margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ctx b{color:var(--text);font-weight:500}
-.span.unclosed .bar{background:repeating-linear-gradient(45deg,
-  var(--danger),var(--danger) 6px,transparent 6px,transparent 12px)}
+.flow{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:4px 0 12px}
+.col{display:flex;flex-direction:column;gap:6px;min-width:270px;flex:0 0 auto;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px}
+.col-head{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+.node{display:grid;grid-template-columns:1fr 44px 74px;gap:10px;align-items:center;
+  padding:7px 10px;border-radius:7px;cursor:default;
+  background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 12%,transparent);
+  border-left:3px solid hsl(var(--hue) 70% 55%)}
+.node:hover{background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 22%,transparent)}
+.node.mark{background:transparent;border-left-style:dashed;opacity:.75}
+.nname{font-family:var(--mono);font-size:12px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.nbar{height:3px;border-radius:2px;background:color-mix(in srgb,var(--line) 70%,transparent);
+  overflow:hidden}
+.nbar i{display:block;height:3px;background:hsl(var(--hue) 70% 55%)}
+.ndur{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right;
+  font-variant-numeric:tabular-nums}
+/* A branch leaves the column sideways: that turn is the whole point of the shape. */
+.branch{display:flex;align-items:flex-start;margin:2px 0 2px 10px}
+.branch-line{width:26px;height:22px;margin-top:14px;
+  border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);
+  border-bottom-left-radius:8px;opacity:.55;flex:0 0 auto}
 .warn{color:var(--warn)}
 
 .marks{list-style:none;margin:0;padding:0;border:1px solid var(--line);

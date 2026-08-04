@@ -36,17 +36,17 @@ final class TraceReader
             }
 
             $events = $trace['events'];
-            $root = $this->firstEvent($events, 'request', 'begin');
-            $close = $this->firstEvent($events, 'request', 'end');
+            $root = $this->rootEvent($events, 'begin');
+            $close = $this->rootEvent($events, 'end');
             $summary = $this->firstEvent($events, 'orm.summary', 'mark');
 
             $out[] = [
                 'file' => basename($path),
-                'recordedAt' => is_string($trace['recordedAt'] ?? null) ? $trace['recordedAt'] : '',
-                'path' => (string) ($root['context']['path'] ?? '—'),
-                'method' => (string) ($root['context']['method'] ?? ''),
-                'totalMs' => (float) ($close['durationMs'] ?? 0.0),
-                'queries' => (int) ($summary['context']['queries'] ?? 0),
+                'recordedAt' => $this->str($trace, 'recordedAt'),
+                'path' => $this->str($this->arr($root, 'context'), 'path', '—'),
+                'method' => $this->str($this->arr($root, 'context'), 'method', $this->str($root, 'name') === 'sse' ? 'SSE' : ''),
+                'totalMs' => $this->float($close, 'durationMs'),
+                'queries' => $this->int($this->arr($summary, 'context'), 'queries'),
             ];
 
             if (count($out) >= $limit) {
@@ -62,8 +62,8 @@ final class TraceReader
      *
      * @return array{
      *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float},
-     *     spans: list<array{name: string, depth: int, startMs: float, durationMs: float|null, context: array<string, mixed>}>,
-     *     marks: list<array{name: string, atMs: float, context: array<string, mixed>}>,
+     *     spans: list<array<string, mixed>>,
+     *     marks: list<array<string, mixed>>,
      *     queries: list<array{sql: string, durationMs: float, params: int}>
      * }|null
      */
@@ -78,8 +78,8 @@ final class TraceReader
         }
 
         $events = $trace['events'];
-        $root = $this->firstEvent($events, 'request', 'begin');
-        $close = $this->firstEvent($events, 'request', 'end');
+        $root = $this->rootEvent($events, 'begin');
+        $close = $this->rootEvent($events, 'end');
 
         $spans = [];
         $marks = [];
@@ -88,15 +88,17 @@ final class TraceReader
         $open = [];
 
         foreach ($events as $e) {
-            $name = (string) ($e['name'] ?? '');
-            $type = (string) ($e['type'] ?? '');
+            $name = $this->str($e, 'name');
+            $type = $this->str($e, 'type');
 
             if ($type === 'begin') {
                 $open[$name] = [
                     'name' => $name,
-                    'depth' => (int) ($e['depth'] ?? 0),
-                    'startMs' => (float) ($e['atMs'] ?? 0.0),
-                    'context' => is_array($e['context'] ?? null) ? $e['context'] : [],
+                    'depth' => $this->int($e, 'depth'),
+                    'startMs' => $this->float($e, 'atMs'),
+                    'cid' => $this->int($e, 'cid'),
+                    'pcid' => $this->int($e, 'pcid'),
+                    'context' => $this->arr($e, 'context'),
                 ];
                 continue;
             }
@@ -106,31 +108,35 @@ final class TraceReader
                 unset($open[$name]);
                 $spans[] = [
                     'name' => $name,
-                    'depth' => $started['depth'] ?? (int) ($e['depth'] ?? 0),
-                    'startMs' => $started['startMs'] ?? (float) ($e['atMs'] ?? 0.0),
-                    'durationMs' => isset($e['durationMs']) ? (float) $e['durationMs'] : null,
+                    'depth' => $started['depth'] ?? $this->int($e, 'depth'),
+                    'startMs' => $started['startMs'] ?? $this->float($e, 'atMs'),
+                    'cid' => $started['cid'] ?? $this->int($e, 'cid'),
+                    'pcid' => $started['pcid'] ?? $this->int($e, 'pcid'),
+                    'durationMs' => isset($e['durationMs']) ? $this->float($e, 'durationMs') : null,
                     'context' => array_merge(
                         $started['context'] ?? [],
-                        is_array($e['context'] ?? null) ? $e['context'] : [],
+                        $this->arr($e, 'context'),
                     ),
                 ];
                 continue;
             }
 
             if ($type === 'query') {
-                $ctx = is_array($e['context'] ?? null) ? $e['context'] : [];
+                $ctx = $this->arr($e, 'context');
                 $queries[] = [
-                    'sql' => (string) ($ctx['sql'] ?? ''),
-                    'durationMs' => (float) ($e['durationMs'] ?? 0.0),
-                    'params' => (int) ($ctx['params'] ?? 0),
+                    'sql' => $this->str($ctx, 'sql'),
+                    'durationMs' => $this->float($e, 'durationMs'),
+                    'params' => $this->int($ctx, 'params'),
                 ];
                 continue;
             }
 
             $marks[] = [
                 'name' => $name,
-                'atMs' => (float) ($e['atMs'] ?? 0.0),
-                'context' => is_array($e['context'] ?? null) ? $e['context'] : [],
+                'atMs' => $this->float($e, 'atMs'),
+                'cid' => $this->int($e, 'cid'),
+                'pcid' => $this->int($e, 'pcid'),
+                'context' => $this->arr($e, 'context'),
             ];
         }
 
@@ -145,16 +151,55 @@ final class TraceReader
         return [
             'meta' => [
                 'file' => basename($file),
-                'recordedAt' => is_string($trace['recordedAt'] ?? null) ? $trace['recordedAt'] : '',
-                'path' => (string) ($root['context']['path'] ?? '—'),
-                'method' => (string) ($root['context']['method'] ?? ''),
-                'route' => (string) ($root['context']['route'] ?? ''),
-                'totalMs' => (float) ($close['durationMs'] ?? 0.0),
+                'recordedAt' => $this->str($trace, 'recordedAt'),
+                'path' => $this->str($this->arr($root, 'context'), 'path', '—'),
+                'method' => $this->str($this->arr($root, 'context'), 'method'),
+                'route' => $this->str($this->arr($root, 'context'), 'route'),
+                'totalMs' => $this->float($close, 'durationMs'),
             ],
             'spans' => $spans,
             'marks' => $marks,
             'queries' => $queries,
         ];
+    }
+
+    /** @param array<string, mixed> $a */
+    private function str(array $a, string $k, string $default = ''): string
+    {
+        $v = $a[$k] ?? null;
+
+        return is_string($v) ? $v : $default;
+    }
+
+    /** @param array<string, mixed> $a */
+    private function int(array $a, string $k): int
+    {
+        $v = $a[$k] ?? null;
+
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
+    }
+
+    /** @param array<string, mixed> $a */
+    private function float(array $a, string $k): float
+    {
+        $v = $a[$k] ?? null;
+
+        return is_float($v) || is_int($v) ? (float) $v : (is_numeric($v) ? (float) $v : 0.0);
+    }
+
+    /**
+     * @param  array<string, mixed> $a
+     * @return array<string, mixed>
+     */
+    private function arr(array $a, string $k): array
+    {
+        $v = $a[$k] ?? null;
+        if (!is_array($v)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $v */
+        return $v;
     }
 
     public function isEnabled(): bool
@@ -177,7 +222,7 @@ final class TraceReader
         $files = glob($this->dir() . '/*.json') ?: [];
         rsort($files);
 
-        return array_values($files);
+        return $files;
     }
 
     /**
@@ -201,6 +246,26 @@ final class TraceReader
 
         /** @var array{recordedAt?: mixed, events: list<array<string, mixed>>} $data */
         return $data;
+    }
+
+    /**
+     * The span that opened the trace. Two names can: a page request and an SSE
+     * connection, which is its own trace rather than a continuation of the page
+     * that minted its deferred id.
+     *
+     * @param  list<array<string, mixed>> $events
+     * @return array<string, mixed>
+     */
+    private function rootEvent(array $events, string $type): array
+    {
+        foreach (['request', 'sse'] as $name) {
+            $found = $this->firstEvent($events, $name, $type);
+            if ($found !== []) {
+                return $found;
+            }
+        }
+
+        return [];
     }
 
     /**

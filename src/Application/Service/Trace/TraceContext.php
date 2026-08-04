@@ -48,7 +48,7 @@ final class TraceContext
         }
 
         $context = \Swoole\Coroutine::getContext();
-        if ($context !== null) {
+        if ($context instanceof \ArrayObject) {
             $context[self::KEY] = $buffer;
         }
     }
@@ -67,9 +67,11 @@ final class TraceContext
 
         while ($cid > 0 && $hops < self::MAX_HOPS) {
             $context = \Swoole\Coroutine::getContext($cid);
-            $found = $context[self::KEY] ?? null;
-            if ($found instanceof TraceBuffer) {
-                return $found;
+            if ($context instanceof \ArrayObject) {
+                $found = $context[self::KEY] ?? null;
+                if ($found instanceof TraceBuffer) {
+                    return $found;
+                }
             }
 
             $cid = \Swoole\Coroutine::getPcid($cid);
@@ -88,7 +90,7 @@ final class TraceContext
         }
 
         $context = \Swoole\Coroutine::getContext();
-        if ($context !== null) {
+        if ($context instanceof \ArrayObject) {
             unset($context[self::KEY]);
         }
     }
@@ -107,6 +109,7 @@ final class TraceContext
         }
 
         $cid = \Swoole\Coroutine::getCid();
+        $cid = is_int($cid) ? $cid : 0;
         $pcid = \Swoole\Coroutine::getPcid($cid);
 
         return ['cid' => $cid, 'pcid' => is_int($pcid) ? $pcid : 0];
