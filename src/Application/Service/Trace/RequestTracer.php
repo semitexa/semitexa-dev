@@ -50,7 +50,14 @@ final class RequestTracer implements RequestTracerInterface
     public function begin(string $name, array $context = []): void
     {
         try {
-            if ($name === 'request') {
+            // Both names can open a trace. 'sse' has to, because an SSE
+            // connection is served by SseKissHandler INSIDE RouteExecutor rather
+            // than intercepted ahead of routing - so when the surrounding page
+            // request carries no marker there is no buffer for the SSE span to
+            // land in, and tying the start to 'request' alone meant an SSE trace
+            // could never begin. Starting only when nothing is open keeps a
+            // marked page request as one trace instead of splitting it.
+            if (($name === 'request' || $name === 'sse') && TraceContext::current() === null) {
                 if (!$this->shouldRecord($context)) {
                     return;
                 }
@@ -58,6 +65,7 @@ final class RequestTracer implements RequestTracerInterface
                 TraceContext::begin(new TraceBuffer(
                     startedAt: (float) hrtime(true),
                     rootCid: TraceContext::identity()['cid'],
+                    rootSpan: $name,
                 ));
                 $this->orm()->enableQueryLog();
             }
@@ -93,7 +101,11 @@ final class RequestTracer implements RequestTracerInterface
                 : null;
             $buffer->push($event);
 
-            if ($name === 'request') {
+            // Flush when the span that OPENED this buffer closes, not on a fixed
+            // name: an SSE connection opened its own, a page request opened its
+            // own, and closing on 'request' alone would leave an SSE trace on
+            // disk-less forever.
+            if ($buffer->rootSpan === $name) {
                 $this->appendQueries($buffer);
                 $this->flush($buffer);
                 TraceContext::end();

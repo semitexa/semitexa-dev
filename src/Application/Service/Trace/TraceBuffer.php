@@ -38,6 +38,8 @@ final class TraceBuffer
     public function __construct(
         public readonly float $startedAt,
         public readonly int $rootCid,
+        /** Name of the span that opened this buffer; closing it writes the trace. */
+        public readonly string $rootSpan = 'request',
     ) {
     }
 
