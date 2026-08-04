@@ -42,7 +42,11 @@ fi
 # `rev-parse` rather than a test for a .git *directory*: in a linked worktree
 # .git is a regular file holding a gitdir pointer, so the directory test would
 # reject exactly the setup an agent gets when it works in an isolated worktree.
-if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+# Compared against "true", not just tested for success: in a bare repository
+# rev-parse prints "false" and exits 0, so a status-only check accepts it and the
+# failure surfaces later at `git add -A` instead of here.
+is_work_tree="$(git -C "$repo" rev-parse --is-inside-work-tree 2>/dev/null || printf 'false')"
+if [ "$is_work_tree" != "true" ]; then
     printf 'Not a git working tree: %s\n' "$repo" >&2
     exit 1
 fi
@@ -67,8 +71,22 @@ case "$branch" in
 esac
 
 author="$(shuf -n1 -e "${authors[@]}")"
-git -C "$repo" config user.name "$(printf '%s' "$author" | sed 's/ <.*//')"
-git -C "$repo" config user.email "$(printf '%s' "$author" | sed 's/.*<//;s/>//')"
+author_name="$(printf '%s' "$author" | sed 's/ <.*//')"
+author_email="$(printf '%s' "$author" | sed 's/.*<//;s/>//')"
+
+# Repository-local config is SHARED across linked worktrees, so two worktrees
+# staging at once would overwrite each other's identity and the commit could go
+# out under whichever name landed last. In a linked worktree the identity is
+# therefore written worktree-locally instead; extensions.worktreeConfig is the
+# switch git requires for that to take effect, and it is scoped to this repo.
+if [ -f "$repo/.git" ]; then
+    git -C "$repo" config extensions.worktreeConfig true
+    git -C "$repo" config --worktree user.name "$author_name"
+    git -C "$repo" config --worktree user.email "$author_email"
+else
+    git -C "$repo" config user.name "$author_name"
+    git -C "$repo" config user.email "$author_email"
+fi
 
 git -C "$repo" add -A
 

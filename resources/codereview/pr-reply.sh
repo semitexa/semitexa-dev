@@ -69,6 +69,21 @@ if [[ "${#POSITIONAL[@]}" -ne 4 ]]; then
     exit 1
 fi
 
+REPO="${POSITIONAL[0]}"
+PR="${POSITIONAL[1]}"
+COMMENT_ID="${POSITIONAL[2]}"
+
+# Caught here rather than as a confusing gh 404 three seconds later, which reads
+# like a missing comment rather than a swapped argument.
+[[ "$PR" =~ ^[0-9]+$ ]] || { printf 'PR number must be numeric, got: %s\n' "$PR" >&2; exit 1; }
+[[ "$COMMENT_ID" =~ ^[0-9]+$ ]] || { printf 'Comment id must be numeric, got: %s\n' "$COMMENT_ID" >&2; exit 1; }
+
+case "$KIND" in
+    line|review|issue) ;;
+    *) printf 'Unknown --kind: %s (expected: line, review, issue)\n' "$KIND" >&2; exit 1 ;;
+esac
+BODY="${POSITIONAL[3]}"
+
 # Throttle before posting.
 #
 # GitHub answers a burst of replies with secondary rate limits, and the caller is
@@ -86,21 +101,6 @@ if [[ "$MIN_DELAY_SECONDS" =~ ^[0-9]+$ ]] && [[ "$MAX_DELAY_SECONDS" =~ ^[0-9]+$
         sleep "$DELAY_SECONDS"
     fi
 fi
-
-REPO="${POSITIONAL[0]}"
-PR="${POSITIONAL[1]}"
-COMMENT_ID="${POSITIONAL[2]}"
-
-# Caught here rather than as a confusing gh 404 three seconds later, which reads
-# like a missing comment rather than a swapped argument.
-[[ "$PR" =~ ^[0-9]+$ ]] || { printf 'PR number must be numeric, got: %s\n' "$PR" >&2; exit 1; }
-[[ "$COMMENT_ID" =~ ^[0-9]+$ ]] || { printf 'Comment id must be numeric, got: %s\n' "$COMMENT_ID" >&2; exit 1; }
-
-case "$KIND" in
-    line|review|issue) ;;
-    *) printf 'Unknown --kind: %s (expected: line, review, issue)\n' "$KIND" >&2; exit 1 ;;
-esac
-BODY="${POSITIONAL[3]}"
 
 case "$KIND" in
     line)
@@ -123,9 +123,5 @@ $BODY" \
 
 $BODY" \
             --jq '{id: .id, body: .body, createdAt: .created_at, kind: "issue"}'
-        ;;
-    *)
-        echo "Unknown --kind: $KIND (expected: line, review, issue)" >&2
-        exit 1
         ;;
 esac

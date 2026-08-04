@@ -207,8 +207,12 @@ for dir in "$PACKAGES_DIR"/*/; do
             : > "$TMPDIR/diff.txt"
         fi
 
-        gh api "repos/$repo_slug/pulls/$pr_number/comments" --paginate 2>/dev/null \
-            | jq '[.[] | {
+        if ! gh api "repos/$repo_slug/pulls/$pr_number/comments" --paginate 2>"$TMPDIR/gh-err.txt" > "$TMPDIR/rc-raw.json"; then
+            printf 'ERROR: could not fetch review comments for %s#%s: %s\n' \
+                "$repo_slug" "$pr_number" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+            exit 1
+        fi
+        jq '[.[] | {
                 id,
                 user: .user.login,
                 body,
@@ -221,20 +225,28 @@ for dir in "$PACKAGES_DIR"/*/; do
                 commitId: .commit_id,
                 originalCommitId: .original_commit_id,
                 htmlUrl: .html_url
-            }]' > "$TMPDIR/rc.json" 2>/dev/null || echo '[]' > "$TMPDIR/rc.json"
+            }]' < "$TMPDIR/rc-raw.json" > "$TMPDIR/rc.json"
 
-        gh api "repos/$repo_slug/issues/$pr_number/comments" --paginate 2>/dev/null \
-            | jq '[.[] | {
+        if ! gh api "repos/$repo_slug/issues/$pr_number/comments" --paginate 2>"$TMPDIR/gh-err.txt" > "$TMPDIR/ic-raw.json"; then
+            printf 'ERROR: could not fetch issue comments for %s#%s: %s\n' \
+                "$repo_slug" "$pr_number" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+            exit 1
+        fi
+        jq '[.[] | {
                 id,
                 user: .user.login,
                 body,
                 createdAt: .created_at,
                 updatedAt: .updated_at,
                 htmlUrl: .html_url
-            }]' > "$TMPDIR/ic.json" 2>/dev/null || echo '[]' > "$TMPDIR/ic.json"
+            }]' < "$TMPDIR/ic-raw.json" > "$TMPDIR/ic.json"
 
-        gh api "repos/$repo_slug/pulls/$pr_number/reviews" --paginate 2>/dev/null \
-            | jq '[.[] | {
+        if ! gh api "repos/$repo_slug/pulls/$pr_number/reviews" --paginate 2>"$TMPDIR/gh-err.txt" > "$TMPDIR/rv-raw.json"; then
+            printf 'ERROR: could not fetch reviews for %s#%s: %s\n' \
+                "$repo_slug" "$pr_number" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+            exit 1
+        fi
+        jq '[.[] | {
                 id,
                 user: .user.login,
                 state,
@@ -242,7 +254,7 @@ for dir in "$PACKAGES_DIR"/*/; do
                 submittedAt: .submitted_at,
                 commitId: .commit_id,
                 htmlUrl: .html_url
-            }]' > "$TMPDIR/rv.json" 2>/dev/null || echo '[]' > "$TMPDIR/rv.json"
+            }]' < "$TMPDIR/rv-raw.json" > "$TMPDIR/rv.json"
 
         jq --rawfile diff "$TMPDIR/diff.txt" \
            --slurpfile rc "$TMPDIR/rc.json" \
