@@ -39,16 +39,10 @@ use Semitexa\Orm\OrmManager;
 #[SatisfiesServiceContract(of: RequestTracerInterface::class)]
 final class RequestTracer implements RequestTracerInterface
 {
-    /** @var list<array<string, mixed>> flat event log; nesting is rebuilt from depth */
-    private array $events = [];
-
-    private bool $recording = false;
-    private bool $failed = false;
-    private int $depth = 0;
-    private float $startedAt = 0.0;
-
-    /** @var array<string, float> open span name => start time in nanoseconds */
-    private array $open = [];
+    // No per-request state on this class. It is a single instance shared by the
+    // whole worker, so a concurrent untraced request would otherwise reset the
+    // recording flag and clear the events of a traced request running beside it.
+    // Everything lives in a TraceBuffer held in the coroutine context.
 
     #[InjectAsReadonly]
     protected OrmManager $orm;
@@ -57,85 +51,101 @@ final class RequestTracer implements RequestTracerInterface
     {
         try {
             if ($name === 'request') {
-                $this->recording = $this->shouldRecord($context);
-                $this->startedAt = (float) hrtime(true);
-                $this->events = [];
-                $this->depth = 0;
-                $this->open = [];
-
-                if ($this->recording) {
-                    // Enabled per traced request and dropped again at the end, so
-                    // the unbounded query log cannot keep growing in a worker that
-                    // lives for days.
-                    $this->orm()->enableQueryLog();
+                if (!$this->shouldRecord($context)) {
+                    return;
                 }
+
+                TraceContext::begin(new TraceBuffer(
+                    startedAt: (float) hrtime(true),
+                    rootCid: TraceContext::identity()['cid'],
+                ));
+                $this->orm()->enableQueryLog();
             }
 
-            if (!$this->recording || $this->failed) {
+            $buffer = TraceContext::current();
+            if ($buffer === null || $buffer->failed) {
                 return;
             }
 
-            $this->open[$name] = (float) hrtime(true);
-            $this->events[] = [
-                'type' => 'begin',
-                'name' => $name,
-                'depth' => $this->depth,
-                'atMs' => $this->sinceStartMs(),
-                'context' => $this->scrub($context),
-            ];
-            $this->depth++;
+            $buffer->open[$name] = (float) hrtime(true);
+            $buffer->events[] = $this->event('begin', $name, $buffer, $context);
+            $buffer->depth++;
         } catch (\Throwable) {
-            $this->failed = true;
+            $this->markFailed();
         }
     }
 
     public function end(string $name, array $context = []): void
     {
         try {
-            if (!$this->recording || $this->failed) {
+            $buffer = TraceContext::current();
+            if ($buffer === null || $buffer->failed) {
                 return;
             }
 
-            $this->depth = max(0, $this->depth - 1);
-            $started = $this->open[$name] ?? null;
-            unset($this->open[$name]);
+            $buffer->depth = max(0, $buffer->depth - 1);
+            $started = $buffer->open[$name] ?? null;
+            unset($buffer->open[$name]);
 
-            $this->events[] = [
-                'type' => 'end',
-                'name' => $name,
-                'depth' => $this->depth,
-                'atMs' => $this->sinceStartMs(),
-                'durationMs' => $started !== null
-                    ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
-                    : null,
-                'context' => $this->scrub($context),
-            ];
+            $event = $this->event('end', $name, $buffer, $context);
+            $event['durationMs'] = $started !== null
+                ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
+                : null;
+            $buffer->events[] = $event;
 
             if ($name === 'request') {
-                $this->appendQueries();
-                $this->flush();
+                $this->appendQueries($buffer);
+                $this->flush($buffer);
+                TraceContext::end();
             }
         } catch (\Throwable) {
-            $this->failed = true;
+            $this->markFailed();
         }
     }
 
     public function mark(string $name, array $context = []): void
     {
         try {
-            if (!$this->recording || $this->failed) {
+            $buffer = TraceContext::current();
+            if ($buffer === null || $buffer->failed) {
                 return;
             }
 
-            $this->events[] = [
-                'type' => 'mark',
-                'name' => $name,
-                'depth' => $this->depth,
-                'atMs' => $this->sinceStartMs(),
-                'context' => $this->scrub($context),
-            ];
+            $buffer->events[] = $this->event('mark', $name, $buffer, $context);
         } catch (\Throwable) {
-            $this->failed = true;
+            $this->markFailed();
+        }
+    }
+
+    /**
+     * Every event carries the coroutine it was recorded from, and that
+     * coroutine's parent. Two spans with different cids and overlapping times ran
+     * concurrently; the viewer can state that instead of inferring it from clocks
+     * that happen to overlap.
+     *
+     * @param  array<string, mixed> $context
+     * @return array<string, mixed>
+     */
+    private function event(string $type, string $name, TraceBuffer $buffer, array $context): array
+    {
+        $identity = TraceContext::identity();
+
+        return [
+            'type' => $type,
+            'name' => $name,
+            'depth' => $buffer->depth,
+            'atMs' => $buffer->sinceStartMs(),
+            'cid' => $identity['cid'],
+            'pcid' => $identity['pcid'],
+            'context' => $this->scrub($context),
+        ];
+    }
+
+    private function markFailed(): void
+    {
+        $buffer = TraceContext::current();
+        if ($buffer !== null) {
+            $buffer->failed = true;
         }
     }
 
@@ -201,7 +211,7 @@ final class RequestTracer implements RequestTracerInterface
      * same timeline as the spans - the point is seeing that forty of them
      * happened inside one handler, which a separate list would not show.
      */
-    private function appendQueries(): void
+    private function appendQueries(TraceBuffer $buffer): void
     {
         try {
             $queries = $this->orm()->drainQueryLog();
@@ -215,7 +225,7 @@ final class RequestTracer implements RequestTracerInterface
         $total = 0.0;
         foreach ($queries as $q) {
             $total += $q['timeMs'];
-            $this->events[] = [
+            $buffer->events[] = [
                 'type' => 'query',
                 'name' => 'orm.query',
                 'depth' => 1,
@@ -226,22 +236,17 @@ final class RequestTracer implements RequestTracerInterface
         }
 
         if ($queries !== []) {
-            $this->events[] = [
+            $buffer->events[] = [
                 'type' => 'mark',
                 'name' => 'orm.summary',
                 'depth' => 0,
-                'atMs' => $this->sinceStartMs(),
+                'atMs' => $buffer->sinceStartMs(),
                 'context' => ['queries' => count($queries), 'totalMs' => round($total, 3)],
             ];
         }
     }
 
-    private function sinceStartMs(): float
-    {
-        return round(((float) hrtime(true) - $this->startedAt) / 1_000_000, 3);
-    }
-
-    private function flush(): void
+    private function flush(TraceBuffer $buffer): void
     {
         // Env rather than a constructor parameter: container-managed services must
         // have a parameterless constructor, so an injected path is not available.
@@ -256,7 +261,7 @@ final class RequestTracer implements RequestTracerInterface
         }
 
         $payload = json_encode(
-            ['recordedAt' => date('c'), 'events' => $this->events],
+            ['recordedAt' => date('c'), 'events' => $buffer->events],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         );
 
@@ -273,7 +278,5 @@ final class RequestTracer implements RequestTracerInterface
             @rename($tmp, $final);
         }
 
-        $this->recording = false;
-        $this->events = [];
     }
 }

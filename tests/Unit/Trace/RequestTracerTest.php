@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Trace;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Trace\RequestTracer;
+use Semitexa\Dev\Application\Service\Trace\TraceContext;
 
 /**
  * The tracer sits on the request path of every request in every environment, so
@@ -22,6 +23,7 @@ final class RequestTracerTest extends TestCase
     {
         $this->root = sys_get_temp_dir() . '/semitexa-tracer-' . uniqid();
         mkdir($this->root, 0755, true);
+        TraceContext::resetFallback();
         putenv('APP_ENV=dev');
         putenv('SEMITEXA_TRACE_DIR=' . $this->root . '/var/trace');
         $this->marker = null;
@@ -29,6 +31,7 @@ final class RequestTracerTest extends TestCase
 
     protected function tearDown(): void
     {
+        TraceContext::resetFallback();
         putenv('APP_ENV');
         putenv('SEMITEXA_TRACE_DIR');
         $this->removeDir($this->root);
@@ -145,6 +148,52 @@ final class RequestTracerTest extends TestCase
         $tracer->end('request');
 
         self::assertCount(1, $this->traceFiles());
+    }
+
+    #[Test]
+    public function every_event_records_the_coroutine_it_came_from(): void
+    {
+        // Outside a coroutine both are 0; what matters is that the fields exist,
+        // because the flow diagram distinguishes concurrent from sequential work
+        // by them rather than by timings that happen to overlap.
+        $this->marker = '1';
+        $this->runRequest(new RequestTracer());
+
+        $events = json_decode((string) file_get_contents($this->traceFiles()[0]), true)['events'];
+        foreach ($events as $e) {
+            if ($e['type'] === 'query') {
+                continue;
+            }
+            self::assertArrayHasKey('cid', $e, $e['name'] . ' carries no cid');
+            self::assertArrayHasKey('pcid', $e, $e['name'] . ' carries no pcid');
+        }
+    }
+
+    #[Test]
+    public function an_untraced_request_cannot_clear_a_traced_one(): void
+    {
+        // The tracer is one instance for the whole worker. Before the buffer moved
+        // into the coroutine context, a concurrent untraced request calling
+        // begin('request') reset the flag and wiped the events of the traced
+        // request beside it.
+        $tracer = new RequestTracer();
+        $this->marker = '1';
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/traced', 'marker' => '1']);
+        $tracer->begin('pipeline');
+
+        $this->marker = null;
+        $untraced = new RequestTracer();
+        $untraced->begin('request', ['method' => 'GET', 'path' => '/other', 'marker' => null]);
+        $untraced->end('request');
+
+        $tracer->end('pipeline', ['handler' => 'H']);
+        $tracer->end('request');
+
+        $files = $this->traceFiles();
+        self::assertCount(1, $files, 'only the traced request writes a file');
+        $events = json_decode((string) file_get_contents($files[0]), true)['events'];
+        $names = array_column($events, 'name');
+        self::assertContains('pipeline', $names, 'the traced request kept its spans');
     }
 
     /**
