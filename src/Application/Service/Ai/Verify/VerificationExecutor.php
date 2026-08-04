@@ -522,7 +522,7 @@ final class VerificationExecutor
                 status:   VerificationResult::STATUS_FAIL,
                 exitCode: 1,
                 signal:   'skill_copies → the canonical skills-sync.sh is not executable, so the copies cannot be checked'
-                    . ' — restore it with: chmod +x packages/semitexa-dev/resources/codereview/skills-sync.sh',
+                    . ' — restore it with: chmod +x packages/semitexa-dev/resources/skills-sync.sh',
             );
         }
 
@@ -542,7 +542,7 @@ final class VerificationExecutor
             status:   VerificationResult::STATUS_FAIL,
             exitCode: $r['exit'],
             signal:   'skill_copies → ' . $this->compress($r['output'])
-                . ' — edit packages/semitexa-dev/resources/codereview/, then run bin/skills-sync.sh',
+                . ' — edit packages/semitexa-dev/resources/skills/, then run bin/skills-sync.sh',
         );
     }
 
@@ -563,7 +563,7 @@ final class VerificationExecutor
         // Existence only. Whether it is executable is runSkillCopies()'s call,
         // because a present-but-unrunnable script is a broken gate rather than an
         // absent one, and the two must not report the same way.
-        $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/codereview/skills-sync.sh';
+        $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/skills-sync.sh';
 
         return is_file($candidate) ? $candidate : null;
     }
