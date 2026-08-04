@@ -35,7 +35,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --kind)
-            KIND="${2:-}"
+            [ "$#" -ge 2 ] || { printf -- '--kind expects a value\n' >&2; exit 1; }
+            KIND="$2"
             shift 2
             ;;
         --help|-h)
@@ -56,8 +57,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "${#POSITIONAL[@]}" -lt 4 ]]; then
+# -ne, not -lt. An unquoted body is the easy mistake -
+#   pr-reply.sh semitexa/core 5 123 Fixed the bug
+# - and with -lt the extra words were silently discarded: the script posted the
+# single word "Fixed" and reported success.
+if [[ "${#POSITIONAL[@]}" -ne 4 ]]; then
     echo "Usage: pr-reply.sh <repo-slug> <pr-number> <comment-id> <body> [--kind=<kind>]" >&2
+    if [[ "${#POSITIONAL[@]}" -gt 4 ]]; then
+        echo "Got ${#POSITIONAL[@]} positional arguments; quote the reply body if it contains spaces." >&2
+    fi
     exit 1
 fi
 
@@ -82,6 +90,16 @@ fi
 REPO="${POSITIONAL[0]}"
 PR="${POSITIONAL[1]}"
 COMMENT_ID="${POSITIONAL[2]}"
+
+# Caught here rather than as a confusing gh 404 three seconds later, which reads
+# like a missing comment rather than a swapped argument.
+[[ "$PR" =~ ^[0-9]+$ ]] || { printf 'PR number must be numeric, got: %s\n' "$PR" >&2; exit 1; }
+[[ "$COMMENT_ID" =~ ^[0-9]+$ ]] || { printf 'Comment id must be numeric, got: %s\n' "$COMMENT_ID" >&2; exit 1; }
+
+case "$KIND" in
+    line|review|issue) ;;
+    *) printf 'Unknown --kind: %s (expected: line, review, issue)\n' "$KIND" >&2; exit 1 ;;
+esac
 BODY="${POSITIONAL[3]}"
 
 case "$KIND" in

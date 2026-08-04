@@ -343,12 +343,28 @@ class VerificationExecutorTest extends TestCase
         self::assertSame([], $runner->calls, 'nothing may be executed when the script is absent');
     }
 
-    private function writeSkillsSyncFixture(): void
+    public function test_skill_copies_fails_when_the_canonical_script_is_not_executable(): void
+    {
+        // Present but unrunnable must not read as "nothing to check" — that is a
+        // gate switching itself off while the run stays green.
+        $this->writeSkillsSyncFixture(executable: false);
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))
+            ->execute($this->planWith([$this->skillCopiesTarget()]));
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringContainsString('not executable', $results[0]->signal);
+        self::assertStringContainsString('chmod +x', $results[0]->signal);
+        self::assertSame([], $runner->calls, 'an unrunnable script must not be executed');
+    }
+
+    private function writeSkillsSyncFixture(bool $executable = true): void
     {
         $dir = $this->root . '/packages/semitexa-dev/resources/codereview';
         mkdir($dir, 0755, true);
         file_put_contents($dir . '/skills-sync.sh', "#!/usr/bin/env bash\nexit 0\n");
-        chmod($dir . '/skills-sync.sh', 0755);
+        chmod($dir . '/skills-sync.sh', $executable ? 0755 : 0644);
     }
 
     private function skillCopiesTarget(): VerificationTarget

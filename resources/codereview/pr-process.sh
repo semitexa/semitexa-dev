@@ -3,8 +3,12 @@
 set -euo pipefail
 
 usage() {
-    cat <<'EOF'
-Usage: bin/pr-process.sh [options]
+    # Unquoted heredoc so $0 expands: this script is fanned out to bin/ and to
+    # the agent skill directories, and a hard-coded bin/ path in the examples
+    # sends an operator running the copy straight to "No such file or directory".
+    self="$0"
+    cat <<EOF
+Usage: ${self} [options]
 
 Options:
   --repo <pkg-or-slug>     Limit to one repo (e.g. semitexa-core or semitexa/semitexa-core)
@@ -15,10 +19,10 @@ Options:
   --help                   Show this help
 
 Examples:
-  bin/pr-process.sh
-  bin/pr-process.sh --repo semitexa/semitexa-core
-  bin/pr-process.sh --ready-only
-  bin/pr-process.sh --repo semitexa-auth --pr 3 --json
+  ${self}
+  ${self} --repo semitexa/semitexa-core
+  ${self} --ready-only
+  ${self} --repo semitexa-auth --pr 3 --json
 EOF
 }
 
@@ -31,11 +35,16 @@ FAIL_ON_WARNINGS=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --repo)
-            REPO_FILTER="${2:-}"
+            # $# is checked before shift 2. With the flag last, ${2:-} hides the
+            # missing value and `shift 2` fails under `set -e`, so the script
+            # exits 1 having printed nothing at all.
+            [ "$#" -ge 2 ] || { printf -- '--repo expects a value\n' >&2; exit 1; }
+            REPO_FILTER="$2"
             shift 2
             ;;
         --pr)
-            PR_FILTER="${2:-}"
+            [ "$#" -ge 2 ] || { printf -- '--pr expects a value\n' >&2; exit 1; }
+            PR_FILTER="$2"
             shift 2
             ;;
         --ready-only)
@@ -67,7 +76,14 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 REVIEW_JSON="$TMPDIR/review.json"
-ARGS=(--compact --actionable-only --no-diff)
+# NOT --actionable-only. That flag drops every PR whose actionable count is
+# zero, upstream in pr-review.sh, which is precisely the shape the
+# all-line-comments-classified-as-noise warning exists to detect: inline
+# comments present, none surviving classification. Filtering there would
+# delete the evidence before this script could compute the warning, leaving a
+# guard that can never fire. The equivalent filter is applied below instead,
+# after warnings are evaluated, so the case stays visible.
+ARGS=(--compact --no-diff)
 if [[ -n "$REPO_FILTER" ]]; then
     ARGS+=(--repo "$REPO_FILTER")
 fi
@@ -121,6 +137,20 @@ jq '
         )
     )
 ' "$REVIEW_JSON" > "$ENRICHED_JSON"
+
+# Applied here rather than upstream, so warnings computed above survive into the
+# output. A PR with no actionable comments is still dropped from the queue - it
+# just gets the chance to be reported as suspicious first.
+jq '
+    .repos |= map(
+        .prs |= map(select(
+            (.summary.actionableComments // 0) > 0
+            or ((.process.warnings // []) | length) > 0
+        ))
+    )
+    | .repos |= map(select((.prs | length) > 0))
+' "$ENRICHED_JSON" > "$TMPDIR/enriched-actionable.json"
+mv "$TMPDIR/enriched-actionable.json" "$ENRICHED_JSON"
 
 if [[ "$READY_ONLY" -eq 1 ]]; then
     jq '
@@ -251,11 +281,10 @@ else
                         else
                             empty
                         end
-                    ),
-                    ""
+                    )
                 ]
                 | map(select(. != ""))
-                | join("\n")
+                | join("\n") + "\n" 
             )
         end
     ' "$ENRICHED_JSON"

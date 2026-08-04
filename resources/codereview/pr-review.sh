@@ -59,11 +59,15 @@ INCLUDE_DIFF=1
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --repo)
-            REPO_FILTER="${2:-}"
+            # $# checked before shift 2: with the flag last, ${2:-} hides the
+            # missing value and shift 2 fails under set -e, exiting 1 silently.
+            [ "$#" -ge 2 ] || { printf -- '--repo expects a value\n' >&2; exit 1; }
+            REPO_FILTER="$2"
             shift 2
             ;;
         --pr)
-            PR_FILTER="${2:-}"
+            [ "$#" -ge 2 ] || { printf -- '--pr expects a value\n' >&2; exit 1; }
+            PR_FILTER="$2"
             shift 2
             ;;
         --compact)
@@ -104,6 +108,16 @@ else
     echo "Expected packages/ or pakages/ directory under $ROOT_DIR" >&2
     exit 1
 fi
+# Checked once, up front. A missing binary would otherwise surface as an
+# unhelpful failure deep inside the per-repo loop, and before the gh-error
+# handling above existed it took the same silent path as "no open PRs".
+for _bin in gh jq; do
+    command -v "$_bin" >/dev/null 2>&1 || {
+        printf 'Required command not found: %s\n' "$_bin" >&2
+        exit 1
+    }
+done
+
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -145,12 +159,21 @@ for dir in "$PACKAGES_DIR"/*/; do
     # truncating it silently. A dropped PR does not look like an error here; it
     # looks like a repository with nothing left to review, which is the one
     # wrong answer this queue must never give.
-    prs_json="$(gh pr list \
+    # Failure and emptiness are kept apart on purpose. The old form was
+    # `2>/dev/null || echo '[]'`, which turned expired gh auth, a network error,
+    # lost repository access, an API rate limit and a missing gh binary all into
+    # "this repository has no open PRs" - the one wrong answer this queue must
+    # never give, and the same failure the --limit comment above is about.
+    if ! prs_json="$(gh pr list \
         --repo "$repo_slug" \
         --state open \
         --limit 200 \
         --json number,title,author,baseRefName,headRefName,url,createdAt,updatedAt,body,labels,reviewDecision \
-        2>/dev/null || echo '[]')"
+        2>"$TMPDIR/gh-err.txt")"; then
+        printf 'ERROR: could not list PRs for %s: %s\n' \
+            "$repo_slug" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+        exit 1
+    fi
 
     if [[ -n "$PR_FILTER" ]]; then
         prs_json="$(echo "$prs_json" | jq --argjson pr "$PR_FILTER" '[.[] | select(.number == $pr)]')"
@@ -190,7 +213,7 @@ for dir in "$PACKAGES_DIR"/*/; do
                 user: .user.login,
                 body,
                 path,
-                line: .original_line,
+                line: (.line // .original_line),
                 side,
                 createdAt: .created_at,
                 updatedAt: .updated_at,

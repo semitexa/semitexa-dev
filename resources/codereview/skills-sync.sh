@@ -117,13 +117,19 @@ synced=0
 process_pair() {
     local src="$1" dst="$2" label="$3"
 
-    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    # -x as well as content. A copy that lost its execute bit is byte-identical,
+    # so cmp alone calls it in sync while every attempt to run it fails with
+    # "Permission denied" - drift the check would report as health.
+    if [ -f "$dst" ] && [ -x "$dst" ] && cmp -s "$src" "$dst"; then
         [ "$MODE" = "list" ] && printf 'ok     %s\n' "$label"
         return 0
     fi
 
     local state="DRIFT"
     [ -f "$dst" ] || state="ABSENT"
+    if [ -f "$dst" ] && [ ! -x "$dst" ] && cmp -s "$src" "$dst"; then
+        state="NOEXEC"
+    fi
     drifted=$((drifted + 1))
 
     case "$MODE" in

@@ -508,7 +508,21 @@ final class VerificationExecutor
         if ($script === null) {
             return $this->skipped(
                 $target,
-                'skill_copies: skills-sync.sh not found next to this package; nothing to keep in sync',
+                'skill_copies: skills-sync.sh not found in this project; nothing to keep in sync',
+            );
+        }
+
+        // Present but not executable is a failure, never a skip. Treating it as
+        // "nothing to check" is how a gate switches itself off: a chmod that lost
+        // the execute bit would silently stop guarding the copies, and the run
+        // would still be green.
+        if (!is_executable($script)) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_FAIL,
+                exitCode: 1,
+                signal:   'skill_copies → the canonical skills-sync.sh is not executable, so the copies cannot be checked'
+                    . ' — restore it with: chmod +x packages/semitexa-dev/resources/codereview/skills-sync.sh',
             );
         }
 
@@ -546,9 +560,12 @@ final class VerificationExecutor
      */
     private function skillsSyncScript(): ?string
     {
+        // Existence only. Whether it is executable is runSkillCopies()'s call,
+        // because a present-but-unrunnable script is a broken gate rather than an
+        // absent one, and the two must not report the same way.
         $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/codereview/skills-sync.sh';
 
-        return is_file($candidate) && is_executable($candidate) ? $candidate : null;
+        return is_file($candidate) ? $candidate : null;
     }
 
     private function skipped(VerificationTarget $target, string $reason): VerificationResult

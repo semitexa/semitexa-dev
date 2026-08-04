@@ -39,8 +39,11 @@ fi
 # with no arguments, and `git -C ""` silently operated on the current working
 # directory — rewriting author config in whatever repo the caller happened to be
 # standing in.
-if [ ! -d "$repo/.git" ]; then
-    printf 'Not a git repository: %s\n' "$repo" >&2
+# `rev-parse` rather than a test for a .git *directory*: in a linked worktree
+# .git is a regular file holding a gitdir pointer, so the directory test would
+# reject exactly the setup an agent gets when it works in an isolated worktree.
+if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'Not a git working tree: %s\n' "$repo" >&2
     exit 1
 fi
 
