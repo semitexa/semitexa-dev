@@ -67,6 +67,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_LIVE_TENANCY     => $this->runLiveTenancy($target),
                 VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
                 VerificationTarget::TYPE_CAPABILITY_COVERAGE => $this->runCapabilityCoverage($target),
+                VerificationTarget::TYPE_SKILL_COPIES      => $this->runSkillCopies($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -485,6 +486,86 @@ final class VerificationExecutor
             }
         }
         return null;
+    }
+
+    /**
+     * Are the fanned-out copies of the codereview helpers still identical to the
+     * canonical ones?
+     *
+     * Delegates to the same `skills-sync.sh --check` an operator runs by hand, so
+     * there is one implementation of "are these in sync" rather than a PHP
+     * reimplementation that can disagree with the shell one.
+     *
+     * Skips rather than fails when the script is absent: a consumer project that
+     * installs semitexa/dev has the package but no agent skill directories to
+     * keep in step, and a gate that fails on nothing relevant is a gate somebody
+     * switches off.
+     */
+    private function runSkillCopies(VerificationTarget $target): VerificationResult
+    {
+        $script = $this->skillsSyncScript();
+
+        if ($script === null) {
+            return $this->skipped(
+                $target,
+                'skill_copies: skills-sync.sh not found in this project; nothing to keep in sync',
+            );
+        }
+
+        // Present but not executable is a failure, never a skip. Treating it as
+        // "nothing to check" is how a gate switches itself off: a chmod that lost
+        // the execute bit would silently stop guarding the copies, and the run
+        // would still be green.
+        if (!is_executable($script)) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_FAIL,
+                exitCode: 1,
+                signal:   'skill_copies → the canonical skills-sync.sh is not executable, so the copies cannot be checked'
+                    . ' — restore it with: chmod +x packages/semitexa-dev/resources/codereview/skills-sync.sh',
+            );
+        }
+
+        $r = $this->processRunner->run([$script, '--check'], $this->projectRoot);
+
+        if ($r['exit'] === 0) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'skill_copies → every copy matches the canonical scripts',
+            );
+        }
+
+        return new VerificationResult(
+            target:   $target,
+            status:   VerificationResult::STATUS_FAIL,
+            exitCode: $r['exit'],
+            signal:   'skill_copies → ' . $this->compress($r['output'])
+                . ' — edit packages/semitexa-dev/resources/codereview/, then run bin/skills-sync.sh',
+        );
+    }
+
+    /**
+     * Absolute path to the canonical skills-sync.sh, or null when this is not a
+     * checkout that has one.
+     *
+     * Resolved against the project being verified, NOT against __DIR__. Walking
+     * up from this file finds the script in a consumer install too — under
+     * vendor/semitexa/dev/ — and running it there is exactly wrong: the script
+     * needs a monorepo root (bin/semitexa plus packages/) and exits non-zero
+     * without one, so the target would fail on a project that has no agent skill
+     * directories to keep in sync at all. Anchoring on the monorepo path makes
+     * the absent case a skip, which is what runSkillCopies() promises.
+     */
+    private function skillsSyncScript(): ?string
+    {
+        // Existence only. Whether it is executable is runSkillCopies()'s call,
+        // because a present-but-unrunnable script is a broken gate rather than an
+        // absent one, and the two must not report the same way.
+        $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/codereview/skills-sync.sh';
+
+        return is_file($candidate) ? $candidate : null;
     }
 
     private function skipped(VerificationTarget $target, string $reason): VerificationResult
