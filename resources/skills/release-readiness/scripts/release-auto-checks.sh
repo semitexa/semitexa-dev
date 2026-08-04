@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/common.sh"
+
+require_cmd curl
+require_cmd python3
+
+ensure_release_domain_namespace
+
+SMOKE_HOST="${SMOKE_HOST:-$RLS_DEMO_HOST}"
+SMOKE_BASE_URL="${SMOKE_BASE_URL:-http://${SMOKE_HOST}}"
+
+curl_smoke() {
+    curl --resolve "${SMOKE_HOST}:80:127.0.0.1" -sS "$@"
+}
+
+check_page() {
+    local path="$1"
+    local marker="${2:-}"
+    local body_file
+    body_file="$(mktemp)"
+
+    local status
+    status="$(curl_smoke -H 'Accept: text/html' -o "$body_file" -w '%{http_code}' "${SMOKE_BASE_URL}${path}")"
+    if [ "$status" != "200" ]; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "Route check failed for ${path} (status ${status})"
+    fi
+
+    if ! grep -iFq '<!doctype html>' "$body_file"; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "Route check failed for ${path} (not html)"
+    fi
+
+    if grep -q '"authentication_required"' "$body_file"; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "Route check failed for ${path} (auth_required body)"
+    fi
+
+    if [ -n "$marker" ] && ! grep -Fq "$marker" "$body_file"; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "Route check failed for ${path} (missing marker: ${marker})"
+    fi
+
+    rm -f "$body_file"
+    ok "HTTP 200 ${path}"
+}
+
+check_json_page() {
+    local path="$1"
+    local marker="${2:-}"
+    local body_file
+    body_file="$(mktemp)"
+
+    local status
+    status="$(curl_smoke -H 'Accept: application/json' -o "$body_file" -w '%{http_code}' "${SMOKE_BASE_URL}${path}")"
+    if [ "$status" != "200" ]; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "JSON route check failed for ${path} (status ${status})"
+    fi
+
+    if [ -n "$marker" ] && ! grep -Fq "$marker" "$body_file"; then
+        cat "$body_file" >&2 || true
+        rm -f "$body_file"
+        fail "JSON route check failed for ${path} (missing marker: ${marker})"
+    fi
+
+    rm -f "$body_file"
+    ok "JSON 200 ${path}"
+}
+
+check_logs() {
+    local log_file
+    log_file="$(mktemp)"
+    compose logs --since 10m app >"$log_file" 2>&1 || true
+
+    if grep -Eq 'Fatal error|authentication_required' "$log_file"; then
+        cat "$log_file" >&2 || true
+        rm -f "$log_file"
+        fail "Recent app logs contain fatal/authentication errors"
+    fi
+
+    if grep -Eq 'denied payload=Semitexa\\Ssr\\Application\\Payload\\Request\\(SseKissPayload|SsrFallbackPayload|SsrLocaleSwitchPayload)' "$log_file"; then
+        cat "$log_file" >&2 || true
+        rm -f "$log_file"
+        fail "Recent app logs contain denied SSR helper payloads"
+    fi
+
+    if grep -Eq 'denied payload=Semitexa\\Modules\\(SsrDemo|OrmDemo)\\Application\\Payload\\Request\\' "$log_file"; then
+        cat "$log_file" >&2 || true
+        rm -f "$log_file"
+        fail "Recent app logs contain denied public demo payloads"
+    fi
+
+    ok "Recent app logs look clean"
+    rm -f "$log_file"
+}
+
+info "Running automated release checks..."
+
+(
+    cd "$RELEASE_ROOT"
+    "$RELEASE_ROOT/bin/semitexa" self-test
+)
+
+# Lightweight HTTP availability checks against the live Semitexa Demo on
+# demo.rls.semitexa.test. These are NOT the test suite — see bin/semitexa
+# test:run below for the real test gate. Scope is Semitexa Demo only: home
+# (/) and section routes (/demo/<section>); Site/OS/Platform and the legacy
+# framework Playground routes are intentionally out of release smoke scope.
+# Markers are picked from <title> / <h1> / CTA content stable across releases.
+check_page / "Get Started"
+check_page /demo/routing "Section Overview"
+check_page /demo/routing/basic "Basic Route"
+check_page /demo/di/readonly "Readonly Injection"
+check_page /demo/data/relations "Relations"
+check_page /demo/auth/session "Session Auth"
+check_page /demo/events/sync "Sync Events"
+check_page /demo/events/sse "SSE Stream"
+check_page /demo/rendering "One rendering story, not two"
+check_page /demo/rendering/components "Components"
+check_page /demo/rendering/seo "SEO"
+check_page /demo/rendering/deferred "Deferred Blocks"
+check_page /demo/platform/tenancy-resolution "Resolution Story"
+check_page /demo/api/graphql "GraphQL API"
+check_page /demo/cli/runtime-maintenance "Runtime Maintenance"
+check_page /demo/testing/payload-contracts "Payload Contract Testing"
+
+check_json_page '/demo/routing/basic?_format=json' '"featureTitle":"Basic Route"'
+check_json_page '/demo/rendering/components?_format=json' '"sourceCode"'
+
+check_logs
+
+# Real test gate, phase 1 — full PHPUnit via bin/semitexa test:run.
+# Positional targets deliberately make test:run SKIP its own E2E phase: the
+# clone's dev-module Playwright suite assumes the dev environment (Playground
+# tenants, dev domains) and is out of release smoke scope. Browser smoke is
+# skill-owned and runs separately below.
+(
+    cd "$RELEASE_ROOT"
+    _phpunit_paths=""
+    for _dir in packages/*/tests src/modules/*/tests; do
+        [ -d "$_dir" ] && _phpunit_paths="$_phpunit_paths $_dir"
+    done
+    # shellcheck disable=SC2086
+    "$RELEASE_ROOT/bin/semitexa" test:run $_phpunit_paths
+)
+
+# Real test gate, phase 2 — skill-owned browser smoke (Semitexa Demo only).
+# Deploys references/release-smoke.spec.ts + its dedicated Playwright config
+# into the clone and runs ONLY that spec via the e2e-runner service, so the
+# clone's own playwright.config testMatch (dev-module E2E) never applies.
+run_playwright_smoke() {
+    info "Browser smoke: Semitexa Demo via skill-owned release-smoke spec..."
+    local smoke_dir="$RELEASE_ROOT/var/release-smoke"
+    mkdir -p "$smoke_dir"
+    cp "$SCRIPT_DIR/../references/release-smoke.spec.ts" "$smoke_dir/"
+    cp "$SCRIPT_DIR/../references/release-smoke.playwright.config.ts" "$smoke_dir/"
+    (
+        cd "$RELEASE_ROOT"
+        docker compose \
+            -f docker-compose.yml -f docker-compose.mysql.yml \
+            -f docker-compose.redis.yml -f docker-compose.ollama.yml \
+            -f docker-compose.test.yml \
+            run --rm e2e-runner npx --no-install playwright test \
+            --config=var/release-smoke/release-smoke.playwright.config.ts
+    )
+    ok "Browser smoke passed (Semitexa Demo)"
+}
+
+run_playwright_smoke
+
+ok "Automated release checks passed"

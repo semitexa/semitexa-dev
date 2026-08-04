@@ -307,7 +307,7 @@ class VerificationExecutorTest extends TestCase
         self::assertStringContainsString('DRIFT', $results[0]->signal);
         // The operator has to be told where to edit, or the obvious move is to
         // fix the copy the message just named - which is exactly the mistake.
-        self::assertStringContainsString('packages/semitexa-dev/resources/codereview/', $results[0]->signal);
+        self::assertStringContainsString('packages/semitexa-dev/resources/skills/', $results[0]->signal);
         self::assertStringContainsString('bin/skills-sync.sh', $results[0]->signal);
     }
 
@@ -321,7 +321,7 @@ class VerificationExecutorTest extends TestCase
 
         self::assertCount(1, $runner->calls);
         self::assertSame(
-            $this->root . '/packages/semitexa-dev/resources/codereview/skills-sync.sh',
+            $this->root . '/packages/semitexa-dev/resources/skills-sync.sh',
             $runner->calls[0]['command'][0],
         );
         self::assertSame('--check', $runner->calls[0]['command'][1]);
@@ -361,7 +361,7 @@ class VerificationExecutorTest extends TestCase
 
     private function writeSkillsSyncFixture(bool $executable = true): void
     {
-        $dir = $this->root . '/packages/semitexa-dev/resources/codereview';
+        $dir = $this->root . '/packages/semitexa-dev/resources';
         mkdir($dir, 0755, true);
         file_put_contents($dir . '/skills-sync.sh', "#!/usr/bin/env bash\nexit 0\n");
         chmod($dir . '/skills-sync.sh', $executable ? 0755 : 0644);

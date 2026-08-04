@@ -175,7 +175,7 @@ final class VerificationPlanner
         $targets[] = new VerificationTarget(
             type: VerificationTarget::TYPE_SKILL_COPIES,
             id: 'skill_copies:project',
-            reason: 'the codereview helper scripts are duplicated into bin/ and the agent skill directories, none of which is version-controlled; an edited copy is silently lost on the next sync',
+            reason: 'whole agent skills are duplicated into bin/ and one directory per agent runtime, none of which is version-controlled; an edited copy is silently lost on the next sync',
             triggeredBy: [],
             filePath: null,
         );
