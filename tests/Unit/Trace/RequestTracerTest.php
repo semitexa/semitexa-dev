@@ -7,7 +7,9 @@ namespace Semitexa\Dev\Tests\Unit\Trace;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Trace\RequestTracer;
+use Semitexa\Dev\Application\Service\Trace\TraceBuffer;
 use Semitexa\Dev\Application\Service\Trace\TraceContext;
+use Semitexa\Orm\Adapter\QueryRecorder;
 
 /**
  * The tracer sits on the request path of every request in every environment, so
@@ -169,31 +171,126 @@ final class RequestTracerTest extends TestCase
         }
     }
 
+    /**
+     * Outside a coroutine the buffer lives in one process-local slot, so this
+     * cannot model two requests running at once - {@see RequestTracerCoroutineIsolationTest}
+     * does that with real coroutines. What it does pin is the property that made
+     * the old version of this test pass for the wrong reason: a second span
+     * carrying the root name is nested work, and its end must not flush the trace
+     * around it. Before that was counted, the untraced `end('request')` below
+     * closed the traced buffer early, and the assertion still passed because
+     * `begin:pipeline` had already been recorded.
+     */
     #[Test]
-    public function an_untraced_request_cannot_clear_a_traced_one(): void
+    public function a_nested_root_span_does_not_close_the_trace_around_it(): void
     {
-        // The tracer is one instance for the whole worker. Before the buffer moved
-        // into the coroutine context, a concurrent untraced request calling
-        // begin('request') reset the flag and wiped the events of the traced
-        // request beside it.
         $tracer = new RequestTracer();
         $this->marker = '1';
         $tracer->begin('request', ['method' => 'GET', 'path' => '/traced', 'marker' => '1']);
         $tracer->begin('pipeline');
 
-        $this->marker = null;
-        $untraced = new RequestTracer();
-        $untraced->begin('request', ['method' => 'GET', 'path' => '/other', 'marker' => null]);
-        $untraced->end('request');
+        $inner = new RequestTracer();
+        $inner->begin('request', ['method' => 'GET', 'path' => '/other', 'marker' => null]);
+        $inner->end('request');
 
         $tracer->end('pipeline', ['handler' => 'H']);
         $tracer->end('request');
 
         $files = $this->traceFiles();
-        self::assertCount(1, $files, 'only the traced request writes a file');
+        self::assertCount(1, $files, 'only one trace is written');
+
         $events = json_decode((string) file_get_contents($files[0]), true)['events'];
-        $names = array_column($events, 'name');
-        self::assertContains('pipeline', $names, 'the traced request kept its spans');
+        $ends = [];
+        foreach ($events as $i => $e) {
+            if ($e['type'] === 'end') {
+                $ends[$e['name']] = $i;
+            }
+        }
+
+        self::assertArrayHasKey('pipeline', $ends, 'the outer trace was cut short before its own span closed');
+        self::assertArrayHasKey('request', $ends);
+        self::assertLessThan(
+            $ends['request'],
+            $ends['pipeline'],
+            'end:pipeline must be recorded before end:request',
+        );
+    }
+
+    #[Test]
+    public function a_finished_trace_leaves_the_query_log_switched_off(): void
+    {
+        $this->marker = '1';
+
+        $this->runRequest(new RequestTracer());
+
+        self::assertFalse(QueryRecorder::isRecording(), 'the query log outlived the request that opened it');
+    }
+
+    /**
+     * The leak the review found: a buffer that fails mid-trace returned from
+     * `end()` before the query log was released, and the log then went on
+     * collecting every statement the worker ran for the rest of its life.
+     */
+    #[Test]
+    public function a_trace_that_fails_still_switches_the_query_log_off(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/x', 'marker' => '1']);
+        $buffer = TraceContext::current();
+        self::assertInstanceOf(TraceBuffer::class, $buffer);
+        $buffer->failed = true;
+        $tracer->end('request');
+
+        self::assertFalse(QueryRecorder::isRecording(), 'a failed trace left the query log enabled');
+        self::assertSame([], $this->traceFiles(), 'a failed trace must not be written');
+    }
+
+    /**
+     * Failure is a property of one recording, not of the shared tracer instance.
+     */
+    #[Test]
+    public function a_failed_trace_does_not_disable_the_next_one(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/first', 'marker' => '1']);
+        $buffer = TraceContext::current();
+        self::assertInstanceOf(TraceBuffer::class, $buffer);
+        $buffer->failed = true;
+        $tracer->end('request');
+
+        $this->runRequest($tracer);
+
+        $files = $this->traceFiles();
+        self::assertCount(1, $files, 'the request after a failed one was not recorded');
+    }
+
+    /**
+     * A long SSE connection can reach the event cap before its root span closes,
+     * and the dropped event is the one carrying the total. Without a total the
+     * viewer scales every bar against zero.
+     */
+    #[Test]
+    public function a_trace_that_hits_the_event_cap_still_reports_how_long_it_ran(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/long', 'marker' => '1']);
+        for ($i = 0; $i < TraceBuffer::MAX_EVENTS + 10; $i++) {
+            $tracer->mark('tick');
+        }
+        $tracer->end('request');
+
+        $trace = json_decode((string) file_get_contents($this->traceFiles()[0]), true);
+        self::assertTrue($trace['truncated'], 'the trace does not say it was cut off');
+        self::assertGreaterThan(0.0, $trace['totalMs'], 'elapsed time was lost with the dropped end event');
+
+        $names = array_column($trace['events'], 'name');
+        self::assertNotContains('request', array_slice($names, 1), 'the end event survived, so this is not the capped case');
     }
 
     /**

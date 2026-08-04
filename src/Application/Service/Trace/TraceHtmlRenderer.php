@@ -66,7 +66,7 @@ final class TraceHtmlRenderer
 
     /**
      * @param array{
-     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float},
+     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated?: bool},
      *     spans: list<array{name: string, depth: int, startMs: float, durationMs: float|null, context: array<string, mixed>}>,
      *     marks: list<array{name: string, atMs: float, context: array<string, mixed>}>,
      *     queries: list<array{sql: string, durationMs: float, params: int}>
@@ -90,6 +90,15 @@ final class TraceHtmlRenderer
             count($trace['queries']),
             $this->e($meta['recordedAt']),
         );
+
+        // Said before the flow, not after: a reader who scrolls a capped trace
+        // without knowing it is capped will conclude the request ended where the
+        // events stop.
+        if (($meta['truncated'] ?? false) === true) {
+            $body .= '<p class="nplus">This trace hit the ' . TraceBuffer::MAX_EVENTS
+                . '-event cap. Everything after that point is missing, and the total
+                   below is elapsed time rather than the closing span.</p>';
+        }
 
         $body .= $this->flow($trace['spans'], $trace['marks'], $total, $meta['file']);
 

@@ -75,9 +75,13 @@ final class RequestTracer implements RequestTracerInterface
                 return;
             }
 
-            $buffer->open[$name] = (float) hrtime(true);
+            if ($name === $buffer->rootSpan) {
+                $buffer->rootOpen++;
+            }
+
+            $cid = TraceContext::identity()['cid'];
             $buffer->push($this->event('begin', $name, $buffer, $context));
-            $buffer->depth++;
+            $buffer->enter($cid, $name, (float) hrtime(true));
         } catch (\Throwable) {
             $this->markFailed();
         }
@@ -87,27 +91,44 @@ final class RequestTracer implements RequestTracerInterface
     {
         try {
             $buffer = TraceContext::current();
-            if ($buffer === null || $buffer->failed) {
+            if ($buffer === null) {
                 return;
             }
 
-            $buffer->depth = max(0, $buffer->depth - 1);
-            $started = $buffer->open[$name] ?? null;
-            unset($buffer->open[$name]);
+            // Read before the failure check. A buffer that failed mid-trace still
+            // holds the ORM query log open, and a log left enabled goes on
+            // collecting every statement the worker runs from then on - so the
+            // root span has to finalize whether the recording is usable or not.
+            //
+            // Counted rather than matched on the name: only the OUTERMOST root
+            // span closing ends the trace, so a nested dispatch cannot cut it
+            // short halfway through.
+            $isRoot = false;
+            if ($name === $buffer->rootSpan) {
+                $buffer->rootOpen = max(0, $buffer->rootOpen - 1);
+                $isRoot = $buffer->rootOpen === 0;
+            }
 
-            $event = $this->event('end', $name, $buffer, $context);
-            $event['durationMs'] = $started !== null
-                ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
-                : null;
-            $buffer->push($event);
+            if (!$buffer->failed) {
+                $cid = TraceContext::identity()['cid'];
+                $started = $buffer->leave($cid, $name);
+
+                $event = $this->event('end', $name, $buffer, $context);
+                $event['durationMs'] = $started !== null
+                    ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
+                    : null;
+                $buffer->push($event);
+            }
 
             // Flush when the span that OPENED this buffer closes, not on a fixed
             // name: an SSE connection opened its own, a page request opened its
             // own, and closing on 'request' alone would leave an SSE trace on
             // disk-less forever.
-            if ($buffer->rootSpan === $name) {
+            if ($isRoot) {
                 $this->appendQueries($buffer);
-                $this->flush($buffer);
+                if (!$buffer->failed) {
+                    $this->flush($buffer);
+                }
                 TraceContext::end();
             }
         } catch (\Throwable) {
@@ -145,7 +166,7 @@ final class RequestTracer implements RequestTracerInterface
         return [
             'type' => $type,
             'name' => $name,
-            'depth' => $buffer->depth,
+            'depth' => $buffer->depth($identity['cid']),
             'atMs' => $buffer->sinceStartMs(),
             'cid' => $identity['cid'],
             'pcid' => $identity['pcid'],
@@ -237,11 +258,20 @@ final class RequestTracer implements RequestTracerInterface
     {
         try {
             $queries = $this->orm()->drainQueryLog();
-            $this->orm()->disableQueryLog();
         } catch (\Throwable) {
             // No database configured, or ORM not booted. Not an error here: a
             // trace without queries is still a useful trace.
             return;
+        } finally {
+            // finally, because a drain that throws would otherwise leave the log
+            // enabled for the life of the worker - an unbounded list of every
+            // statement it runs, which is the one thing this switch documents as
+            // unsafe to leave on.
+            try {
+                $this->orm()->disableQueryLog();
+            } catch (\Throwable) {
+                // Nothing further to try, and nowhere to report it from.
+            }
         }
 
         $total = 0.0;
@@ -286,6 +316,11 @@ final class RequestTracer implements RequestTracerInterface
             [
                 'recordedAt' => date('c'),
                 'truncated' => $buffer->truncated,
+                // Outside the capped list on purpose. A long SSE connection can
+                // reach the cap before its root span closes, and the end event
+                // that carries the total is then the one dropped - leaving the
+                // viewer to scale every bar against a total of zero.
+                'totalMs' => $buffer->sinceStartMs(),
                 'events' => $buffer->events,
             ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,

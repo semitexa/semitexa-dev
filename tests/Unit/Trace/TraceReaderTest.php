@@ -135,6 +135,79 @@ final class TraceReaderTest extends TestCase
     }
 
     /** @param list<array<string, mixed>> $events */
+    /**
+     * A capped trace loses its `end:request`, which is where the total normally
+     * comes from. The recorder writes elapsed time outside the capped list for
+     * that case, and both views have to fall back to it — otherwise the trace
+     * reads as 0 ms and every bar is scaled against nothing.
+     */
+    #[Test]
+    public function a_capped_trace_reports_elapsed_time_instead_of_zero(): void
+    {
+        $this->writeRaw('capped.json', [
+            'recordedAt' => '2026-08-04T05:00:00+00:00',
+            'truncated' => true,
+            'totalMs' => 812.5,
+            'events' => [
+                ['type' => 'begin', 'name' => 'sse', 'depth' => 0, 'atMs' => 0.0, 'cid' => 2, 'pcid' => 0, 'context' => ['sse' => true, 'path' => '/__semitexa_kiss']],
+                ['type' => 'mark', 'name' => 'tick', 'depth' => 1, 'atMs' => 5.0, 'cid' => 2, 'pcid' => 0, 'context' => []],
+            ],
+        ]);
+
+        $trace = (new TraceReader())->read('capped.json');
+
+        self::assertNotNull($trace);
+        self::assertSame(812.5, $trace['meta']['totalMs']);
+        self::assertTrue($trace['meta']['truncated']);
+
+        $listed = (new TraceReader())->list();
+        self::assertSame(812.5, $listed[0]['totalMs']);
+    }
+
+    /**
+     * Two coroutines inside one trace can open a span of the same name. Paired by
+     * name alone, the first begin matches the second end.
+     */
+    #[Test]
+    public function spans_are_paired_within_their_own_coroutine(): void
+    {
+        $this->write('coro.json', [
+            ['type' => 'begin', 'name' => 'sse', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+            ['type' => 'begin', 'name' => 'block', 'depth' => 1, 'atMs' => 1.0, 'cid' => 2, 'pcid' => 1, 'context' => ['which' => 'a']],
+            ['type' => 'begin', 'name' => 'block', 'depth' => 1, 'atMs' => 2.0, 'cid' => 3, 'pcid' => 1, 'context' => ['which' => 'b']],
+            ['type' => 'end', 'name' => 'block', 'depth' => 1, 'atMs' => 8.0, 'cid' => 2, 'pcid' => 1, 'durationMs' => 7.0, 'context' => []],
+            ['type' => 'end', 'name' => 'block', 'depth' => 1, 'atMs' => 9.0, 'cid' => 3, 'pcid' => 1, 'durationMs' => 7.0, 'context' => []],
+            ['type' => 'end', 'name' => 'sse', 'depth' => 0, 'atMs' => 10.0, 'cid' => 1, 'pcid' => 0, 'durationMs' => 10.0, 'context' => []],
+        ]);
+
+        $trace = (new TraceReader())->read('coro.json');
+        self::assertNotNull($trace);
+
+        $blocks = array_values(array_filter(
+            $trace['spans'],
+            static fn (array $s): bool => $s['name'] === 'block',
+        ));
+
+        self::assertCount(2, $blocks);
+        // Each end keeps the start time from its OWN coroutine's begin.
+        $byCid = [];
+        foreach ($blocks as $b) {
+            $byCid[$b['cid']] = $b;
+        }
+        self::assertSame(1.0, $byCid[2]['startMs']);
+        self::assertSame(2.0, $byCid[3]['startMs']);
+        self::assertSame('a', $byCid[2]['context']['which']);
+        self::assertSame('b', $byCid[3]['context']['which']);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function writeRaw(string $name, array $payload): void
+    {
+        file_put_contents($this->dir . '/' . $name, json_encode($payload));
+    }
+
     private function write(string $name, array $events): void
     {
         file_put_contents(

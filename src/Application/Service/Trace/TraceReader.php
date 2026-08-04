@@ -45,7 +45,7 @@ final class TraceReader
                 'recordedAt' => $this->str($trace, 'recordedAt'),
                 'path' => $this->str($this->arr($root, 'context'), 'path', '—'),
                 'method' => $this->str($this->arr($root, 'context'), 'method', $this->str($root, 'name') === 'sse' ? 'SSE' : ''),
-                'totalMs' => $this->float($close, 'durationMs'),
+                'totalMs' => $close !== [] ? $this->float($close, 'durationMs') : $this->float($trace, 'totalMs'),
                 'queries' => $this->int($this->arr($summary, 'context'), 'queries'),
             ];
 
@@ -61,7 +61,7 @@ final class TraceReader
      * One trace, resolved into spans, marks and queries.
      *
      * @return array{
-     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float},
+     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated: bool},
      *     spans: list<array<string, mixed>>,
      *     marks: list<array<string, mixed>>,
      *     queries: list<array{sql: string, durationMs: float, params: int}>
@@ -84,15 +84,19 @@ final class TraceReader
         $spans = [];
         $marks = [];
         $queries = [];
-        /** @var array<string, array{name: string, depth: int, startMs: float, context: array<string, mixed>}> $open */
+        /** @var array<string, array<string, mixed>> $open */
         $open = [];
 
         foreach ($events as $e) {
             $name = $this->str($e, 'name');
             $type = $this->str($e, 'type');
+            // Keyed by coroutine as well as name: an SSE trace runs several
+            // coroutines at once, and two of them opening `pipeline` would
+            // otherwise pair the first begin with the second end.
+            $key = $this->int($e, 'cid') . '|' . $name;
 
             if ($type === 'begin') {
-                $open[$name] = [
+                $open[$key] = [
                     'name' => $name,
                     'depth' => $this->int($e, 'depth'),
                     'startMs' => $this->float($e, 'atMs'),
@@ -104,8 +108,8 @@ final class TraceReader
             }
 
             if ($type === 'end') {
-                $started = $open[$name] ?? null;
-                unset($open[$name]);
+                $started = $open[$key] ?? null;
+                unset($open[$key]);
                 $spans[] = [
                     'name' => $name,
                     'depth' => $started['depth'] ?? $this->int($e, 'depth'),
@@ -114,7 +118,7 @@ final class TraceReader
                     'pcid' => $started['pcid'] ?? $this->int($e, 'pcid'),
                     'durationMs' => isset($e['durationMs']) ? $this->float($e, 'durationMs') : null,
                     'context' => array_merge(
-                        $started['context'] ?? [],
+                        $started !== null ? $this->arr($started, 'context') : [],
                         $this->arr($e, 'context'),
                     ),
                 ];
@@ -155,7 +159,11 @@ final class TraceReader
                 'path' => $this->str($this->arr($root, 'context'), 'path', '—'),
                 'method' => $this->str($this->arr($root, 'context'), 'method'),
                 'route' => $this->str($this->arr($root, 'context'), 'route'),
-                'totalMs' => $this->float($close, 'durationMs'),
+                // The end event carries the authoritative duration, but the event
+                // cap can drop it. The recorder writes elapsed time outside the
+                // capped list for exactly that case.
+                'totalMs' => $close !== [] ? $this->float($close, 'durationMs') : $this->float($trace, 'totalMs'),
+                'truncated' => ($trace['truncated'] ?? false) === true,
             ],
             'spans' => $spans,
             'marks' => $marks,
@@ -226,7 +234,7 @@ final class TraceReader
     }
 
     /**
-     * @return array{recordedAt?: mixed, events: list<array<string, mixed>>}|null
+     * @return array{recordedAt?: mixed, truncated?: mixed, totalMs?: mixed, events: list<array<string, mixed>>}|null
      */
     private function decode(string $path): ?array
     {
@@ -244,7 +252,7 @@ final class TraceReader
             return null;
         }
 
-        /** @var array{recordedAt?: mixed, events: list<array<string, mixed>>} $data */
+        /** @var array{recordedAt?: mixed, truncated?: mixed, totalMs?: mixed, events: list<array<string, mixed>>} $data */
         return $data;
     }
 
