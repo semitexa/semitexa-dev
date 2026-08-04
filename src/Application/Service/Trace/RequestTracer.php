@@ -68,7 +68,7 @@ final class RequestTracer implements RequestTracerInterface
             }
 
             $buffer->open[$name] = (float) hrtime(true);
-            $buffer->events[] = $this->event('begin', $name, $buffer, $context);
+            $buffer->push($this->event('begin', $name, $buffer, $context));
             $buffer->depth++;
         } catch (\Throwable) {
             $this->markFailed();
@@ -91,7 +91,7 @@ final class RequestTracer implements RequestTracerInterface
             $event['durationMs'] = $started !== null
                 ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
                 : null;
-            $buffer->events[] = $event;
+            $buffer->push($event);
 
             if ($name === 'request') {
                 $this->appendQueries($buffer);
@@ -111,7 +111,7 @@ final class RequestTracer implements RequestTracerInterface
                 return;
             }
 
-            $buffer->events[] = $this->event('mark', $name, $buffer, $context);
+            $buffer->push($this->event('mark', $name, $buffer, $context));
         } catch (\Throwable) {
             $this->markFailed();
         }
@@ -158,6 +158,16 @@ final class RequestTracer implements RequestTracerInterface
     {
         if (Environment::getEnvValue('APP_ENV') !== 'dev') {
             return false;
+        }
+
+        // SSE connections are traced without a marker. The browser builds that
+        // URL, so a query parameter can never be on it unless the page puts it
+        // there - and a developer cannot mark the connection they care about
+        // after the fact. There are few SSE connections in a dev session, so
+        // recording all of them costs little and is the only way this path is
+        // reachable at all.
+        if (($context['sse'] ?? false) === true) {
+            return true;
         }
 
         // The marker is handed in by RouteExecutor, which holds the Request.
@@ -225,24 +235,24 @@ final class RequestTracer implements RequestTracerInterface
         $total = 0.0;
         foreach ($queries as $q) {
             $total += $q['timeMs'];
-            $buffer->events[] = [
+            $buffer->push([
                 'type' => 'query',
                 'name' => 'orm.query',
                 'depth' => 1,
                 'atMs' => null,
                 'durationMs' => round($q['timeMs'], 3),
                 'context' => ['sql' => mb_substr($q['sql'], 0, 300), 'params' => count($q['params'])],
-            ];
+            ]);
         }
 
         if ($queries !== []) {
-            $buffer->events[] = [
+            $buffer->push([
                 'type' => 'mark',
                 'name' => 'orm.summary',
                 'depth' => 0,
                 'atMs' => $buffer->sinceStartMs(),
                 'context' => ['queries' => count($queries), 'totalMs' => round($total, 3)],
-            ];
+            ]);
         }
     }
 
@@ -261,7 +271,11 @@ final class RequestTracer implements RequestTracerInterface
         }
 
         $payload = json_encode(
-            ['recordedAt' => date('c'), 'events' => $buffer->events],
+            [
+                'recordedAt' => date('c'),
+                'truncated' => $buffer->truncated,
+                'events' => $buffer->events,
+            ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         );
 

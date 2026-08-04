@@ -15,8 +15,18 @@ namespace Semitexa\Dev\Application\Service\Trace;
  */
 final class TraceBuffer
 {
+    /**
+     * An SSE connection can stay open for hours and emit a frame per tick, so the
+     * buffer is capped. Past the cap it stops recording and says so, rather than
+     * growing until the worker runs out of memory - a diagnostic tool that can
+     * exhaust the process it observes is worse than one that stops early.
+     */
+    public const MAX_EVENTS = 5000;
+
     /** @var list<array<string, mixed>> */
     public array $events = [];
+
+    public bool $truncated = false;
 
     public int $depth = 0;
 
@@ -29,6 +39,20 @@ final class TraceBuffer
         public readonly float $startedAt,
         public readonly int $rootCid,
     ) {
+    }
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    public function push(array $event): void
+    {
+        if (count($this->events) >= self::MAX_EVENTS) {
+            $this->truncated = true;
+
+            return;
+        }
+
+        $this->events[] = $event;
     }
 
     public function sinceStartMs(): float
