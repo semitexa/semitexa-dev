@@ -985,14 +985,63 @@ function notifyPackagistForPackages(array $updatedPackages): void
         return;
     }
 
+    $nudgesDeclined = 0;
+
     foreach ($updatedPackages as $package) {
-        $ok = notifyPackagist($package['name'], $username, $apiToken);
-        if ($ok) {
-            echo "Packagist: triggered update for {$package['name']}\n";
-        } else {
-            fwrite(STDERR, "Packagist: failed to trigger update for {$package['name']}\n");
+        $result = notifyPackagist($package['name'], $username, $apiToken);
+
+        // One retry, because the failure we actually see is a burst limit. A
+        // 39-package release fires 39 of these back to back; the run 20 minutes
+        // later had both of its calls declined while the release itself
+        // published perfectly well.
+        if (!$result['ok'] && packagistWorthRetrying($result['reason'])) {
+            sleep(3);
+            $result = notifyPackagist($package['name'], $username, $apiToken);
         }
+
+        if ($result['ok']) {
+            echo "Packagist: triggered update for {$package['name']}\n";
+            continue;
+        }
+
+        ++$nudgesDeclined;
+        // NOT "failed", and not on STDERR. This call is a nudge to re-crawl
+        // sooner; the tag push already fired GitHub's Packagist webhook, which
+        // is the path that actually publishes. Whether the version is live is
+        // decided by verifyPackagistForPackages() below, which checks both the
+        // webhook delivery and packagist.org itself — so a declined nudge on a
+        // run that then verifies green is noise, and printing it as a failure
+        // is what makes a real failure indistinguishable from this.
+        echo "Packagist: update nudge declined for {$package['name']} ({$result['reason']}); "
+            . "relying on the GitHub webhook — verification below decides.\n";
     }
+
+    if ($nudgesDeclined > 0) {
+        echo "Packagist: {$nudgesDeclined} nudge(s) declined. This is only a problem if the "
+            . "verification step also fails.\n";
+    }
+}
+
+/**
+ * Whether a nudge failure is the kind a second attempt might clear.
+ *
+ * Rate limits and 5xx are worth one retry. A 401/403 is a bad token and a 404 is
+ * a package Packagist does not know about — retrying those just doubles the
+ * noise and the wait.
+ */
+function packagistWorthRetrying(string $reason): bool
+{
+    if (str_contains($reason, 'no response')) {
+        return true;
+    }
+
+    if (preg_match('/HTTP (\d{3})/', $reason, $m) !== 1) {
+        return false;
+    }
+
+    $status = (int) $m[1];
+
+    return $status === 429 || $status >= 500;
 }
 
 function verifyPackagistForPackages(array $updatedPackages): void
@@ -1044,7 +1093,18 @@ function verifyPackagistForPackages(array $updatedPackages): void
     }
 }
 
-function notifyPackagist(string $packageName, string $username, string $apiToken): bool
+/**
+ * Ask Packagist to re-crawl a package.
+ *
+ * Returns ['ok' => bool, 'reason' => string]. It used to return a bare bool,
+ * which meant a failure could only ever be reported as the word "failed" — the
+ * status code and body were fetched and thrown away. Two releases printed that
+ * word with no way to tell a throttle from a bad token from an outage, on runs
+ * that had in fact published correctly.
+ *
+ * @return array{ok: bool, reason: string}
+ */
+function notifyPackagist(string $packageName, string $username, string $apiToken): array
 {
     $url = 'https://packagist.org/api/update-package';
     $payload = json_encode(['repository' => 'https://packagist.org/' . $packageName]);
@@ -1058,12 +1118,48 @@ function notifyPackagist(string $packageName, string $username, string $apiToken
         ],
     );
 
-    if ($response === null || $response['status_code'] < 200 || $response['status_code'] >= 300) {
-        return false;
+    if ($response === null) {
+        return ['ok' => false, 'reason' => 'no response (network error or timeout)'];
+    }
+
+    $status = (int) $response['status_code'];
+    if ($status < 200 || $status >= 300) {
+        return ['ok' => false, 'reason' => 'HTTP ' . $status . packagistBodyHint($response['body'])];
     }
 
     $data = json_decode($response['body'], true);
-    return is_array($data) && ($data['status'] ?? null) === 'success';
+    if (is_array($data) && ($data['status'] ?? null) === 'success') {
+        return ['ok' => true, 'reason' => ''];
+    }
+
+    // 2xx that is not `status: success` — Packagist answering with something we
+    // did not expect. Carrying the body forward is the whole point: this is the
+    // branch with no status code to explain itself.
+    return ['ok' => false, 'reason' => 'HTTP ' . $status . ' without status=success' . packagistBodyHint($response['body'])];
+}
+
+/** A short, single-line excerpt of a response body for an error message. */
+function packagistBodyHint(string $body): string
+{
+    $body = trim($body);
+    if ($body === '') {
+        return '';
+    }
+
+    $decoded = json_decode($body, true);
+    if (is_array($decoded)) {
+        $message = $decoded['message'] ?? $decoded['error'] ?? $decoded['status'] ?? null;
+        if (is_string($message) && $message !== '') {
+            $body = $message;
+        }
+    }
+
+    $body = preg_replace('/\s+/', ' ', $body) ?? $body;
+    if (strlen($body) > 160) {
+        $body = substr($body, 0, 157) . '...';
+    }
+
+    return ' — ' . $body;
 }
 
 function verifyGithubWebhookDelivery(array $package, string $packagistWebhookUsername, string $releaseStartedAt, int $timeoutSeconds, int $intervalSeconds): ?array
