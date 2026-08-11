@@ -180,6 +180,10 @@ final class VerificationPlanner
             filePath: null,
         );
 
+        foreach ($this->docsTargets($changedFiles) as $docsTarget) {
+            $targets[] = $docsTarget;
+        }
+
         return new VerificationPlan(
             scope: $requestedScope,
             effectiveScope: $effectiveScope,
@@ -698,4 +702,66 @@ final class VerificationPlanner
         }
         return $roots;
     }
+    /**
+     * Documentation gates.
+     *
+     * Two different failures, so two targets. A page can claim an attribute
+     * that no longer exists — that is a markdown change, or a rename that left
+     * the page behind. And a signature can change without the generated
+     * reference being rebuilt, which no amount of reading the prose would
+     * catch; only regenerating and comparing does.
+     *
+     * Both are skipped when semitexa/docs is absent, and the claim check runs
+     * against a baseline when the project keeps one, so existing debt does not
+     * block unrelated work.
+     *
+     * @param list<ChangedFile> $changedFiles
+     *
+     * @return list<VerificationTarget>
+     */
+    private function docsTargets(array $changedFiles): array
+    {
+        $touchedMarkdown = false;
+        $touchedPhp = false;
+        foreach ($changedFiles as $file) {
+            if (str_ends_with(strtolower($file->path), '.md')) {
+                $touchedMarkdown = true;
+            } elseif (str_ends_with(strtolower($file->path), '.php')) {
+                $touchedPhp = true;
+            }
+        }
+
+        $targets = [];
+
+        if ($touchedMarkdown) {
+            $input = [];
+            $baseline = $this->projectRoot . '/var/docs/docs-lint-baseline.json';
+            if (is_file($baseline)) {
+                $input['--baseline'] = $baseline;
+            }
+
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_DOCS,
+                id: 'docs:claims',
+                reason: 'a documented attribute, command or env key that the framework no longer has',
+                triggeredBy: [],
+                commandName: 'docs:lint',
+                commandInput: $input,
+            );
+        }
+
+        if ($touchedPhp) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_DOCS,
+                id: 'docs:reference',
+                reason: 'the generated reference is built from signatures; changing one without rebuilding leaves the page wrong',
+                triggeredBy: [],
+                commandName: 'docs:reference:generate',
+                commandInput: ['--check' => true],
+            );
+        }
+
+        return $targets;
+    }
+
 }

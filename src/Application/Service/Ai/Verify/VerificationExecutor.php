@@ -68,6 +68,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
                 VerificationTarget::TYPE_CAPABILITY_COVERAGE => $this->runCapabilityCoverage($target),
                 VerificationTarget::TYPE_SKILL_COPIES      => $this->runSkillCopies($target),
+                VerificationTarget::TYPE_DOCS              => $this->runDocsGate($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_SKIPPED,
@@ -102,6 +103,49 @@ final class VerificationExecutor
             $exit = $command->run($input, $buffer);
         } catch (\Throwable $e) {
             // Same reasoning: a gate that blew up did not clear the change.
+            return $this->failed(
+                $target,
+                "{$commandName} threw " . $e::class . ': ' . $this->compress($e->getMessage()),
+            );
+        }
+
+        return new VerificationResult(
+            target:   $target,
+            status:   $exit === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
+            exitCode: $exit,
+            signal:   $this->lastSignalLine($buffer->fetch()),
+        );
+    }
+
+    /**
+     * A documentation gate — docs:lint, or the reference generator's --check.
+     *
+     * Unlike a lint, a missing command here is a skip rather than a failure.
+     * The lint gates name commands the dev package itself registers, so an
+     * absent one means a stale plan; these name commands from semitexa/docs,
+     * which a project is free not to install. Failing a project for not
+     * installing the documentation tooling would be the wrong end of the stick.
+     */
+    private function runDocsGate(VerificationTarget $target): VerificationResult
+    {
+        $commandName = $target->commandName;
+        if ($commandName === null) {
+            return $this->skipped($target, 'docs target missing commandName');
+        }
+
+        try {
+            $command = $this->application->find($commandName);
+        } catch (CommandNotFoundException) {
+            return $this->skipped($target, "semitexa/docs is not installed; {$commandName} unavailable");
+        }
+
+        $buffer = new BufferedOutput();
+        $input = new ArrayInput(['command' => $commandName] + $target->commandInput);
+        $input->setInteractive(false);
+
+        try {
+            $exit = $command->run($input, $buffer);
+        } catch (\Throwable $e) {
             return $this->failed(
                 $target,
                 "{$commandName} threw " . $e::class . ': ' . $this->compress($e->getMessage()),
