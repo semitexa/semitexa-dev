@@ -34,6 +34,7 @@ final readonly class VerificationTarget
     public const TYPE_CAPABILITY_INDEX = 'capability_index';
     public const TYPE_CAPABILITY_COVERAGE = 'capability_coverage';
     public const TYPE_SKILL_COPIES     = 'skill_copies';
+    public const TYPE_DOCS             = 'docs';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled
@@ -44,6 +45,13 @@ final readonly class VerificationTarget
         public string $reason,
         public array $triggeredBy,
         public ?string $commandName = null,
+        /**
+         * Extra console input for the target's command. TYPE_LINT runs a bare
+         * command; a docs gate needs its baseline and its --check.
+         *
+         * @var array<string, string|bool>
+         */
+        public array $commandInput = [],
         public ?string $filePath = null,
         public ?string $testFilter = null,
     ) {}
