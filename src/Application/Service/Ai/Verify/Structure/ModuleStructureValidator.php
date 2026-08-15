@@ -137,13 +137,18 @@ final class ModuleStructureValidator
     {
         $violations = [];
 
-        // 1. Module-root envelope: only `src/` (runtime) and `tests/` are
-        //    allowed at the application module root, plus a small set of
-        //    metadata/scaffold files. Anything else triggers a violation —
-        //    package-only layer names get the dedicated `invalid_layer`
-        //    code; everything else falls through to `unknown_directory` or
-        //    `invalid_root_file`.
-        $allowedRootDirs = ['src', 'tests'];
+        // 1. Module-root envelope: `src/` (runtime), `tests/`, and
+        //    `resources/` — module-owned non-PHP assets — are allowed at the
+        //    application module root, plus a small set of metadata/scaffold
+        //    files. `resources/` mirrors the package envelope: semitexa/prompt
+        //    resolves prompt bodies relative to the OWNING package-or-module
+        //    root (`resources/prompts/{id}.twig`), so a module following that
+        //    convention must not fail the gate (#101). Like a package's, its
+        //    contents are not code and are not walked. Anything else triggers
+        //    a violation — package-only layer names get the dedicated
+        //    `invalid_layer` code; everything else falls through to
+        //    `unknown_directory` or `invalid_root_file`.
+        $allowedRootDirs = ['src', 'tests', 'resources'];
         $allowedRootFiles = ['composer.json', '.gitkeep', 'README.md', 'README'];
 
         foreach ($this->scanDirs($absRoot) as $dir) {
@@ -159,7 +164,7 @@ final class ModuleStructureValidator
                         "'%s/' is a package-only layer and is not allowed inside src/modules/.",
                         $dir,
                     ),
-                    expected: 'src/ or tests/ at the application module root.',
+                    expected: 'src/, tests/ or resources/ at the application module root.',
                     actual: $dir . '/',
                     suggestedFix: sprintf(
                         "Move '%s/' contents into Application/ or Domain/ under src/. Application modules consume framework attributes/commands; they do not declare them.",

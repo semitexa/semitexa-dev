@@ -267,19 +267,21 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    public function test_resources_directory_at_module_root_fails(): void
+    public function test_resources_directory_at_module_root_passes(): void
     {
+        // Module-owned non-PHP assets live in resources/ — the same envelope
+        // slot packages get, and the home semitexa/prompt's AsPrompt default
+        // (`resources/prompts/{id}.twig`, relative to the owning root) points
+        // at. This used to fire unknown_directory, stranding prompt bodies
+        // with no sanctioned home (#101).
         $this->scaffoldModule('Hello', [
             'Application/Handler/PayloadHandler',
-            'resources/css',
+            'resources/prompts',
         ]);
+        $this->writeFile('src/modules/Hello/resources/prompts/hello.greeting.twig', "You are a greeter.\n");
 
         $violations = $this->validator()->validate($this->module('Hello'));
-        $this->assertHasViolationAt(
-            $violations,
-            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
-            'src/modules/Hello/resources',
-        );
+        $this->assertNoViolationAt($violations, 'src/modules/Hello/resources');
     }
 
     public function test_package_only_layer_in_app_module_fires_invalid_layer(): void
@@ -3327,6 +3329,24 @@ class ModuleStructureValidatorTest extends TestCase
     /**
      * @param list<ModuleStructureViolation> $violations
      */
+    /**
+     * @param list<ModuleStructureViolation> $violations
+     */
+    private function assertNoViolationAt(array $violations, string $path): void
+    {
+        foreach ($violations as $v) {
+            if ($v->path === $path) {
+                $this->fail(sprintf(
+                    "Expected NO violation at path '%s', got %s.\n%s",
+                    $path,
+                    $v->code,
+                    $this->renderViolations($violations),
+                ));
+            }
+        }
+        $this->assertTrue(true);
+    }
+
     private function assertHasViolationAt(array $violations, string $code, string $path): void
     {
         foreach ($violations as $v) {
