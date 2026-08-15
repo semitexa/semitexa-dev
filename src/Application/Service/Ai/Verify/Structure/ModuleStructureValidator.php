@@ -181,10 +181,10 @@ final class ModuleStructureValidator
                     "Unknown application-module-root directory: '%s/'.",
                     $dir,
                 ),
-                expected: 'src/ (runtime) or tests/ at the application module root.',
+                expected: 'src/ (runtime), tests/, or resources/ (non-PHP assets) at the application module root.',
                 actual: $dir . '/',
                 suggestedFix: sprintf(
-                    "Move '%s/' under src/ if it carries runtime PHP, or under tests/ if it carries tests. Application modules mirror the packages/ layout.",
+                    "Move '%s/' under src/ if it carries runtime PHP, under tests/ if it carries tests, or under resources/ if it carries module-owned non-PHP assets. Application modules mirror the packages/ layout.",
                     $dir,
                 ),
             );
@@ -205,7 +205,7 @@ final class ModuleStructureValidator
                 expected: 'application-module metadata files only — see ' . ModuleStructureSpecLoader::SPEC_REL_PATH,
                 actual: $file,
                 suggestedFix: sprintf(
-                    "Move '%s' under src/ if it is runtime PHP, under tests/ if it belongs to tests, or remove it.",
+                    "Move '%s' under src/ if it is runtime PHP, under tests/ if it belongs to tests, under resources/ if it is a module-owned asset, or remove it.",
                     $file,
                 ),
             );
