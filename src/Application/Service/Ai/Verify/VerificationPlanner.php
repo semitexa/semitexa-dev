@@ -180,8 +180,15 @@ final class VerificationPlanner
             filePath: null,
         );
 
-        foreach ($this->docsTargets($changedFiles) as $docsTarget) {
-            $targets[] = $docsTarget;
+        // Not at minimal scope: `docs:reference` regenerates the whole
+        // reference (class discovery across every package plus a console boot)
+        // to diff it, which puts it with phpstan_di in the expensive tier the
+        // minimal contract explicitly excludes — see AiVerifyCommandTest's
+        // minimal-scope pin.
+        if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL) {
+            foreach ($this->docsTargets($changedFiles) as $docsTarget) {
+                $targets[] = $docsTarget;
+            }
         }
 
         return new VerificationPlan(
