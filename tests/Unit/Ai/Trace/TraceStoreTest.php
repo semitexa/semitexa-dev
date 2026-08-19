@@ -4,42 +4,26 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Ai\Trace;
 
-use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Log\StaticLoggerBridge;
-use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Tests\Support\CapturingLogger;
+use Semitexa\Testing\TestCase;
 
 /**
- * TraceStore is now a constructor-less #[AsService] that resolves its
- * project root from {@see ProjectRoot::get()} — tests chdir into a throw-
- * away dir with stub `composer.json`/`src/modules` so the resolver locks
- * onto it, then `ProjectRoot::reset()` keeps the cache from leaking.
+ * TraceStore is a constructor-less #[AsService] that resolves its project
+ * root from ProjectRoot::get() — the base TestCase's fixture root points the
+ * resolver at a throwaway dir and cleans up cwd + memoized root afterwards.
  */
 class TraceStoreTest extends TestCase
 {
     private string $root;
-    private ?string $originalCwd = null;
 
     protected function setUp(): void
     {
-        $this->root = sys_get_temp_dir() . '/semitexa-trace-' . uniqid();
-        mkdir($this->root . '/src/modules', 0755, true);
-        file_put_contents($this->root . '/composer.json', '{"name":"temp/project"}');
-        $this->originalCwd = getcwd() ?: null;
-        chdir($this->root);
-        ProjectRoot::reset();
-    }
-
-    protected function tearDown(): void
-    {
-        if ($this->originalCwd !== null) {
-            chdir($this->originalCwd);
-        }
-        ProjectRoot::reset();
-        $this->removeDir($this->root);
+        parent::setUp();
+        $this->root = $this->enterFixtureProjectRoot('trace');
     }
 
     public function test_open_or_create_writes_header_line_with_schema_version(): void
@@ -206,20 +190,5 @@ class TraceStoreTest extends TestCase
         [$message, $context] = $logger->warnings[0];
         $this->assertSame('Skipping unreadable trace record', $message);
         $this->assertStringContainsString('tr-bad.ndjson', (string) $context['file']);
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($items as $item) {
-            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
-        }
-        rmdir($dir);
     }
 }
