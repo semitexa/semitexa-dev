@@ -102,6 +102,11 @@ parameters:
 rules:
     - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
     - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
+    # Ships in semitexa/core (semitexa-core#108). The packages travel in
+    # lockstep everywhere this config runs (path repos in the workbench and
+    # release clone; consumer installs get exact pins via semitexa/ultimate),
+    # but when merging develop→master, land the core PR before this one.
+    - Semitexa\Core\PHPStan\Rules\StaticFacadeAccessRule
     - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
     - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
     - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
