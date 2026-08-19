@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
-use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Log\StaticLoggerBridge;
-use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
@@ -16,29 +14,16 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Semitexa\Dev\Tests\Support\CapturingLogger;
+use Semitexa\Testing\TestCase;
 
 class EpicStoreTest extends TestCase
 {
     private string $root;
-    private ?string $originalCwd = null;
 
     protected function setUp(): void
     {
-        $this->root = sys_get_temp_dir() . '/semitexa-dev-ai-work-epic-' . uniqid();
-        mkdir($this->root . '/src/modules', 0755, true);
-        file_put_contents($this->root . '/composer.json', '{"name":"temp/project"}');
-        $this->originalCwd = getcwd() ?: null;
-        chdir($this->root);
-        ProjectRoot::reset();
-    }
-
-    protected function tearDown(): void
-    {
-        if ($this->originalCwd !== null) {
-            chdir($this->originalCwd);
-        }
-        ProjectRoot::reset();
-        $this->removeDir($this->root);
+        parent::setUp();
+        $this->root = $this->enterFixtureProjectRoot('ai-work-epic');
     }
 
     private function newEpicStore(?TaskStore $tasks = null): EpicStore
@@ -143,18 +128,4 @@ class EpicStoreTest extends TestCase
         $this->assertStringContainsString('ep-bad.json', (string) $context['file']);
     }
 
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($items as $item) {
-            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
-        }
-        rmdir($dir);
-    }
 }

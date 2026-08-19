@@ -16,7 +16,8 @@
         "semitexa/project-graph": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0"
+        "phpunit/phpunit": "^10.0",
+        "semitexa/testing": "*"
     },
     "autoload": {
         "psr-4": {
