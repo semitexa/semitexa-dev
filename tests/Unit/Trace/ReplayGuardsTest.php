@@ -90,4 +90,36 @@ final class ReplayGuardsTest extends TestCase
 
         (new CapturingQueueTransport())->consume('events', static fn () => null);
     }
+
+    #[Test]
+    public function the_registry_recovers_real_transports_after_a_reset(): void
+    {
+        // The replay stubs the PROCESS-global registry; ReplayRunner resets it
+        // in a finally so later publishes reach real transports again. This
+        // pins the recovery half: after reset(), lazy initialization rebuilds
+        // the real factories instead of keeping the captor.
+        $captor = new CapturingQueueTransport();
+        $factory = new class($captor) implements QueueTransportFactoryInterface {
+            public function __construct(private readonly CapturingQueueTransport $captor)
+            {
+            }
+
+            public function create(): QueueTransportInterface
+            {
+                return $this->captor;
+            }
+        };
+        QueueTransportRegistry::reset();
+        QueueTransportRegistry::initialize();
+        QueueTransportRegistry::register('in-memory', $factory);
+        self::assertInstanceOf(CapturingQueueTransport::class, QueueTransportRegistry::create('in-memory'));
+
+        QueueTransportRegistry::reset();
+
+        self::assertNotInstanceOf(
+            CapturingQueueTransport::class,
+            QueueTransportRegistry::create('in-memory'),
+            'after the replay\'s reset, the process must publish through real transports again',
+        );
+    }
 }

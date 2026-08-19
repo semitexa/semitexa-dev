@@ -87,6 +87,33 @@ final class ReplayRunner
 
         $queueCaptor = $this->stubQueueTransports();
 
+        try {
+            return $this->runSandboxed($traceFile, $envelope, $input, $mutations, $handlerClass, $payloadClass, $resourceClass, $queueCaptor);
+        } finally {
+            // The registry is process-global; leaving it stubbed would send
+            // every LATER publish in this process to the captor instead of a
+            // real broker. reset() restores lazy initialization, so the next
+            // create() rebuilds the real factories.
+            QueueTransportRegistry::reset();
+        }
+    }
+
+    /**
+     * @param  array{path: string, method: string, route: ?string, payload: array<string, mixed>} $envelope
+     * @param  array<string, mixed> $input
+     * @param  array<string, mixed> $mutations
+     * @return array<string, mixed>
+     */
+    private function runSandboxed(
+        string $traceFile,
+        array $envelope,
+        array $input,
+        array $mutations,
+        string $handlerClass,
+        string $payloadClass,
+        string $resourceClass,
+        CapturingQueueTransport $queueCaptor,
+    ): array {
         $tracer = $this->optionalTracer();
         $before = $this->traceFiles();
         $tracer?->begin('request', [
@@ -152,15 +179,42 @@ final class ReplayRunner
             'input' => ContextRedactor::redact($input),
             'mutated_keys' => array_keys($mutations),
             'duration_ms' => $durationMs,
+            // is_object, not null-check: handle() is not type-constrained
+            // here, and ::class on an array or scalar is a TypeError that
+            // would abort the command after the rollback already happened.
             'verdict' => $handlerError !== null ? 'handler_threw' : ($result === null ? 'null_result' : 'ok'),
             'handler_error' => $handlerError,
-            'resource_class' => $result !== null ? $result::class : null,
-            'resource' => $result !== null ? $this->serialize($result) : null,
+            'resource_class' => is_object($result) ? $result::class : ($result === null ? null : get_debug_type($result)),
+            'resource' => is_object($result) ? $this->serialize($result) : null,
             'guards' => [
                 'db' => $dbGuard,
-                'queue_captured' => $queueCaptor->drain(),
+                'queue_captured' => $this->redactCaptured($queueCaptor->drain()),
             ],
         ];
+    }
+
+    /**
+     * Captured queue payloads carry exactly the fields redaction protects
+     * (tokens, reset links, addresses) — they must pass the same gate as
+     * every other value before reaching the printed envelope.
+     *
+     * @param  list<array{queue: string, payload: string}> $captured
+     * @return list<array<string, mixed>>
+     */
+    private function redactCaptured(array $captured): array
+    {
+        $out = [];
+        foreach ($captured as $item) {
+            $decoded = json_decode($item['payload'], true);
+            $out[] = [
+                'queue' => $item['queue'],
+                'payload' => is_array($decoded)
+                    ? ContextRedactor::redact($decoded)
+                    : mb_substr($item['payload'], 0, 200),
+            ];
+        }
+
+        return $out;
     }
 
     /** @return array<string, mixed>|null */
@@ -200,7 +254,9 @@ final class ReplayRunner
 
         return [
             'path' => $path,
-            'method' => (string) ($root['context']['method'] ?? 'GET'),
+            // Uppercased at the source: the route table compares methods
+            // strictly, and a trace that recorded 'get' must still resolve.
+            'method' => strtoupper((string) ($root['context']['method'] ?? 'GET')),
             'route' => $root['context']['route'] ?? null,
             'payload' => is_array($snapshot) ? $snapshot : [],
         ];
@@ -315,6 +371,12 @@ final class ReplayRunner
         $bag = [];
         foreach ($payloadData as $k => $v) {
             if (!is_string($k)) {
+                continue;
+            }
+            // null means "field absent", not the four-character string "null"
+            // json_encode would produce — a handler reading the bag must see
+            // the same shape the original request had.
+            if ($v === null) {
                 continue;
             }
             $bag[$k] = is_scalar($v) ? (string) $v : (is_array($v) ? $v : (string) (json_encode($v) ?: ''));

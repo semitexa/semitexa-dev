@@ -426,13 +426,6 @@ final class RequestTracer implements RequestTracerInterface
      */
     private function announceBegin(string $name, array $context): void
     {
-        // The panel polls its own feed every second; journaling those polls
-        // would flood the journal with the act of watching it. The observatory
-        // does not observe itself.
-        if (str_starts_with((string) ($context['path'] ?? ''), '/__observatory')) {
-            return;
-        }
-
         if (ObservatoryContext::nest()) {
             return;
         }
@@ -459,11 +452,21 @@ final class RequestTracer implements RequestTracerInterface
             'cid' => $identity['cid'],
             'startedAtNs' => (float) hrtime(true),
             'context' => $this->scrub(array_diff_key($context, ['marker' => true, 'sse' => true])),
+            // The panel polls its own feed every second; journaling those
+            // polls would flood the journal with the act of watching it. The
+            // slot still OPENS (so begin/end nesting stays balanced — an
+            // asymmetric early return here once let a suppressed begin eat
+            // another process's end); only the WRITES are suppressed.
+            'suppressed' => str_starts_with((string) ($context['path'] ?? ''), '/__observatory'),
         ];
         ObservatoryContext::open($record);
 
+        if ($record['suppressed'] === true) {
+            return;
+        }
+
         $line = $record;
-        unset($line['startedAtNs']);
+        unset($line['startedAtNs'], $line['suppressed']);
         ObservatoryJournal::write(['ts' => date('c'), 'event' => 'begin'] + $line);
     }
 
@@ -476,7 +479,7 @@ final class RequestTracer implements RequestTracerInterface
     private function announceEnd(array $context, ?string $traceFile): void
     {
         $record = ObservatoryContext::close();
-        if ($record === null) {
+        if ($record === null || ($record['suppressed'] ?? false) === true) {
             return;
         }
 

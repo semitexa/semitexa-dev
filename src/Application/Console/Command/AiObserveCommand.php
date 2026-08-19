@@ -242,14 +242,29 @@ final class AiObserveCommand extends BaseCommand
 
         while (microtime(true) < $deadline) {
             usleep(200_000);
+            // Re-resolve EVERY iteration: at midnight the journal rolls to a
+            // new dated file while the old one still exists and stops growing
+            // — a follower pinned to the old path would go silent for the
+            // rest of the duration.
+            $current = $this->reader->todayJournalPath();
+            if ($current !== $path) {
+                $path = $current;
+                $offset = 0;
+                $carry = '';
+            }
             clearstatcache(true, $path);
             if (!is_file($path)) {
-                // Midnight rollover or first write still pending.
-                $path = $this->reader->todayJournalPath();
+                // First write of the day still pending.
                 $offset = 0;
                 continue;
             }
             $size = (int) filesize($path);
+            if ($size < $offset) {
+                // Truncated (manual cleanup): restart from the top rather
+                // than waiting forever for the size to catch up.
+                $offset = 0;
+                $carry = '';
+            }
             if ($size <= $offset) {
                 continue;
             }
