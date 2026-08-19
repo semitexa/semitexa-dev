@@ -44,6 +44,12 @@ final class ObservatoryJournal
      */
     private const MAX_LINE_BYTES = 4000;
 
+    /** Journal files older than this are swept on the first write of a new day. */
+    private const RETENTION_DAYS = 7;
+
+    /** The day whose sweep already ran in this process, so retention costs one glob per day. */
+    private static ?string $sweptDay = null;
+
     /** @param array<string, mixed> $record */
     public static function write(array $record): void
     {
@@ -58,11 +64,14 @@ final class ObservatoryJournal
                 return;
             }
 
+            $day = date('Ymd');
             @file_put_contents(
-                $dir . '/journal-' . date('Ymd') . '.ndjson',
+                $dir . '/journal-' . $day . '.ndjson',
                 $line . "\n",
                 FILE_APPEND | LOCK_EX,
             );
+
+            self::sweepOld($dir, $day);
         } catch (\Throwable) {
             // Observing must never fault the observed.
         }
@@ -84,5 +93,27 @@ final class ObservatoryJournal
         return is_string($configured) && $configured !== ''
             ? $configured
             : ProjectRoot::get() . '/var/observatory';
+    }
+
+    /**
+     * Delete journal files older than the retention window. Runs once per
+     * process per day (memoized on the day string), so a busy worker pays one
+     * glob a day and an idle one pays nothing. Filenames carry their day, so
+     * age needs no stat calls — string comparison on the suffix is enough.
+     */
+    private static function sweepOld(string $dir, string $today): void
+    {
+        if (self::$sweptDay === $today) {
+            return;
+        }
+        self::$sweptDay = $today;
+
+        $cutoff = date('Ymd', time() - self::RETENTION_DAYS * 86400);
+        foreach (glob($dir . '/journal-*.ndjson') ?: [] as $file) {
+            $day = substr(basename($file), 8, 8);
+            if ($day !== '' && $day < $cutoff) {
+                @unlink($file);
+            }
+        }
     }
 }

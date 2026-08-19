@@ -448,6 +448,45 @@ final class RequestTracerTest extends TestCase
     }
 
     #[Test]
+    public function a_background_job_root_journals_its_kind_and_opens_no_trace(): void
+    {
+        // Scheduler runs and queue consumers report as 'job' roots: journal
+        // lifecycle yes, trace buffer no — spans belong to requests for now.
+        $tracer = new RequestTracer();
+        $tracer->begin('job', ['kind' => 'scheduler', 'route' => 'App\\Jobs\\NightlyRollup', 'attempt' => 2]);
+        $tracer->end('job', ['status' => 'success']);
+
+        self::assertSame([], $this->traceFiles(), 'a job root must not open a trace buffer');
+
+        $lines = $this->journalLines();
+        self::assertCount(2, $lines);
+        self::assertSame('scheduler', $lines[0]['kind']);
+        self::assertSame('App\\Jobs\\NightlyRollup', $lines[0]['name']);
+        self::assertSame('success', $lines[1]['context']['status'] ?? null);
+        self::assertIsNumeric($lines[1]['durationMs']);
+    }
+
+    #[Test]
+    public function journal_files_past_retention_are_swept_on_write(): void
+    {
+        $dir = $this->root . '/var/observatory';
+        mkdir($dir, 0755, true);
+        $ancient = $dir . '/journal-' . date('Ymd', time() - 30 * 86400) . '.ndjson';
+        $recent = $dir . '/journal-' . date('Ymd', time() - 2 * 86400) . '.ndjson';
+        file_put_contents($ancient, "{}\n");
+        file_put_contents($recent, "{}\n");
+        // The sweep memoizes per day per process; other tests may have latched
+        // it already, so reset via reflection to exercise it here.
+        $prop = new \ReflectionProperty(\Semitexa\Dev\Application\Service\Trace\ObservatoryJournal::class, 'sweptDay');
+        $prop->setValue(null, null);
+
+        $this->runRequest(new RequestTracer());
+
+        self::assertFileDoesNotExist($ancient, 'a 30-day-old journal must be swept');
+        self::assertFileExists($recent, 'a file inside the retention window must survive');
+    }
+
+    #[Test]
     public function the_observatory_does_not_observe_itself(): void
     {
         // The panel polls its own feed every second; journaling those polls

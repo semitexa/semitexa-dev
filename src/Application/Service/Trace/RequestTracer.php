@@ -54,8 +54,10 @@ final class RequestTracer implements RequestTracerInterface
             // The Observatory journal sees EVERY root process in dev, marked or
             // not — that is the whole point of the live view. Announced before
             // the recording gate below, which only decides whether a full trace
-            // file is also collected.
-            if (($name === 'request' || $name === 'sse') && $this->isDev()) {
+            // file is also collected. 'job' is journal-only: background work
+            // (scheduler runs, queue consumers) reports its lifecycle here but
+            // opens no trace buffer — spans belong to requests for now.
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
                 $this->announceBegin($name, $context);
             }
         } catch (\Throwable) {
@@ -187,7 +189,7 @@ final class RequestTracer implements RequestTracerInterface
             // After the buffer logic on purpose: a recorded trace file's name is
             // only known post-flush, and the journal line carries it so a
             // consumer can jump from the live row to the full waterfall.
-            if (($name === 'request' || $name === 'sse') && $this->isDev()) {
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
                 $this->announceEnd($context, $traceFile);
             }
         } catch (\Throwable) {
@@ -440,10 +442,18 @@ final class RequestTracer implements RequestTracerInterface
             'id' => ObservatoryJournal::newProcessId(),
             // Replays journal as their own kind: they ARE processes, but a
             // consumer picking "the latest traced request" must never mistake
-            // a replay for the request it re-ran.
-            'kind' => ($context['marker'] ?? null) === 'replay'
-                ? 'replay'
-                : ((($context['sse'] ?? false) === true) ? 'sse' : 'http'),
+            // a replay for the request it re-ran. Background 'job' roots name
+            // their own kind (scheduler, queue) via context.
+            'kind' => match (true) {
+                ($context['marker'] ?? null) === 'replay' => 'replay',
+                $name === 'job' => is_string($context['kind'] ?? null) && $context['kind'] !== '' ? $context['kind'] : 'job',
+                ($context['sse'] ?? false) === true => 'sse',
+                // The KISS transport is served INSIDE RouteExecutor, so its
+                // root opens as a plain request — but for the panel it IS the
+                // live connection, and 20-second "http" rows read as stuck.
+                ($context['route'] ?? null) === 'ssr.kiss' => 'sse',
+                default => 'http',
+            },
             'name' => (string) ($context['route'] ?? $context['path'] ?? $name),
             'worker' => getmypid(),
             'cid' => $identity['cid'],

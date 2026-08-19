@@ -47,6 +47,30 @@ final class DeepContextEventTraceTest extends TestCase
     }
 
     #[Test]
+    public function a_consumed_queue_message_journals_as_a_queue_job(): void
+    {
+        $worker = new \Semitexa\Core\Queue\QueueWorker();
+        $worker->processPayload((string) json_encode([
+            'type' => 'handler',
+            'handlerClass' => 'App\\DoesNotExist\\Handler',
+        ]));
+
+        $lines = [];
+        foreach (glob($this->root . '/observatory/journal-*.ndjson') ?: [] as $f) {
+            foreach (explode("\n", trim((string) file_get_contents($f))) as $line) {
+                if ($line !== '') {
+                    $lines[] = json_decode($line, true);
+                }
+            }
+        }
+
+        self::assertCount(2, $lines, 'one consumed message is one journal process');
+        self::assertSame('queue', $lines[0]['kind']);
+        self::assertSame('App\\DoesNotExist\\Handler', $lines[0]['name']);
+        self::assertSame($lines[0]['id'], $lines[1]['id']);
+    }
+
+    #[Test]
     public function a_dispatched_event_lands_in_the_open_trace(): void
     {
         $container = ContainerFactory::get();
