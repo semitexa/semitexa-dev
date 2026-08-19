@@ -102,6 +102,7 @@ parameters:
 rules:
     - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
     - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
+    - Semitexa\Core\PHPStan\Rules\StaticFacadeAccessRule
     - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
     - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
     - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
