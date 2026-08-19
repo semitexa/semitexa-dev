@@ -9,6 +9,7 @@ use Semitexa\Core\Environment;
 use Semitexa\Core\Pipeline\RequestTracerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Orm\Adapter\QueryRecorder;
 use Semitexa\Orm\OrmManager;
 
 /**
@@ -50,6 +51,20 @@ final class RequestTracer implements RequestTracerInterface
     public function begin(string $name, array $context = []): void
     {
         try {
+            // The Observatory journal sees EVERY root process in dev, marked or
+            // not — that is the whole point of the live view. Announced before
+            // the recording gate below, which only decides whether a full trace
+            // file is also collected. 'job' is journal-only: background work
+            // (scheduler runs, queue consumers) reports its lifecycle here but
+            // opens no trace buffer — spans belong to requests for now.
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
+                $this->announceBegin($name, $context);
+            }
+        } catch (\Throwable) {
+            // Journal trouble must not degrade tracing, let alone the request.
+        }
+
+        try {
             // Both names can open a trace. 'sse' has to, because an SSE
             // connection is served by SseKissHandler INSIDE RouteExecutor rather
             // than intercepted ahead of routing - so when the surrounding page
@@ -68,6 +83,36 @@ final class RequestTracer implements RequestTracerInterface
                     rootSpan: $name,
                 ));
                 $this->orm()->enableQueryLog();
+                // Live attachment: each query lands on the timeline of whichever
+                // trace the EMITTING coroutine belongs to, with a real position
+                // and duration - the drained end-of-request list could say
+                // neither, and mixed concurrent requests' queries together.
+                QueryRecorder::observe(static function (string $sql, array $params, float $timeMs): void {
+                    $buffer = TraceContext::current();
+                    if ($buffer === null || $buffer->failed) {
+                        return;
+                    }
+                    $identity = TraceContext::identity();
+                    $buffer->queryCount++;
+                    $buffer->queryTotalMs += $timeMs;
+                    $buffer->push([
+                        'type' => 'query',
+                        'name' => 'orm.query',
+                        'depth' => $buffer->depth($identity['cid']),
+                        'atMs' => $buffer->sinceStartMs(),
+                        'cid' => $identity['cid'],
+                        'pcid' => $identity['pcid'],
+                        'durationMs' => round($timeMs, 3),
+                        'context' => [
+                            'sql' => mb_substr($sql, 0, 300),
+                            'params' => count($params),
+                            // The values an N+1 or a wrong-row hunt actually
+                            // needs — redacted by key, so a :password binding
+                            // never reaches the file.
+                            'bindings' => ContextRedactor::redact(array_slice($params, 0, 20, true)),
+                        ],
+                    ]);
+                });
             }
 
             $buffer = TraceContext::current();
@@ -89,50 +134,66 @@ final class RequestTracer implements RequestTracerInterface
 
     public function end(string $name, array $context = []): void
     {
+        // A local, never a property: the tracer is one instance shared by the
+        // whole worker, so anything per-request on it is a coroutine race.
+        $traceFile = null;
+
         try {
+            // No early return on a missing buffer: an UNMARKED request has no
+            // trace buffer but still owes the journal its end line below.
             $buffer = TraceContext::current();
-            if ($buffer === null) {
-                return;
-            }
 
-            // Read before the failure check. A buffer that failed mid-trace still
-            // holds the ORM query log open, and a log left enabled goes on
-            // collecting every statement the worker runs from then on - so the
-            // root span has to finalize whether the recording is usable or not.
-            //
-            // Counted rather than matched on the name: only the OUTERMOST root
-            // span closing ends the trace, so a nested dispatch cannot cut it
-            // short halfway through.
-            $isRoot = false;
-            if ($name === $buffer->rootSpan) {
-                $buffer->rootOpen = max(0, $buffer->rootOpen - 1);
-                $isRoot = $buffer->rootOpen === 0;
-            }
-
-            if (!$buffer->failed) {
-                $cid = TraceContext::identity()['cid'];
-                $started = $buffer->leave($cid, $name);
-
-                $event = $this->event('end', $name, $buffer, $context);
-                $event['durationMs'] = $started !== null
-                    ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
-                    : null;
-                $buffer->push($event);
-            }
-
-            // Flush when the span that OPENED this buffer closes, not on a fixed
-            // name: an SSE connection opened its own, a page request opened its
-            // own, and closing on 'request' alone would leave an SSE trace on
-            // disk-less forever.
-            if ($isRoot) {
-                $this->appendQueries($buffer);
-                if (!$buffer->failed) {
-                    $this->flush($buffer);
+            if ($buffer !== null) {
+                // Read before the failure check. A buffer that failed mid-trace still
+                // holds the ORM query log open, and a log left enabled goes on
+                // collecting every statement the worker runs from then on - so the
+                // root span has to finalize whether the recording is usable or not.
+                //
+                // Counted rather than matched on the name: only the OUTERMOST root
+                // span closing ends the trace, so a nested dispatch cannot cut it
+                // short halfway through.
+                $isRoot = false;
+                if ($name === $buffer->rootSpan) {
+                    $buffer->rootOpen = max(0, $buffer->rootOpen - 1);
+                    $isRoot = $buffer->rootOpen === 0;
                 }
-                TraceContext::end();
+
+                if (!$buffer->failed) {
+                    $cid = TraceContext::identity()['cid'];
+                    $started = $buffer->leave($cid, $name);
+
+                    $event = $this->event('end', $name, $buffer, $context);
+                    $event['durationMs'] = $started !== null
+                        ? round(((float) hrtime(true) - $started) / 1_000_000, 3)
+                        : null;
+                    $buffer->push($event);
+                }
+
+                // Flush when the span that OPENED this buffer closes, not on a fixed
+                // name: an SSE connection opened its own, a page request opened its
+                // own, and closing on 'request' alone would leave an SSE trace on
+                // disk-less forever.
+                if ($isRoot) {
+                    $this->finalizeQueryLog($buffer);
+                    if (!$buffer->failed) {
+                        $traceFile = $this->flush($buffer);
+                    }
+                    TraceContext::end();
+                }
             }
         } catch (\Throwable) {
             $this->markFailed();
+        }
+
+        try {
+            // After the buffer logic on purpose: a recorded trace file's name is
+            // only known post-flush, and the journal line carries it so a
+            // consumer can jump from the live row to the full waterfall.
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
+                $this->announceEnd($context, $traceFile);
+            }
+        } catch (\Throwable) {
+            // Journal trouble must not degrade tracing, let alone the request.
         }
     }
 
@@ -163,6 +224,23 @@ final class RequestTracer implements RequestTracerInterface
     {
         $identity = TraceContext::identity();
 
+        // Deep-context convention: a caller that wants an object's STATE in
+        // the trace (not just its class name) passes it under this key. The
+        // snapshot is redacted and size-bounded at ingestion — scrub() below
+        // would reduce it to a class name, which is why it is lifted out first.
+        $snapshot = null;
+        if (isset($context['payload_snapshot'])) {
+            if (is_object($context['payload_snapshot'])) {
+                $snapshot = ContextRedactor::snapshot($context['payload_snapshot']);
+            }
+            unset($context['payload_snapshot']);
+        }
+
+        $scrubbed = $this->scrub($context);
+        if ($snapshot !== null) {
+            $scrubbed['snapshot'] = $snapshot;
+        }
+
         return [
             'type' => $type,
             'name' => $name,
@@ -170,7 +248,7 @@ final class RequestTracer implements RequestTracerInterface
             'atMs' => $buffer->sinceStartMs(),
             'cid' => $identity['cid'],
             'pcid' => $identity['pcid'],
-            'context' => $this->scrub($context),
+            'context' => $scrubbed,
         ];
     }
 
@@ -248,20 +326,24 @@ final class RequestTracer implements RequestTracerInterface
     }
 
     /**
-     * Fold the recorded queries into the trace as marks, then stop recording.
+     * Close this trace's query-log session and write the summary mark.
      *
-     * Queries appear as events rather than a separate section so they sit in the
-     * same timeline as the spans - the point is seeing that forty of them
-     * happened inside one handler, which a separate list would not show.
+     * The query EVENTS are no longer produced here: the live observer attached
+     * in begin() placed each one on the timeline of the trace whose coroutine
+     * ran it, with a real position, duration and coroutine identity - the
+     * drained end-of-request list could say none of that, and mixed concurrent
+     * requests' queries together. The summary therefore comes from the buffer's
+     * own counters, which count exactly what was attributed to this trace.
      */
-    private function appendQueries(TraceBuffer $buffer): void
+    private function finalizeQueryLog(TraceBuffer $buffer): void
     {
         try {
-            $queries = $this->orm()->drainQueryLog();
+            // Drained for hygiene only (clears the shared list); the entries
+            // were already attached live and per-trace by the observer.
+            $this->orm()->drainQueryLog();
         } catch (\Throwable) {
             // No database configured, or ORM not booted. Not an error here: a
             // trace without queries is still a useful trace.
-            return;
         } finally {
             // finally, because a drain that throws would otherwise leave the log
             // enabled for the life of the worker - an unbounded list of every
@@ -274,31 +356,19 @@ final class RequestTracer implements RequestTracerInterface
             }
         }
 
-        $total = 0.0;
-        foreach ($queries as $q) {
-            $total += $q['timeMs'];
-            $buffer->push([
-                'type' => 'query',
-                'name' => 'orm.query',
-                'depth' => 1,
-                'atMs' => null,
-                'durationMs' => round($q['timeMs'], 3),
-                'context' => ['sql' => mb_substr($q['sql'], 0, 300), 'params' => count($q['params'])],
-            ]);
-        }
-
-        if ($queries !== []) {
+        if ($buffer->queryCount > 0) {
             $buffer->push([
                 'type' => 'mark',
                 'name' => 'orm.summary',
                 'depth' => 0,
                 'atMs' => $buffer->sinceStartMs(),
-                'context' => ['queries' => count($queries), 'totalMs' => round($total, 3)],
+                'context' => ['queries' => $buffer->queryCount, 'totalMs' => round($buffer->queryTotalMs, 3)],
             ]);
         }
     }
 
-    private function flush(TraceBuffer $buffer): void
+    /** @return string|null basename of the written trace file, for the journal link */
+    private function flush(TraceBuffer $buffer): ?string
     {
         // Env rather than a constructor parameter: container-managed services must
         // have a parameterless constructor, so an injected path is not available.
@@ -309,7 +379,7 @@ final class RequestTracer implements RequestTracerInterface
             ? $configured
             : ProjectRoot::get() . '/var/trace';
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
-            return;
+            return null;
         }
 
         $payload = json_encode(
@@ -327,7 +397,7 @@ final class RequestTracer implements RequestTracerInterface
         );
 
         if ($payload === false) {
-            return;
+            return null;
         }
 
         // Written through a temp file and renamed: a reader tailing the directory
@@ -335,9 +405,99 @@ final class RequestTracer implements RequestTracerInterface
         // stopped early.
         $final = $dir . '/' . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 8) . '.json';
         $tmp = $final . '.tmp';
-        if (@file_put_contents($tmp, $payload) !== false) {
-            @rename($tmp, $final);
+        if (@file_put_contents($tmp, $payload) !== false && @rename($tmp, $final)) {
+            return basename($final);
         }
 
+        return null;
+    }
+
+    private function isDev(): bool
+    {
+        return Environment::getEnvValue('APP_ENV') === 'dev';
+    }
+
+    /**
+     * Open a journal process for this root span — unless one is already open in
+     * this coroutine, in which case this begin is an internal re-dispatch and
+     * only deepens the nesting counter.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function announceBegin(string $name, array $context): void
+    {
+        if (ObservatoryContext::nest()) {
+            return;
+        }
+
+        $identity = TraceContext::identity();
+        $record = [
+            'id' => ObservatoryJournal::newProcessId(),
+            // Replays journal as their own kind: they ARE processes, but a
+            // consumer picking "the latest traced request" must never mistake
+            // a replay for the request it re-ran. Background 'job' roots name
+            // their own kind (scheduler, queue) via context.
+            'kind' => match (true) {
+                ($context['marker'] ?? null) === 'replay' => 'replay',
+                $name === 'job' => is_string($context['kind'] ?? null) && $context['kind'] !== '' ? $context['kind'] : 'job',
+                ($context['sse'] ?? false) === true => 'sse',
+                // The KISS transport is served INSIDE RouteExecutor, so its
+                // root opens as a plain request — but for the panel it IS the
+                // live connection, and 20-second "http" rows read as stuck.
+                ($context['route'] ?? null) === 'ssr.kiss' => 'sse',
+                default => 'http',
+            },
+            'name' => (string) ($context['route'] ?? $context['path'] ?? $name),
+            'worker' => getmypid(),
+            'cid' => $identity['cid'],
+            'startedAtNs' => (float) hrtime(true),
+            'context' => $this->scrub(array_diff_key($context, ['marker' => true, 'sse' => true])),
+            // The panel polls its own feed every second; journaling those
+            // polls would flood the journal with the act of watching it. The
+            // slot still OPENS (so begin/end nesting stays balanced — an
+            // asymmetric early return here once let a suppressed begin eat
+            // another process's end); only the WRITES are suppressed.
+            'suppressed' => str_starts_with((string) ($context['path'] ?? ''), '/__observatory'),
+        ];
+        ObservatoryContext::open($record);
+
+        if ($record['suppressed'] === true) {
+            return;
+        }
+
+        $line = $record;
+        unset($line['startedAtNs'], $line['suppressed']);
+        ObservatoryJournal::write(['ts' => date('c'), 'event' => 'begin'] + $line);
+    }
+
+    /**
+     * Close the journal process when the OUTERMOST root end arrives; nested
+     * re-dispatch ends only unwind the counter.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function announceEnd(array $context, ?string $traceFile): void
+    {
+        $record = ObservatoryContext::close();
+        if ($record === null || ($record['suppressed'] ?? false) === true) {
+            return;
+        }
+
+        $line = [
+            'ts' => date('c'),
+            'event' => 'end',
+            'id' => $record['id'],
+            'kind' => $record['kind'],
+            'name' => $record['name'],
+            'worker' => $record['worker'],
+            'durationMs' => round(((float) hrtime(true) - (float) $record['startedAtNs']) / 1_000_000, 3),
+        ];
+        if ($traceFile !== null) {
+            $line['trace'] = $traceFile;
+        }
+        if ($context !== []) {
+            $line['context'] = $this->scrub($context);
+        }
+        ObservatoryJournal::write($line);
     }
 }
