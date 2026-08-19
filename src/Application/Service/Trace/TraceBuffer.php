@@ -48,6 +48,16 @@ final class TraceBuffer
     public bool $failed = false;
 
     /**
+     * Per-trace query accounting, fed by the live QueryRecorder observer. Kept
+     * on the buffer rather than derived from the shared recorder log, because
+     * that log mixes queries from every coroutine on the worker — these two
+     * count only what was attributed to THIS trace.
+     */
+    public int $queryCount = 0;
+
+    public float $queryTotalMs = 0.0;
+
+    /**
      * How many spans carrying the root name are currently open.
      *
      * A root-name span opening while a trace is already running is nested work,
