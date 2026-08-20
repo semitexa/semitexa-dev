@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 use Semitexa\Dev\Application\Service\Trace\ReplayRunner;
 use Semitexa\Dev\Application\Service\Trace\TraceReader;
@@ -70,7 +71,7 @@ final class AiObserveCommand extends BaseCommand
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa-dev.ai-observe.error/v1',
                 'error' => 'observatory-disabled',
-                'hint' => 'APP_ENV must be dev; the journal is a development instrument.',
+                'hint' => 'The journal is off here: APP_ENV must be dev, or SEMITEXA_OBSERVATORY_MODE=monitor for journal-only production observability.',
             ]));
 
             return self::FAILURE;
@@ -92,6 +93,16 @@ final class AiObserveCommand extends BaseCommand
      */
     private function replay(InputInterface $input, OutputInterface $output): int
     {
+        // Monitor mode reads the journal; it never re-executes anything.
+        // ReplayRunner refuses too — this early exit just says why, first.
+        if (!ObservatoryMode::full()) {
+            return $this->fail(
+                $output,
+                'replay-requires-dev',
+                'Replay executes recorded requests and is dev-only; monitor mode is journal-only by design.',
+            );
+        }
+
         $id = $this->strOption($input, 'id');
         if ($id === null) {
             return $this->fail($output, 'missing-id', 'ai:observe replay --id=<process-id> [--mutate k=v]');

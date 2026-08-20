@@ -40,6 +40,7 @@ final class AiObserveCommandTest extends TestCase
         putenv('APP_ENV');
         putenv('SEMITEXA_OBSERVATORY_DIR');
         putenv('SEMITEXA_TRACE_DIR');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
         foreach (['/observatory', '/trace'] as $sub) {
             foreach (glob($this->dir . $sub . '/*') ?: [] as $f) {
                 @unlink($f);
@@ -159,5 +160,28 @@ final class AiObserveCommandTest extends TestCase
 
         $envelope = json_decode($tester->getDisplay(), true);
         self::assertSame('observatory-disabled', $envelope['error']);
+    }
+
+    #[Test]
+    public function monitor_mode_reads_the_journal_but_refuses_replay(): void
+    {
+        // The operator's SSH session on a production box: ps/tail/show work,
+        // because the journal is the whole point of monitor mode — replay does
+        // not, because it re-executes recorded requests.
+        putenv('APP_ENV=production');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'begin', 'id' => 'p-1-aa', 'kind' => 'http', 'name' => 'HubPayload', 'worker' => 1],
+        ]);
+
+        $tester = $this->tester();
+        self::assertSame(0, $tester->execute(['action' => 'ps']));
+        $envelope = json_decode($tester->getDisplay(), true);
+        self::assertSame(1, $envelope['counts']['live']);
+
+        $tester = $this->tester();
+        self::assertSame(1, $tester->execute(['action' => 'replay', '--id' => 'p-1-aa']));
+        $envelope = json_decode($tester->getDisplay(), true);
+        self::assertSame('replay-requires-dev', $envelope['error']);
     }
 }

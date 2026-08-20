@@ -41,7 +41,54 @@ final class RequestTracerTest extends TestCase
         putenv('APP_ENV');
         putenv('SEMITEXA_TRACE_DIR');
         putenv('SEMITEXA_OBSERVATORY_DIR');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+        putenv('SEMITEXA_OBSERVATORY_SAMPLE');
         $this->removeDir($this->root);
+    }
+
+    #[Test]
+    public function monitor_mode_journals_lifecycles_but_never_writes_a_trace(): void
+    {
+        // The whole point of monitor mode: a production box gets the process
+        // journal, and nothing else — not even for a request that carries the
+        // trace marker, because a query parameter must not dump request
+        // internals on prod.
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        $this->marker = '1';
+
+        $this->runRequest(new RequestTracer());
+
+        self::assertSame([], $this->traceFiles(), 'monitor mode must never write a trace file');
+
+        $events = array_column($this->journalLines(), 'event');
+        self::assertSame(['begin', 'end'], $events, 'one journaled lifecycle, begin then end');
+    }
+
+    #[Test]
+    public function a_sampled_out_process_swallows_both_its_lines(): void
+    {
+        // The decision is made once at begin and carried on the slot: a rate
+        // of zero must suppress the end as well, or the reader would fold
+        // orphan ends into a wrong live picture.
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        putenv('SEMITEXA_OBSERVATORY_SAMPLE=0');
+
+        $this->runRequest(new RequestTracer());
+
+        self::assertSame([], $this->journalLines(), 'a sampled-out process must journal nothing at all');
+    }
+
+    #[Test]
+    public function without_the_monitor_flag_prod_journals_nothing(): void
+    {
+        putenv('APP_ENV=prod');
+
+        $this->runRequest(new RequestTracer());
+
+        self::assertSame([], $this->journalLines());
+        self::assertSame([], $this->traceFiles());
     }
 
     #[Test]
