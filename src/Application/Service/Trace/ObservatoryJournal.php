@@ -30,10 +30,11 @@ use Semitexa\Core\Support\ProjectRoot;
  *
  * ## Cost discipline
  *
- * Dev-only by the caller's gate (the tracer announces nothing outside
- * APP_ENV=dev), and every write is @-guarded and wrapped: a diagnostic that can
- * fail the process it observes is worse than none. Files roll per day so a
- * long-lived dev stack does not grow one unbounded file.
+ * Gated by the caller ({@see ObservatoryMode} — the tracer announces nothing
+ * when the mode is off, and samples in monitor mode), and every write is
+ * @-guarded and wrapped: a diagnostic that can fail the process it observes is
+ * worse than none. Files roll per day so a long-lived stack does not grow one
+ * unbounded file.
  */
 final class ObservatoryJournal
 {

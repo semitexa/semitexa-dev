@@ -51,13 +51,14 @@ final class RequestTracer implements RequestTracerInterface
     public function begin(string $name, array $context = []): void
     {
         try {
-            // The Observatory journal sees EVERY root process in dev, marked or
+            // The Observatory journal sees EVERY root process wherever the
+            // journal is on (dev always, monitor mode on prod), marked or
             // not — that is the whole point of the live view. Announced before
             // the recording gate below, which only decides whether a full trace
             // file is also collected. 'job' is journal-only: background work
             // (scheduler runs, queue consumers) reports its lifecycle here but
             // opens no trace buffer — spans belong to requests for now.
-            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && ObservatoryMode::journals()) {
                 $this->announceBegin($name, $context);
             }
         } catch (\Throwable) {
@@ -189,7 +190,7 @@ final class RequestTracer implements RequestTracerInterface
             // After the buffer logic on purpose: a recorded trace file's name is
             // only known post-flush, and the journal line carries it so a
             // consumer can jump from the live row to the full waterfall.
-            if (($name === 'request' || $name === 'sse' || $name === 'job') && $this->isDev()) {
+            if (($name === 'request' || $name === 'sse' || $name === 'job') && ObservatoryMode::journals()) {
                 $this->announceEnd($context, $traceFile);
             }
         } catch (\Throwable) {
@@ -412,11 +413,6 @@ final class RequestTracer implements RequestTracerInterface
         return null;
     }
 
-    private function isDev(): bool
-    {
-        return Environment::getEnvValue('APP_ENV') === 'dev';
-    }
-
     /**
      * Open a journal process for this root span — unless one is already open in
      * this coroutine, in which case this begin is an internal re-dispatch and
@@ -456,8 +452,12 @@ final class RequestTracer implements RequestTracerInterface
             // polls would flood the journal with the act of watching it. The
             // slot still OPENS (so begin/end nesting stays balanced — an
             // asymmetric early return here once let a suppressed begin eat
-            // another process's end); only the WRITES are suppressed.
-            'suppressed' => str_starts_with((string) ($context['path'] ?? ''), '/__observatory'),
+            // another process's end); only the WRITES are suppressed. Monitor
+            // mode's sampling rides the same slot for the same reason: the
+            // decision is made once here, so a sampled-out begin swallows its
+            // own end instead of leaving the reader an end with no begin.
+            'suppressed' => str_starts_with((string) ($context['path'] ?? ''), '/__observatory')
+                || !ObservatoryMode::sampled(),
         ];
         ObservatoryContext::open($record);
 

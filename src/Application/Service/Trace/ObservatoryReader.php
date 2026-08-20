@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Trace;
 
 use Semitexa\Core\Attribute\AsService;
-use Semitexa\Core\Environment;
 
 /**
  * Folds the Observatory journal into the live process picture.
@@ -38,9 +37,15 @@ final class ObservatoryReader
      */
     private const STALE_AFTER_SECONDS = 3600;
 
+    /**
+     * Whether there is a journal to read here at all — dev, or monitor mode on
+     * a production box. What a given SURFACE may show is a separate question:
+     * the HTTP panel adds {@see ObservatoryPanelGate} on top of this, replay
+     * demands {@see ObservatoryMode::full()}.
+     */
     public function isEnabled(): bool
     {
-        return Environment::getEnvValue('APP_ENV') === 'dev';
+        return ObservatoryMode::journals();
     }
 
     /**

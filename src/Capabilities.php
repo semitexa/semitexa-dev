@@ -28,6 +28,17 @@ use Semitexa\Core\Attribute\Capability;
         'a bespoke shell script chaining lint and test over a diff',
     ],
 )]
+#[Capability(
+    id: 'dev.observatory',
+    summary: 'Live observation of every process (requests, SSE, scheduler runs, queue messages) with deep-dive traces and sandbox replay: the /__observatory panel for humans, ai:observe ps|tail|show|replay for agents. SEMITEXA_OBSERVATORY_MODE=monitor gives production the journal alone — sampled lifecycles, panel behind a token or loopback tunnel, no traces, no replay.',
+    useWhen: 'Debugging a Semitexa app: what is running right now, what just happened, where the milliseconds or the N+1 went, or re-running a recorded request with mutated inputs — writes rolled back, queue handoffs captured. On production, monitor mode answers the load questions: what runs, how often, how long.',
+    avoidWhen: 'Deep-dive on production (traces, deep context and replay stay dev-only — monitor mode is journal lifecycles only) or profiling for microbenchmarks — spans are semantic framework steps, not a sampling profiler.',
+    replaces: [
+        'grepping logs to reconstruct what a request did',
+        'var_dump-and-restart cycles to see a payload or a query',
+        'hand-built scripts that re-send a request to reproduce a case',
+    ],
+)]
 final class Capabilities
 {
 }

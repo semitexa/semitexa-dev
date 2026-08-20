@@ -10,6 +10,7 @@ use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryFeedPayload;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 
 /**
@@ -23,9 +24,12 @@ final class ObservatoryFeedHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected ObservatoryReader $reader;
 
+    #[InjectAsReadonly]
+    protected ObservatoryPanelGate $gate;
+
     public function handle(ObservatoryFeedPayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!$this->reader->isEnabled()) {
+        if (!$this->gate->allows()) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

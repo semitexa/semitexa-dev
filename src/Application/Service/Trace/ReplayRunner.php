@@ -63,6 +63,14 @@ final class ReplayRunner
      */
     public function replay(string $traceFile, array $mutations): array
     {
+        // Hard guard, not a courtesy: replay EXECUTES recorded requests, and
+        // monitor mode exists precisely so a production box can journal
+        // without ever running code on demand. Checked here, not only in the
+        // command, so no future caller can reach the sandbox outside dev.
+        if (!ObservatoryMode::full()) {
+            return ['error' => 'replay-requires-dev', 'trace' => $traceFile];
+        }
+
         $raw = $this->rawTrace($traceFile);
         if ($raw === null) {
             return ['error' => 'trace-unreadable', 'trace' => $traceFile];

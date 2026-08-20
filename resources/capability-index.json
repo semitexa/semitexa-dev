@@ -1,7 +1,7 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-07-30T20:48:02+00:00",
-    "count": 59,
+    "generated_at": "2026-08-20T05:05:42+00:00",
+    "count": 60,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -44,7 +44,7 @@
         "semitexa/webhooks",
         "semitexa/workflow"
     ],
-    "content_hash": "b600692c99d9f4c7b63dc5a8dac6446e69bb72640fa098a444788d65e73fc469",
+    "content_hash": "07e1fa0042dfb4e693a9cc7b90c535e8f19e44892e3e23bd59d242a32720dcfc",
     "capabilities": [
         {
             "id": "api.external",
@@ -145,6 +145,22 @@
                 "copying an existing module by hand and renaming its classes",
                 "grepping for a class name to work out what a change would break",
                 "a bespoke shell script chaining lint and test over a diff"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Dev\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/dev"
+        },
+        {
+            "id": "dev.observatory",
+            "summary": "Live observation of every process (requests, SSE, scheduler runs, queue messages) with deep-dive traces and sandbox replay: the /__observatory panel for humans, ai:observe ps|tail|show|replay for agents. SEMITEXA_OBSERVATORY_MODE=monitor gives production the journal alone \u2014 sampled lifecycles, panel behind a token or loopback tunnel, no traces, no replay.",
+            "use_when": "Debugging a Semitexa app: what is running right now, what just happened, where the milliseconds or the N+1 went, or re-running a recorded request with mutated inputs \u2014 writes rolled back, queue handoffs captured. On production, monitor mode answers the load questions: what runs, how often, how long.",
+            "avoid_when": "Deep-dive on production (traces, deep context and replay stay dev-only \u2014 monitor mode is journal lifecycles only) or profiling for microbenchmarks \u2014 spans are semantic framework steps, not a sampling profiler.",
+            "replaces": [
+                "grepping logs to reconstruct what a request did",
+                "var_dump-and-restart cycles to see a payload or a query",
+                "hand-built scripts that re-send a request to reproduce a case"
             ],
             "see_also": "",
             "kind": "package",
