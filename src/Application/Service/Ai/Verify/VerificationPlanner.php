@@ -38,7 +38,13 @@ final class VerificationPlanner
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
         ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
-        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms'],
+        // lint:deferred-twig belongs here because a deferred slot template is rendered
+        // TWICE - by Twig on the server and by semitexa-twig.js on the client - and the
+        // client subset has no functions, no filters beyond |raw and no ternary. Anything
+        // outside it renders as an EMPTY STRING with no error, so the divergence is
+        // invisible until someone notices missing text. The command already existed and
+        // was wired into no gate at all; it was red on a real template when connected.
+        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred.
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
@@ -51,6 +57,7 @@ final class VerificationPlanner
         'lint:responses',
         'lint:templates',
         'lint:mechanisms',
+        'lint:deferred-twig',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
