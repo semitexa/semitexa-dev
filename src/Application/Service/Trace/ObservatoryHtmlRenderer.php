@@ -134,6 +134,22 @@ a.row:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
 .fold{padding:9px 16px;color:var(--dim);font-size:12.5px;font-family:var(--mono);
   cursor:pointer;border-bottom:1px solid var(--line)}
 .fold:hover{color:var(--text)}
+
+/* Motion is only possible because rows now PERSIST between polls. The panel used to
+   replace innerHTML wholesale every second, which destroyed and recreated every node -
+   no transition can survive that, which is why the page felt static even though it was
+   updating constantly. The transport was never the problem. */
+@keyframes enter{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.row.enter{animation:enter .28s cubic-bezier(.2,.8,.2,1)}
+.row.leaving{opacity:0;transform:translateY(4px);transition:opacity .2s ease,transform .2s ease}
+/* A row that just landed keeps a brief edge so the eye catches WHICH one is new. */
+.row.enter::after{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;
+  background:var(--accent);animation:fadeEdge 1.1s ease forwards}
+@keyframes fadeEdge{to{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .row.enter,.row.leaving{animation:none;transition:none;transform:none;opacity:1}
+  .row.enter::after{display:none}
+}
 CSS;
     }
 
@@ -209,7 +225,7 @@ function recentRow(p, max, extraClass) {
 // A run of identical processes becomes ONE row carrying the count, the total, and the
 // shape of the individual durations. Click opens the run in place rather than navigating.
 function groupRow(g, max, idx) {
-  if (g.items.length === 1) return recentRow(g.items[0], max);
+  if (g.items.length === 1) return {head: recentRow(g.items[0], max), kids: null};
   const total = g.items.reduce((a, p) => a + (p.durationMs || 0), 0);
   const head = '<div class="row group" data-group="' + idx + '">'
     + '<span class="bar' + barClass(total) + '" style="width:' + barWidth(total, max) + '%"></span>'
@@ -222,7 +238,7 @@ function groupRow(g, max, idx) {
     + '</div>';
   const kids = '<div class="kids" data-kids="' + idx + '" hidden>'
     + g.items.map(p => recentRow(p, max, 'child')).join('') + '</div>';
-  return head + kids;
+  return {head: head, kids: kids};
 }
 
 async function tick() {
@@ -242,27 +258,122 @@ async function tick() {
     // wedged worker is sometimes the only thing that explains a stuck request.
     const fresh = d.live.filter(p => !p.stale);
     const stale = d.live.filter(p => p.stale);
+    lastSnapshotAt = Date.now();
+    liveAges = {};
+    d.live.forEach(p => { liveAges[p.id] = p.ageS; });
     let liveHtml = fresh.length ? fresh.map(liveRow).join('') : '';
     if (stale.length) {
       liveHtml += '<div class="fold" id="stale-fold">▶ ' + stale.length
         + ' stale · oldest ' + fmtAge(Math.max.apply(null, stale.map(p => p.ageS))) + '</div>'
         + '<div id="stale-list" hidden>' + stale.map(liveRow).join('') + '</div>';
     }
-    document.getElementById('live').innerHTML =
-      liveHtml || '<div class="empty">Nothing in flight.</div>';
+    const liveBox = document.getElementById('live');
+    if (!fresh.length && !stale.length) {
+      liveBox.innerHTML = '<div class="empty">Nothing in flight.</div>';
+      delete liveBox.dataset.primed;
+    } else {
+      const entries = fresh.map(p => ({
+        key: p.id,
+        // The signature decides whether a row is rewritten at all. Age is excluded on
+        // purpose - it changes every second and would rebuild every live row forever,
+        // which is the churn this reconciler exists to stop. A ticker updates it instead.
+        sig: p.kind + '|' + p.name + '|' + p.worker + '|' + (p.stale ? 's' : ''),
+        html: liveRow(p),
+      }));
+      reconcile(liveBox, entries);
+      renderStaleFold(liveBox, stale);
+    }
 
     const max = Math.max.apply(null, d.recent.map(p => p.durationMs || 0).concat([1]));
-    document.getElementById('recent').innerHTML = d.recent.length
-      ? groupRuns(d.recent).map((g, i) => groupRow(g, max, i)).join('')
-      : '<div class="empty">Nothing yet.</div>';
-    restoreOpenGroups();
+    const recentBox = document.getElementById('recent');
+    if (!d.recent.length) {
+      recentBox.innerHTML = '<div class="empty">Nothing yet.</div>';
+      delete recentBox.dataset.primed;
+    } else {
+      const entries = groupRuns(d.recent).map((g, i) => {
+        const parts = groupRow(g, max, i);
+        return {
+          // Keyed on the first member so a run keeps its identity as it grows: appending
+          // a tick must not read as a different row arriving.
+          key: g.items[0].id,
+          sig: g.kind + '|' + g.name + '|' + g.items.length + '|' + Math.round(max),
+          html: parts.head,
+          after: parts.kids,
+        };
+      });
+      reconcile(recentBox, entries);
+    }
   } catch (e) {
     document.getElementById('meta').textContent = 'feed unreachable — retrying…';
   }
 }
 
-// Delegated because the lists are re-rendered wholesale every second; binding per row
-// would leak listeners and lose the open state on the next tick.
+// Keyed reconciliation. The panel used to assign innerHTML on every poll, which threw
+// away and rebuilt every node once a second: no CSS transition could survive it, the
+// open state of a group had to be restored by hand afterwards, and the page looked
+// static precisely BECAUSE it was being recreated so often. Rows now persist across
+// ticks and only their contents change, which is what makes motion possible at all.
+function reconcile(container, entries) {
+  // The empty placeholder carries no data-key, so the removal pass below would never
+  // collect it and it would sit above the first real row forever. Clear it on the way in.
+  const placeholder = container.querySelector(':scope > .empty');
+  if (placeholder) placeholder.remove();
+
+  const seen = new Set();
+  let anchor = null;
+  for (const e of entries) {
+    seen.add(e.key);
+    let node = container.querySelector('[data-key="' + CSS.escape(e.key) + '"]');
+    if (!node) {
+      const holder = document.createElement('div');
+      holder.innerHTML = e.html;
+      node = holder.firstElementChild;
+      if (!node) continue;
+      node.dataset.key = e.key;
+      node.classList.add('enter');
+      // Only the first paint should be quiet - otherwise the initial load animates
+      // twenty rows at once and reads as noise rather than as arrival.
+      if (!container.dataset.primed) node.classList.remove('enter');
+    } else if (node.dataset.sig !== e.sig) {
+      const wasOpen = node.classList.contains('open');
+      const holder = document.createElement('div');
+      holder.innerHTML = e.html;
+      const fresh = holder.firstElementChild;
+      if (fresh) { node.innerHTML = fresh.innerHTML; node.className = fresh.className; }
+      node.dataset.key = e.key;
+      if (wasOpen) node.classList.add('open');
+    }
+    node.dataset.sig = e.sig;
+    // insertBefore with an existing node MOVES it, so order follows the feed without
+    // rebuilding anything.
+    container.insertBefore(node, anchor ? anchor.nextSibling : container.firstChild);
+    anchor = node;
+    if (e.after) {
+      const kids = e.after;
+      let kn = container.querySelector('[data-key="' + CSS.escape(e.key) + '::kids"]');
+      if (!kn) {
+        const h = document.createElement('div');
+        h.innerHTML = kids;
+        kn = h.firstElementChild;
+        if (kn) kn.dataset.key = e.key + '::kids';
+      }
+      if (kn) {
+        seen.add(e.key + '::kids');
+        kn.hidden = !node.classList.contains('open');
+        container.insertBefore(kn, anchor.nextSibling);
+        anchor = kn;
+      }
+    }
+  }
+  container.dataset.primed = '1';
+  Array.from(container.children).forEach(n => {
+    if (!n.dataset.key || seen.has(n.dataset.key)) return;
+    n.classList.add('leaving');
+    setTimeout(() => n.remove(), 200);
+  });
+}
+
+// Delegated because rows are reconciled rather than owned by a listener each.
 document.addEventListener('click', (e) => {
   const fold = e.target.closest('#stale-fold');
   if (fold) {
@@ -272,25 +383,54 @@ document.addEventListener('click', (e) => {
   }
   const g = e.target.closest('.group');
   if (!g) return;
-  const kids = document.querySelector('[data-kids="' + g.dataset.group + '"]');
+  const kids = g.nextElementSibling && g.nextElementSibling.classList.contains('kids')
+    ? g.nextElementSibling : null;
   if (!kids) return;
   kids.hidden = !kids.hidden;
   g.classList.toggle('open', !kids.hidden);
-  // A run the reader opened must survive the next poll, or the panel fights them.
-  openGroups[g.querySelector('.name').textContent.trim()] = !kids.hidden;
+  // No bookkeeping needed any more: the row and its children are the same DOM nodes
+  // next tick, so the open state simply stays. That was the workaround the wholesale
+  // innerHTML rewrite forced, and reconciliation removed the need for it.
 });
 
-// Which runs the reader has opened, keyed by name so it survives re-render.
-const openGroups = {};
+// The stale fold is appended after the live rows and owned outside the reconciler,
+// which keys on process ids it has no business inventing one for.
+function renderStaleFold(box, stale) {
+  const existing = box.querySelector('.fold');
+  const list = box.querySelector('#stale-list');
+  if (!stale.length) { if (existing) existing.remove(); if (list) list.remove(); return; }
+  const oldest = fmtAge(Math.max.apply(null, stale.map(p => p.ageS)));
+  const open = list ? !list.hidden : false;
+  const label = (open ? '▼ ' : '▶ ') + stale.length + ' stale · oldest ' + oldest;
+  if (existing) { existing.textContent = label; } else {
+    const f = document.createElement('div');
+    f.className = 'fold'; f.id = 'stale-fold'; f.textContent = label;
+    box.appendChild(f);
+  }
+  const holder = list || document.createElement('div');
+  holder.id = 'stale-list';
+  holder.hidden = !open;
+  holder.innerHTML = stale.map(liveRow).join('');
+  if (!list) box.appendChild(holder);
+}
 
-function restoreOpenGroups() {
-  document.querySelectorAll('.group').forEach(g => {
-    const key = g.querySelector('.name').textContent.trim();
-    if (!openGroups[key]) return;
-    const kids = document.querySelector('[data-kids="' + g.dataset.group + '"]');
-    if (kids) { kids.hidden = false; g.classList.add('open'); }
+// Live ages advance every 200ms from the last snapshot rather than jumping once a
+// second. Continuous motion is most of what separates "live" from "refreshing", and it
+// costs one interval instead of a transport rewrite.
+let lastSnapshotAt = 0, liveAges = {};
+function tickAges() {
+  if (paused || !lastSnapshotAt) return;
+  const drift = Math.floor((Date.now() - lastSnapshotAt) / 1000);
+  document.querySelectorAll('#live .row[data-key]').forEach(row => {
+    const base = liveAges[row.dataset.key];
+    if (base === undefined) return;
+    const el = row.querySelector('.age');
+    if (!el) return;
+    const stale = el.classList.contains('stale');
+    el.textContent = fmtAge(base + drift) + (stale ? ' · stale' : '');
   });
 }
+setInterval(tickAges, 200);
 
 tick();
 timer = setInterval(tick, 1000);
