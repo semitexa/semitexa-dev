@@ -96,6 +96,10 @@ class VerificationPlannerTest extends TestCase
         $commands = $this->lintCommandNames($plan);
         sort($commands);
         $this->assertSame([
+            // Deferred slot templates are rendered twice - Twig on the server,
+            // semitexa-twig.js on the client - and anything outside the client
+            // subset renders as an empty string with no error.
+            'lint:deferred-twig',
             'lint:di',
             'lint:handlers',
             // Broad scope runs every lint, including the mechanism check that
