@@ -100,6 +100,40 @@ a.row:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .empty{padding:18px;color:var(--dim);font-size:13px}
 .tracelink{font-family:var(--mono);font-size:11.5px;color:var(--accent);text-align:right}
+
+/* Duration as GEOMETRY, not digits. The bar sits behind the row so the eye reads
+   magnitude before it reads anything else - the list spans 0.076 ms to 23915 ms and
+   a right-aligned number makes those look equally heavy.
+   LOG scale on purpose: linear would render everything except the slowest row as an
+   invisible sliver, which is the same "one bar at 98%" problem the waterfall has. */
+.row{position:relative}
+.bar{position:absolute;left:0;top:0;bottom:0;width:0;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 22%,transparent),transparent);
+  pointer-events:none;transition:width .25s ease}
+.bar.hot{background:linear-gradient(90deg,color-mix(in srgb,var(--warn) 26%,transparent),transparent)}
+.bar.slow{background:linear-gradient(90deg,color-mix(in srgb,var(--danger) 26%,transparent),transparent)}
+/* :not(.bar) matters - a bare .row>* rule outranks .bar's position:absolute on
+   specificity, which drops the bar back into the grid as a real column and shifts
+   every cell right. It must stay out of flow. */
+.row>*:not(.bar){position:relative}
+
+/* Repetition collapsed. Ten identical FundsTickJob lines say nothing ten times; one
+   line with a count and the shape of those durations says it once and adds the trend. */
+.count{font-family:var(--mono);font-size:11px;color:var(--bg);background:var(--accent);
+  border-radius:999px;padding:1px 7px;margin-left:8px;font-weight:700}
+.spark{display:inline-flex;align-items:flex-end;gap:2px;height:14px;margin-left:10px;vertical-align:-2px}
+.spark i{width:3px;background:var(--dim);border-radius:1px;min-height:2px;display:block}
+.group{cursor:pointer}
+.group:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.caret{display:inline-block;width:10px;color:var(--dim);transition:transform .15s ease}
+.group.open .caret{transform:rotate(90deg)}
+.child{padding-left:34px;background:color-mix(in srgb,var(--line) 30%,transparent)}
+
+/* Stale processes are hours-dead and were crowding out everything live. Demoted to a
+   fold rather than hidden - they still matter when nothing else explains a wedged worker. */
+.fold{padding:9px 16px;color:var(--dim);font-size:12.5px;font-family:var(--mono);
+  cursor:pointer;border-bottom:1px solid var(--line)}
+.fold:hover{color:var(--text)}
 CSS;
     }
 
@@ -117,6 +151,37 @@ document.getElementById('pause').addEventListener('click', function () {
   if (!paused) tick();
 });
 
+// Magnitude on a LOG scale. The list routinely spans five orders of magnitude
+// (0.076 ms next to 23915 ms); linear would leave every row but the slowest at zero
+// width, which is exactly the "one bar at 98%" failure the deep view already has.
+function barWidth(ms, max) {
+  if (!ms || !max || max <= 0) return 0;
+  return Math.max(2, Math.round(100 * Math.log10(1 + ms) / Math.log10(1 + max)));
+}
+function barClass(ms) {
+  return ms >= 1000 ? ' slow' : ms >= 100 ? ' hot' : '';
+}
+
+// Consecutive only, never global: collapsing across the whole list would reorder time,
+// and "these ten ran back to back" is itself the information.
+function groupRuns(rows) {
+  const out = [];
+  for (const p of rows) {
+    const last = out[out.length - 1];
+    if (last && last.kind === p.kind && last.name === p.name) { last.items.push(p); continue; }
+    out.push({kind: p.kind, name: p.name, items: [p]});
+  }
+  return out;
+}
+
+function sparkline(items) {
+  const vals = items.map(p => p.durationMs || 0);
+  const max = Math.max.apply(null, vals.concat([1]));
+  return '<span class="spark" title="' + vals.map(v => fmtMs(v)).join(' · ') + '">'
+    + vals.map(v => '<i style="height:' + Math.max(2, Math.round(14 * v / max)) + 'px"></i>').join('')
+    + '</span>';
+}
+
 function liveRow(p) {
   return '<div class="row">'
     + '<span class="kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span>'
@@ -127,15 +192,37 @@ function liveRow(p) {
     + '</div>';
 }
 
-function recentRow(p) {
-  const inner = '<span class="kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span>'
+function recentRow(p, max, extraClass) {
+  const w = barWidth(p.durationMs, max);
+  const inner = '<span class="bar' + barClass(p.durationMs) + '" style="width:' + w + '%"></span>'
+    + '<span class="kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span>'
     + '<span class="name">' + esc(p.name) + '</span>'
     + '<span class="num">w' + esc(p.worker) + '</span>'
     + '<span class="num hot">' + fmtMs(p.durationMs) + '</span>'
     + '<span class="tracelink">' + (p.trace ? 'waterfall →' : '') + '</span>';
+  const cls = 'row' + (extraClass ? ' ' + extraClass : '');
   return p.trace
-    ? '<a class="row" href="/__trace?file=' + encodeURIComponent(p.trace) + '">' + inner + '</a>'
-    : '<div class="row">' + inner + '</div>';
+    ? '<a class="' + cls + '" href="/__trace?file=' + encodeURIComponent(p.trace) + '">' + inner + '</a>'
+    : '<div class="' + cls + '">' + inner + '</div>';
+}
+
+// A run of identical processes becomes ONE row carrying the count, the total, and the
+// shape of the individual durations. Click opens the run in place rather than navigating.
+function groupRow(g, max, idx) {
+  if (g.items.length === 1) return recentRow(g.items[0], max);
+  const total = g.items.reduce((a, p) => a + (p.durationMs || 0), 0);
+  const head = '<div class="row group" data-group="' + idx + '">'
+    + '<span class="bar' + barClass(total) + '" style="width:' + barWidth(total, max) + '%"></span>'
+    + '<span class="kind ' + esc(g.kind) + '">' + esc(g.kind) + '</span>'
+    + '<span class="name"><span class="caret">▶</span> ' + esc(g.name)
+    + '<span class="count">×' + g.items.length + '</span>' + sparkline(g.items) + '</span>'
+    + '<span class="num"></span>'
+    + '<span class="num hot">' + fmtMs(total) + '</span>'
+    + '<span class="tracelink">total</span>'
+    + '</div>';
+  const kids = '<div class="kids" data-kids="' + idx + '" hidden>'
+    + g.items.map(p => recentRow(p, max, 'child')).join('') + '</div>';
+  return head + kids;
 }
 
 async function tick() {
@@ -150,13 +237,59 @@ async function tick() {
       + (d.truncated ? ' · journal tail truncated' : '');
     document.getElementById('live-note').textContent =
       Object.entries(d.counts.byKind).map(([k, n]) => n + ' ' + k).join(' · ');
+    // Stale entries are hours-dead and were filling the LIVE panel, which is the one
+    // place that must answer "what is happening RIGHT NOW". Folded, not dropped - a
+    // wedged worker is sometimes the only thing that explains a stuck request.
+    const fresh = d.live.filter(p => !p.stale);
+    const stale = d.live.filter(p => p.stale);
+    let liveHtml = fresh.length ? fresh.map(liveRow).join('') : '';
+    if (stale.length) {
+      liveHtml += '<div class="fold" id="stale-fold">▶ ' + stale.length
+        + ' stale · oldest ' + fmtAge(Math.max.apply(null, stale.map(p => p.ageS))) + '</div>'
+        + '<div id="stale-list" hidden>' + stale.map(liveRow).join('') + '</div>';
+    }
     document.getElementById('live').innerHTML =
-      d.live.length ? d.live.map(liveRow).join('') : '<div class="empty">Nothing in flight.</div>';
-    document.getElementById('recent').innerHTML =
-      d.recent.length ? d.recent.map(recentRow).join('') : '<div class="empty">Nothing yet.</div>';
+      liveHtml || '<div class="empty">Nothing in flight.</div>';
+
+    const max = Math.max.apply(null, d.recent.map(p => p.durationMs || 0).concat([1]));
+    document.getElementById('recent').innerHTML = d.recent.length
+      ? groupRuns(d.recent).map((g, i) => groupRow(g, max, i)).join('')
+      : '<div class="empty">Nothing yet.</div>';
+    restoreOpenGroups();
   } catch (e) {
     document.getElementById('meta').textContent = 'feed unreachable — retrying…';
   }
+}
+
+// Delegated because the lists are re-rendered wholesale every second; binding per row
+// would leak listeners and lose the open state on the next tick.
+document.addEventListener('click', (e) => {
+  const fold = e.target.closest('#stale-fold');
+  if (fold) {
+    const list = document.getElementById('stale-list');
+    if (list) { list.hidden = !list.hidden; fold.textContent = (list.hidden ? '▶ ' : '▼ ') + fold.textContent.slice(2); }
+    return;
+  }
+  const g = e.target.closest('.group');
+  if (!g) return;
+  const kids = document.querySelector('[data-kids="' + g.dataset.group + '"]');
+  if (!kids) return;
+  kids.hidden = !kids.hidden;
+  g.classList.toggle('open', !kids.hidden);
+  // A run the reader opened must survive the next poll, or the panel fights them.
+  openGroups[g.querySelector('.name').textContent.trim()] = !kids.hidden;
+});
+
+// Which runs the reader has opened, keyed by name so it survives re-render.
+const openGroups = {};
+
+function restoreOpenGroups() {
+  document.querySelectorAll('.group').forEach(g => {
+    const key = g.querySelector('.name').textContent.trim();
+    if (!openGroups[key]) return;
+    const kids = document.querySelector('[data-kids="' + g.dataset.group + '"]');
+    if (kids) { kids.hidden = false; g.classList.add('open'); }
+  });
 }
 
 tick();
