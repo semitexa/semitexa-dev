@@ -118,6 +118,43 @@ final class TraceHtmlRendererGraphLinkTest extends TestCase
      * @param  array<string, mixed> $context
      * @return array<string, mixed>
      */
+
+    #[Test]
+    public function a_step_that_names_its_method_links_to_that_method(): void
+    {
+        $html = (new TraceHtmlRenderer())->renderTrace($this->trace([
+            $this->span('pipeline', ['handler' => 'App\\Handler\\ThingHandler', 'method' => 'handle']),
+        ]));
+
+        self::assertStringContainsString(
+            'href="/__trace/node?class=App%5CHandler%5CThingHandler&amp;from=t.json&amp;method=handle"',
+            $html,
+        );
+        self::assertStringContainsString('ThingHandler::handle()', $html);
+    }
+
+    #[Test]
+    public function an_http_verb_is_not_a_method(): void
+    {
+        // A class beside a verb-shaped method key: the verb must not become a link target.
+        $html = (new TraceHtmlRenderer())->renderTrace($this->trace([
+            $this->span('request', ['method' => 'GET', 'path' => '/x', 'gate' => 'App\\Auth\\Gate']),
+        ]));
+
+        self::assertStringNotContainsString('method=GET', $html);
+        self::assertStringContainsString('class=App%5CAuth%5CGate&amp;from=t.json"', $html);
+    }
+
+    #[Test]
+    public function a_listener_span_links_to_the_listener_not_the_event(): void
+    {
+        $html = (new TraceHtmlRenderer())->renderTrace($this->trace([
+            $this->span('event.listener', ['event' => 'App\\Event\\Thing', 'listener' => 'App\\Listener\\OnThing', 'method' => 'handle']),
+        ]));
+
+        self::assertStringContainsString('class=App%5CListener%5COnThing&amp;from=t.json&amp;method=handle"', $html);
+    }
+
     private function span(string $name, array $context): array
     {
         return [

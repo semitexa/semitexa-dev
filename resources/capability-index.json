@@ -1,12 +1,13 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-08-20T05:05:42+00:00",
-    "count": 60,
+    "generated_at": "2026-09-03T16:44:04+00:00",
+    "count": 62,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
         "semitexa/authorization",
         "semitexa/cache",
+        "semitexa/cms",
         "semitexa/core",
         "semitexa/demo",
         "semitexa/dev",
@@ -23,6 +24,7 @@
         "semitexa/os",
         "semitexa/platform-settings",
         "semitexa/platform-ui",
+        "semitexa/platform-user",
         "semitexa/project-graph",
         "semitexa/prompt",
         "semitexa/rbac",
@@ -44,7 +46,7 @@
         "semitexa/webhooks",
         "semitexa/workflow"
     ],
-    "content_hash": "07e1fa0042dfb4e693a9cc7b90c535e8f19e44892e3e23bd59d242a32720dcfc",
+    "content_hash": "4cd084000636fe725134e634409e0111c896189008d368f4c5856d80912a23b9",
     "capabilities": [
         {
             "id": "api.external",
@@ -107,6 +109,21 @@
             "package": "semitexa/cache"
         },
         {
+            "id": "cms.site-map",
+            "summary": "A site as a navigable map of places: pages that open an editor, collections that open a grid.",
+            "use_when": "Someone who did not build the site has to find and change its content.",
+            "avoid_when": "The site has three pages and a menu already shows all of them.",
+            "replaces": [
+                "an admin menu hand-written per site, and rewritten whenever the structure changes",
+                "a tree built by dumping a content table into the UI, where 40 exhibition texts sit beside the contacts page as equals"
+            ],
+            "see_also": "semitexa/weave",
+            "kind": "package",
+            "declared_by": "Semitexa\\Cms\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/cms"
+        },
+        {
             "id": "core.framework",
             "summary": "The runtime every other package builds on: attribute discovery, the two-tier container, routing, events and the console kernel.",
             "use_when": "Always. It is the floor of a Semitexa project rather than a choice made within one.",
@@ -154,7 +171,7 @@
         },
         {
             "id": "dev.observatory",
-            "summary": "Live observation of every process (requests, SSE, scheduler runs, queue messages) with deep-dive traces and sandbox replay: the /__observatory panel for humans, ai:observe ps|tail|show|replay for agents. SEMITEXA_OBSERVATORY_MODE=monitor gives production the journal alone \u2014 sampled lifecycles, panel behind a token or loopback tunnel, no traces, no replay.",
+            "summary": "Live observation of every process (requests, SSE, scheduler runs, queue messages) with deep-dive traces and sandbox replay: the /__observatory panel for humans, ai:observe ps|tail|show|replay for agents. Every traced step links to the source of the method that ran it (/__trace/node, ai:observe show --source) \u2014 read live from the working copy, never copied into the recording. SEMITEXA_OBSERVATORY_MODE=monitor gives production the journal alone \u2014 sampled lifecycles, panel behind a token or loopback tunnel, no traces, no replay.",
             "use_when": "Debugging a Semitexa app: what is running right now, what just happened, where the milliseconds or the N+1 went, or re-running a recorded request with mutated inputs \u2014 writes rolled back, queue handoffs captured. On production, monitor mode answers the load questions: what runs, how often, how long.",
             "avoid_when": "Deep-dive on production (traces, deep context and replay stay dev-only \u2014 monitor mode is journal lifecycles only) or profiling for microbenchmarks \u2014 spans are semantic framework steps, not a sampling profiler.",
             "replaces": [
@@ -377,6 +394,22 @@
             "declared_by": "Semitexa\\TicTacToe\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/tictactoe"
+        },
+        {
+            "id": "platform-user.identity",
+            "summary": "People who sign in: password credentials, roles, tenant binding, and the lockout that follows repeated failures.",
+            "use_when": "Something in the project needs a human to log in \u2014 an admin console, a customer area, any session-backed page.",
+            "avoid_when": "Identity comes from elsewhere entirely \u2014 an upstream SSO, or machine credentials (semitexa/api) rather than people.",
+            "replaces": [
+                "a users table with password_hash() called at three different call sites and verified at a fourth",
+                "a failed-attempt counter that each handler increments its own way, or not at all",
+                "a UserProviderInterface implementation written per project so session auth stops being inert"
+            ],
+            "see_also": "semitexa/auth",
+            "kind": "package",
+            "declared_by": "Semitexa\\Platform\\User\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/platform-user"
         },
         {
             "id": "prompt.catalog",

@@ -248,16 +248,24 @@ final class TraceHtmlRenderer
         // trace says this class ran; the graph says what it is wired to, and that
         // half is a property of the code, so it is resolved on the way out rather
         // than frozen into the recording.
-        $class = $this->classIn($context);
+        // A span that names its method (handler => X, method => handle) links
+        // straight to that method's source; one that names only the class
+        // lands on the class's conventional entry point.
+        $target = SpanTarget::of($context);
+        $class = $target?->class;
+        $method = $target?->method;
         $tag = $class === null ? 'div' : 'a';
         $href = $class === null ? '' : sprintf(
-            ' href="/__trace/node?class=%s&amp;from=%s"',
+            ' href="/__trace/node?class=%s&amp;from=%s%s"',
             rawurlencode($class),
             rawurlencode($from),
+            $method === null ? '' : '&amp;method=' . rawurlencode($method),
         );
 
         if ($class !== null) {
-            $tip .= "\n\nClick to open " . $this->shortClass($class) . ' in the project graph';
+            $tip .= "\n\nClick to open " . $this->shortClass($class)
+                . ($method === null ? '' : '::' . $method . '()')
+                . ' — source and project graph';
         }
 
         return sprintf(
@@ -280,41 +288,6 @@ final class TraceHtmlRenderer
     }
 
     /**
-     * The class a step points at, if it named one.
-     *
-     * Matched on shape rather than against a list of context keys, so a span
-     * added later — a new gate, a new pipeline phase — is linkable the day it is
-     * recorded instead of the day someone remembers to extend a list here.
-     *
-     * @param array<mixed, mixed> $context
-     */
-    private function classIn(array $context): ?string
-    {
-        $preferred = ['handler', 'payload', 'resource', 'gate'];
-
-        foreach ($preferred as $key) {
-            $value = $context[$key] ?? null;
-            if (is_string($value) && $this->looksLikeClass($value)) {
-                return $value;
-            }
-        }
-
-        foreach ($context as $value) {
-            if (is_string($value) && $this->looksLikeClass($value)) {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    private function looksLikeClass(string $value): bool
-    {
-        return str_contains($value, '\\')
-            && preg_match('/^[A-Za-z_\x80-\xff][\w\x80-\xff]*(\\\\[A-Za-z_\x80-\xff][\w\x80-\xff]*)+$/', $value) === 1;
-    }
-
-    /**
      * One class as the graph knows it: what it is, and what it is wired to.
      *
      * The trace answers "what ran". This answers "why that, and what else touches
@@ -328,16 +301,26 @@ final class TraceHtmlRenderer
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null $node
      */
-    public function renderNode(string $requested, ?array $node, string $from, bool $graphAvailable): string
-    {
+    public function renderNode(
+        string $requested,
+        ?array $node,
+        string $from,
+        bool $graphAvailable,
+        ?SourceSlice $slice = null,
+        bool $classScope = false,
+    ): string {
         $back = $from !== ''
             ? '<a class="back" href="/__trace?file=' . rawurlencode($from) . '">&larr; back to the trace</a>'
             : '<a class="back" href="/__trace">&larr; all traces</a>';
 
-        if ($node === null) {
+        if ($node === null && $slice === null) {
             return $this->page('Not in the graph', $back . $this->missingNode($requested, $graphAvailable));
         }
 
+        // The graph may not know a class whose file is right there on disk (a
+        // class newer than the last graph build, say). The source is then the
+        // whole page, and the head is built from what the slice knows.
+        $fqcn = $node['fqcn'] ?? $slice?->fqcn ?? $requested;
         $head = sprintf(
             '<div class="head">%s
                <h1>%s <span class="kind">%s</span></h1>
@@ -345,21 +328,96 @@ final class TraceHtmlRenderer
                <div class="meta dim">%s &middot; %s:%d</div>
              </div>',
             $back,
-            $this->e($node['name']),
-            $this->e($node['type']),
-            $this->e($node['fqcn']),
-            $this->e($node['module'] !== '' ? $node['module'] : 'no module'),
-            $this->e($node['file']),
-            $node['line'],
+            $this->e($this->shortClass($fqcn)),
+            $this->e($node['type'] ?? 'not in graph'),
+            $this->e($fqcn),
+            $this->e(($node['module'] ?? '') !== '' ? $node['module'] : 'no module'),
+            $this->e($node['file'] ?? $slice?->file ?? ''),
+            $node['line'] ?? $slice?->startLine ?? 0,
         );
 
-        // Outgoing first: "what this reaches for" is the question a reader arrives
-        // with, having just watched it run.
-        return $this->page(
-            $node['name'],
-            $head
-            . $this->edges('Reaches', $node['out'], $from, 'to')
-            . $this->edges('Reached by', $node['in'], $from, 'from'),
+        // Source first: a reader who clicked a step wants to see what ran before
+        // they want to see what it is wired to. Then outgoing edges — "what this
+        // reaches for" — then incoming.
+        $body = $head . $this->source($fqcn, $slice, $from, $classScope);
+        if ($node !== null) {
+            $body .= $this->edges('Reaches', $node['out'], $from, 'to')
+                . $this->edges('Reached by', $node['in'], $from, 'from');
+        } else {
+            $body .= '<section><h2>Graph</h2><p class="dim">'
+                . ($graphAvailable
+                    ? 'The project graph does not know this class yet — rebuild with <code>bin/semitexa ai:review-graph:generate</code> to see what it is wired to.'
+                    : 'No project graph was found. Build one with <code>bin/semitexa ai:review-graph:generate</code> to see what this class is wired to.')
+                . '</p></section>';
+        }
+
+        return $this->page($this->shortClass($fqcn), $body);
+    }
+
+    /**
+     * The code behind the class: one method by default, the class on request.
+     *
+     * Line numbers are the file's own, so a reader can go straight to the
+     * editor; the toggle swaps scope without losing the trace they came from.
+     */
+    private function source(string $fqcn, ?SourceSlice $slice, string $from, bool $classScope): string
+    {
+        if ($slice === null) {
+            return '<section><h2>Source</h2><p class="dim">Source unavailable — the class could not be '
+                . 'loaded, or its file is outside the project root.</p></section>';
+        }
+
+        $link = fn (string $scope): string => sprintf(
+            '/__trace/node?class=%s&amp;from=%s&amp;scope=%s',
+            rawurlencode($fqcn),
+            rawurlencode($from),
+            $scope,
+        );
+
+        $what = $slice->method !== null
+            ? '<code>' . $this->e($slice->method) . '()</code>'
+            : 'whole class';
+
+        $toggle = match (true) {
+            $classScope => '<a class="src-toggle" href="' . $link('method') . '">entry method</a>',
+            $slice->method !== null => '<a class="src-toggle" href="' . $link('class') . '">whole class</a>',
+            // Method scope was asked for and none was found: the class is
+            // already what is shown, and a toggle to it would be a no-op.
+            default => '<span class="dim">no conventional entry method — showing the class</span>',
+        };
+
+        $notes = '';
+        if ($slice->truncated) {
+            $notes .= '<p class="nplus">Cut at ' . count($slice->lines) . ' lines. The rest is in the file — '
+                . '<code>' . $this->e($slice->file) . '</code>.</p>';
+        }
+        if ($slice->origin === 'graph') {
+            $notes .= '<p class="dim src-note">Bounds from the project graph, which is as fresh as its last build; '
+                . 'the class itself could not be loaded, so only the class view is available.</p>';
+        }
+
+        $numbered = '';
+        foreach ((new SourceHighlighter())->lines($slice->lines) as $html) {
+            $numbered .= '<li>' . ($html === '' ? '&nbsp;' : $html) . '</li>';
+        }
+
+        return sprintf(
+            '<section>
+               <h2>Source <span class="dim src-where">%s &middot; %s:%d–%d</span></h2>
+               <div class="src-head">%s%s</div>%s
+               <pre class="src"><ol start="%d">%s</ol></pre>
+             </section>',
+            $what,
+            $this->e($slice->file),
+            $slice->startLine,
+            $slice->endLine,
+            $toggle,
+            $slice->method !== null
+                ? ' <span class="dim">&middot; ' . $this->e($this->shortClass($slice->fqcn)) . '::' . $this->e($slice->method) . '</span>'
+                : '',
+            $notes,
+            $slice->startLine,
+            $numbered,
         );
     }
 
@@ -560,6 +618,25 @@ a.node:hover .nname{text-decoration-color:currentColor}
 .ekind{font-family:var(--mono);font-size:11px;color:var(--accent)}
 .ename{font-family:var(--mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .etype{font-size:11px;color:var(--dim)}
+
+/* Source: the file's own numbering, the page's own palette. */
+.src-where{text-transform:none;letter-spacing:0;font-family:var(--mono);font-size:12px}
+.src-head{display:flex;gap:10px;align-items:baseline;font-size:13px;margin:0 0 10px}
+.src-toggle{color:var(--accent);text-decoration:none;font-size:12px;border:1px solid var(--line);
+  border-radius:4px;padding:2px 8px}
+.src-toggle:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.src-note{font-size:12.5px;margin:0 0 10px}
+.src{margin:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;tab-size:4}
+.src ol{margin:0;padding:12px 0 12px 64px;list-style:decimal}
+.src li{padding:0 16px 0 8px;white-space:pre}
+.src li::marker{color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
+.src li:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.src .k{color:#c678dd}.src .s{color:#98c379}.src .c{color:var(--dim);font-style:italic}
+.src .v{color:#e5c07b}.src .n{color:#d19a66}.src .i{color:var(--text)}.src .a{color:#56b6c2}
+@media (prefers-color-scheme:light){
+  .src .k{color:#a626a4}.src .s{color:#50a14f}.src .v{color:#986801}.src .n{color:#c18401}.src .a{color:#0184bc}
+}
 
 .empty{text-align:center;padding:80px 20px}
 .empty h1{margin-bottom:12px}
