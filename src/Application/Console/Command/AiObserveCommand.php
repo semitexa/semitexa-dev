@@ -393,6 +393,11 @@ final class AiObserveCommand extends BaseCommand
      * uses: the recorded method when the span has one, the conventional entry
      * method otherwise, the class when neither exists.
      *
+     * The key is the RESOLVED identity, not the requested one: a span that
+     * named only the class and resolved to handle() shares its entry with a
+     * span that named Class::handle outright. Only an unreadable source keeps
+     * the requested key, so the consumer still learns where the span pointed.
+     *
      * @param  array<string, mixed> $trace
      * @return array<string, mixed> the trace with `source_ref` on spans and a top-level `source` map
      */
@@ -400,6 +405,8 @@ final class AiObserveCommand extends BaseCommand
     {
         $catalog = new EntryMethodCatalog();
         $sources = [];
+        /** @var array<string, string> $canonical requested key → resolved key, so each target resolves once */
+        $canonical = [];
 
         /** @var list<array<string, mixed>> $spans */
         $spans = is_array($trace['spans'] ?? null) ? $trace['spans'] : [];
@@ -409,18 +416,26 @@ final class AiObserveCommand extends BaseCommand
                 continue;
             }
 
-            $key = $target->key();
-            if (!array_key_exists($key, $sources)) {
+            $requested = $target->key();
+            if (!isset($canonical[$requested])) {
                 $slice = $target->method !== null
                     ? $this->source->slice($target->class, $target->method)
                     : $this->source->sliceAny($target->class, $catalog->candidates($target->class, null));
+                $key = match (true) {
+                    $slice === null => $requested,
+                    $slice->method === null => $slice->fqcn,
+                    default => $slice->fqcn . '::' . $slice->method,
+                };
+                $canonical[$requested] = $key;
                 // null stays in the map: the span still says it pointed
                 // somewhere, and the consumer learns the source was unreadable
                 // instead of wondering why a key is missing.
-                $sources[$key] = $slice?->toArray();
+                if (!array_key_exists($key, $sources)) {
+                    $sources[$key] = $slice?->toArray();
+                }
             }
 
-            $spans[$i]['source_ref'] = $key;
+            $spans[$i]['source_ref'] = $canonical[$requested];
         }
 
         $trace['spans'] = $spans;

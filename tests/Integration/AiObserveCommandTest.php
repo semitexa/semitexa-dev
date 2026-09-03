@@ -265,4 +265,34 @@ final class AiObserveCommandTest extends TestCase
 
         self::assertStringContainsString('"source":{}', $tester->getDisplay(), 'a map stays a map; a consumer must never meet [] on this field');
     }
+
+    #[Test]
+    public function a_class_only_span_and_an_explicit_method_span_share_one_resolved_entry(): void
+    {
+        // The first span names only the class; the convention resolves it to
+        // handle(). The second names Class::handle outright. One entry, one read.
+        $handler = 'Semitexa\\Dev\\Tests\\Fixtures\\Source\\SlicedFixtureHandler';
+        file_put_contents($this->dir . '/trace/t5.json', (string) json_encode([
+            'recordedAt' => date('c'), 'truncated' => false, 'totalMs' => 12.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 5.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler], 'durationMs' => 4.0],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 6.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 9.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler, 'method' => 'handle'], 'durationMs' => 3.0],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 12.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 12.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-5-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 12.0, 'trace' => 't5.json'],
+        ]);
+
+        $tester = $this->tester();
+        $tester->execute(['action' => 'show', '--id' => 'p-5-t', '--source' => true]);
+
+        $envelope = json_decode($tester->getDisplay(), true);
+        $refs = array_values(array_filter(array_column($envelope['trace']['spans'], 'source_ref')));
+        self::assertSame([$handler . '::handle', $handler . '::handle'], $refs, 'the ref is the RESOLVED identity, not the requested one');
+        self::assertSame([$handler . '::handle'], array_keys($envelope['source']));
+    }
 }

@@ -134,6 +134,7 @@ a.row:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
 .fold{padding:9px 16px;color:var(--dim);font-size:12.5px;font-family:var(--mono);
   cursor:pointer;border-bottom:1px solid var(--line)}
 .fold:hover{color:var(--text)}
+.fold:focus-visible,.group:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* Motion is only possible because rows now PERSIST between polls. The panel used to
    replace innerHTML wholesale every second, which destroyed and recreated every node -
@@ -227,7 +228,7 @@ function recentRow(p, max, extraClass) {
 function groupRow(g, max, idx) {
   if (g.items.length === 1) return {head: recentRow(g.items[0], max), kids: null};
   const total = g.items.reduce((a, p) => a + (p.durationMs || 0), 0);
-  const head = '<div class="row group" data-group="' + idx + '">'
+  const head = '<div class="row group" data-group="' + idx + '" role="button" tabindex="0" aria-expanded="false">'
     + '<span class="bar' + barClass(total) + '" style="width:' + barWidth(total, max) + '%"></span>'
     + '<span class="kind ' + esc(g.kind) + '">' + esc(g.kind) + '</span>'
     + '<span class="name"><span class="caret">▶</span> ' + esc(g.name)
@@ -261,12 +262,6 @@ async function tick() {
     lastSnapshotAt = Date.now();
     liveAges = {};
     d.live.forEach(p => { liveAges[p.id] = p.ageS; });
-    let liveHtml = fresh.length ? fresh.map(liveRow).join('') : '';
-    if (stale.length) {
-      liveHtml += '<div class="fold" id="stale-fold">▶ ' + stale.length
-        + ' stale · oldest ' + fmtAge(Math.max.apply(null, stale.map(p => p.ageS))) + '</div>'
-        + '<div id="stale-list" hidden>' + stale.map(liveRow).join('') + '</div>';
-    }
     const liveBox = document.getElementById('live');
     if (!fresh.length && !stale.length) {
       liveBox.innerHTML = '<div class="empty">Nothing in flight.</div>';
@@ -357,7 +352,7 @@ function reconcile(container, entries) {
         }
       }
       node.dataset.key = e.key;
-      if (wasOpen) node.classList.add('open');
+      if (wasOpen) { node.classList.add('open'); node.setAttribute('aria-expanded', 'true'); }
       changed.add(e.key);
     }
     node.dataset.sig = e.sig;
@@ -396,23 +391,39 @@ function reconcile(container, entries) {
 }
 
 // Delegated because rows are reconciled rather than owned by a listener each.
-document.addEventListener('click', (e) => {
-  const fold = e.target.closest('#stale-fold');
-  if (fold) {
-    const list = document.getElementById('stale-list');
-    if (list) { list.hidden = !list.hidden; fold.textContent = (list.hidden ? '▶ ' : '▼ ') + fold.textContent.slice(2); }
-    return;
-  }
-  const g = e.target.closest('.group');
-  if (!g) return;
+// The fold and the group heads are divs acting as buttons, so they carry
+// role/tabindex/aria-expanded and answer Enter and Space the way a button would;
+// a keyboard user must be able to reach the trace links a closed run hides.
+function toggleFold(fold) {
+  const list = document.getElementById('stale-list');
+  if (!list) return;
+  list.hidden = !list.hidden;
+  fold.textContent = (list.hidden ? '▶ ' : '▼ ') + fold.textContent.slice(2);
+  fold.setAttribute('aria-expanded', String(!list.hidden));
+}
+function toggleGroup(g) {
   const kids = g.nextElementSibling && g.nextElementSibling.classList.contains('kids')
     ? g.nextElementSibling : null;
   if (!kids) return;
   kids.hidden = !kids.hidden;
   g.classList.toggle('open', !kids.hidden);
+  g.setAttribute('aria-expanded', String(!kids.hidden));
   // No bookkeeping needed any more: the row and its children are the same DOM nodes
   // next tick, so the open state simply stays. That was the workaround the wholesale
   // innerHTML rewrite forced, and reconciliation removed the need for it.
+}
+function activate(e) {
+  const fold = e.target.closest('#stale-fold');
+  if (fold) { toggleFold(fold); return true; }
+  const g = e.target.closest('.group');
+  if (g) { toggleGroup(g); return true; }
+  return false;
+}
+document.addEventListener('click', activate);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!e.target.matches || !e.target.matches('.group, #stale-fold')) return;
+  if (activate(e)) e.preventDefault();
 });
 
 // The stale fold is appended after the live rows and owned outside the reconciler,
@@ -424,9 +435,10 @@ function renderStaleFold(box, stale) {
   const oldest = fmtAge(Math.max.apply(null, stale.map(p => p.ageS)));
   const open = list ? !list.hidden : false;
   const label = (open ? '▼ ' : '▶ ') + stale.length + ' stale · oldest ' + oldest;
-  if (existing) { existing.textContent = label; } else {
+  if (existing) { existing.textContent = label; existing.setAttribute('aria-expanded', String(open)); } else {
     const f = document.createElement('div');
     f.className = 'fold'; f.id = 'stale-fold'; f.textContent = label;
+    f.setAttribute('role', 'button'); f.tabIndex = 0; f.setAttribute('aria-expanded', String(open));
     box.appendChild(f);
   }
   const holder = list || document.createElement('div');
