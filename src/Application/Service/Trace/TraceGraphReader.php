@@ -65,6 +65,7 @@ final class TraceGraphReader
      *     module: string,
      *     file: string,
      *     line: int,
+     *     endLine: int,
      *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null
@@ -117,6 +118,7 @@ final class TraceGraphReader
             'module' => $node->module,
             'file' => $this->relative($node->file),
             'line' => $node->line,
+            'endLine' => $node->endLine,
             'out' => $this->rank($out),
             'in' => $this->rank($in),
         ];

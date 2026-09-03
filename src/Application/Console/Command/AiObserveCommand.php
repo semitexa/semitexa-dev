@@ -10,6 +10,9 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 use Semitexa\Dev\Application\Service\Trace\ReplayRunner;
+use Semitexa\Dev\Application\Service\Trace\EntryMethodCatalog;
+use Semitexa\Dev\Application\Service\Trace\SourceSliceReader;
+use Semitexa\Dev\Application\Service\Trace\SpanTarget;
 use Semitexa\Dev\Application\Service\Trace\TraceReader;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -46,6 +49,9 @@ final class AiObserveCommand extends BaseCommand
     #[InjectAsReadonly]
     protected ReplayRunner $replayRunner;
 
+    #[InjectAsReadonly]
+    protected SourceSliceReader $source;
+
     public function __construct()
     {
         parent::__construct('ai:observe');
@@ -62,6 +68,7 @@ final class AiObserveCommand extends BaseCommand
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'How many rows (tail, default 50, max 500)')
             ->addOption('follow', null, InputOption::VALUE_NONE, 'Stream new rows as they land (tail)')
             ->addOption('duration', null, InputOption::VALUE_REQUIRED, 'Seconds to follow before exiting (default 15, max 300)')
+            ->addOption('source', null, InputOption::VALUE_NONE, 'Inline the source of the method/class each traced span ran (show; dev-only)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Accepted for ai:* symmetry; output is always JSON');
     }
 
@@ -342,6 +349,21 @@ final class AiObserveCommand extends BaseCommand
         if (is_string($traceFile) && $traceFile !== '') {
             $trace = $this->traces->read($traceFile);
             if ($trace !== null) {
+                if ((bool) $input->getOption('source')) {
+                    if (!ObservatoryMode::full()) {
+                        return $this->fail(
+                            $output,
+                            'source-requires-dev',
+                            'Inlining source reads files from the working copy and is dev-only; monitor mode is journal-only by design.',
+                        );
+                    }
+                    $trace = $this->withSource($trace);
+                    // An object even when empty: the field is a map keyed
+                    // Class::method, and a consumer indexing it must not meet
+                    // a JSON array on the one trace that named no class.
+                    $envelope['source'] = (object) $trace['source'];
+                    unset($trace['source']);
+                }
                 $envelope['trace'] = $trace;
             } else {
                 // The journal says a trace was written, but the file is gone
@@ -362,12 +384,72 @@ final class AiObserveCommand extends BaseCommand
         return self::SUCCESS;
     }
 
+    /**
+     * Attach the source behind every span that named a class.
+     *
+     * Each distinct Class::method is read once and keyed under `source`; the
+     * span carries only the key (`source_ref`), so a handler that ran ten
+     * times costs one slice, not ten. The same resolution the HTML node page
+     * uses: the recorded method when the span has one, the conventional entry
+     * method otherwise, the class when neither exists.
+     *
+     * The key is the RESOLVED identity, not the requested one: a span that
+     * named only the class and resolved to handle() shares its entry with a
+     * span that named Class::handle outright. Only an unreadable source keeps
+     * the requested key, so the consumer still learns where the span pointed.
+     *
+     * @param  array<string, mixed> $trace
+     * @return array<string, mixed> the trace with `source_ref` on spans and a top-level `source` map
+     */
+    private function withSource(array $trace): array
+    {
+        $catalog = new EntryMethodCatalog();
+        $sources = [];
+        /** @var array<string, string> $canonical requested key → resolved key, so each target resolves once */
+        $canonical = [];
+
+        /** @var list<array<string, mixed>> $spans */
+        $spans = is_array($trace['spans'] ?? null) ? $trace['spans'] : [];
+        foreach ($spans as $i => $span) {
+            $target = SpanTarget::of(is_array($span['context'] ?? null) ? $span['context'] : []);
+            if ($target === null) {
+                continue;
+            }
+
+            $requested = $target->key();
+            if (!isset($canonical[$requested])) {
+                $slice = $target->method !== null
+                    ? $this->source->slice($target->class, $target->method)
+                    : $this->source->sliceAny($target->class, $catalog->candidates($target->class, null));
+                $key = match (true) {
+                    $slice === null => $requested,
+                    $slice->method === null => $slice->fqcn,
+                    default => $slice->fqcn . '::' . $slice->method,
+                };
+                $canonical[$requested] = $key;
+                // null stays in the map: the span still says it pointed
+                // somewhere, and the consumer learns the source was unreadable
+                // instead of wondering why a key is missing.
+                if (!array_key_exists($key, $sources)) {
+                    $sources[$key] = $slice?->toArray();
+                }
+            }
+
+            $spans[$i]['source_ref'] = $canonical[$requested];
+        }
+
+        $trace['spans'] = $spans;
+        $trace['source'] = $sources;
+
+        return $trace;
+    }
+
     private function unknown(OutputInterface $output): int
     {
         $output->writeln((string) json_encode([
             'artifact' => 'semitexa-dev.ai-observe.error/v1',
             'error' => 'unknown-action',
-            'hint' => 'Actions: ps | tail [--kind= --name= --lines= --follow --duration=] | show --id=',
+            'hint' => 'Actions: ps | tail [--kind= --name= --lines= --follow --duration=] | show --id= [--source] | replay --id= [--mutate k=v]',
         ]));
 
         return self::FAILURE;

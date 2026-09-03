@@ -9,6 +9,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Dev\Application\Console\Command\AiObserveCommand;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 use Semitexa\Dev\Application\Service\Trace\ReplayRunner;
+use Semitexa\Dev\Application\Service\Trace\SourceSliceReader;
 use Semitexa\Dev\Application\Service\Trace\TraceReader;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Semitexa\Testing\TestCase;
@@ -68,6 +69,7 @@ final class AiObserveCommandTest extends TestCase
             // Bare instance: these tests never reach the replay action; its
             // own dependencies are exercised by ReplayGuardsTest and live runs.
             ReplayRunner::class => new ReplayRunner(),
+            SourceSliceReader::class => new SourceSliceReader(),
         ]));
         $app = new Application();
         $app->add($command);
@@ -139,6 +141,65 @@ final class AiObserveCommandTest extends TestCase
     }
 
     #[Test]
+    public function show_with_source_inlines_the_code_each_span_ran(): void
+    {
+        // Two spans onto the same handler: one slice, two refs.
+        $handler = 'Semitexa\\Dev\\Tests\\Fixtures\\Source\\SlicedFixture';
+        file_put_contents($this->dir . '/trace/t2.json', (string) json_encode([
+            'recordedAt' => date('c'),
+            'truncated' => false,
+            'totalMs' => 12.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 5.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler, 'method' => 'target'], 'durationMs' => 4.0],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 6.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 9.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler, 'method' => 'target'], 'durationMs' => 3.0],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 12.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 12.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'begin', 'id' => 'p-2-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1],
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-2-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 12.0, 'trace' => 't2.json'],
+        ]);
+
+        $tester = $this->tester();
+        self::assertSame(0, $tester->execute(['action' => 'show', '--id' => 'p-2-t', '--source' => true]));
+
+        $envelope = json_decode($tester->getDisplay(), true);
+        $refs = array_values(array_filter(array_column($envelope['trace']['spans'], 'source_ref')));
+        self::assertSame([$handler . '::target', $handler . '::target'], $refs, 'every span that named a class carries a ref');
+        self::assertCount(1, $envelope['source'], 'the same Class::method is read once, however often it ran');
+        $slice = $envelope['source'][$handler . '::target'];
+        self::assertSame('target', $slice['method']);
+        self::assertStringEndsWith('tests/Fixtures/Source/SlicedFixture.php', $slice['file']);
+        self::assertStringContainsString('FIXTURE_TARGET_BODY', implode("\n", $slice['lines']));
+        self::assertArrayNotHasKey('source', $envelope['trace'], 'the map lives on the envelope, not inside the trace');
+    }
+
+    #[Test]
+    public function without_the_flag_show_adds_no_source(): void
+    {
+        file_put_contents($this->dir . '/trace/t3.json', (string) json_encode([
+            'recordedAt' => date('c'), 'truncated' => false, 'totalMs' => 1.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 1.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-3-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 1.0, 'trace' => 't3.json'],
+        ]);
+
+        $tester = $this->tester();
+        $tester->execute(['action' => 'show', '--id' => 'p-3-t']);
+
+        $envelope = json_decode($tester->getDisplay(), true);
+        self::assertArrayNotHasKey('source', $envelope);
+        self::assertArrayNotHasKey('source_ref', $envelope['trace']['spans'][0]);
+    }
+
+    #[Test]
     public function show_refuses_an_unknown_id_with_a_hint(): void
     {
         $this->seedJournal([]);
@@ -183,5 +244,55 @@ final class AiObserveCommandTest extends TestCase
         self::assertSame(1, $tester->execute(['action' => 'replay', '--id' => 'p-1-aa']));
         $envelope = json_decode($tester->getDisplay(), true);
         self::assertSame('replay-requires-dev', $envelope['error']);
+    }
+
+    #[Test]
+    public function source_is_an_object_even_when_no_span_named_a_class(): void
+    {
+        file_put_contents($this->dir . '/trace/t4.json', (string) json_encode([
+            'recordedAt' => date('c'), 'truncated' => false, 'totalMs' => 1.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 1.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-4-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 1.0, 'trace' => 't4.json'],
+        ]);
+
+        $tester = $this->tester();
+        $tester->execute(['action' => 'show', '--id' => 'p-4-t', '--source' => true]);
+
+        self::assertStringContainsString('"source":{}', $tester->getDisplay(), 'a map stays a map; a consumer must never meet [] on this field');
+    }
+
+    #[Test]
+    public function a_class_only_span_and_an_explicit_method_span_share_one_resolved_entry(): void
+    {
+        // The first span names only the class; the convention resolves it to
+        // handle(). The second names Class::handle outright. One entry, one read.
+        $handler = 'Semitexa\\Dev\\Tests\\Fixtures\\Source\\SlicedFixtureHandler';
+        file_put_contents($this->dir . '/trace/t5.json', (string) json_encode([
+            'recordedAt' => date('c'), 'truncated' => false, 'totalMs' => 12.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 5.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler], 'durationMs' => 4.0],
+                ['type' => 'begin', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 6.0, 'cid' => 1, 'pcid' => 0, 'context' => []],
+                ['type' => 'end', 'name' => 'pipeline', 'depth' => 1, 'atMs' => 9.0, 'cid' => 1, 'pcid' => 0, 'context' => ['handler' => $handler, 'method' => 'handle'], 'durationMs' => 3.0],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 12.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 12.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-5-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 12.0, 'trace' => 't5.json'],
+        ]);
+
+        $tester = $this->tester();
+        $tester->execute(['action' => 'show', '--id' => 'p-5-t', '--source' => true]);
+
+        $envelope = json_decode($tester->getDisplay(), true);
+        $refs = array_values(array_filter(array_column($envelope['trace']['spans'], 'source_ref')));
+        self::assertSame([$handler . '::handle', $handler . '::handle'], $refs, 'the ref is the RESOLVED identity, not the requested one');
+        self::assertSame([$handler . '::handle'], array_keys($envelope['source']));
     }
 }
