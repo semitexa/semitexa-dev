@@ -31,9 +31,10 @@ final class TraceHtmlRendererSourceTest extends TestCase
         self::assertStringContainsString('<code>handle()</code>', $html);
         self::assertStringContainsString('src/Handler/ThingHandler.php:41–43', $html);
         self::assertStringContainsString('ThingHandler::handle', $html);
-        // Toggle goes to the class, keeping the trace to come back to.
+        // Toggle goes to the class, keeping the trace to come back to AND the
+        // method, so the class view can hand the reader back to this method.
         self::assertStringContainsString(
-            'href="/__trace/node?class=App%5CHandler%5CThingHandler&amp;from=t.json&amp;scope=class"',
+            'href="/__trace/node?class=App%5CHandler%5CThingHandler&amp;from=t.json&amp;scope=class&amp;method=handle"',
             $html,
         );
         self::assertStringNotContainsString('scope=method', $html);
@@ -184,5 +185,21 @@ final class TraceHtmlRendererSourceTest extends TestCase
             'out' => [['kind' => 'handles', 'fqcn' => 'App\\Payload\\ThingPayload', 'name' => 'ThingPayload', 'type' => 'payload']],
             'in' => [],
         ];
+    }
+
+    #[Test]
+    public function the_class_view_carries_the_recorded_method_back_to_the_method_view(): void
+    {
+        $html = (new TraceHtmlRenderer())->renderNode(
+            'App\\Handler\\ThingHandler',
+            $this->node(),
+            't.json',
+            true,
+            $this->slice(method: null, start: 12),
+            classScope: true,
+            method: 'handle',
+        );
+
+        self::assertStringContainsString('scope=method&amp;method=handle"', $html, 'the way back lands on the recorded method, not on a guess');
     }
 }

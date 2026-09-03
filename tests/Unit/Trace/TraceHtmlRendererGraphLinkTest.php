@@ -114,11 +114,6 @@ final class TraceHtmlRendererGraphLinkTest extends TestCase
         self::assertStringContainsString('src/Handler/ThingHandler.php', $html);
     }
 
-    /**
-     * @param  array<string, mixed> $context
-     * @return array<string, mixed>
-     */
-
     #[Test]
     public function a_step_that_names_its_method_links_to_that_method(): void
     {
@@ -155,6 +150,10 @@ final class TraceHtmlRendererGraphLinkTest extends TestCase
         self::assertStringContainsString('class=App%5CListener%5COnThing&amp;from=t.json&amp;method=handle"', $html);
     }
 
+    /**
+     * @param  array<string, mixed> $context
+     * @return array<string, mixed>
+     */
     private function span(string $name, array $context): array
     {
         return [

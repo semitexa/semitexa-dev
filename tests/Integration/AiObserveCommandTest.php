@@ -245,4 +245,24 @@ final class AiObserveCommandTest extends TestCase
         $envelope = json_decode($tester->getDisplay(), true);
         self::assertSame('replay-requires-dev', $envelope['error']);
     }
+
+    #[Test]
+    public function source_is_an_object_even_when_no_span_named_a_class(): void
+    {
+        file_put_contents($this->dir . '/trace/t4.json', (string) json_encode([
+            'recordedAt' => date('c'), 'truncated' => false, 'totalMs' => 1.0,
+            'events' => [
+                ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'cid' => 1, 'pcid' => 0, 'context' => ['method' => 'GET', 'path' => '/x']],
+                ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'cid' => 1, 'pcid' => 0, 'context' => [], 'durationMs' => 1.0],
+            ],
+        ]));
+        $this->seedJournal([
+            ['ts' => date('c'), 'event' => 'end', 'id' => 'p-4-t', 'kind' => 'http', 'name' => 'Traced', 'worker' => 1, 'durationMs' => 1.0, 'trace' => 't4.json'],
+        ]);
+
+        $tester = $this->tester();
+        $tester->execute(['action' => 'show', '--id' => 'p-4-t', '--source' => true]);
+
+        self::assertStringContainsString('"source":{}', $tester->getDisplay(), 'a map stays a map; a consumer must never meet [] on this field');
+    }
 }

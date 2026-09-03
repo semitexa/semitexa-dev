@@ -49,4 +49,22 @@ final class EntryMethodCatalogTest extends TestCase
         self::assertSame([], (new EntryMethodCatalog())->candidates('App\\X\\Whatever', null));
         self::assertSame([], (new EntryMethodCatalog())->candidates('App\\X\\Whatever', 'class'));
     }
+
+    #[Test]
+    public function type_and_suffix_candidates_are_merged_so_both_callers_agree(): void
+    {
+        // The graph calls it a service; the name says handler. The HTML page
+        // (knows the type) and the CLI (does not) must both reach handle().
+        $catalog = new EntryMethodCatalog();
+
+        self::assertSame(['__invoke', 'handle'], $catalog->candidates('App\\X\\OptionsMetadataHandler', 'service'));
+        self::assertSame(['handle', '__invoke'], $catalog->candidates('App\\X\\OptionsMetadataHandler', null));
+    }
+
+    #[Test]
+    public function a_scheduled_job_enters_through_handle(): void
+    {
+        self::assertSame(['handle', '__invoke'], (new EntryMethodCatalog())->candidates('App\\Jobs\\FundsTickJob', 'job'));
+        self::assertSame(['handle', '__invoke'], (new EntryMethodCatalog())->candidates('App\\Jobs\\FundsTickJob', null));
+    }
 }

@@ -27,6 +27,7 @@ final class EntryMethodCatalog
         'event_listener' => ['handle', '__invoke'],
         'command' => ['execute', '__invoke'],
         'slot_handler' => ['handle', '__invoke'],
+        'job' => ['handle', '__invoke'],
         'service' => ['__invoke'],
         // A payload's shape IS the class — setters and validation together.
         // validate() is offered because a payload that has one usually keeps
@@ -44,6 +45,7 @@ final class EntryMethodCatalog
         'Command' => ['execute', '__invoke'],
         'Payload' => ['validate'],
         'Middleware' => ['process', 'handle', '__invoke'],
+        'Job' => ['handle', '__invoke'],
     ];
 
     /**
@@ -53,16 +55,20 @@ final class EntryMethodCatalog
      */
     public function candidates(string $fqcn, ?string $nodeType): array
     {
-        if ($nodeType !== null && isset(self::BY_TYPE[$nodeType])) {
-            return self::BY_TYPE[$nodeType];
-        }
+        // Type first, then the name — MERGED, not either/or. The two callers
+        // differ in what they know (the HTML page has the graph type, the CLI
+        // does not), and they must still end on the same method: a class the
+        // graph calls 'service' but named ...Handler declares handle(), which
+        // only the suffix half knows to try.
+        $methods = $nodeType !== null ? (self::BY_TYPE[$nodeType] ?? []) : [];
 
-        foreach (self::BY_SUFFIX as $suffix => $methods) {
+        foreach (self::BY_SUFFIX as $suffix => $bySuffix) {
             if (str_ends_with($fqcn, $suffix)) {
-                return $methods;
+                $methods = [...$methods, ...$bySuffix];
+                break;
             }
         }
 
-        return [];
+        return array_values(array_unique($methods));
     }
 }

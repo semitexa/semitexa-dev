@@ -71,7 +71,7 @@ final class SourceSliceReader
     public function slice(string $fqcn, ?string $method = null, int $maxLines = self::MAX_LINES): ?SourceSlice
     {
         try {
-            if (!$this->looksLikeClass($fqcn)) {
+            if (!SpanTarget::looksLikeClass($fqcn)) {
                 return null;
             }
 
@@ -97,31 +97,32 @@ final class SourceSliceReader
      */
     public function sliceAny(string $fqcn, array $methods, int $maxLines = self::MAX_LINES): ?SourceSlice
     {
-        foreach ($methods as $method) {
-            $slice = $this->slice($fqcn, $method, $maxLines);
-            if ($slice === null) {
-                // The class itself is unreadable; no other method will fare better.
+        try {
+            if (!SpanTarget::looksLikeClass($fqcn)) {
                 return null;
             }
-            if ($slice->method !== null) {
-                return $slice;
-            }
-        }
 
-        return $this->slice($fqcn, null, $maxLines);
+            $class = $this->reflect($fqcn);
+            $found = null;
+            if ($class !== null) {
+                foreach ($methods as $method) {
+                    if ($this->looksLikeIdentifier($method) && $class->hasMethod($method)) {
+                        $found = $method;
+                        break;
+                    }
+                }
+            }
+
+            return $this->slice($fqcn, $found, $maxLines);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function fromReflection(string $fqcn, ?string $method, int $maxLines): ?SourceSlice
     {
-        try {
-            // Autoloads. The name has already been checked for shape, and this
-            // runs only where the trace viewer itself is enabled (dev).
-            $class = new \ReflectionClass($fqcn);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        if ($class->isInternal()) {
+        $class = $this->reflect($fqcn);
+        if ($class === null || $class->isInternal()) {
             return null;
         }
 
@@ -149,6 +150,67 @@ final class SourceSliceReader
         return $this->read($fqcn, $shown, $file, $start, $end, $maxLines, 'reflection');
     }
 
+    /**
+     * Reflection on a class the worker already has, or one whose file provably
+     * declares it — never on a bare name from the query string.
+     *
+     * `new ReflectionClass($name)` autoloads. Composer's PSR-4 maps a name to a
+     * path by convention, not by content, so a class-shaped name can resolve to
+     * a file that declares FUNCTIONS (Twig\Resources\core → twig's core.php,
+     * already loaded through autoload_files). Including it a second time is a
+     * compile-time redeclaration fatal, which no catch(\Throwable) sees, and
+     * the dev worker dies. So an unloaded class is first resolved to its file,
+     * the file is confined to the project root, and it is scanned for the
+     * declaration before the autoloader is allowed to include it.
+     */
+    private function reflect(string $fqcn): ?\ReflectionClass
+    {
+        try {
+            if (!class_exists($fqcn, false) && !interface_exists($fqcn, false)
+                && !trait_exists($fqcn, false) && !enum_exists($fqcn, false)
+            ) {
+                $file = $this->composerFileFor($fqcn);
+                if ($file === null || !$this->declares($file, $fqcn)) {
+                    return null;
+                }
+                // Now safe to let the autoloader include exactly that file.
+                if (!class_exists($fqcn) && !interface_exists($fqcn) && !trait_exists($fqcn) && !enum_exists($fqcn)) {
+                    return null;
+                }
+            }
+
+            return new \ReflectionClass($fqcn);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** The file Composer would include for $fqcn, confined to the project root; null when unknown or outside. */
+    private function composerFileFor(string $fqcn): ?string
+    {
+        foreach (spl_autoload_functions() as $loader) {
+            if (!is_array($loader) || !($loader[0] instanceof \Composer\Autoload\ClassLoader)) {
+                continue;
+            }
+            $file = $loader[0]->findFile($fqcn);
+            if (is_string($file) && $file !== '') {
+                return $this->confine($file);
+            }
+        }
+
+        return null;
+    }
+
+    /** True when the file textually declares the short name of $fqcn as a class-like. */
+    private function declares(string $file, string $fqcn): bool
+    {
+        $short = substr($fqcn, (int) strrpos($fqcn, '\\') + 1);
+        $head = @file_get_contents($file, false, null, 0, 65536);
+
+        return is_string($head)
+            && preg_match('/\b(?:class|interface|trait|enum)\s+' . preg_quote($short, '/') . '\b/', $head) === 1;
+    }
+
     private function fromGraph(string $fqcn, int $maxLines): ?SourceSlice
     {
         // Uninitialised outside the container (unit tests, or a project without
@@ -168,12 +230,9 @@ final class SourceSliceReader
             return null;
         }
 
-        // The graph's describe() drops endLine. Read to the end of the file and
-        // let the cap decide; a class-level fallback is coarse by nature.
-        $end = $this->lineCount($file);
-        if ($end === null) {
-            return null;
-        }
+        // The indexer recorded both ends of the class; read() clamps to the
+        // file in case it shrank since the graph was built.
+        $end = $node['endLine'] >= $node['line'] ? $node['endLine'] : PHP_INT_MAX;
 
         return $this->read($fqcn, null, $file, $node['line'], $end, $maxLines, 'graph');
     }
@@ -198,6 +257,11 @@ final class SourceSliceReader
         }
 
         $start = max(1, $start);
+        if ($start > count($all)) {
+            // The bounds describe a file that has since shrunk: nothing here is
+            // the code they meant, and an empty slice would still say "shown".
+            return null;
+        }
         $end = min(max($start, $end), count($all));
         $maxLines = max(1, $maxLines);
 
@@ -252,27 +316,19 @@ final class SourceSliceReader
             return $file;
         }
 
+        // The EARLIEST project-level segment, not the first listed: a container
+        // root such as /home/ci/src/app has its own 'src' before the project's.
+        $best = null;
         foreach (self::RELOCATABLE_DIRS as $dir) {
             $pos = strpos($file, '/' . $dir . '/');
-            if ($pos !== false) {
-                return $root . substr($file, $pos);
+            if ($pos !== false && ($best === null || $pos < $best)) {
+                $best = $pos;
             }
         }
 
-        return null;
+        return $best === null ? null : $root . substr($file, $best);
     }
 
-    private function lineCount(string $file): ?int
-    {
-        $confined = $this->confine($file);
-        if ($confined === null) {
-            return null;
-        }
-
-        $all = @file($confined);
-
-        return $all === false ? null : count($all);
-    }
 
     private function relative(string $file): string
     {
@@ -286,12 +342,6 @@ final class SourceSliceReader
         return str_starts_with($file, $root) ? substr($file, strlen($root)) : $file;
     }
 
-    /** Same shape rule as the trace renderer's link detection. */
-    private function looksLikeClass(string $value): bool
-    {
-        return str_contains($value, '\\')
-            && preg_match('/^[A-Za-z_\x80-\xff][\w\x80-\xff]*(\\\\[A-Za-z_\x80-\xff][\w\x80-\xff]*)+$/', $value) === 1;
-    }
 
     private function looksLikeIdentifier(string $value): bool
     {

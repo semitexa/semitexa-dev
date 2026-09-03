@@ -65,6 +65,7 @@ final class TraceNodeHandler implements TypedHandlerInterface
                 $this->graph->isAvailable(),
                 $slice,
                 $payload->wantsClass(),
+                $payload->method,
             ));
     }
 
@@ -78,13 +79,13 @@ final class TraceNodeHandler implements TypedHandlerInterface
             return $this->source->slice($payload->class, null);
         }
 
+        $candidates = (new EntryMethodCatalog())->candidates($payload->class, $nodeType);
         if ($payload->method !== '') {
-            return $this->source->slice($payload->class, $payload->method);
+            // The recorded method first; a trace link outlives a rename, so a
+            // miss falls through to the convention rather than to the class.
+            array_unshift($candidates, $payload->method);
         }
 
-        return $this->source->sliceAny(
-            $payload->class,
-            (new EntryMethodCatalog())->candidates($payload->class, $nodeType),
-        );
+        return $this->source->sliceAny($payload->class, $candidates);
     }
 }

@@ -296,10 +296,13 @@ final class TraceHtmlRenderer
      *
      * @param array{
      *     fqcn: string, name: string, type: string, module: string,
-     *     file: string, line: int,
+     *     file: string, line: int, endLine?: int,
      *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null $node
+     * @param string $method the method the reader arrived with (from the trace
+     *                       link), carried through the scope toggle so the way
+     *                       back lands on that method and not on a guess
      */
     public function renderNode(
         string $requested,
@@ -308,6 +311,7 @@ final class TraceHtmlRenderer
         bool $graphAvailable,
         ?SourceSlice $slice = null,
         bool $classScope = false,
+        string $method = '',
     ): string {
         $back = $from !== ''
             ? '<a class="back" href="/__trace?file=' . rawurlencode($from) . '">&larr; back to the trace</a>'
@@ -339,7 +343,7 @@ final class TraceHtmlRenderer
         // Source first: a reader who clicked a step wants to see what ran before
         // they want to see what it is wired to. Then outgoing edges — "what this
         // reaches for" — then incoming.
-        $body = $head . $this->source($fqcn, $slice, $from, $classScope);
+        $body = $head . $this->source($fqcn, $slice, $from, $classScope, $method);
         if ($node !== null) {
             $body .= $this->edges('Reaches', $node['out'], $from, 'to')
                 . $this->edges('Reached by', $node['in'], $from, 'from');
@@ -360,18 +364,22 @@ final class TraceHtmlRenderer
      * Line numbers are the file's own, so a reader can go straight to the
      * editor; the toggle swaps scope without losing the trace they came from.
      */
-    private function source(string $fqcn, ?SourceSlice $slice, string $from, bool $classScope): string
+    private function source(string $fqcn, ?SourceSlice $slice, string $from, bool $classScope, string $method): string
     {
         if ($slice === null) {
             return '<section><h2>Source</h2><p class="dim">Source unavailable — the class could not be '
                 . 'loaded, or its file is outside the project root.</p></section>';
         }
 
+        // The recorded method rides along: in class scope the slice has none,
+        // and without it "entry method" would re-resolve by convention.
+        $carried = $method !== '' ? $method : ($slice->method ?? '');
         $link = fn (string $scope): string => sprintf(
-            '/__trace/node?class=%s&amp;from=%s&amp;scope=%s',
+            '/__trace/node?class=%s&amp;from=%s&amp;scope=%s%s',
             rawurlencode($fqcn),
             rawurlencode($from),
             $scope,
+            $carried === '' ? '' : '&amp;method=' . rawurlencode($carried),
         );
 
         $what = $slice->method !== null

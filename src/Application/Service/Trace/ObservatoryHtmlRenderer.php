@@ -293,9 +293,10 @@ async function tick() {
       const entries = groupRuns(d.recent).map((g, i) => {
         const parts = groupRow(g, max, i);
         return {
-          // Keyed on the first member so a run keeps its identity as it grows: appending
-          // a tick must not read as a different row arriving.
-          key: g.items[0].id,
+          // Keyed on the OLDEST member so a run keeps its identity as it grows: the feed
+          // is newest-first, so items[0] changes on every tick and would read as a new
+          // row arriving each second - the exact flicker keyed rendering exists to stop.
+          key: g.items[g.items.length - 1].id,
           sig: g.kind + '|' + g.name + '|' + g.items.length + '|' + Math.round(max),
           html: parts.head,
           after: parts.kids,
@@ -320,6 +321,7 @@ function reconcile(container, entries) {
   if (placeholder) placeholder.remove();
 
   const seen = new Set();
+  const changed = new Set();
   let anchor = null;
   for (const e of entries) {
     seen.add(e.key);
@@ -339,9 +341,24 @@ function reconcile(container, entries) {
       const holder = document.createElement('div');
       holder.innerHTML = e.html;
       const fresh = holder.firstElementChild;
-      if (fresh) { node.innerHTML = fresh.innerHTML; node.className = fresh.className; }
+      if (fresh && fresh.tagName !== node.tagName) {
+        // A single (<a href>) that became a run (<div class="row group">) or back:
+        // patching innerHTML would leave a link with no href, or a group that
+        // navigates. Swap the element and keep its place.
+        fresh.dataset.key = e.key;
+        node.replaceWith(fresh);
+        node = fresh;
+      } else if (fresh) {
+        node.innerHTML = fresh.innerHTML;
+        node.className = fresh.className;
+        for (const attr of ['href', 'data-group']) {
+          if (fresh.hasAttribute(attr)) node.setAttribute(attr, fresh.getAttribute(attr));
+          else node.removeAttribute(attr);
+        }
+      }
       node.dataset.key = e.key;
       if (wasOpen) node.classList.add('open');
+      changed.add(e.key);
     }
     node.dataset.sig = e.sig;
     // insertBefore with an existing node MOVES it, so order follows the feed without
@@ -356,6 +373,11 @@ function reconcile(container, entries) {
         h.innerHTML = kids;
         kn = h.firstElementChild;
         if (kn) kn.dataset.key = e.key + '::kids';
+      } else if (changed.has(e.key)) {
+        // The run grew: its member list is stale until it is re-rendered too.
+        const h = document.createElement('div');
+        h.innerHTML = kids;
+        if (h.firstElementChild) kn.innerHTML = h.firstElementChild.innerHTML;
       }
       if (kn) {
         seen.add(e.key + '::kids');

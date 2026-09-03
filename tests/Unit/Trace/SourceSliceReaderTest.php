@@ -167,4 +167,19 @@ final class SourceSliceReaderTest extends TestCase
         self::assertNotNull($slice);
         self::assertNull($slice->method);
     }
+
+    #[Test]
+    public function a_name_that_maps_to_a_functions_file_is_never_included(): void
+    {
+        // Composer PSR-4 maps Twig\Resources\core to twig/src/Resources/core.php,
+        // a file of functions already loaded via autoload_files. Including it
+        // again is an uncatchable redeclaration fatal. The reader must refuse
+        // it on inspection, before the autoloader gets a say.
+        if (!is_file(dirname(__DIR__, 5) . '/vendor/twig/twig/src/Resources/core.php')) {
+            self::markTestSkipped('twig not installed in this workspace');
+        }
+
+        self::assertNull((new SourceSliceReader())->slice('Twig\\Resources\\core', 'x'));
+        self::assertTrue(true, 'still alive');
+    }
 }

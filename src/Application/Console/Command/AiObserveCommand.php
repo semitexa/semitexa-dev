@@ -358,7 +358,10 @@ final class AiObserveCommand extends BaseCommand
                         );
                     }
                     $trace = $this->withSource($trace);
-                    $envelope['source'] = $trace['source'];
+                    // An object even when empty: the field is a map keyed
+                    // Class::method, and a consumer indexing it must not meet
+                    // a JSON array on the one trace that named no class.
+                    $envelope['source'] = (object) $trace['source'];
                     unset($trace['source']);
                 }
                 $envelope['trace'] = $trace;
