@@ -12,8 +12,10 @@ use Semitexa\Core\Attribute\AsService;
  * Self-contained HTML from PHP — same discipline as the trace viewer: dev must
  * not depend on ssr, so no Twig, no asset pipeline, no external fonts. The page
  * polls `/__observatory/feed` once a second; polling a journal file is the
- * honest transport here (the file is the cross-worker state), and a KISS/SSE
- * push is a later upgrade on top, never a replacement.
+ * honest transport here (the file is the cross-worker state). A KISS/SSE push
+ * is NOT the upgrade path: SSE lives in semitexa/ssr, and dev must not depend on
+ * it. The poll is adaptive instead - 1s while anything is live, 4s when idle,
+ * off while the tab is hidden - see schedule() in the script.
  */
 #[AsService]
 final class ObservatoryHtmlRenderer
@@ -165,7 +167,7 @@ let paused = false, timer = null;
 document.getElementById('pause').addEventListener('click', function () {
   paused = !paused;
   this.textContent = paused ? 'resume' : 'pause';
-  if (!paused) tick();
+  if (!paused) tick().then(schedule);
 });
 
 // Magnitude on a LOG scale. The list routinely spans five orders of magnitude
@@ -245,8 +247,21 @@ function groupRow(g, max, idx) {
 async function tick() {
   if (paused) return;
   try {
-    const r = await fetch('/__observatory/feed', {headers: {'Accept': 'application/json'}});
+    // Bounded: a fetch that never settles would leave tick() pending and
+    // schedule() never called - polling would stop with the tab in plain view.
+    // And a non-2xx is a failure too: fetch() resolves on HTTP errors, and
+    // parsing an error body would read as "nothing live" and back the poll off.
+    const ctl = new AbortController();
+    const bound = setTimeout(() => ctl.abort(), 5000);
+    let r;
+    try {
+      r = await fetch('/__observatory/feed', {headers: {'Accept': 'application/json'}, signal: ctl.signal});
+    } finally {
+      clearTimeout(bound);
+    }
+    if (!r.ok) throw new Error('feed ' + r.status);
     const d = await r.json();
+    liveCount = d.counts.live;
     document.getElementById('stat-live').innerHTML = 'live <b>' + d.counts.live + '</b>'
       + (d.counts.stale ? ' <span class="age stale">(' + d.counts.stale + ' stale)</span>' : '');
     document.getElementById('stat-workers').innerHTML = 'workers <b>' + d.counts.workers + '</b>';
@@ -301,6 +316,9 @@ async function tick() {
     }
   } catch (e) {
     document.getElementById('meta').textContent = 'feed unreachable — retrying…';
+    // A failed fetch is not "idle": retry at the fast cadence so a server
+    // restart shows up within a second, not four.
+    liveCount = 1;
   }
 }
 
@@ -466,8 +484,22 @@ function tickAges() {
 }
 setInterval(tickAges, 200);
 
-tick();
-timer = setInterval(tick, 1000);
+// Adaptive cadence rather than a fixed second. A push transport is not on the
+// table (dev must not depend on ssr, which owns SSE), so the poll is made honest
+// instead: every second while something is in flight, backing off to 4s when
+// nothing is - and not at all while the tab is hidden, where a poll would only
+// journal itself. Coming back refreshes at once.
+let liveCount = 0;
+function schedule() {
+  clearTimeout(timer);
+  if (document.hidden) return;
+  timer = setTimeout(async () => { await tick(); schedule(); }, liveCount > 0 ? 1000 : 4000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearTimeout(timer); return; }
+  tick().then(schedule);
+});
+tick().then(schedule);
 JS;
     }
 }

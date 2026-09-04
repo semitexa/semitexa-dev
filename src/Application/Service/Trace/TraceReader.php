@@ -64,7 +64,7 @@ final class TraceReader
      *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated: bool},
      *     spans: list<array<string, mixed>>,
      *     marks: list<array<string, mixed>>,
-     *     queries: list<array{sql: string, durationMs: float, params: int}>
+     *     queries: list<array{sql: string, durationMs: float, params: int, atMs: float|null}>
      * }|null
      */
     public function read(string $file): ?array
@@ -131,6 +131,9 @@ final class TraceReader
                     'sql' => $this->str($ctx, 'sql'),
                     'durationMs' => $this->float($e, 'durationMs'),
                     'params' => $this->int($ctx, 'params'),
+                    // Position on the timeline; null for traces recorded before
+                    // queries were attached live (the drained list had none).
+                    'atMs' => isset($e['atMs']) && (is_float($e['atMs']) || is_int($e['atMs'])) ? (float) $e['atMs'] : null,
                 ];
                 continue;
             }
@@ -138,6 +141,8 @@ final class TraceReader
             $marks[] = [
                 'name' => $name,
                 'atMs' => $this->float($e, 'atMs'),
+                // Marks nest like spans; the waterfall indents them by it.
+                'depth' => $this->int($e, 'depth'),
                 'cid' => $this->int($e, 'cid'),
                 'pcid' => $this->int($e, 'pcid'),
                 'context' => $this->arr($e, 'context'),

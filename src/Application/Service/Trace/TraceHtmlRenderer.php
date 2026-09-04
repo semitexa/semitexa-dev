@@ -69,7 +69,7 @@ final class TraceHtmlRenderer
      *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated?: bool},
      *     spans: list<array{name: string, depth: int, startMs: float, durationMs: float|null, context: array<string, mixed>}>,
      *     marks: list<array{name: string, atMs: float, context: array<string, mixed>}>,
-     *     queries: list<array{sql: string, durationMs: float, params: int}>
+     *     queries: list<array{sql: string, durationMs: float, params: int, atMs?: float|null}>
      * } $trace
      */
     public function renderTrace(array $trace): string
@@ -100,7 +100,7 @@ final class TraceHtmlRenderer
                    below is elapsed time rather than the closing span.</p>';
         }
 
-        $body .= $this->flow($trace['spans'], $trace['marks'], $total, $meta['file']);
+        $body .= $this->waterfall($trace['spans'], $trace['marks'], $trace['queries'], $total, $meta['file']);
 
         if ($trace['queries'] !== []) {
             $body .= $this->queries($trace['queries'], $total);
@@ -110,85 +110,130 @@ final class TraceHtmlRenderer
     }
 
     /**
-     * The flow: sequential steps stack downward, concurrent branches sit side by
-     * side.
+     * The waterfall: time is the horizontal axis, and every step sits where it
+     * happened.
      *
-     * Concurrency is read off coroutine ids, not off overlapping clocks. Spans
-     * sharing a cid ran one after another; a span on a different cid whose parent
-     * is the current one is a branch. Timings that merely overlap prove nothing —
-     * two spans can overlap on the clock and still be the same coroutine
-     * suspending, which is sequential.
+     * Rows are spans and marks in start order, indented by depth; the bar on each
+     * row starts at the step's offset into the request and is as wide as its
+     * duration, so "what ran while what" is read off alignment rather than
+     * inferred from numbers. Linear on purpose — a 0.01 ms gate next to a 200 ms
+     * handler SHOULD look like nothing, because it was nothing; that is the whole
+     * point of drawing it. A bar keeps a 2px floor so a measured step never
+     * disappears and gets mistaken for missing.
      *
-     * A spawn is recorded as a mark, not a span: it returns immediately and the
-     * work happens elsewhere. So a branch attaches to the spawn point rather than
-     * nesting inside an enclosing span.
+     * Concurrency is read off coroutine ids, not off overlapping clocks: a row
+     * that ran on a coroutine other than the root carries a chip saying so.
+     * Queries get one lane of ticks rather than a row each — a request can run
+     * hundreds, and the shape of that lane (a comb) is the N+1 signature.
      *
      * @param list<array<string, mixed>> $spans
      * @param list<array<string, mixed>> $marks
+     * @param list<array<string, mixed>> $queries
      */
-    private function flow(array $spans, array $marks, float $total, string $from): string
+    private function waterfall(array $spans, array $marks, array $queries, float $total, string $from): string
     {
-        $byCid = [];
-        foreach ($spans as $s) {
-            $byCid[$this->iv($s, 'cid')][] = ['kind' => 'span'] + $s;
-        }
-        foreach ($marks as $m) {
-            $byCid[$this->iv($m, 'cid')][] = ['kind' => 'mark', 'startMs' => $this->fv($m, 'atMs'), 'durationMs' => null] + $m;
-        }
-        foreach ($byCid as &$items) {
-            usort($items, fn (array $a, array $b): int => $this->fv($a, 'startMs') <=> $this->fv($b, 'startMs'));
-        }
-        unset($items);
-
-        $rootCid = $spans !== [] ? $this->iv($spans[0], 'cid') : array_key_first($byCid);
-        if ($rootCid === null) {
+        if ($spans === [] && $marks === []) {
             return '<p class="dim">Nothing recorded.</p>';
         }
 
-        $children = [];
-        foreach ($byCid as $cid => $items) {
-            $parent = $this->iv($items[0], 'pcid');
-            if ($cid !== $rootCid) {
-                $children[$parent][] = $cid;
-            }
+        $items = [];
+        foreach ($spans as $s) {
+            $items[] = ['kind' => 'span'] + $s;
+        }
+        foreach ($marks as $m) {
+            $items[] = ['kind' => 'mark', 'startMs' => $this->fv($m, 'atMs'), 'durationMs' => null] + $m;
+        }
+        // Start order, and on a tie the shallower first: a span begins before
+        // anything it encloses.
+        usort($items, fn (array $a, array $b): int => [$this->fv($a, 'startMs'), $this->iv($a, 'depth')] <=> [$this->fv($b, 'startMs'), $this->iv($b, 'depth')]);
+
+        $rootCid = $spans !== [] ? $this->iv($spans[0], 'cid') : $this->iv($items[0], 'cid');
+
+        $rows = '';
+        foreach ($items as $item) {
+            $rows .= $this->node($item, $total, $from, $rootCid);
         }
 
-        return '<div class="flow">' . $this->column($rootCid, $byCid, $children, $total, 0, $from) . '</div>';
+        return '<div class="wf">' . $this->ruler($total) . $rows . $this->queryLane($queries, $total) . '</div>';
+    }
+
+    /** Tick marks with the elapsed time at each quarter, so a bar can be read in ms without hovering. */
+    private function ruler(float $total): string
+    {
+        $ticks = '';
+        foreach ([0, 25, 50, 75, 100] as $pct) {
+            $ticks .= sprintf(
+                '<b style="left:%d%%"><span>%s</span></b>',
+                $pct,
+                $pct === 0 ? '0' : $this->ms($total * $pct / 100) . ' ms',
+            );
+        }
+
+        return '<div class="wf-ruler"><span class="nname dim">step</span><span class="wf-time">' . $ticks . '</span><span class="ndur dim">took</span></div>';
     }
 
     /**
-     * One coroutine as a vertical column, with any coroutines it spawned rendered
-     * as columns beside it.
-     *
-     * @param array<int, list<array<string, mixed>>> $byCid
-     * @param array<int, list<int>>                  $children
+     * Beyond this many ticks the lane is solid anyway, and a trace with a
+     * runaway N+1 must not turn into thousands of DOM nodes.
      */
-    private function column(int $cid, array $byCid, array $children, float $total, int $depth, string $from): string
+    private const MAX_QUERY_TICKS = 400;
+
+    /**
+     * @param list<array<string, mixed>> $queries
+     */
+    private function queryLane(array $queries, float $total): string
     {
-        if ($depth > 6) {
-            return '<div class="col"><div class="node dim">deeper branches omitted</div></div>';
+        if ($queries === []) {
+            return '';
         }
 
-        $nodes = '';
-        foreach ($byCid[$cid] ?? [] as $item) {
-            $nodes .= $this->node($item, $total, $from);
-
-            // A branch hangs off the spawn that created it, which is the point in
-            // this column where the work left for another coroutine.
-            if (str_contains($this->sv($item, 'name'), 'spawn')) {
-                $kids = $children[$cid] ?? [];
-                if ($kids !== []) {
-                    $kid = array_shift($kids);
-                    $children[$cid] = $kids;
-                    $nodes .= '<div class="branch">'
-                        . '<div class="branch-line" title="spawned coroutine ' . $kid . '"></div>'
-                        . $this->column($kid, $byCid, $children, $total, $depth + 1, $from)
-                        . '</div>';
-                }
+        $ticks = '';
+        $placed = 0;
+        $drawn = 0;
+        $sum = 0.0;
+        foreach ($queries as $q) {
+            $sum += $this->fv($q, 'durationMs');
+            $at = $q['atMs'] ?? null;
+            if (!is_float($at) && !is_int($at)) {
+                continue;
             }
+            $placed++;
+            if ($drawn >= self::MAX_QUERY_TICKS) {
+                continue;
+            }
+            $drawn++;
+            $ticks .= sprintf(
+                '<i style="left:%s%%;width:%s%%" title="%s"></i>',
+                $this->num($this->pct((float) $at, $total)),
+                $this->num($this->pct($this->fv($q, 'durationMs'), $total)),
+                $this->e($this->ms($this->fv($q, 'durationMs')) . ' ms @ ' . $this->ms((float) $at) . ' ms'),
+            );
         }
 
-        return '<div class="col" data-cid="' . $cid . '"><div class="col-head">coroutine ' . $cid . '</div>' . $nodes . '</div>';
+        // Both caveats when both apply: a capped lane and unpositioned queries
+        // (older traces recorded queries without a position) are independent,
+        // and a lane that says only one of them reads as complete.
+        $notes = [];
+        if ($drawn < $placed) {
+            $notes[] = 'first ' . $drawn . ' drawn';
+        }
+        if ($placed < count($queries)) {
+            $notes[] = $placed === 0 ? 'no positions recorded' : (count($queries) - $placed) . ' without position';
+        }
+        $label = count($queries) . ' quer' . (count($queries) === 1 ? 'y' : 'ies')
+            . ($notes === [] ? '' : ' (' . implode(', ', $notes) . ')');
+
+        return sprintf(
+            '<div class="node qlane" style="--hue:95" title="%s">
+               <span class="nname">%s</span>
+               <span class="wf-bar">%s</span>
+               <span class="ndur">%s ms</span>
+             </div>',
+            $this->e('ORM queries on the timeline; a comb of identical ticks is what an N+1 looks like'),
+            $this->e($label),
+            $ticks,
+            $this->ms($sum),
+        );
     }
 
     /** @param array<string, mixed> $a */
@@ -216,23 +261,32 @@ final class TraceHtmlRenderer
     }
 
     /**
-     * One step. Fixed height with the number beside it, plus a thin proportional
-     * indicator — height cannot carry duration here, because a step taking 96% of
-     * the request would be three screens tall and everything else an unreadable
-     * sliver.
+     * One row of the waterfall: the name (indented by depth), the bar placed at
+     * the step's offset and sized by its duration, and the number.
+     *
+     * A mark has no duration and draws as a tick. An open span — one the request
+     * died inside — runs from its start to the end of the trace and says so.
      *
      * @param array<string, mixed> $item
      */
-    private function node(array $item, float $total, string $from): string
+    private function node(array $item, float $total, string $from, int $rootCid = 0): string
     {
         $name = $this->sv($item, 'name');
         $durRaw = $item['durationMs'] ?? null;
         $dur = is_float($durRaw) || is_int($durRaw) ? (float) $durRaw : null;
         $isMark = ($item['kind'] ?? '') === 'mark';
-        $share = $dur !== null ? $this->pct($dur, $total) : 0.0;
+        $start = $this->pct($this->fv($item, 'startMs'), $total);
+        $isOpen = !$isMark && $dur === null;
+        $share = $isOpen ? max(0.0, 100.0 - $start) : ($dur !== null ? $this->pct($dur, $total) : 0.0);
+        $depth = max(0, $this->iv($item, 'depth'));
+        $cid = $this->iv($item, 'cid');
         $context = (array) ($item['context'] ?? []);
 
-        $detail = [];
+        $detail = ['at ' . $this->ms($this->fv($item, 'startMs')) . ' ms'
+            . ($dur !== null ? ', took ' . $this->ms($dur) . ' ms' : ($isOpen ? ', never closed' : ''))];
+        if ($cid !== $rootCid) {
+            $detail[] = 'coroutine ' . $cid . ' (spawned by ' . $this->iv($item, 'pcid') . ')';
+        }
         foreach ($context as $k => $v) {
             if ($k === 'marker' || $v === null || $v === '' || $v === false) {
                 continue;
@@ -268,20 +322,29 @@ final class TraceHtmlRenderer
                 . ' — source and project graph';
         }
 
+        $bar = $isMark
+            ? sprintf('<b class="wf-tick" style="left:%s%%"></b>', $this->num($start))
+            : sprintf('<i%s style="left:%s%%;width:%s%%"></i>', $isOpen ? ' class="open"' : '', $this->num($start), $this->num($share));
+
         return sprintf(
-            '<%s class="node%s%s" style="--hue:%d" title="%s"%s>
-               <span class="nname">%s</span>
-               <span class="nbar"><i style="width:%s%%"></i></span>
+            '<%s class="node%s%s%s" style="--hue:%d;--depth:%d" title="%s"%s>
+               <span class="nname">%s%s</span>
+               <span class="wf-bar">%s</span>
                <span class="ndur">%s</span>
              </%s>',
             $tag,
             $isMark ? ' mark' : '',
             $class === null ? '' : ' linked',
+            $isOpen ? ' unfinished' : '',
             $this->hue($name),
+            $depth,
             $this->e($tip),
             $href,
-            $this->e($name),
-            $this->num($share),
+            $cid !== $rootCid ? '<em class="cid" title="coroutine ' . $cid . '">c' . $cid . '</em>' : '',
+            // Eight rows named pipeline.listener say nothing until each says WHICH
+            // listener; the class rides on the row, not only in the tooltip.
+            $this->e($name) . ($class === null ? '' : ' <span class="who">' . $this->e($this->shortClass($class)) . '</span>'),
+            $bar,
             $dur === null ? ($isMark ? '' : '<span class="warn">open</span>') : $this->ms($dur) . ' ms',
             $tag,
         );
@@ -569,34 +632,40 @@ code{font-family:var(--mono);font-size:12.5px}
 .num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
 .when{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
 
-.flow{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:4px 0 12px}
-.col{display:flex;flex-direction:column;gap:6px;min-width:270px;flex:0 0 auto;
-  border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px}
-.col-head{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--dim);margin-bottom:2px}
-.node{display:grid;grid-template-columns:1fr 44px 74px;gap:10px;align-items:center;
-  padding:7px 10px;border-radius:7px;cursor:default;
-  background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 12%,transparent);
-  border-left:3px solid hsl(var(--hue) 70% 55%)}
-.node:hover{background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 22%,transparent)}
+/* Waterfall: name | timeline | number. The timeline column is the request, 0 to total. */
+.wf{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.wf-ruler,.node{display:grid;grid-template-columns:minmax(220px,34%) 1fr 84px;gap:12px;align-items:center;
+  padding:0 12px;border-bottom:1px solid var(--line)}
+.wf-ruler{height:30px;color:var(--dim);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.wf-time{position:relative;height:100%}
+.wf-time b{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);font-weight:400}
+.wf-time b span{position:absolute;top:8px;left:4px;white-space:nowrap;text-transform:none;letter-spacing:0}
+.wf-time b:last-child span{left:auto;right:4px}
+.node{height:30px;cursor:default;border-left:3px solid hsl(var(--hue) 70% 55%)}
+.node:last-child{border-bottom:0}
+.node:hover{background:color-mix(in srgb,hsl(var(--hue) 70% 55%) 12%,transparent)}
 /* A step that names a class goes somewhere; one that does not must not pretend to. */
 a.node{text-decoration:none;color:inherit;cursor:pointer}
 a.node .nname{text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);
   text-underline-offset:3px}
 a.node:hover .nname{text-decoration-color:currentColor}
-.node.mark{background:transparent;border-left-style:dashed;opacity:.75}
-.nname{font-family:var(--mono);font-size:12px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-.nbar{height:3px;border-radius:2px;background:color-mix(in srgb,var(--line) 70%,transparent);
-  overflow:hidden}
-.nbar i{display:block;height:3px;background:hsl(var(--hue) 70% 55%)}
+.node.mark{border-left-style:dashed;opacity:.8}
+.node.mark .nname{color:var(--dim)}
+.node.qlane{border-left-color:hsl(95 60% 45%)}
+.nname{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  padding-left:calc(var(--depth,0) * 14px)}
+.who{color:var(--dim);font-size:11px}
+a.node:hover .who{color:var(--text)}
+.cid{font-style:normal;font-size:10px;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  border-radius:3px;padding:0 4px;margin-right:6px;vertical-align:middle}
+.wf-bar{position:relative;height:12px;border-radius:2px;
+  background:repeating-linear-gradient(90deg,transparent 0 24.9%,color-mix(in srgb,var(--line) 70%,transparent) 24.9% 25%)}
+.wf-bar i{position:absolute;top:0;bottom:0;min-width:2px;border-radius:2px;background:hsl(var(--hue) 70% 55%)}
+.wf-bar i.open{background:repeating-linear-gradient(90deg,var(--warn) 0 6px,transparent 6px 10px);opacity:.8}
+.wf-bar .wf-tick{position:absolute;top:-3px;width:2px;height:18px;background:hsl(var(--hue) 70% 55%);opacity:.9}
+.qlane .wf-bar i{background:hsl(95 60% 45%);min-width:1px}
 .ndur{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right;
   font-variant-numeric:tabular-nums}
-/* A branch leaves the column sideways: that turn is the whole point of the shape. */
-.branch{display:flex;align-items:flex-start;margin:2px 0 2px 10px}
-.branch-line{width:26px;height:22px;margin-top:14px;
-  border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);
-  border-bottom-left-radius:8px;opacity:.55;flex:0 0 auto}
 .warn{color:var(--warn)}
 
 .marks{list-style:none;margin:0;padding:0;border:1px solid var(--line);

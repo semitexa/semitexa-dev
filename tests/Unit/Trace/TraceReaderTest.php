@@ -96,6 +96,8 @@ final class TraceReaderTest extends TestCase
         self::assertCount(1, $trace['marks']);
         self::assertCount(1, $trace['queries']);
         self::assertSame('SELECT 1', $trace['queries'][0]['sql']);
+        self::assertNull($trace['queries'][0]['atMs'], 'a query recorded without a position says so rather than landing at 0');
+        self::assertArrayHasKey('depth', $trace['marks'][0], 'marks keep their depth so the waterfall can indent them');
     }
 
     #[Test]
