@@ -116,6 +116,20 @@ final class TraceHtmlRendererWaterfallTest extends TestCase
     }
 
     #[Test]
+    public function a_runaway_query_count_is_capped_in_the_dom_and_says_so(): void
+    {
+        $queries = [];
+        for ($i = 0; $i < 450; $i++) {
+            $queries[] = ['sql' => 'SELECT ' . $i, 'durationMs' => 0.01, 'params' => 0, 'atMs' => $i / 100];
+        }
+
+        $html = $this->render([$this->span('request', 0.0, 10.0, 0)], [], $queries);
+
+        self::assertStringContainsString('450 queries (first 400 drawn)', $html);
+        self::assertSame(400, substr_count($html, 'ms @ '), 'one tick per drawn query, and not one more');
+    }
+
+    #[Test]
     public function the_ruler_labels_the_quarters_in_ms(): void
     {
         $html = $this->render([$this->span('request', 0.0, 200.0, 0)]);

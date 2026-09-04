@@ -64,7 +64,7 @@ final class TraceReader
      *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated: bool},
      *     spans: list<array<string, mixed>>,
      *     marks: list<array<string, mixed>>,
-     *     queries: list<array{sql: string, durationMs: float, params: int}>
+     *     queries: list<array{sql: string, durationMs: float, params: int, atMs: float|null}>
      * }|null
      */
     public function read(string $file): ?array

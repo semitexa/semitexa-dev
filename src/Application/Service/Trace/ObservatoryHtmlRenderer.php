@@ -304,6 +304,9 @@ async function tick() {
     }
   } catch (e) {
     document.getElementById('meta').textContent = 'feed unreachable — retrying…';
+    // A failed fetch is not "idle": retry at the fast cadence so a server
+    // restart shows up within a second, not four.
+    liveCount = 1;
   }
 }
 

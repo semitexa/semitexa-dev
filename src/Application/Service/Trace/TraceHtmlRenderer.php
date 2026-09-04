@@ -173,6 +173,12 @@ final class TraceHtmlRenderer
     }
 
     /**
+     * Beyond this many ticks the lane is solid anyway, and a trace with a
+     * runaway N+1 must not turn into thousands of DOM nodes.
+     */
+    private const MAX_QUERY_TICKS = 400;
+
+    /**
      * @param list<array<string, mixed>> $queries
      */
     private function queryLane(array $queries, float $total): string
@@ -183,6 +189,7 @@ final class TraceHtmlRenderer
 
         $ticks = '';
         $placed = 0;
+        $drawn = 0;
         $sum = 0.0;
         foreach ($queries as $q) {
             $sum += $this->fv($q, 'durationMs');
@@ -191,6 +198,10 @@ final class TraceHtmlRenderer
                 continue;
             }
             $placed++;
+            if ($drawn >= self::MAX_QUERY_TICKS) {
+                continue;
+            }
+            $drawn++;
             $ticks .= sprintf(
                 '<i style="left:%s%%;width:%s%%" title="%s"></i>',
                 $this->num($this->pct((float) $at, $total)),
@@ -200,7 +211,9 @@ final class TraceHtmlRenderer
         }
 
         $label = count($queries) . ' quer' . (count($queries) === 1 ? 'y' : 'ies');
-        if ($placed < count($queries)) {
+        if ($drawn < $placed) {
+            $label .= ' (first ' . $drawn . ' drawn)';
+        } elseif ($placed < count($queries)) {
             // Older traces recorded queries without a position; say so instead of
             // drawing an empty lane that reads as "no queries ran".
             $label .= $placed === 0 ? ' (no positions recorded)' : ' (' . $placed . ' placed)';
