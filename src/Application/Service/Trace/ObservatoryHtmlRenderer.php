@@ -247,7 +247,19 @@ function groupRow(g, max, idx) {
 async function tick() {
   if (paused) return;
   try {
-    const r = await fetch('/__observatory/feed', {headers: {'Accept': 'application/json'}});
+    // Bounded: a fetch that never settles would leave tick() pending and
+    // schedule() never called - polling would stop with the tab in plain view.
+    // And a non-2xx is a failure too: fetch() resolves on HTTP errors, and
+    // parsing an error body would read as "nothing live" and back the poll off.
+    const ctl = new AbortController();
+    const bound = setTimeout(() => ctl.abort(), 5000);
+    let r;
+    try {
+      r = await fetch('/__observatory/feed', {headers: {'Accept': 'application/json'}, signal: ctl.signal});
+    } finally {
+      clearTimeout(bound);
+    }
+    if (!r.ok) throw new Error('feed ' + r.status);
     const d = await r.json();
     liveCount = d.counts.live;
     document.getElementById('stat-live').innerHTML = 'live <b>' + d.counts.live + '</b>'

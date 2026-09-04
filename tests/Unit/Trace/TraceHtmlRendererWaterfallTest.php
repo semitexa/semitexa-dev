@@ -113,6 +113,16 @@ final class TraceHtmlRendererWaterfallTest extends TestCase
         );
 
         self::assertStringContainsString('1 query (no positions recorded)', $html);
+
+        $mixed = $this->render(
+            [$this->span('request', 0.0, 10.0, 0)],
+            [],
+            [
+                ['sql' => 'SELECT 1', 'durationMs' => 1.0, 'params' => 0, 'atMs' => 5.0],
+                ['sql' => 'SELECT 2', 'durationMs' => 1.0, 'params' => 0, 'atMs' => null],
+            ],
+        );
+        self::assertStringContainsString('2 queries (1 without position)', $mixed);
     }
 
     #[Test]
@@ -127,6 +137,30 @@ final class TraceHtmlRendererWaterfallTest extends TestCase
 
         self::assertStringContainsString('450 queries (first 400 drawn)', $html);
         self::assertSame(400, substr_count($html, 'ms @ '), 'one tick per drawn query, and not one more');
+    }
+
+    #[Test]
+    public function a_capped_lane_still_reports_the_queries_it_could_not_place(): void
+    {
+        $queries = [['sql' => 'SELECT old', 'durationMs' => 0.01, 'params' => 0, 'atMs' => null]];
+        for ($i = 0; $i < 401; $i++) {
+            $queries[] = ['sql' => 'SELECT ' . $i, 'durationMs' => 0.01, 'params' => 0, 'atMs' => $i / 100];
+        }
+
+        $html = $this->render([$this->span('request', 0.0, 10.0, 0)], [], $queries);
+
+        self::assertStringContainsString('402 queries (first 400 drawn, 1 without position)', $html);
+    }
+
+    #[Test]
+    public function a_nested_mark_is_indented_like_the_span_it_sits_in(): void
+    {
+        $html = $this->render(
+            [$this->span('request', 0.0, 10.0, 0), $this->span('pipeline', 1.0, 5.0, 1)],
+            [['name' => 'event.dispatch', 'atMs' => 3.0, 'depth' => 2, 'cid' => 1, 'pcid' => 0, 'context' => []]],
+        );
+
+        self::assertMatchesRegularExpression('/class="node mark[^"]*" style="--hue:\d+;--depth:2"/', $html);
     }
 
     #[Test]

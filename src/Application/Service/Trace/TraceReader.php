@@ -141,6 +141,8 @@ final class TraceReader
             $marks[] = [
                 'name' => $name,
                 'atMs' => $this->float($e, 'atMs'),
+                // Marks nest like spans; the waterfall indents them by it.
+                'depth' => $this->int($e, 'depth'),
                 'cid' => $this->int($e, 'cid'),
                 'pcid' => $this->int($e, 'pcid'),
                 'context' => $this->arr($e, 'context'),

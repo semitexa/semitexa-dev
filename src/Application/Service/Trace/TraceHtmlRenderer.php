@@ -210,14 +210,18 @@ final class TraceHtmlRenderer
             );
         }
 
-        $label = count($queries) . ' quer' . (count($queries) === 1 ? 'y' : 'ies');
+        // Both caveats when both apply: a capped lane and unpositioned queries
+        // (older traces recorded queries without a position) are independent,
+        // and a lane that says only one of them reads as complete.
+        $notes = [];
         if ($drawn < $placed) {
-            $label .= ' (first ' . $drawn . ' drawn)';
-        } elseif ($placed < count($queries)) {
-            // Older traces recorded queries without a position; say so instead of
-            // drawing an empty lane that reads as "no queries ran".
-            $label .= $placed === 0 ? ' (no positions recorded)' : ' (' . $placed . ' placed)';
+            $notes[] = 'first ' . $drawn . ' drawn';
         }
+        if ($placed < count($queries)) {
+            $notes[] = $placed === 0 ? 'no positions recorded' : (count($queries) - $placed) . ' without position';
+        }
+        $label = count($queries) . ' quer' . (count($queries) === 1 ? 'y' : 'ies')
+            . ($notes === [] ? '' : ' (' . implode(', ', $notes) . ')');
 
         return sprintf(
             '<div class="node qlane" style="--hue:95" title="%s">
