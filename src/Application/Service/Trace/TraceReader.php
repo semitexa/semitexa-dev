@@ -131,6 +131,9 @@ final class TraceReader
                     'sql' => $this->str($ctx, 'sql'),
                     'durationMs' => $this->float($e, 'durationMs'),
                     'params' => $this->int($ctx, 'params'),
+                    // Position on the timeline; null for traces recorded before
+                    // queries were attached live (the drained list had none).
+                    'atMs' => isset($e['atMs']) && (is_float($e['atMs']) || is_int($e['atMs'])) ? (float) $e['atMs'] : null,
                 ];
                 continue;
             }
