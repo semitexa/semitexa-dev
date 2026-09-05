@@ -28,9 +28,12 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Structure;
  *     describing the path to deep validation. Opaque is NOT a wildcard —
  *     it is a tracked deferred rule.
  *
- *   - `MODE_VENDOR_BUNDLE` — the subtree is a third-party artifact kept as its
- *     author ships it. Any files and any nested directories are accepted, and
- *     nothing inside is classified. Distinct from `MODE_OPAQUE_INTERNAL`, which
+ *   - `MODE_VENDOR_BUNDLE` — this path holds ONE DIRECTORY PER third-party
+ *     bundle. Each bundle directory is accepted whatever it is called and its
+ *     contents are not classified, because they belong to their author. Files
+ *     directly at this level are still rejected: a bundle is a directory, and
+ *     letting loose files sit beside them would make one root a shared dumping
+ *     ground for several bundles. Distinct from `MODE_OPAQUE_INTERNAL`, which
  *     means "deep validation is owed and tracked": a vendored bundle is never
  *     going to be deep-validated, because its layout is not ours to decide.
  *     A bundle like Leaflet is one indivisible thing — `leaflet.js`,
@@ -158,10 +161,10 @@ final readonly class ModuleStructureRule
         return $this->mode === self::MODE_VENDOR_BUNDLE;
     }
 
-    /** Modes whose contents the validator does not descend into. */
+    /** Modes whose contents the validator does not descend into at all. */
     public function skipsChildScan(): bool
     {
-        return $this->isOpaqueInternal() || $this->isVendorBundle();
+        return $this->isOpaqueInternal();
     }
 
     public function isLeafFilesOnly(): bool

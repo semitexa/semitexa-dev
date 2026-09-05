@@ -111,6 +111,26 @@ final readonly class ModuleStructureSpec
         return in_array($name, $this->packageOnlyDirectories, true);
     }
 
+    /**
+     * Spec paths declared as vendor bundles, e.g. `Application/Static/vendor`.
+     *
+     * A scan that classifies contents has to stop at these: what is inside
+     * belongs to a third party, and our names for things are not its problem.
+     *
+     * @return list<string>
+     */
+    public function vendorBundlePaths(): array
+    {
+        $paths = [];
+        foreach ($this->codeRootRules as $path => $rule) {
+            if ($rule->isVendorBundle()) {
+                $paths[] = (string) $path;
+            }
+        }
+
+        return $paths;
+    }
+
     public function isForbiddenInProductionPackages(string $name): bool
     {
         // Case-insensitive match: `Demo`, `demo`, `DEMO` all read alike.

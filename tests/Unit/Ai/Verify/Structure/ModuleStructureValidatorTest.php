@@ -3259,6 +3259,58 @@ class ModuleStructureValidatorTest extends TestCase
     }
 
     /**
+     * A bundle is a DIRECTORY. Loose files straight under vendor/ would make
+     * one root a shared dumping ground for several bundles, which is the
+     * one-directory-per-bundle contract the docs state — so the spec has to
+     * enforce it rather than merely describe it.
+     */
+    public function test_a_loose_file_directly_under_vendor_is_refused(): void
+    {
+        $this->scaffoldModule('Home', [
+            'Application/Static/vendor',
+        ]);
+        file_put_contents(
+            $this->root . '/src/modules/Home/src/Application/Static/vendor/leaflet.js',
+            '// not in a bundle directory',
+        );
+
+        $violations = $this->validator()->validate($this->module('Home'));
+
+        $paths = array_map(
+            static fn (ModuleStructureViolation $v): string => $v->path,
+            $violations,
+        );
+        self::assertContains(
+            'src/modules/Home/src/Application/Static/vendor/leaflet.js',
+            $paths,
+            'vendor/ holds bundle directories; a loose file must be named as the problem.',
+        );
+    }
+
+    /**
+     * A vendored bundle may ship a directory whose NAME is on the demo/sandbox
+     * deny-list — `examples/` is the obvious one. The name belongs to its
+     * author, so the production-package pollution scan must stop at the bundle
+     * root instead of accusing a third party of polluting our package.
+     */
+    public function test_a_bundles_own_examples_directory_is_not_package_pollution(): void
+    {
+        $base = $this->root . '/packages/semitexa-fixture';
+        mkdir($base . '/src/Application/Static/vendor/leaflet/examples', 0755, true);
+        mkdir($base . '/tests', 0755, true);
+        file_put_contents($base . '/composer.json', '{"name":"semitexa/fixture"}');
+        file_put_contents($base . '/src/Application/Static/vendor/leaflet/leaflet.js', '// bundle');
+        file_put_contents($base . '/src/Application/Static/vendor/leaflet/examples/index.html', '<!-- theirs -->');
+
+        $violations = $this->validator()->validate($this->package('fixture'));
+
+        self::assertNotContains(
+            ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
+            $this->codes($violations),
+        );
+    }
+
+    /**
      * The escape hatch is scoped to vendor/. The type directories keep
      * classifying, so this is not a way to stop the rule applying elsewhere.
      */

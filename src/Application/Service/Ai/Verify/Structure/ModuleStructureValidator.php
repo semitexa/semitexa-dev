@@ -413,10 +413,11 @@ final class ModuleStructureValidator
             return;
         }
 
-        // Explicit opt-outs. `opaque_internal` means the spec author knowingly
-        // defers child validation; `vendor_bundle` means the subtree belongs to
-        // somebody else and its layout is not ours to classify. Either way the
-        // directory is permitted and its contents are not scanned.
+        // Explicit opt-out: `opaque_internal` means the spec author knowingly
+        // defers child validation. The directory is permitted; its contents are
+        // not scanned. (`vendor_bundle` is handled in the directory loop below,
+        // because it still has something to say about THIS level: bundles are
+        // directories, and loose files here are a violation.)
         if ($rule->skipsChildScan()) {
             return;
         }
@@ -446,6 +447,15 @@ final class ModuleStructureValidator
                         $childDir,
                     ),
                 );
+                continue;
+            }
+
+            if ($rule->isVendorBundle()) {
+                // One directory per third-party bundle, accepted under whatever
+                // name its author uses, and not descended into: leaflet/ holds
+                // leaflet.js, leaflet.css and images/ together because the CSS
+                // references the images relative to itself, and none of that is
+                // ours to classify.
                 continue;
             }
 
@@ -746,6 +756,14 @@ final class ModuleStructureValidator
                 continue;
             }
 
+            // A vendored bundle may legitimately ship a directory whose NAME is
+            // on the demo/sandbox deny-list — `examples/` is the obvious one.
+            // The name is the author's, not ours, so the scan stops here rather
+            // than accusing a third party of polluting our package.
+            if ($this->isVendorBundleRoot($childRel)) {
+                continue;
+            }
+
             if ($this->spec->isForbiddenInProductionPackages($childDir)) {
                 $violations[] = new ModuleStructureViolation(
                     code: ModuleStructureViolation::CODE_PRODUCTION_PACKAGE_POLLUTION,
@@ -781,6 +799,24 @@ final class ModuleStructureValidator
                 violations: $violations,
             );
         }
+    }
+
+    /**
+     * Is this package-root-relative path a declared vendor-bundle root?
+     *
+     * The pollution scan walks package-root-relative paths (`src/Application/
+     * Static/vendor`), while the spec is keyed inside the code root
+     * (`Application/Static/vendor`) — so compare on the tail.
+     */
+    private function isVendorBundleRoot(string $relInsidePackage): bool
+    {
+        foreach ($this->spec->vendorBundlePaths() as $specPath) {
+            if ($relInsidePackage === $specPath || str_ends_with($relInsidePackage, '/' . $specPath)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
