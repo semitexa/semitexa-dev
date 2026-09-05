@@ -413,11 +413,11 @@ final class ModuleStructureValidator
             return;
         }
 
-        // Phase 2: explicit opt-out. An opaque_internal rule means the spec
-        // author knowingly defers child validation. Stop descending — but we
-        // still apply file-placement rules at this level via the descent
-        // skip. The directory is permitted; its contents are not scanned.
-        if ($rule->isOpaqueInternal()) {
+        // Explicit opt-outs. `opaque_internal` means the spec author knowingly
+        // defers child validation; `vendor_bundle` means the subtree belongs to
+        // somebody else and its layout is not ours to classify. Either way the
+        // directory is permitted and its contents are not scanned.
+        if ($rule->skipsChildScan()) {
             return;
         }
 

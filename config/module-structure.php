@@ -285,7 +285,7 @@ $codeRoot = array_merge($codeRoot, [
     // Static + View — assets and templates.
     $rule(
         path: 'Application/Static',
-        allowedDirectories: ['css', 'js', 'img', 'fonts', 'svg', 'audio'],
+        allowedDirectories: ['css', 'js', 'img', 'fonts', 'svg', 'audio', 'vendor'],
         allowedFiles: ['assets.json'],
     ),
     $rule(path: 'Application/Static/css',   allowFeatureGrouping: true, allowAnyFile: true),
@@ -294,6 +294,21 @@ $codeRoot = array_merge($codeRoot, [
     $rule(path: 'Application/Static/fonts', allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/audio', allowFeatureGrouping: true, allowAnyFile: true),
     $rule(path: 'Application/Static/svg',   allowFeatureGrouping: true, allowAnyFile: true),
+    // Self-hosted third-party bundles, one directory per bundle, kept exactly as
+    // their author ships them. The sibling directories above classify by asset
+    // TYPE, which a bundle cannot honour: Leaflet is leaflet.js, leaflet.css and
+    // images/*.png together, and its CSS references those images relative to
+    // itself — split them and the vendored file's own URLs break unless you edit
+    // third-party code the next upgrade overwrites. Filing the whole bundle under
+    // one type directory instead is a misfiling the runtime never asked for:
+    // StaticAssetHandler and ModuleAssetResolver dispatch on file extension, not
+    // on the directory. A strict CSP, which this framework encourages, is what
+    // produces this shape in the first place.
+    $rule(
+        path: 'Application/Static/vendor',
+        mode: ModuleStructureRule::MODE_VENDOR_BUNDLE,
+        rationale: 'Self-hosted third-party asset bundles, kept with their own internal layout intact.',
+    ),
 
     $rule(
         path: 'Application/View',

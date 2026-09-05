@@ -3232,6 +3232,59 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertSame(['Command'], $spec->ruleFor('Application/Console')?->allowedDirectories);
     }
 
+    // ----------------- vendored third-party bundles -----------------
+
+    /**
+     * A self-hosted third-party bundle is one indivisible artifact: Leaflet
+     * ships leaflet.js, leaflet.css and images/*.png together, and the CSS
+     * references those images relative to itself. The type directories beside
+     * it (css/, js/, img/) cannot hold that shape without either breaking the
+     * vendored file's own URLs or misfiling the whole bundle under one type —
+     * and the runtime dispatches on file extension, so the misfiling buys
+     * nothing. Static/vendor/<bundle>/ accepts it as shipped.
+     */
+    public function test_a_vendored_bundle_keeps_its_own_internal_layout(): void
+    {
+        $this->scaffoldModule('Home', [
+            'Application/Static/vendor/leaflet/images',
+        ]);
+        $base = $this->root . '/src/modules/Home/src/Application/Static/vendor/leaflet';
+        file_put_contents($base . '/leaflet.js', '// bundle');
+        file_put_contents($base . '/leaflet.css', '.leaflet{background:url(images/marker.png)}');
+        file_put_contents($base . '/images/marker.png', 'PNG');
+
+        $violations = $this->validator()->validate($this->module('Home'));
+
+        self::assertSame([], $this->codes($violations), 'A vendored bundle must not need reshaping to pass.');
+    }
+
+    /**
+     * The escape hatch is scoped to vendor/. The type directories keep
+     * classifying, so this is not a way to stop the rule applying elsewhere.
+     */
+    public function test_the_bundle_escape_hatch_does_not_leak_to_its_siblings(): void
+    {
+        $this->scaffoldModule('Home', [
+            'Application/Static/whatever',
+        ]);
+
+        $violations = $this->validator()->validate($this->module('Home'));
+
+        self::assertContains(
+            ModuleStructureViolation::CODE_UNKNOWN_DIRECTORY,
+            $this->codes($violations),
+        );
+    }
+
+    /** @param list<ModuleStructureViolation> $violations @return list<string> */
+    private function codes(array $violations): array
+    {
+        return array_values(array_map(
+            static fn (ModuleStructureViolation $v): string => $v->code,
+            $violations,
+        ));
+    }
+
     // ----------------------- helpers ------------------------
 
     private function validator(): ModuleStructureValidator

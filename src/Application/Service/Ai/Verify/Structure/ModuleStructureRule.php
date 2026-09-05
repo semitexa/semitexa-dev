@@ -28,6 +28,19 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Structure;
  *     describing the path to deep validation. Opaque is NOT a wildcard —
  *     it is a tracked deferred rule.
  *
+ *   - `MODE_VENDOR_BUNDLE` — the subtree is a third-party artifact kept as its
+ *     author ships it. Any files and any nested directories are accepted, and
+ *     nothing inside is classified. Distinct from `MODE_OPAQUE_INTERNAL`, which
+ *     means "deep validation is owed and tracked": a vendored bundle is never
+ *     going to be deep-validated, because its layout is not ours to decide.
+ *     A bundle like Leaflet is one indivisible thing — `leaflet.js`,
+ *     `leaflet.css` and `images/*.png` together, with the CSS referencing the
+ *     images relative to itself — so splitting it across `css/`, `js/` and
+ *     `img/` breaks the vendored file's own URLs, and filing it whole under one
+ *     type directory is a lie the runtime never asked for: `StaticAssetHandler`
+ *     and `ModuleAssetResolver` both dispatch on file extension, never on the
+ *     directory a file sits in.
+ *
  *   - `MODE_LEAF_FILES_ONLY` — the rule accepts files (filtered by
  *     `allowedFiles` / `allowedFilePatterns` / `allowAnyFile`) but rejects
  *     EVERY direct subdirectory with `module_structure.unknown_directory`.
@@ -43,6 +56,7 @@ final readonly class ModuleStructureRule
     public const MODE_DEEP_VALIDATED  = 'deep_validated';
     public const MODE_OPAQUE_INTERNAL = 'opaque_internal';
     public const MODE_LEAF_FILES_ONLY = 'leaf_files_only';
+    public const MODE_VENDOR_BUNDLE   = 'vendor_bundle';
 
     /**
      * @param string                $path                 module-relative path; `top_level` for the module root
@@ -52,7 +66,7 @@ final readonly class ModuleStructureRule
      * @param list<string>          $excludedFilePatterns PCRE patterns matching basenames that are NEVER allowed at this path, even when `allowAnyFile` or `allowedFilePatterns` would otherwise match. Use to encode "this filename family belongs in a different layer" — e.g. `*Resource.php` is excluded from `Domain/Model/` because persistence resource models live in `Application/Db/<Adapter>/Model/`.
      * @param bool                  $allowFeatureGrouping if true, ANY direct child directory name is allowed (feature subfolders such as `Customer/`, `Order/`)
      * @param bool                  $allowAnyFile         if true, ANY file (subject to `excludedFilePatterns`) is allowed at this path
-     * @param string                $mode                 one of MODE_DEEP_VALIDATED / MODE_OPAQUE_INTERNAL / MODE_LEAF_FILES_ONLY
+     * @param string                $mode                 one of MODE_DEEP_VALIDATED / MODE_OPAQUE_INTERNAL / MODE_LEAF_FILES_ONLY / MODE_VENDOR_BUNDLE
      * @param string|null           $opaqueReason         required when `$mode === MODE_OPAQUE_INTERNAL`: why this directory is not yet deep-validated
      * @param string|null           $opaqueOwner          required when opaque: who owns the path forward to deep validation
      * @param string|null           $opaqueTodo           required when opaque: concrete steps needed to remove the opacity
@@ -104,6 +118,9 @@ final readonly class ModuleStructureRule
         if ($this->mode === self::MODE_LEAF_FILES_ONLY) {
             return false;
         }
+        if ($this->isVendorBundle()) {
+            return true;
+        }
         if ($this->allowFeatureGrouping) {
             return true;
         }
@@ -136,6 +153,18 @@ final readonly class ModuleStructureRule
     public function isOpaqueInternal(): bool
     {
         return $this->mode === self::MODE_OPAQUE_INTERNAL;
+    }
+
+    /** A third-party subtree, kept as shipped and not classified by us. */
+    public function isVendorBundle(): bool
+    {
+        return $this->mode === self::MODE_VENDOR_BUNDLE;
+    }
+
+    /** Modes whose contents the validator does not descend into. */
+    public function skipsChildScan(): bool
+    {
+        return $this->isOpaqueInternal() || $this->isVendorBundle();
     }
 
     public function isLeafFilesOnly(): bool
