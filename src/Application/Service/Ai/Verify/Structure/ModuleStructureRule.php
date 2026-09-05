@@ -118,9 +118,6 @@ final readonly class ModuleStructureRule
         if ($this->mode === self::MODE_LEAF_FILES_ONLY) {
             return false;
         }
-        if ($this->isVendorBundle()) {
-            return true;
-        }
         if ($this->allowFeatureGrouping) {
             return true;
         }

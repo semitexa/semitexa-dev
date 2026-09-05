@@ -3276,13 +3276,17 @@ class ModuleStructureValidatorTest extends TestCase
         );
     }
 
-    /** @param list<ModuleStructureViolation> $violations @return list<string> */
+    /**
+     * @param list<ModuleStructureViolation> $violations
+     *
+     * @return list<string>
+     */
     private function codes(array $violations): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (ModuleStructureViolation $v): string => $v->code,
             $violations,
-        ));
+        );
     }
 
     // ----------------------- helpers ------------------------
