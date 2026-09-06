@@ -124,8 +124,11 @@ fi
 # The failure mode is the dangerous kind: "no findings" and "never looked" are
 # the same silence. Asking costs one comment.
 #
-# Set SEMITEXA_PR_CODERABBIT=0 to skip.
-if [ "${SEMITEXA_PR_CODERABBIT:-1}" = "1" ] && [ -n "${pr_number:-}" ]; then
+# Set SEMITEXA_PR_CODERABBIT=0 to skip. Only that exact value skips: matching
+# on "= 1" instead would let SEMITEXA_PR_CODERABBIT=true silently disable the
+# request, and a review trigger that turns itself off without saying so is the
+# failure this block exists to prevent.
+if [ "${SEMITEXA_PR_CODERABBIT:-1}" != "0" ] && [ -n "${pr_number:-}" ]; then
     if [ "$created" -eq 1 ]; then
         coderabbit_command="@coderabbitai review"
     else
@@ -151,8 +154,9 @@ fi
 # otherwise one harmless line. It cannot install or enable anything; if Cursor
 # is not on the org the comment simply sits there unanswered.
 #
-# Set SEMITEXA_PR_BUGBOT=0 to skip.
-if [ "${SEMITEXA_PR_BUGBOT:-1}" = "1" ] && [ "$created" -eq 1 ] && [ -n "${pr_number:-}" ]; then
+# Set SEMITEXA_PR_BUGBOT=0 to skip — same contract as the block above, and it
+# had the same mismatch between the documented opt-out and the code.
+if [ "${SEMITEXA_PR_BUGBOT:-1}" != "0" ] && [ "$created" -eq 1 ] && [ -n "${pr_number:-}" ]; then
     if gh pr comment "$pr_number" --repo "$repo_slug" --body "bugbot run" >/dev/null 2>&1; then
         printf 'Requested a Bugbot review on #%s\n' "$pr_number"
     else
