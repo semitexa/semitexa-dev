@@ -107,6 +107,45 @@ else
     created=1
 fi
 
+# CodeRabbit review request — the one that actually reviews these PRs.
+#
+# MEASURED across a full working session on this ecosystem's only merge path,
+# develop -> master:
+#
+#   * "Review skipped — auto reviews are disabled on base/target branches other
+#     than the default branch." Every PR here has a non-default base, so NONE of
+#     them is reviewed unless a human asks. The largest PR of that session sat
+#     unreviewed until triggered by hand and then returned six findings, two of
+#     them data loss.
+#   * "Already reviewed the last commit" came back on PRs that had received NEW
+#     commits since the previous pass, so an updated PR needs `full review`
+#     rather than `review` to cover the commits added after it.
+#
+# The failure mode is the dangerous kind: "no findings" and "never looked" are
+# the same silence. Asking costs one comment.
+#
+# Set SEMITEXA_PR_CODERABBIT=0 to skip. Only that exact value skips: matching
+# on "= 1" instead would let SEMITEXA_PR_CODERABBIT=true silently disable the
+# request, and a review trigger that turns itself off without saying so is the
+# failure this block exists to prevent.
+if [ "${SEMITEXA_PR_CODERABBIT:-1}" != "0" ] && [ -n "${pr_number:-}" ]; then
+    if [ "$created" -eq 1 ]; then
+        coderabbit_command="@coderabbitai review"
+    else
+        # An updated PR carries commits a previous pass did not see, and the
+        # incremental reviewer declines to look at them on a plain `review`.
+        coderabbit_command="@coderabbitai full review"
+    fi
+
+    if gh pr comment "$pr_number" --repo "$repo_slug" --body "$coderabbit_command" >/dev/null 2>&1; then
+        printf 'Asked CodeRabbit for a review on #%s (%s)\n' "$pr_number" "$coderabbit_command"
+    else
+        # Loud, not silent: an unreviewed PR that nobody knows is unreviewed is
+        # exactly what this block exists to prevent.
+        printf 'WARNING: could not ask CodeRabbit to review #%s — this PR may go unreviewed\n' "$pr_number" >&2
+    fi
+fi
+
 # Cursor Bugbot review request.
 #
 # Once the Cursor GitHub App is installed and the repository is enabled in the
@@ -115,8 +154,9 @@ fi
 # otherwise one harmless line. It cannot install or enable anything; if Cursor
 # is not on the org the comment simply sits there unanswered.
 #
-# Set SEMITEXA_PR_BUGBOT=0 to skip.
-if [ "${SEMITEXA_PR_BUGBOT:-1}" = "1" ] && [ "$created" -eq 1 ] && [ -n "${pr_number:-}" ]; then
+# Set SEMITEXA_PR_BUGBOT=0 to skip — same contract as the block above, and it
+# had the same mismatch between the documented opt-out and the code.
+if [ "${SEMITEXA_PR_BUGBOT:-1}" != "0" ] && [ "$created" -eq 1 ] && [ -n "${pr_number:-}" ]; then
     if gh pr comment "$pr_number" --repo "$repo_slug" --body "bugbot run" >/dev/null 2>&1; then
         printf 'Requested a Bugbot review on #%s\n' "$pr_number"
     else

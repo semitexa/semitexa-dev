@@ -43,6 +43,26 @@ parameters:
     # skeleton from the dev environment that produces it. ai:verify in
     # semitexa.dev gates framework + library code; ultimate is gated by
     # its own release-readiness workflow.
+    # Packages that live in this monorepo but are NOT installed in the dev
+    # workspace. Their classes are absent from vendor/composer/autoload_psr4.php,
+    # so PHPStan reported every reference to them as semitexa.brokenFqcn — a
+    # package's own classes, on disk, next to the file referencing them.
+    #
+    # MEASURED 2026-09-06: semitexa/demo, showcase-kit, theme-sky and ultimate
+    # are absent from installed.json. semitexa/demo additionally has a STALE
+    # vendor/semitexa/demo symlink left from April, so it looks installed to
+    # anything that checks the filesystem while the autoloader knows nothing
+    # about it — which is why the failure read as a broken FQCN rather than a
+    # missing package.
+    #
+    # scanDirectories, not autoload: these are analysed as symbols so references
+    # resolve, without installing 327 files of routes and handlers into the dev
+    # runtime and changing what discovery finds.
+    scanDirectories:
+        - %currentWorkingDirectory%/packages/semitexa-demo/src
+        - %currentWorkingDirectory%/packages/semitexa-showcase-kit/src
+        - %currentWorkingDirectory%/packages/semitexa-theme-sky/src
+
     excludePaths:
         - %currentWorkingDirectory%/packages/semitexa-core/src/Composer/SemitexaPlugin.php
         - %currentWorkingDirectory%/packages/semitexa-ultimate/src
