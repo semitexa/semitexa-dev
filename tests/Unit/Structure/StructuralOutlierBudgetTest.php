@@ -54,7 +54,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 718],
-        'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 912],
+        // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
+        // on the route's declared pagination modes, and turning one unconditional
+        // statement into an if costs two lines that no wording can remove. No new
+        // method; the class is no more tangled than it was.
+        'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 915],
         'semitexa-update/src/Application/Service/Composer/ComposerUpdateRunner.php' => [20, 751],
         'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 742],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
