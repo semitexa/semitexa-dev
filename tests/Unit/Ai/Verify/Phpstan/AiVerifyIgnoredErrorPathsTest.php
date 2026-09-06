@@ -26,20 +26,53 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
  */
 final class AiVerifyIgnoredErrorPathsTest extends TestCase
 {
+    /** Where the config sits inside THIS package, in every layout. */
+    private const CONFIG_IN_PACKAGE = 'config/phpstan-ai-verify.neon';
+
+    #[Test]
+    public function the_runner_and_this_test_name_the_same_config(): void
+    {
+        // PhpstanRunner::CONFIG_REL_PATH is workspace-relative
+        // (`packages/semitexa-dev/config/...`); this test finds the same file
+        // from the package root. Tying them together here means a rename of
+        // the config breaks one obvious assertion instead of quietly leaving
+        // the sweep below pointed at a file that no longer exists.
+        self::assertStringEndsWith(
+            self::CONFIG_IN_PACKAGE,
+            PhpstanRunner::CONFIG_REL_PATH,
+            'the runner loads a different config than this test sweeps',
+        );
+    }
+
     #[Test]
     public function every_path_scoped_exemption_points_at_a_file_that_exists(): void
     {
-        $root = dirname(__DIR__, 7);
-        // Read the path from the runner that actually loads it, so a moved
-        // config moves this test with it instead of quietly checking nothing.
-        $config = $root . '/' . PhpstanRunner::CONFIG_REL_PATH;
+        // This file lives at <package>/tests/Unit/Ai/Verify/Phpstan/, so five
+        // levels up is the package root in EVERY layout — the standalone
+        // package checkout as well as the workspace, where the same package
+        // sits at packages/semitexa-dev.
+        $packageRoot = dirname(__DIR__, 5);
+        $config = $packageRoot . '/' . self::CONFIG_IN_PACKAGE;
 
         self::assertFileExists($config, 'the ai:verify PHPStan config itself moved — this test is reading nothing');
 
+        // The exemption paths are written against %currentWorkingDirectory%,
+        // which is the WORKSPACE root when ai:verify runs PHPStan, and they
+        // name sibling packages (packages/semitexa-core/...). A standalone
+        // checkout of this package has no siblings to resolve them against,
+        // so the claim is unanswerable there rather than false. Named
+        // explicitly, because a skip that reads as a pass is the same defect
+        // this test exists to catch.
+        $workspaceRoot = dirname($packageRoot, 2);
+        if (basename(dirname($packageRoot)) !== 'packages' || !is_dir($workspaceRoot . '/packages')) {
+            self::markTestSkipped(
+                'standalone package checkout: the exemptions name sibling packages that only exist in the workspace, '
+                . 'where test:run runs this test on every gate',
+            );
+        }
+
         $contents = (string) file_get_contents($config);
 
-        // `path:` entries are written relative to %currentWorkingDirectory%,
-        // which is the project root when ai:verify runs PHPStan.
         $matched = preg_match_all(
             '/^\s*path:\s*%currentWorkingDirectory%\/(\S+)\s*$/m',
             $contents,
@@ -59,7 +92,7 @@ final class AiVerifyIgnoredErrorPathsTest extends TestCase
             $target = rtrim($relative, '*');
             $target = rtrim($target, '/');
 
-            if (!file_exists($root . '/' . $target)) {
+            if (!file_exists($workspaceRoot . '/' . $target)) {
                 $missing[] = $relative;
             }
         }
