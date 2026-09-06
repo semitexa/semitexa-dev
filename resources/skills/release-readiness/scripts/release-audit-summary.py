@@ -49,6 +49,13 @@ print("COUNTS advisories={} abandoned={}".format(len(pairs), len(abandoned)))
 for severity in sorted(counts):
     print("SEVERITY {}={}".format(severity, counts[severity]))
 
-# low and unknown are reported, never blocking; the gate decides on the rest.
+# Fail closed. ONLY an explicit "low" is non-blocking; everything else blocks,
+# including an advisory that carries no severity at all.
+#
+# Composer gained the severity field in 2.7 and this project pins no Composer
+# version, so an older binary in a release environment can emit advisories with
+# no classification. Routing those to the non-blocking bucket would have let an
+# unclassified advisory — which is not the same as a harmless one — through the
+# gate on exactly the environment least likely to be current.
 for severity, line in sorted(lines):
-    print(("LOW " if severity in ("low", "unknown") else "BLOCK ") + line)
+    print(("LOW " if severity == "low" else "BLOCK ") + line)

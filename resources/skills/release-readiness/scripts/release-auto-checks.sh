@@ -164,9 +164,13 @@ doctor_gate
 # the parse has to be the thing that decides — an audit that did not happen is a
 # hard failure here, not a quiet pass.
 #
-# Blocks on medium and above, reports low without blocking. A release stopped by
-# a low-severity advisory in a dev-only package is a release someone ships with
-# the gate switched off.
+# ONLY an explicit low severity is non-blocking. Everything else stops the
+# release, including an advisory carrying no severity at all: composer gained
+# that field in 2.7 and this project pins no composer version, so an older
+# binary can report an advisory it cannot classify — and unclassified is not
+# harmless. A release stopped by a genuine low in a dev-only package would be a
+# release someone ships with the gate switched off, which is why low stays a
+# warning.
 audit_gate() {
     local report summary
     report="$(cd "$RELEASE_ROOT" && composer audit --locked --format=json 2>/dev/null || true)"
@@ -185,11 +189,11 @@ $summary"
     done <<<"$summary"
 
     if printf '%s\n' "$summary" | grep -q '^BLOCK '; then
-        fail "Dependencies carry advisories at medium severity or above:
+        fail "Dependencies carry advisories that are not classified as low:
 $(printf '%s\n' "$summary" | grep '^BLOCK ' | sed 's/^BLOCK /  - /')"
     fi
 
-    ok "composer audit found nothing at medium severity or above"
+    ok "composer audit found nothing above low severity"
 }
 
 audit_gate
