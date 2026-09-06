@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Phpstan;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
 
 /**
  * Every `path:` under ignoreErrors in the ai:verify PHPStan config must point
@@ -25,13 +26,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class AiVerifyIgnoredErrorPathsTest extends TestCase
 {
-    private const CONFIG = 'packages/semitexa-dev/config/phpstan-ai-verify.neon';
-
     #[Test]
     public function every_path_scoped_exemption_points_at_a_file_that_exists(): void
     {
         $root = dirname(__DIR__, 7);
-        $config = $root . '/' . self::CONFIG;
+        // Read the path from the runner that actually loads it, so a moved
+        // config moves this test with it instead of quietly checking nothing.
+        $config = $root . '/' . PhpstanRunner::CONFIG_REL_PATH;
 
         self::assertFileExists($config, 'the ai:verify PHPStan config itself moved — this test is reading nothing');
 
@@ -68,7 +69,7 @@ final class AiVerifyIgnoredErrorPathsTest extends TestCase
             . "They suppress nothing and reportUnmatchedIgnoredErrors is off, so PHPStan will never say so. "
             . "Delete the stale entries (or repoint them if the file moved):\n  - %s",
             count($missing),
-            self::CONFIG,
+            PhpstanRunner::CONFIG_REL_PATH,
             implode("\n  - ", $missing),
         ));
     }
