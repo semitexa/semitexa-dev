@@ -76,10 +76,23 @@ final class AiContextCommand extends BaseCommand
             ], JSON_UNESCAPED_SLASHES));
         }
 
+        // "We stopped looking" must never be printed as "there is nothing".
+        $truncated = $packer->truncatedRoots();
+        if ($truncated !== []) {
+            $output->writeln(json_encode([
+                'kind'   => 'note',
+                'note'   => 'scan hit the per-root file cap in: ' . implode(', ', $truncated)
+                    . ' — prior art below is drawn from part of that root only',
+                'action' => 'narrow the search with --module',
+            ], JSON_UNESCAPED_SLASHES));
+        }
+
         if ($items === []) {
             $output->writeln(json_encode([
                 'kind'   => 'note',
-                'note'   => 'no prior art found in src/modules — codebase may be greenfield for this recipe',
+                'note'   => $truncated === []
+                    ? 'no prior art found in src/modules or packages/*/src — codebase may be greenfield for this recipe'
+                    : 'no prior art found, but the scan was truncated — this is not evidence of greenfield',
                 'action' => 'none',
             ], JSON_UNESCAPED_SLASHES));
         }
