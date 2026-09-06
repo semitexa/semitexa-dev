@@ -179,6 +179,35 @@ final class VerificationPlanner
         // It costs a cmp over ~26 small files and skips itself outside the
         // monorepo, so an always-on target is affordable here in a way it would
         // not be for phpunit or phpstan.
+        // The scaffold's copies, unlike the skills', ARE in git: ultimate's infra
+        // files, the root bin/semitexa, the root guidance docs and
+        // semitexa-update's resources/scaffold with its checksum manifest. An
+        // edit to any of them shows up in a changed-file list, so this triggers
+        // on paths instead of running on every invocation — and the paths
+        // include the copies, because editing a copy is the failure this exists
+        // for: the next scaffold:sync overwrites it without a word.
+        $scaffoldTriggers = [];
+        foreach ($changedFiles as $file) {
+            $path = $file->path;
+            if (str_starts_with($path, 'packages/semitexa-installer/scaffold/')
+                || str_starts_with($path, 'packages/semitexa-update/resources/scaffold')
+                || str_starts_with($path, 'packages/semitexa-ultimate/')
+                || $path === 'bin/semitexa'
+            ) {
+                $scaffoldTriggers[] = $path;
+            }
+        }
+
+        if ($scaffoldTriggers !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_SCAFFOLD_DRIFT,
+                id: 'scaffold_drift:project',
+                reason: 'the installer scaffold is propagated into four copies; a partial sync ships drift, and a hand-edited copy is silently overwritten by the next one',
+                triggeredBy: $scaffoldTriggers,
+                filePath: null,
+            );
+        }
+
         $targets[] = new VerificationTarget(
             type: VerificationTarget::TYPE_SKILL_COPIES,
             id: 'skill_copies:project',
