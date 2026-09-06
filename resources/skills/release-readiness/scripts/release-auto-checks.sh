@@ -155,6 +155,45 @@ $(printf '%s\n' "$summary" | grep '^FAIL ' | sed 's/^FAIL /  - /')"
 }
 doctor_gate
 
+# Are we about to ship a dependency with a known advisory?
+#
+# `composer audit` has always been able to answer; nothing in the release flow
+# asked. MEASURED 2026-09-06 on the real command: network up and nothing found
+# gives exit 0 with a JSON report; network DOWN gives exit 100 and an EMPTY
+# stdout. So the exit code alone cannot separate "clean" from "never ran", and
+# the parse has to be the thing that decides — an audit that did not happen is a
+# hard failure here, not a quiet pass.
+#
+# Blocks on medium and above, reports low without blocking. A release stopped by
+# a low-severity advisory in a dev-only package is a release someone ships with
+# the gate switched off.
+audit_gate() {
+    local report summary
+    report="$(cd "$RELEASE_ROOT" && composer audit --locked --format=json 2>/dev/null || true)"
+
+    if ! summary="$(printf '%s' "$report" | python3 "$SCRIPT_DIR/release-audit-summary.py" 2>&1)"; then
+        fail "composer audit did not produce a report this gate could read, so no dependency was checked:
+$summary"
+    fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            COUNTS*)   info "composer audit ${line#COUNTS }" ;;
+            SEVERITY*) info "composer audit severity ${line#SEVERITY }" ;;
+            LOW*)      warn "advisory (not blocking): ${line#LOW }" ;;
+        esac
+    done <<<"$summary"
+
+    if printf '%s\n' "$summary" | grep -q '^BLOCK '; then
+        fail "Dependencies carry advisories at medium severity or above:
+$(printf '%s\n' "$summary" | grep '^BLOCK ' | sed 's/^BLOCK /  - /')"
+    fi
+
+    ok "composer audit found nothing at medium severity or above"
+}
+
+audit_gate
+
 # Lightweight HTTP availability checks against the live Semitexa Demo on
 # demo.rls.semitexa.test. These are NOT the test suite — see bin/semitexa
 # test:run below for the real test gate. Scope is Semitexa Demo only: home
