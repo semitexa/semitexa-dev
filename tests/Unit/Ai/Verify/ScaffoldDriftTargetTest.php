@@ -59,6 +59,10 @@ final class ScaffoldDriftTargetTest extends TestCase
             'a test'               => ['packages/semitexa-os/tests/Unit/Service/ProviderHealthCacheTest.php'],
             'an app module'        => ['src/modules/CmsDemo/src/Application/Service/DemoArticleEditor.php'],
             'a similarly named package' => ['packages/semitexa-installer/src/Installer.php'],
+            // The prefix 'resources/scaffold' also claims this one; the
+            // boundary is the directory separator.
+            'a sibling of the scaffold dir' => ['packages/semitexa-update/resources/scaffold-notes.md'],
+            'a sibling of the manifest'     => ['packages/semitexa-update/resources/scaffold-manifest.json.bak'],
         ];
     }
 

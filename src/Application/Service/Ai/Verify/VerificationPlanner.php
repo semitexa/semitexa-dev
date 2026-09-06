@@ -189,8 +189,13 @@ final class VerificationPlanner
         $scaffoldTriggers = [];
         foreach ($changedFiles as $file) {
             $path = $file->path;
+            // Boundaries, not prefixes. 'packages/semitexa-update/resources/scaffold'
+            // as a prefix also claims scaffold-notes.md and any other sibling
+            // that happens to start with the word — a file dragged into a rule
+            // it has nothing to do with.
             if (str_starts_with($path, 'packages/semitexa-installer/scaffold/')
-                || str_starts_with($path, 'packages/semitexa-update/resources/scaffold')
+                || str_starts_with($path, 'packages/semitexa-update/resources/scaffold/')
+                || $path === 'packages/semitexa-update/resources/scaffold-manifest.json'
                 || str_starts_with($path, 'packages/semitexa-ultimate/')
                 || $path === 'bin/semitexa'
             ) {
