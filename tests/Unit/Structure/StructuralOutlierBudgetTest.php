@@ -44,7 +44,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 759],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
-        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 771],
+        // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
+        // became a ring that keeps the LAST events, so the capped-trace notice
+        // now has to say WHICH end was cut, and the root coroutine is read from
+        // the file rather than guessed from the first surviving span. No new
+        // method; the class is no more tangled than it was, just eight lines
+        // longer for two things it previously got wrong.
+        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 779],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 718],

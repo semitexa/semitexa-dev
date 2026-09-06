@@ -83,6 +83,13 @@ SKILL_ROOTS=(
     "$PROJECT_ROOT/.claude/skills"
     "$PROJECT_ROOT/.codex/skills"
     "$HOME/.codex/skills"
+    # Gemini runs these skills too and was not listed, so its copies drifted
+    # while --check reported every copy matching. MEASURED 2026-09-06:
+    # ~/.gemini/skills/review-prep/scripts/create-review-pr.sh still called
+    # `gh pr edit` — which fails outright on this org — and carried none of the
+    # review-request block added since. A sync gate that reports on a subset is
+    # worse than none: it answers the question it was asked without covering it.
+    "$HOME/.gemini/skills"
 )
 
 # The codereview helpers are additionally invoked as bin/<script> — the workflow

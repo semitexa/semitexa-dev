@@ -95,12 +95,16 @@ final class TraceHtmlRenderer
         // without knowing it is capped will conclude the request ended where the
         // events stop.
         if (($meta['truncated'] ?? false) === true) {
-            $body .= '<p class="nplus">This trace hit the ' . TraceBuffer::MAX_EVENTS
-                . '-event cap. Everything after that point is missing, and the total
-                   below is elapsed time rather than the closing span.</p>';
+            $body .= '<p class="nplus">This trace hit the ' . TraceBuffer::MAX_EVENTS . '-event cap. '
+                . (($meta['truncatedEnd'] ?? 'tail') === 'head'
+                    ? 'These are the LAST events; the request began before the flow below.'
+                    : 'Everything after this point is missing, and the total below is elapsed time '
+                        . 'rather than the closing span.')
+                . '</p>';
         }
 
-        $body .= $this->waterfall($trace['spans'], $trace['marks'], $trace['queries'], $total, $meta['file']);
+        $rootCid = is_int($meta['rootCid'] ?? null) ? $meta['rootCid'] : null;
+        $body .= $this->waterfall($trace['spans'], $trace['marks'], $trace['queries'], $total, $meta['file'], $rootCid);
 
         if ($trace['queries'] !== []) {
             $body .= $this->queries($trace['queries'], $total);
@@ -130,7 +134,7 @@ final class TraceHtmlRenderer
      * @param list<array<string, mixed>> $marks
      * @param list<array<string, mixed>> $queries
      */
-    private function waterfall(array $spans, array $marks, array $queries, float $total, string $from): string
+    private function waterfall(array $spans, array $marks, array $queries, float $total, string $from, ?int $rootCid = null): string
     {
         if ($spans === [] && $marks === []) {
             return '<p class="dim">Nothing recorded.</p>';
@@ -147,7 +151,11 @@ final class TraceHtmlRenderer
         // anything it encloses.
         usort($items, fn (array $a, array $b): int => [$this->fv($a, 'startMs'), $this->iv($a, 'depth')] <=> [$this->fv($b, 'startMs'), $this->iv($b, 'depth')]);
 
-        $rootCid = $spans !== [] ? $this->iv($spans[0], 'cid') : $this->iv($items[0], 'cid');
+        // Stated by the recorder when the file carries it. Inferring it from
+        // the first span is only correct while nothing was dropped ahead of
+        // that span — on a capped trace the first surviving span can belong to
+        // any coroutine, which would chip EVERY row as foreign.
+        $rootCid ??= $spans !== [] ? $this->iv($spans[0], 'cid') : $this->iv($items[0], 'cid');
 
         $rows = '';
         foreach ($items as $item) {
