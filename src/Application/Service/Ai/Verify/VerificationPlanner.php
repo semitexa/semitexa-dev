@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Dev\Application\Console\Command\ScaffoldSyncDocsCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
@@ -189,6 +190,16 @@ final class VerificationPlanner
         $scaffoldTriggers = [];
         foreach ($changedFiles as $file) {
             $path = $file->path;
+            // The root guidance docs are the fourth copy and were missing here:
+            // scaffold:sync mirrors them into ultimate byte-for-byte, so editing
+            // one is exactly the partial-ritual case this target exists for. The
+            // list comes from the command that owns it — a second hand-written
+            // copy would be the drift this whole check is about.
+            if (in_array($path, ScaffoldSyncDocsCommand::MIRRORED_FILES, true)) {
+                $scaffoldTriggers[] = $path;
+                continue;
+            }
+
             // Boundaries, not prefixes. 'packages/semitexa-update/resources/scaffold'
             // as a prefix also claims scaffold-notes.md and any other sibling
             // that happens to start with the word — a file dragged into a rule

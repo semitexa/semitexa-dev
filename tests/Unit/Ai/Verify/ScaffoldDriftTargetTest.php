@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Console\Command\ScaffoldSyncDocsCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
@@ -38,7 +39,25 @@ final class ScaffoldDriftTargetTest extends TestCase
             'the update manifest' => ['packages/semitexa-update/resources/scaffold-manifest.json'],
             'the ultimate copy'   => ['packages/semitexa-ultimate/composer.json'],
             'the root launcher'   => ['bin/semitexa'],
+            // The fourth copy: scaffold:sync mirrors these into ultimate
+            // byte-for-byte, so an edit to one is the same partial-ritual risk.
+            'root guidance: AGENTS.md'    => ['AGENTS.md'],
+            'root guidance: CLAUDE.md'    => ['CLAUDE.md'],
+            'root guidance: AI_ENTRY.md'  => ['AI_ENTRY.md'],
+            'root guidance: README.md'    => ['README.md'],
         ];
+    }
+
+    /**
+     * The mirrored list is read from the command that owns it, so a file added
+     * there is covered here without anyone remembering to update a second copy.
+     */
+    #[Test]
+    public function every_mirrored_guidance_file_schedules_the_check(): void
+    {
+        foreach (ScaffoldSyncDocsCommand::MIRRORED_FILES as $file) {
+            self::assertTrue($this->plans($file), $file . ' is mirrored into ultimate and must schedule the check');
+        }
     }
 
     #[Test]
@@ -63,6 +82,9 @@ final class ScaffoldDriftTargetTest extends TestCase
             // boundary is the directory separator.
             'a sibling of the scaffold dir' => ['packages/semitexa-update/resources/scaffold-notes.md'],
             'a sibling of the manifest'     => ['packages/semitexa-update/resources/scaffold-manifest.json.bak'],
+            // Named in the command as deliberately NOT mirrored.
+            'a root doc that diverges on purpose' => ['AI_NOTES.md'],
+            'a doc that is not root guidance'     => ['docs/SOMETHING.md'],
         ];
     }
 

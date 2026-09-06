@@ -38,9 +38,14 @@ final class ScaffoldSyncDocsCommand extends BaseCommand
     /**
      * AI-guidance files mirrored root → ultimate. Must match byte-for-byte.
      *
+     * Public because it is a fact about the project rather than an
+     * implementation detail: ai:verify schedules its scaffold-drift check when
+     * one of these is touched, and a second hand-written copy of the list is
+     * exactly the drift this command exists to prevent.
+     *
      * @var list<string>
      */
-    private const MIRRORED_FILES = [
+    public const MIRRORED_FILES = [
         'AGENTS.md',
         'AGENTS_DOCTRINE.md',
         'AI_ENTRY.md',
