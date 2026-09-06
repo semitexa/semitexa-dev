@@ -51,9 +51,21 @@ run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-c
 # how a stale test double survived a release and failed the NEXT preflight instead
 # of its own. --code-only leaves the clone's .env and composer.json alone.
 run_stage "sync-release-code" "$SCRIPT_DIR/release-sync-root.sh" --code-only
+# ...and its infrastructure, which no stage refreshed until now. The clone had
+# drifted far enough that its checks were not measuring what we ship: no node, so
+# RenderParityTest SKIPPED and a green preflight said nothing about parity; no
+# imagemagick webp delegate while a WebP image pipeline was being released. A
+# gate that cannot run is worse than a gate that is missing, because the summary
+# line looks the same.
+run_stage "sync-clone-infra" "$SCRIPT_DIR/release-sync-clone-infra.sh"
 run_stage "stop-semitexa-containers" "$SCRIPT_DIR/release-stop-semitexa.sh"
 run_stage "start-release-clone" "$SCRIPT_DIR/release-start-rls.sh"
 run_stage "sync-release-schema" "$SCRIPT_DIR/release-orm-sync.sh"
+# A release run must not accept a skipped check. With this set, a missing node
+# fails RenderParityTest instead of skipping it, so the clone can never again
+# report parity it did not measure. docker-compose.test.yml passes it through to
+# the phpunit service; unset (an ordinary local run) keeps the skip.
+export SEMITEXA_PARITY_REQUIRED=1
 run_stage "automated-checks" "$SCRIPT_DIR/release-auto-checks.sh"
 CURRENT_STAGE="preflight-complete"
 
