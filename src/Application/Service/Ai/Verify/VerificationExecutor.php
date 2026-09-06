@@ -68,6 +68,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_CAPABILITY_INDEX => $this->runCapabilityIndex($target),
                 VerificationTarget::TYPE_CAPABILITY_COVERAGE => $this->runCapabilityCoverage($target),
                 VerificationTarget::TYPE_SKILL_COPIES      => $this->runSkillCopies($target),
+                VerificationTarget::TYPE_SCAFFOLD_DRIFT    => $this->runScaffoldDrift($target),
                 VerificationTarget::TYPE_DOCS              => $this->runDocsGate($target),
                 default                                   => new VerificationResult(
                     target:   $target,
@@ -545,6 +546,65 @@ final class VerificationExecutor
      * keep in step, and a gate that fails on nothing relevant is a gate somebody
      * switches off.
      */
+    /**
+     * The installer scaffold against the four copies it is propagated into.
+     *
+     * Unlike the agent skills, these copies ARE version-controlled — ultimate's
+     * infra files, the root bin/semitexa, the root guidance docs and
+     * semitexa-update's resources/scaffold plus its checksum manifest — so an
+     * edit to any of them does reach a changed-file list, and the target is
+     * triggered by path rather than run on every invocation.
+     *
+     * The failure it exists for is the partial ritual: touching the SSoT and
+     * forgetting one copy, or hand-editing a copy so the next scaffold:sync
+     * silently overwrites it. MEASURED 2026-09-06 — a one-line change to the
+     * scaffold's docker-compose.test.yml left semitexa-update's manifest stale,
+     * and only that package's own test noticed. This generalises that catch to
+     * every copy.
+     *
+     * Runs the command in-process rather than shelling out, so there is one
+     * implementation of "are these in sync" and a project without semitexa/dev
+     * installed skips instead of failing.
+     */
+    private function runScaffoldDrift(VerificationTarget $target): VerificationResult
+    {
+        try {
+            $command = $this->application->find('scaffold:sync');
+        } catch (CommandNotFoundException) {
+            return $this->skipped($target, 'scaffold_drift: scaffold:sync is unavailable in this project');
+        }
+
+        $buffer = new BufferedOutput();
+        $input = new ArrayInput(['command' => 'scaffold:sync', '--check' => true]);
+        $input->setInteractive(false);
+
+        try {
+            $exit = $command->run($input, $buffer);
+        } catch (\Throwable $e) {
+            return $this->failed(
+                $target,
+                'scaffold:sync --check threw ' . $e::class . ': ' . $this->compress($e->getMessage()),
+            );
+        }
+
+        if ($exit === 0) {
+            return new VerificationResult(
+                target:   $target,
+                status:   VerificationResult::STATUS_PASS,
+                exitCode: 0,
+                signal:   'scaffold_drift → every scaffold copy matches the installer SSoT',
+            );
+        }
+
+        return new VerificationResult(
+            target:   $target,
+            status:   VerificationResult::STATUS_FAIL,
+            exitCode: $exit,
+            signal:   'scaffold_drift → ' . $this->compress($buffer->fetch())
+                . ' — edit packages/semitexa-installer/scaffold/, then run bin/semitexa scaffold:sync',
+        );
+    }
+
     private function runSkillCopies(VerificationTarget $target): VerificationResult
     {
         $script = $this->skillsSyncScript();

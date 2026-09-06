@@ -111,6 +111,50 @@ info "Running automated release checks..."
     "$RELEASE_ROOT/bin/semitexa" self-test
 )
 
+# Can this box actually run what we are about to ship?
+#
+# system:doctor asks the packages themselves — is the database reachable, does
+# ImageMagick carry the WEBP coder, is the cache driver coroutine-safe. That is
+# precisely the class of gap that made the release clone unfit for months
+# without anything noticing: no node, no pcov, no webp delegate, all while a
+# WebP image pipeline was being released through it.
+#
+# FAILS the release only on `fail`. Warnings are printed and do not block: a
+# warn is "usable, look at this" (a duplicate weave node, a redis cache driver),
+# and a gate that stops a release for those is a gate someone routes around.
+doctor_gate() {
+    local report
+    if ! report="$(cd "$RELEASE_ROOT" && "$RELEASE_ROOT/bin/semitexa" system:doctor --json 2>/dev/null)"; then
+        warn "system:doctor is unavailable in the release clone; environment capabilities were not checked"
+        return 0
+    fi
+
+    # Reading the report happens in its own step with its own exit code. An
+    # earlier draft piped straight into a heredoc and a syntax error in the
+    # reader made the gate print "no failing capability" and return 0 — the
+    # exact shape of failure this whole gate exists to end.
+    local summary
+    if ! summary="$(printf '%s' "$report" | python3 "$SCRIPT_DIR/release-doctor-summary.py" 2>&1)"; then
+        fail "system:doctor produced a report this gate could not read, so nothing was checked:
+$summary"
+    fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            COUNTS*) info "system:doctor ${line#COUNTS }" ;;
+            WARN*)   warn "system:doctor: ${line#WARN }" ;;
+        esac
+    done <<<"$summary"
+
+    if printf '%s\n' "$summary" | grep -q '^FAIL '; then
+        fail "system:doctor reports a capability this release needs and this environment does not have:
+$(printf '%s\n' "$summary" | grep '^FAIL ' | sed 's/^FAIL /  - /')"
+    fi
+
+    ok "system:doctor found no failing capability"
+}
+doctor_gate
+
 # Lightweight HTTP availability checks against the live Semitexa Demo on
 # demo.rls.semitexa.test. These are NOT the test suite — see bin/semitexa
 # test:run below for the real test gate. Scope is Semitexa Demo only: home

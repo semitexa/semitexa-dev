@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Dev\Application\Console\Command\ScaffoldSyncDocsCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
@@ -179,6 +180,50 @@ final class VerificationPlanner
         // It costs a cmp over ~26 small files and skips itself outside the
         // monorepo, so an always-on target is affordable here in a way it would
         // not be for phpunit or phpstan.
+        // The scaffold's copies, unlike the skills', ARE in git: ultimate's infra
+        // files, the root bin/semitexa, the root guidance docs and
+        // semitexa-update's resources/scaffold with its checksum manifest. An
+        // edit to any of them shows up in a changed-file list, so this triggers
+        // on paths instead of running on every invocation — and the paths
+        // include the copies, because editing a copy is the failure this exists
+        // for: the next scaffold:sync overwrites it without a word.
+        $scaffoldTriggers = [];
+        foreach ($changedFiles as $file) {
+            $path = $file->path;
+            // The root guidance docs are the fourth copy and were missing here:
+            // scaffold:sync mirrors them into ultimate byte-for-byte, so editing
+            // one is exactly the partial-ritual case this target exists for. The
+            // list comes from the command that owns it — a second hand-written
+            // copy would be the drift this whole check is about.
+            if (in_array($path, ScaffoldSyncDocsCommand::MIRRORED_FILES, true)) {
+                $scaffoldTriggers[] = $path;
+                continue;
+            }
+
+            // Boundaries, not prefixes. 'packages/semitexa-update/resources/scaffold'
+            // as a prefix also claims scaffold-notes.md and any other sibling
+            // that happens to start with the word — a file dragged into a rule
+            // it has nothing to do with.
+            if (str_starts_with($path, 'packages/semitexa-installer/scaffold/')
+                || str_starts_with($path, 'packages/semitexa-update/resources/scaffold/')
+                || $path === 'packages/semitexa-update/resources/scaffold-manifest.json'
+                || str_starts_with($path, 'packages/semitexa-ultimate/')
+                || $path === 'bin/semitexa'
+            ) {
+                $scaffoldTriggers[] = $path;
+            }
+        }
+
+        if ($scaffoldTriggers !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_SCAFFOLD_DRIFT,
+                id: 'scaffold_drift:project',
+                reason: 'the installer scaffold is propagated into four copies; a partial sync ships drift, and a hand-edited copy is silently overwritten by the next one',
+                triggeredBy: $scaffoldTriggers,
+                filePath: null,
+            );
+        }
+
         $targets[] = new VerificationTarget(
             type: VerificationTarget::TYPE_SKILL_COPIES,
             id: 'skill_copies:project',

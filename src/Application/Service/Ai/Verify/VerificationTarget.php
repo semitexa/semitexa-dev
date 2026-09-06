@@ -34,6 +34,7 @@ final readonly class VerificationTarget
     public const TYPE_CAPABILITY_INDEX = 'capability_index';
     public const TYPE_CAPABILITY_COVERAGE = 'capability_coverage';
     public const TYPE_SKILL_COPIES     = 'skill_copies';
+    public const TYPE_SCAFFOLD_DRIFT   = 'scaffold_drift';
     public const TYPE_DOCS             = 'docs';
 
     /**
