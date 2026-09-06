@@ -131,52 +131,85 @@ then
     fail "The release clone's autoloader carries no dev dependencies, so its test stages cannot run. Restore them with: (cd $RELEASE_ROOT && ./bin/semitexa install)"
 fi
 
+# The image is rebuilt from a MARKER, not from "did we copy a file this run".
+#
+# Copying happens before building, so a run whose copy succeeded and whose build
+# then failed leaves the new Dockerfile on disk with the old image still in use.
+# The next run compares file to file, finds them identical, reports "already
+# matches" and skips the rebuild — and every later stage runs on the environment
+# we thought we had replaced. That is the same failure this whole stage exists to
+# end, one level up. Reported by CodeRabbit on semitexa-dev#59.
+#
+# The marker records the checksum of the Dockerfile that produced the CURRENT
+# images, and it is written only after a build succeeds. A missing marker also
+# forces a rebuild, so a clone this stage has never touched is never assumed
+# current.
+IMAGE_MARKER="$RELEASE_ROOT/var/install/clone-image.sha256"
+
+dockerfile_sha() {
+    [ -f "$RELEASE_ROOT/Dockerfile" ] || return 1
+    sha256sum "$RELEASE_ROOT/Dockerfile" | cut -d' ' -f1
+}
+
+rebuild_clone_images() {
+    info "Rebuilding the clone images (slow: Swoole is compiled from source)"
+
+    # EVERY service built from this Dockerfile, not just `app`. Compose gives
+    # each one its own image — semitexarls-app, semitexarls-phpunit,
+    # semitexarls-scheduler — so `build app` leaves the test runner on the old
+    # environment, which is precisely the one that matters here. MEASURED: after
+    # `build app` succeeded, the phpunit service still answered
+    # "sh: node: not found".
+    (
+        cd "$RELEASE_ROOT"
+        build_args=()
+        for overlay in \
+            docker-compose.yml \
+            docker-compose.mysql.yml \
+            docker-compose.redis.yml \
+            docker-compose.nats.yml \
+            docker-compose.ollama.yml \
+            docker-compose.test.yml
+        do
+            [ -f "$RELEASE_ROOT/$overlay" ] && build_args+=(-f "$overlay")
+        done
+
+        # Forced, not defaulted. BuildKit resolves through the shared local
+        # router's DNS and dies there, and a caller that happened to export
+        # DOCKER_BUILDKIT=1 would silently opt this rebuild out of the very
+        # workaround the line above documents. See release-buildkit-dns.
+        DOCKER_BUILDKIT=0 docker compose "${build_args[@]}" build
+    ) || fail "Rebuilding the release clone images failed; its checks would otherwise run on the environment this stage just replaced"
+
+    mkdir -p "$RELEASE_ROOT/var/install"
+    dockerfile_sha > "$IMAGE_MARKER"
+
+    ok "Release clone images rebuilt from the refreshed Dockerfile"
+}
+
+if [ ${#changed[@]} -gt 0 ]; then
+    warn "Release clone infrastructure had drifted from the scaffold; refreshed:"
+    for file in "${changed[@]}"; do
+        printf '          - %s\n' "$file"
+    done
+fi
+
+current_sha="$(dockerfile_sha || true)"
+built_sha=""
+[ -f "$IMAGE_MARKER" ] && built_sha="$(cat "$IMAGE_MARKER")"
+
+if [ -n "$current_sha" ] && [ "$current_sha" != "$built_sha" ]; then
+    if [ -z "$built_sha" ]; then
+        info "No record of which Dockerfile built the clone images — rebuilding rather than assuming they are current"
+    else
+        info "The clone images were built from a different Dockerfile than the one on disk"
+    fi
+    rebuild_clone_images
+fi
+
 if [ ${#changed[@]} -eq 0 ]; then
     ok "Release clone infrastructure already matches the scaffold"
     exit 0
 fi
-
-warn "Release clone infrastructure had drifted from the scaffold; refreshed:"
-for file in "${changed[@]}"; do
-    printf '          - %s\n' "$file"
-done
-
-# A changed Dockerfile has to become a changed IMAGE here, not later.
-#
-# `bin/semitexa install` and `docker compose run` both reuse an existing image
-# rather than rebuilding it, so leaving the rebuild to a later stage means the
-# clone keeps running the environment we just replaced on disk — which reads as
-# a successful sync and changes nothing. MEASURED: after the first sync the file
-# had node in it and the container still answered "sh: node: not found".
-case " ${changed[*]} " in
-    *" Dockerfile "*)
-        info "Dockerfile changed — rebuilding the clone image now (slow: Swoole is compiled from source)"
-        # EVERY service built from this Dockerfile, not just `app`. Compose gives
-        # each one its own image — semitexarls-app, semitexarls-phpunit,
-        # semitexarls-scheduler — so `build app` leaves the test runner on the
-        # old environment, which is precisely the one that matters here.
-        # MEASURED: after `build app` succeeded, the phpunit service still
-        # answered "sh: node: not found".
-        (
-            cd "$RELEASE_ROOT"
-            build_args=()
-            for overlay in \
-                docker-compose.yml \
-                docker-compose.mysql.yml \
-                docker-compose.redis.yml \
-                docker-compose.nats.yml \
-                docker-compose.ollama.yml \
-                docker-compose.test.yml
-            do
-                [ -f "$RELEASE_ROOT/$overlay" ] && build_args+=(-f "$overlay")
-            done
-
-            # BuildKit resolves through the shared local router's DNS and dies
-            # there; the classic builder does not. See release-buildkit-dns.
-            DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-0}" docker compose "${build_args[@]}" build
-        ) || fail "Rebuilding the release clone images failed; its checks would otherwise run on the environment this stage just replaced"
-        ok "Release clone image rebuilt from the refreshed Dockerfile"
-        ;;
-esac
 
 ok "Release clone infrastructure is in step with what this release ships"
