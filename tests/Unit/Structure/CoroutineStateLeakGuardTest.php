@@ -29,6 +29,26 @@ final class CoroutineStateLeakGuardTest extends TestCase
     private const REQUEST_SHAPED = '(tenant|session|auth|user|request|payload|principal|locale)';
 
     /**
+     * Statics that read as request state by name and were checked not to be.
+     * Named one at a time, with the reason, and never exempted by TYPE: an
+     * `int` is a perfectly good tenant or user id and a `bool` is a perfectly
+     * good "is this caller an admin", so a type-wide exemption would wave
+     * through the two cheapest ways to leak an identity.
+     */
+    private const VERIFIED_NOT_REQUEST_STATE = [
+        // A refcount of live trace sessions, not a session identity. Read only
+        // to decide when to clear the query log; never carries request data.
+        'QueryRecorder::$sessions',
+
+        // moduleName => locales DIRECTORY. Paths, not a locale: registered once
+        // at worker boot by a container-managed listener and identical for
+        // every request. The request's own locale is $localeContext, which this
+        // same class clones per coroutine into CoroutineLocal — and which this
+        // guard clears on its own, without an entry here.
+        'Translator::$packageLocaleDirs',
+    ];
+
+    /**
      * A worker-lifetime object may not take request-scoped state into a
      * property. The container builds #[AsService] classes once per worker, so a
      * property written from the current tenant or user is shared with every
@@ -150,23 +170,126 @@ final class CoroutineStateLeakGuardTest extends TestCase
             'the static matcher no longer sees request-shaped shared state',
         );
 
-        $contextFirst = str_replace(
-            'self::$currentUser = $user;',
-            'if (Coroutine::getCid() > 0) { Coroutine::getContext()[self::KEY] = $user; return; } self::$currentUser = $user;',
-            $leakyStatic,
-        );
-
-        self::assertSame([], $this->leakingStatics($contextFirst), 'a coroutine-context-first store is the fix, not a leak');
-
         $counter = <<<'PHP'
-            final class Sessions
+            final class QueryRecorder
             {
                 private static int $sessions = 0;
                 public static function open(): void { self::$sessions++; }
             }
             PHP;
 
-        self::assertSame([], $this->leakingStatics($counter), 'an int cannot carry another request\'s data');
+        self::assertSame(
+            [],
+            $this->leakingStatics($counter),
+            'the named exemption stopped working',
+        );
+    }
+
+    /**
+     * The three ways this guard was too loose when it was first written. Each
+     * fixture is a leak the earlier matchers called safe.
+     */
+    #[Test]
+    public function the_matchers_do_not_wave_through_the_shapes_that_only_look_safe(): void
+    {
+        // 1. A constructor is not a safe place for request state. #[AsService]
+        // classes take no constructor arguments and are built ONCE per worker,
+        // so this captures the first request's tenant and serves it to every
+        // request the worker handles afterwards.
+        $capturedInConstructor = <<<'PHP'
+            #[AsService]
+            final class Captured
+            {
+                private string $tenantId;
+                public function __construct()
+                {
+                    $this->tenantId = $request->currentTenantId();
+                }
+            }
+            PHP;
+
+        self::assertSame(
+            ['$this->tenantId = $request->currentTenantId()'],
+            $this->leakingProperties($capturedInConstructor),
+            'a constructor that captures request state is a worker-lifetime leak, not an exemption',
+        );
+
+        // 2. Scalars carry identities perfectly well. A numeric tenant id and
+        // an "is this caller an admin" flag are the two cheapest ways to leak
+        // one, and a type-wide exemption waves both through.
+        $scalarTenant = <<<'PHP'
+            final class Scope
+            {
+                private static int $tenantId = 0;
+                public static function enter(int $id): void { self::$tenantId = $id; }
+            }
+            PHP;
+
+        self::assertSame(
+            ['static $tenantId'],
+            $this->leakingStatics($scalarTenant),
+            'an int is a perfectly good tenant id',
+        );
+
+        $scalarFlag = <<<'PHP'
+            final class Gate
+            {
+                private static bool $userIsAdmin = false;
+                public static function grant(): void { self::$userIsAdmin = true; }
+            }
+            PHP;
+
+        self::assertSame(
+            ['static $userIsAdmin'],
+            $this->leakingStatics($scalarFlag),
+            'a bool is a perfectly good authorization decision',
+        );
+
+        // 3. Coroutine storage somewhere in the file proves nothing about THIS
+        // static. Here the context is consulted for an unrelated value while
+        // the user is assigned straight to shared memory.
+        $unrelatedContext = <<<'PHP'
+            final class Mixed
+            {
+                private static ?string $currentUser = null;
+
+                public static function locale(): string
+                {
+                    return Coroutine::getContext()['locale'] ?? 'en';
+                }
+
+                public static function setUser(string $user): void
+                {
+                    self::$currentUser = $user;
+                }
+            }
+            PHP;
+
+        self::assertSame(
+            ['static $currentUser'],
+            $this->leakingStatics($unrelatedContext),
+            'a coroutine call elsewhere in the file does not make this static safe',
+        );
+
+        // The real shape, for contrast: context and fallback in ONE method,
+        // the static reached only when there is no coroutine. AuthContextStore.
+        $contextFirst = <<<'PHP'
+            final class Store
+            {
+                private static ?string $currentUser = null;
+
+                public static function setUser(string $user): void
+                {
+                    if (Coroutine::getCid() > 0) {
+                        Coroutine::getContext()[self::KEY] = $user;
+                        return;
+                    }
+                    self::$currentUser = $user;
+                }
+            }
+            PHP;
+
+        self::assertSame([], $this->leakingStatics($contextFirst), 'the context-first fallback is the fix, not a leak');
     }
 
     /**
@@ -195,7 +318,6 @@ final class CoroutineStateLeakGuardTest extends TestCase
 
         preg_match_all('/#\[Inject(?:AsReadonly|AsMutable)\][^;]*?\$(\w+)\s*;/s', $source, $m);
         $injected = $m[1] ?? [];
-        $constructor = preg_match('/function __construct.*?\n    \}/s', $source, $c) === 1 ? $c[0] : '';
 
         preg_match_all(
             '/\$this->(\w+)\s*=\s*([^;\n]*' . self::REQUEST_SHAPED . '[^;\n]*);/i',
@@ -210,10 +332,11 @@ final class CoroutineStateLeakGuardTest extends TestCase
             if (in_array($write[1], $injected, true)) {
                 continue; // an injected collaborator, not request data
             }
-            if ($constructor !== '' && str_contains($constructor, $write[0])) {
-                continue; // built once with the object
-            }
 
+            // A constructor is NOT exempt. #[AsService] classes take no
+            // constructor arguments and are built once per worker, so a
+            // constructor that reads ambient request state captures the FIRST
+            // request's tenant or user and serves it to every request after.
             $offenders[] = '$this->' . $write[1] . ' = ' . trim($write[2]);
         }
 
@@ -224,37 +347,104 @@ final class CoroutineStateLeakGuardTest extends TestCase
     private function leakingStatics(string $source): array
     {
         preg_match_all(
-            '/^\s*(?:private|protected|public)\s+static\s+(?!readonly)(\??[\w\\\\|]+)?\s*\$(\w+)/m',
+            '/^\s*(?:private|protected|public)\s+static\s+(?!readonly)(?:\??[\w\\\\|]+)?\s*\$(\w+)/m',
             $source,
             $statics,
             PREG_SET_ORDER,
         );
 
+        $class = preg_match('/^(?:final |abstract |readonly )*class (\w+)/m', $source, $c) === 1 ? $c[1] : '';
         $offenders = [];
 
         foreach ($statics as $static) {
-            [, $type, $name] = $static;
+            $name = $static[1];
 
             if (preg_match('/' . self::REQUEST_SHAPED . '/i', $name) !== 1) {
                 continue;
             }
-            // A scalar counter or flag cannot carry one request's data into the
-            // next: QueryRecorder::$sessions is a refcount whose name only reads
-            // as request state.
-            if (in_array(strtolower(ltrim($type ?? '', '?')), ['int', 'bool', 'float'], true)) {
+            if (in_array($class . '::$' . $name, self::VERIFIED_NOT_REQUEST_STATE, true)) {
                 continue;
             }
-            if (preg_match('/(?:self|static)::\$' . preg_quote($name, '/') . '\s*(?:=|\[|\+\+|--)/', $source) !== 1) {
+
+            $writes = $this->writeOffsets($source, $name);
+            if ($writes === []) {
                 continue; // never written; a constant in all but name
             }
-            if (str_contains($source, 'Coroutine::getContext()') || str_contains($source, 'CoroutineLocal')) {
-                continue;
+
+            foreach ($writes as $offset) {
+                if (!$this->methodAround($source, $offset, $reads)) {
+                    continue;
+                }
+                if ($reads) {
+                    continue 2; // context-first, with this static as the fallback
+                }
             }
 
             $offenders[] = 'static $' . $name;
         }
 
         return $offenders;
+    }
+
+    /**
+     * @return list<int> byte offsets of every write to self::$name
+     */
+    private function writeOffsets(string $source, string $name): array
+    {
+        preg_match_all(
+            '/(?:self|static)::\$' . preg_quote($name, '/') . '\s*(?:=[^=]|\[|\+\+|--)/',
+            $source,
+            $m,
+            PREG_OFFSET_CAPTURE,
+        );
+
+        return array_map(static fn (array $hit): int => (int) $hit[1], $m[0] ?? []);
+    }
+
+    /**
+     * Whether the method containing $offset also consults coroutine-local
+     * storage, reported through $reads.
+     *
+     * Bound to the METHOD, not the file. A class can call
+     * Coroutine::getContext() somewhere unrelated while assigning the static
+     * directly elsewhere, and a file-wide check calls that safe — the same
+     * too-loose matcher this whole test exists to prevent. The shape that IS
+     * safe keeps both in one place: read the context, return; otherwise fall
+     * back to the static. See AuthContextStore.
+     */
+    private function methodAround(string $source, int $offset, ?bool &$reads): bool
+    {
+        preg_match_all(
+            '/^\s*(?:(?:final|abstract|public|protected|private|static)\s+)*function\s/m',
+            $source,
+            $starts,
+            PREG_OFFSET_CAPTURE,
+        );
+
+        $bounds = array_map(static fn (array $hit): int => (int) $hit[1], $starts[0] ?? []);
+        if ($bounds === []) {
+            return false;
+        }
+
+        $start = null;
+        $end = strlen($source);
+        foreach ($bounds as $bound) {
+            if ($bound <= $offset) {
+                $start = $bound;
+                continue;
+            }
+            $end = $bound;
+            break;
+        }
+
+        if ($start === null) {
+            return false;
+        }
+
+        $body = substr($source, $start, $end - $start);
+        $reads = str_contains($body, 'Coroutine::getContext()') || str_contains($body, 'CoroutineLocal');
+
+        return true;
     }
 
     /** @return array<string, string> relative path => source */
