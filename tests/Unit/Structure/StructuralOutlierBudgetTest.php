@@ -29,7 +29,12 @@ final class StructuralOutlierBudgetTest extends TestCase
 {
     /** Classes at or above 30 methods or 700 lines: path => [methods, lines]. */
     private const BUDGETS = [
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2082],
+        // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
+        // now arrive as a Closure resolved AFTER the connection caps, so an
+        // over-cap attempt no longer pays for a full graphql document execution
+        // before being answered 429. The union type, the resolution line and the
+        // comment saying why it sits below the caps are the whole increase.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2087],
         'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1126],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1246],
@@ -40,7 +45,8 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-webhooks/src/Domain/Model/InboundDelivery.php' => [32, 122],
         'semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [31, 473],
         'semitexa-core/src/Request.php' => [31, 443],
-        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 206],
+        // 206 -> 207: one @param line for the same Closure-or-array contract.
+        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 207],
         'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 759],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
