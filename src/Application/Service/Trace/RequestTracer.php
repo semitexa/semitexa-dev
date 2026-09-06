@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Service\Trace;
 
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Environment;
+use Semitexa\Core\Pipeline\RecordingAwareTracerInterface;
 use Semitexa\Core\Pipeline\RequestTracerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Support\ProjectRoot;
@@ -38,8 +39,39 @@ use Semitexa\Orm\OrmManager;
  * request rather than retrying into the same error on every span.
  */
 #[SatisfiesServiceContract(of: RequestTracerInterface::class)]
-final class RequestTracer implements RequestTracerInterface
+final class RequestTracer implements RequestTracerInterface, RecordingAwareTracerInterface
 {
+    /**
+     * Whether a trace buffer is open for the work running right now.
+     *
+     * Lets the caller stop handing over spans nothing will keep. In dev this
+     * tracer is registered for EVERY request and records only marked ones, so
+     * without this an untraced page still paid the full chain per span —
+     * measured at 44.7 us a request once the pipeline spans took a plain page
+     * to about thirty-four calls.
+     */
+    public function isRecording(): bool
+    {
+        return TraceContext::current() !== null;
+    }
+
+    /**
+     * The span names this tracer needs even when nothing is being recorded.
+     *
+     * 'request' and 'sse' because either can START a recording — and an SSE
+     * connection is served inside RouteExecutor, so its span begins after the
+     * surrounding request has already declined, which is exactly when a caller
+     * would have stopped talking.
+     *
+     * 'job' because the Observatory journal is not the trace: queue jobs are
+     * journalled whether or not a trace file is collected. Leaving it out
+     * opened a journal process that was never closed.
+     */
+    public function wantsWhileSilent(string $name): bool
+    {
+        return $name === 'request' || $name === 'sse' || $name === 'job';
+    }
+
     // No per-request state on this class. It is a single instance shared by the
     // whole worker, so a concurrent untraced request would otherwise reset the
     // recording flag and clear the events of a traced request running beside it.
