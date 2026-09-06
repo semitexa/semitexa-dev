@@ -78,47 +78,6 @@ parameters:
             identifier: phpstanApi.runtimeReflection
             path: %currentWorkingDirectory%/packages/semitexa-core/src/PHPStan/Rules/*
 
-        # class_alias() deprecation shim files. These files declare a
-        # legacy FQCN at the top and register a runtime class_alias to
-        # the canonical FQCN. PHPStan cannot evaluate class_alias()
-        # statically, so it reports `Class X not found.` on the shim's
-        # own declared FQCN — a false positive for a runtime-working
-        # alias. Eventual deletion is tracked separately in the
-        # backlog (`delete deprecation shims once cutover confirmed`);
-        # for now they are intentional and functional.
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-auth/src/AuthenticationMode.php
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-ledger/src/Contract/ReplayHandlerInterface.php
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-ssr/src/Contract/TypedSlotHandlerInterface.php
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-ssr/src/Seo/Sitemap/AsSitemapProvider.php
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-ssr/src/Seo/Sitemap/SitemapUrlProviderInterface.php
-        # Inline class_alias() shims — the file declares the canonical
-        # class and then registers a runtime alias to a legacy FQCN
-        # inside the same file (rather than as a separate shim file).
-        # Same false-positive shape as the whole-file shims above:
-        # PHPStan cannot statically evaluate class_alias() so the
-        # legacy FQCN looks unresolvable. Functionally identical, just
-        # an alternate authoring style. Deletion tracked in the same
-        # backlog item (`delete deprecation shims once cutover
-        # confirmed`); cross-repo grep confirmed no consumers of the
-        # legacy Semitexa\Api\Attributes\ namespace in semitexa.dev or
-        # semitexa.pl, but other consumer apps may still reference it.
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-api/src/Attribute/ApiVersion.php
-        -
-            identifier: class.notFound
-            path: %currentWorkingDirectory%/packages/semitexa-api/src/Attribute/ExternalApi.php
-
 rules:
     - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
     - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
