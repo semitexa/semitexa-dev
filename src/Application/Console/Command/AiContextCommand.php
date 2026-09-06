@@ -83,7 +83,11 @@ final class AiContextCommand extends BaseCommand
                 'kind'   => 'note',
                 'note'   => 'scan hit the per-root file cap in: ' . implode(', ', $truncated)
                     . ' — prior art below is drawn from part of that root only',
-                'action' => 'narrow the search with --module',
+                // NOT "narrow it with --module": the packer walks both roots in
+                // full before the module hint is applied, so --module changes
+                // the RANKING and cannot make the scan reach further. Advice
+                // that does not work is worse than none.
+                'action' => 'read the listed prior art, then search the remaining root directly',
             ], JSON_UNESCAPED_SLASHES));
         }
 

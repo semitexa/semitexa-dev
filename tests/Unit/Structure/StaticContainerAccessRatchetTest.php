@@ -30,17 +30,24 @@ final class StaticContainerAccessRatchetTest extends TestCase
      */
     private const ALLOWED_PREFIXES = [
         'Semitexa\\Core\\Container\\',
-        'Semitexa\\Core\\Log\\StaticLoggerBridge',
-        'Semitexa\\Core\\Application',
         'Semitexa\\Core\\Console\\',
         'Semitexa\\Core\\Server\\',
-        'Semitexa\\Core\\Event\\EventDispatcher',
         'Semitexa\\Core\\Queue\\',
-        'Semitexa\\Scheduler\\Application\\Service\\RunExecutor',
         'Semitexa\\Core\\PHPStan\\Rules\\',
     ];
 
+    /**
+     * Compared with ===, never as a prefix. A class name used as a prefix
+     * blesses more than it names: 'Semitexa\\Core\\Application' permitted the
+     * whole 'Semitexa\\Core\\Application\\' namespace along with the class, and
+     * would equally permit a future 'ApplicationWorker'.
+     */
     private const ALLOWED_EXACT = [
+        'Semitexa\\Core\\Application',
+        'Semitexa\\Core\\Log\\StaticLoggerBridge',
+        'Semitexa\\Core\\Event\\EventDispatcher',
+        'Semitexa\\Scheduler\\Application\\Service\\RunExecutor',
+        'Semitexa\\Core\\Application\\Console\\Command\\TestHandlerCommand',
         'Semitexa\\Dev\\Application\\Service\\Trace\\ReplayRunner',
     ];
 
@@ -117,6 +124,25 @@ final class StaticContainerAccessRatchetTest extends TestCase
      * added to one and not the other means the two disagree about what is
      * forbidden, and the looser of them wins silently.
      */
+    /**
+     * A prefix entry must BE a namespace. This is the invariant whose breach
+     * exempted TestHandlerCommand without anyone deciding to: a class name in
+     * the prefix list quietly blesses every namespace and class that starts
+     * with it.
+     */
+    #[Test]
+    public function every_prefix_entry_is_a_namespace_not_a_class_name(): void
+    {
+        foreach (self::ALLOWED_PREFIXES as $prefix) {
+            self::assertStringEndsWith(
+                '\\',
+                $prefix,
+                "'{$prefix}' is a class name, not a namespace. Prefix matching would bless "
+                . 'everything starting with it — move it to ALLOWED_EXACT.',
+            );
+        }
+    }
+
     #[Test]
     public function the_allowlist_matches_the_phpstan_rule(): void
     {
@@ -191,9 +217,6 @@ final class StaticContainerAccessRatchetTest extends TestCase
 
         foreach (self::ALLOWED_PREFIXES as $prefix) {
             if (str_starts_with($namespace . '\\', $prefix)) {
-                return true;
-            }
-            if ($fqcn !== '' && str_starts_with($fqcn, $prefix)) {
                 return true;
             }
         }

@@ -144,11 +144,16 @@ final class ContextPacker
                 continue;
             }
 
-            $rels[] = $rel;
+            // One past the cap, so truncation is REPORTED only when an extra
+            // eligible file actually exists. Stopping at exactly the cap would
+            // announce a partial answer for a root that happens to hold exactly
+            // that many files and was in fact scanned completely.
             if (count($rels) >= self::MAX_RANK_FILES_PER_ROOT) {
                 $this->truncatedRoots[] = $root;
                 break;
             }
+
+            $rels[] = $rel;
         }
 
         return $rels;

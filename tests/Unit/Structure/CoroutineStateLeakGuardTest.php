@@ -42,10 +42,16 @@ final class CoroutineStateLeakGuardTest extends TestCase
 
         // moduleName => locales DIRECTORY. Paths, not a locale: registered once
         // at worker boot by a container-managed listener and identical for
-        // every request. The request's own locale is $localeContext, which this
-        // same class clones per coroutine into CoroutineLocal — and which this
-        // guard clears on its own, without an entry here.
+        // every request.
         'Translator::$packageLocaleDirs',
+
+        // The BOOT-TIME locale context, deliberately shared. Its two capturing
+        // writes are setService() ("call at worker boot") and initialize(),
+        // which is guarded by an $initialized flag and runs once per worker.
+        // The REQUEST's locale is never this property: getRequestLocaleContext()
+        // clones it per coroutine into CoroutineLocal, precisely so mutating a
+        // locale cannot escape the request that did it.
+        'Translator::$localeContext',
     ];
 
     /**
@@ -293,6 +299,155 @@ final class CoroutineStateLeakGuardTest extends TestCase
     }
 
     /**
+     * The two ways this guard was still too generous after the first round of
+     * review, each a leak it called safe.
+     */
+    #[Test]
+    public function one_careful_setter_does_not_excuse_a_careless_one(): void
+    {
+        // A correct context-first setter, and a second method that assigns the
+        // same static directly. Checking only until the first safe write clears
+        // the class — and this is the likeliest shape in real code: a helper
+        // added later next to an accessor somebody thought about.
+        $mixed = <<<'PHP'
+            final class Store
+            {
+                private static ?string $currentUser = null;
+
+                public static function setUser(string $user): void
+                {
+                    if (Coroutine::getCid() > 0) {
+                        Coroutine::getContext()[self::KEY] = $user;
+                        return;
+                    }
+                    self::$currentUser = $user;
+                }
+
+                public static function forceUser(string $user): void
+                {
+                    self::$currentUser = $user;
+                }
+            }
+            PHP;
+
+        self::assertSame(
+            ['static $currentUser'],
+            $this->leakingStatics($mixed),
+            'a direct write elsewhere in the class is still a direct write',
+        );
+    }
+
+    /**
+     * `=` is not the only way to write to a static. A matcher that knows only
+     * `=` reports these as NEVER WRITTEN, which this guard skips as "a constant
+     * in all but name" — the quietest possible way to miss a leak.
+     */
+    #[Test]
+    public function every_assignment_operator_counts_as_a_write(): void
+    {
+        $template = <<<'PHP'
+            final class Scope
+            {
+                private static ?string $tenantId = null;
+                public static function enter(string $id): void { self::$tenantId OP $id; }
+            }
+            PHP;
+
+        foreach (['??=', '.=', '+=', '|=', '&=', '^=', '*=', '/=', '%=', '<<=', '>>='] as $operator) {
+            self::assertSame(
+                ['static $tenantId'],
+                $this->leakingStatics(str_replace('OP', $operator, $template)),
+                "a write with {$operator} was not seen as a write",
+            );
+        }
+
+        // And a comparison is not a write: a static only ever READ is a constant
+        // in all but name, and flagging it would be noise.
+        $compared = <<<'PHP'
+            final class Probe
+            {
+                private static ?string $tenantId = null;
+                public static function isSame(string $id): bool { return self::$tenantId === $id; }
+                public static function isEqual(string $id): bool { return self::$tenantId == $id; }
+                public static function isOther(string $id): bool { return self::$tenantId != $id; }
+            }
+            PHP;
+
+        self::assertSame([], $this->leakingStatics($compared), 'a comparison was mistaken for a write');
+    }
+
+    /**
+     * Resetting shared state is not leaking it.
+     *
+     * Every correct context-first store in this repository has a teardown
+     * helper that nulls its fallback for CLI and tests, and that helper does
+     * not consult the coroutine context — there is nothing to consult. Treating
+     * it as a leak flagged AuthContextStore, LocaleContextStore,
+     * IsomorphicContextStore and Translator all at once, which is the guard
+     * calling the fix a bug.
+     */
+    #[Test]
+    public function clearing_a_static_is_not_capturing_a_request(): void
+    {
+        $resettable = <<<'PHP'
+            final class Store
+            {
+                private static ?string $currentUser = null;
+
+                public static function setUser(string $user): void
+                {
+                    if (Coroutine::getCid() > 0) {
+                        Coroutine::getContext()[self::KEY] = $user;
+                        return;
+                    }
+                    self::$currentUser = $user;
+                }
+
+                public static function clearFallback(): void
+                {
+                    self::$currentUser = null;
+                }
+            }
+            PHP;
+
+        self::assertSame([], $this->leakingStatics($resettable), 'a teardown helper is not a leak');
+
+        // A default that is not null. LocaleContextStore resets to 'en', which
+        // is what its declaration already gives every caller.
+        $nonNullDefault = <<<'PHP'
+            final class Locales
+            {
+                private static string $staticLocale = 'en';
+
+                public static function setLocale(string $locale): void
+                {
+                    if (Coroutine::getCid() > 0) {
+                        Coroutine::getContext()[self::KEY] = $locale;
+                        return;
+                    }
+                    self::$staticLocale = $locale;
+                }
+
+                public static function reset(): void
+                {
+                    self::$staticLocale = 'en';
+                }
+            }
+            PHP;
+
+        self::assertSame([], $this->leakingStatics($nonNullDefault), 'restoring the declared default is not a leak');
+
+        // The same class, with the helper capturing instead of clearing.
+        $capturing = str_replace('self::$currentUser = null;', 'self::$currentUser = $GLOBALS[\'u\'];', $resettable);
+
+        self::assertSame(
+            ['static $currentUser'],
+            $this->leakingStatics($capturing),
+            'a helper that stores a value is a leak, resettable class or not',
+        );
+    }
+
+    /**
      * A floor: if the scan stops finding files, both checks pass while
      * examining nothing.
      */
@@ -347,7 +502,7 @@ final class CoroutineStateLeakGuardTest extends TestCase
     private function leakingStatics(string $source): array
     {
         preg_match_all(
-            '/^\s*(?:private|protected|public)\s+static\s+(?!readonly)(?:\??[\w\\\\|]+)?\s*\$(\w+)/m',
+            '/^\s*(?:private|protected|public)\s+static\s+(?!readonly)(?:\??[\w\\\\|]+)?\s*\$(\w+)\s*(?:=\s*([^;]*))?;/m',
             $source,
             $statics,
             PREG_SET_ORDER,
@@ -358,6 +513,7 @@ final class CoroutineStateLeakGuardTest extends TestCase
 
         foreach ($statics as $static) {
             $name = $static[1];
+            $default = isset($static[2]) ? trim($static[2]) : 'null';
 
             if (preg_match('/' . self::REQUEST_SHAPED . '/i', $name) !== 1) {
                 continue;
@@ -371,13 +527,24 @@ final class CoroutineStateLeakGuardTest extends TestCase
                 continue; // never written; a constant in all but name
             }
 
+            // EVERY capturing write, not the first safe one. A class can hold a
+            // correct context-first setter and a second method that assigns the
+            // static directly, and clearing the static on the first safe write
+            // would call that class clean — the shape most likely to appear as a
+            // "convenience" helper next to a careful accessor.
+            $safe = true;
             foreach ($writes as $offset) {
-                if (!$this->methodAround($source, $offset, $reads)) {
+                if ($this->restoresDefault($source, $offset, $default)) {
                     continue;
                 }
-                if ($reads) {
-                    continue 2; // context-first, with this static as the fallback
+                if (!$this->methodAround($source, $offset, $reads) || $reads !== true) {
+                    $safe = false;
+                    break;
                 }
+            }
+
+            if ($safe) {
+                continue;
             }
 
             $offenders[] = 'static $' . $name;
@@ -387,18 +554,71 @@ final class CoroutineStateLeakGuardTest extends TestCase
     }
 
     /**
-     * @return list<int> byte offsets of every write to self::$name
+     * Byte offsets of every write to self::$name.
+     *
+     * All of PHP's assignment operators, not just `=`. `self::$tenantId ??= $id`
+     * is a write, and so are `.=`, `+=` and the bitwise forms; a matcher that
+     * only knew `=` reported such a static as never written, which this guard
+     * treats as "a constant in all but name" and skips entirely.
+     *
+     * Comparisons are excluded by the trailing (?!=): `==` and `===` fail it,
+     * and `!=`, `<=`, `>=` never reach it because their first character is not
+     * in the operator set.
+     *
+     * @return list<int>
      */
     private function writeOffsets(string $source, string $name): array
     {
         preg_match_all(
-            '/(?:self|static)::\$' . preg_quote($name, '/') . '\s*(?:=[^=]|\[|\+\+|--)/',
+            '/(?:self|static)::\$' . preg_quote($name, '/')
+                . '\s*(?:\[|\+\+|--|(?:\?\?|\*\*|<<|>>|[-+.*\/%|&^])?=(?!=))/',
             $source,
             $m,
             PREG_OFFSET_CAPTURE,
         );
 
         return array_map(static fn (array $hit): int => (int) $hit[1], $m[0] ?? []);
+    }
+
+    /**
+     * Whether this write puts the property back to its DECLARED DEFAULT.
+     *
+     * Not "is it a literal" — that was tried and was wrong. `self::$isAdmin =
+     * true;` is a literal and grants every later request on the worker admin;
+     * the test fixture for exactly that caught the mistake. What is safe is
+     * restoring the value the declaration already gives everybody:
+     *
+     *   private static ?string $fallbackUser = null;   reset writes null   safe
+     *   private static string  $staticLocale = 'en';   reset writes 'en'   safe
+     *   private static bool    $isAdmin     = false;   a write of true     LEAK
+     *
+     * Teardown helpers are written exactly like the first two
+     * (AuthContextStore::clearFallback(), LocaleContextStore::reset()), and
+     * requiring them to consult the coroutine context first flagged four
+     * CORRECT context-first stores at once — the guard calling the fix a bug.
+     */
+    private function restoresDefault(string $source, int $offset, string $default): bool
+    {
+        $end = strpos($source, ';', $offset);
+        if ($end === false) {
+            return false;
+        }
+
+        $rhs = strstr(substr($source, $offset, $end - $offset), '=');
+        if ($rhs === false) {
+            return false; // ++ / -- / [] append: never a reset
+        }
+
+        $written = self::normalizeValue(substr($rhs, 1));
+        $declared = self::normalizeValue($default);
+
+        // A nullable property with no written default defaults to null anyway.
+        return $written === $declared || ($written === 'null' && $declared === '');
+    }
+
+    private static function normalizeValue(string $value): string
+    {
+        return strtolower((string) preg_replace('/\s+/', '', trim($value)));
     }
 
     /**
