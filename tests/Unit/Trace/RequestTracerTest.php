@@ -321,12 +321,49 @@ final class RequestTracerTest extends TestCase
     }
 
     /**
-     * A long SSE connection can reach the event cap before its root span closes,
-     * and the dropped event is the one carrying the total. Without a total the
-     * viewer scales every bar against zero.
+     * The cap keeps the LAST events, not the first.
+     *
+     * It used to keep the first 5000 and drop everything after, which threw away
+     * exactly the part a developer opens a trace for: the work they triggered
+     * after setting the page up, the orm.summary mark that is the only place
+     * queryCount and queryTotalMs are written, and the root end event carrying
+     * the total. A two-hour SSE connection that filled up at minute four
+     * reported its first four minutes and called that the request.
      */
     #[Test]
-    public function a_trace_that_hits_the_event_cap_still_reports_how_long_it_ran(): void
+    public function a_capped_trace_keeps_its_ending_and_drops_its_warm_up(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/long', 'marker' => '1']);
+        $tracer->mark('warm-up');
+        for ($i = 0; $i < TraceBuffer::MAX_EVENTS + 10; $i++) {
+            $tracer->mark('tick');
+        }
+        $tracer->mark('the-thing-being-debugged');
+        $tracer->end('request');
+
+        $trace = json_decode((string) file_get_contents($this->traceFiles()[0]), true);
+        self::assertTrue($trace['truncated'], 'the trace does not say it was cut off');
+        self::assertSame('head', $trace['truncatedEnd'], 'the trace does not say WHICH end was cut');
+
+        $names = array_column($trace['events'], 'name');
+        self::assertSame('the-thing-being-debugged', $names[count($names) - 2]);
+        self::assertSame('request', $names[count($names) - 1], 'the closing span was dropped');
+        self::assertNotContains('warm-up', $names, 'the warm-up survived, so this is not the capped case');
+        self::assertLessThanOrEqual(TraceBuffer::MAX_EVENTS, count($names), 'the cap did not hold');
+    }
+
+    /**
+     * The pinned head. A trace file's identity — path, method, route, and the
+     * root coroutine — lives in the root begin event and nowhere else, so the
+     * ring must never evict it. Without this the capped trace still renders,
+     * but as an anonymous list of spans with every row chipped as belonging to
+     * a foreign coroutine.
+     */
+    #[Test]
+    public function the_root_begin_event_survives_the_ring(): void
     {
         $this->marker = '1';
         $tracer = new RequestTracer();
@@ -338,11 +375,39 @@ final class RequestTracerTest extends TestCase
         $tracer->end('request');
 
         $trace = json_decode((string) file_get_contents($this->traceFiles()[0]), true);
-        self::assertTrue($trace['truncated'], 'the trace does not say it was cut off');
-        self::assertGreaterThan(0.0, $trace['totalMs'], 'elapsed time was lost with the dropped end event');
+        $first = $trace['events'][0];
 
-        $names = array_column($trace['events'], 'name');
-        self::assertNotContains('request', array_slice($names, 1), 'the end event survived, so this is not the capped case');
+        self::assertSame('begin', $first['type']);
+        self::assertSame('request', $first['name']);
+        self::assertSame('/long', $first['context']['path'], 'the trace lost the path it was recorded for');
+        self::assertSame($first['cid'], $trace['rootCid'], 'the root coroutine is not stated in the file');
+    }
+
+    /**
+     * An untruncated trace must be unaffected — same events, same order. The
+     * ring only engages at the cap, and a reordering bug there would be
+     * invisible in the capped tests above, which assert about the ends.
+     */
+    #[Test]
+    public function a_short_trace_is_untouched_by_the_ring(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/short', 'marker' => '1']);
+        foreach (['one', 'two', 'three'] as $name) {
+            $tracer->mark($name);
+        }
+        $tracer->end('request');
+
+        $trace = json_decode((string) file_get_contents($this->traceFiles()[0]), true);
+
+        self::assertFalse($trace['truncated']);
+        self::assertNull($trace['truncatedEnd']);
+        self::assertSame(
+            ['request', 'one', 'two', 'three', 'request'],
+            array_column($trace['events'], 'name'),
+        );
     }
 
     #[Test]

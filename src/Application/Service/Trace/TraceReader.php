@@ -169,6 +169,14 @@ final class TraceReader
                 // capped list for exactly that case.
                 'totalMs' => $close !== [] ? $this->float($close, 'durationMs') : $this->float($trace, 'totalMs'),
                 'truncated' => ($trace['truncated'] ?? false) === true,
+                // Which end the cap removed. Files written before the buffer
+                // became a ring carry no such key and were cut at the tail.
+                'truncatedEnd' => is_string($trace['truncatedEnd'] ?? null) ? $trace['truncatedEnd'] : 'tail',
+                // Stated by the recorder. Falling back to the first span is only
+                // correct while nothing was dropped ahead of it.
+                'rootCid' => is_int($trace['rootCid'] ?? null)
+                    ? $trace['rootCid']
+                    : ($spans !== [] ? (int) ($spans[0]['cid'] ?? 0) : 0),
             ],
             'spans' => $spans,
             'marks' => $marks,

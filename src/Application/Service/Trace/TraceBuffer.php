@@ -17,14 +17,44 @@ final class TraceBuffer
 {
     /**
      * An SSE connection can stay open for hours and emit a frame per tick, so the
-     * buffer is capped. Past the cap it stops recording and says so, rather than
-     * growing until the worker runs out of memory - a diagnostic tool that can
+     * buffer is capped. Memory is not negotiable: a diagnostic tool that can
      * exhaust the process it observes is worse than one that stops early.
+     *
+     * WHICH events the cap keeps is negotiable, and the first answer was wrong.
+     * It kept the FIRST 5000 and dropped everything after, so a long trace lost
+     * exactly the part the developer opened it for: the mutation they triggered
+     * after setting the page up, the orm.summary mark that is the only place
+     * queryCount and queryTotalMs are written, and the root end event carrying
+     * the total. A two-hour SSE connection that filled up at minute four
+     * reported its first four minutes and called it the request.
+     *
+     * It is now a ring that keeps the LAST events instead, so what is dropped is
+     * the warm-up.
      */
     public const MAX_EVENTS = 5000;
 
-    /** @var list<array<string, mixed>> */
-    public array $events = [];
+    /**
+     * How many leading events are pinned and never evicted.
+     *
+     * The trace file's identity lives in the root begin event and nowhere else:
+     * TraceReader reads path, method and route out of its context, and the
+     * renderer takes the root coroutine id from it. Ring those away and the
+     * trace becomes an anonymous list of spans. It is always the first event
+     * pushed — the buffer is created by the root span's own begin() — which
+     * {@see \Semitexa\Dev\Tests\Unit\Trace\RequestTracerTest} pins.
+     */
+    public const PINNED_EVENTS = 1;
+
+    /**
+     * Pinned events followed by the ring, in storage order — NOT chronological
+     * once the ring has wrapped. Read it through {@see events()}.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $stored = [];
+
+    /** Next ring slot to overwrite, relative to the end of the pinned block. */
+    private int $ringAt = 0;
 
     public bool $truncated = false;
 
@@ -80,13 +110,54 @@ final class TraceBuffer
      */
     public function push(array $event): void
     {
-        if (count($this->events) >= self::MAX_EVENTS) {
-            $this->truncated = true;
+        if (count($this->stored) < self::MAX_EVENTS) {
+            $this->stored[] = $event;
 
             return;
         }
 
-        $this->events[] = $event;
+        // Overwrite the oldest evictable slot in place. Not array_splice(): that
+        // is O(n) per event, and the case this exists for is the trace that
+        // pushes a hundred thousand of them.
+        $this->stored[self::PINNED_EVENTS + $this->ringAt] = $event;
+        $this->ringAt = ($this->ringAt + 1) % (self::MAX_EVENTS - self::PINNED_EVENTS);
+        $this->truncated = true;
+    }
+
+    /**
+     * The events in chronological order: the pinned head, then the ring read
+     * from its oldest surviving slot.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function events(): array
+    {
+        if (!$this->truncated) {
+            return $this->stored;
+        }
+
+        $pinned = array_slice($this->stored, 0, self::PINNED_EVENTS);
+        $ring = array_slice($this->stored, self::PINNED_EVENTS);
+
+        return array_merge(
+            $pinned,
+            array_slice($ring, $this->ringAt),
+            array_slice($ring, 0, $this->ringAt),
+        );
+    }
+
+    /**
+     * Which end of the trace the cap removed, for the viewer to say out loud.
+     * A reader who is not told assumes they are seeing the whole request.
+     */
+    public function truncatedEnd(): ?string
+    {
+        return $this->truncated ? 'head' : null;
+    }
+
+    public function eventCount(): int
+    {
+        return count($this->stored);
     }
 
     public function depth(int $cid): int

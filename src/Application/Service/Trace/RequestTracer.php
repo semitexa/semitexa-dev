@@ -387,12 +387,21 @@ final class RequestTracer implements RequestTracerInterface
             [
                 'recordedAt' => date('c'),
                 'truncated' => $buffer->truncated,
+                // WHICH end was cut. The cap keeps the last events, so a capped
+                // trace is missing its warm-up, not its conclusion — the
+                // opposite of what it used to mean, and the viewer must not go
+                // on saying "everything after this point is missing".
+                'truncatedEnd' => $buffer->truncatedEnd(),
+                // The root coroutine, stated rather than inferred. The renderer
+                // used to take it from the first span in the file, which is only
+                // the root span while nothing has been dropped.
+                'rootCid' => $buffer->rootCid,
                 // Outside the capped list on purpose. A long SSE connection can
                 // reach the cap before its root span closes, and the end event
                 // that carries the total is then the one dropped - leaving the
                 // viewer to scale every bar against a total of zero.
                 'totalMs' => $buffer->sinceStartMs(),
-                'events' => $buffer->events,
+                'events' => $buffer->events(),
             ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         );
