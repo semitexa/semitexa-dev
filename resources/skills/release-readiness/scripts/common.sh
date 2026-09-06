@@ -68,13 +68,29 @@ ensure_release_domain_namespace() {
     set_env_value "TENANT_PLATFORM_DOMAIN" "$RLS_PLATFORM_HOST" "$RLS_ENV_FILE"
 }
 
+# The clone's overlay set, chosen by what is actually on disk.
+#
+# This used to hardcode four files, one of them docker-compose.rabbitmq.yml —
+# a transport the scaffold stopped shipping two migrations ago. Any clone
+# created after that would have failed here on a missing file, and the NATS
+# overlay we do ship was never passed at all. Naming files that may not exist
+# is how a helper outlives the layout it was written for.
 compose() {
-    docker compose \
-        -f "$RELEASE_ROOT/docker-compose.yml" \
-        -f "$RELEASE_ROOT/docker-compose.rabbitmq.yml" \
-        -f "$RELEASE_ROOT/docker-compose.mysql.yml" \
-        -f "$RELEASE_ROOT/docker-compose.redis.yml" \
-        "$@"
+    local args=()
+    local overlay
+
+    for overlay in \
+        docker-compose.yml \
+        docker-compose.mysql.yml \
+        docker-compose.redis.yml \
+        docker-compose.nats.yml \
+        docker-compose.rabbitmq.yml \
+        docker-compose.ollama.yml
+    do
+        [ -f "$RELEASE_ROOT/$overlay" ] && args+=(-f "$RELEASE_ROOT/$overlay")
+    done
+
+    docker compose "${args[@]}" "$@"
 }
 
 list_release_repos() {
