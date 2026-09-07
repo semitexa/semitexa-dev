@@ -45,6 +45,12 @@ run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
 # old root tests/ dir is gone and was never in testMatch, so this stage synced
 # files that never ran.
 run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-constraints.php"
+# The shipped capability index is generated in the monorepo and travels inside
+# semitexa/dev. Without this stage a package that gained a capability could be
+# released while the index still described the previous shape — and an index
+# that has silently rotted teaches a confidently shrinking subset of the
+# framework, which is worse than shipping none at all.
+run_stage "capability-index-freshness" "$SCRIPT_DIR/release-capability-index-check.sh"
 # Refresh the clone's application code before the containers come up. The package
 # tree is pulled every release, but src/ was not — so a package change needing a
 # matching consumer-side change was smoke-tested against frozen app code. That is
