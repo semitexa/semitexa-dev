@@ -94,6 +94,12 @@ final class DevGraphMechanismsCommand extends BaseCommand
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa.dev.mechanisms/v1',
                 'count' => count($capabilities),
+                // Half of this answer comes from a snapshot, so the reader is
+                // told how old that half is. Without it a short or empty result
+                // reads as authoritative when it may only be out of date — and
+                // `ai:ask` stamps its own envelope with the CURRENT time, which
+                // makes a month-old snapshot look freshly computed.
+                'snapshot' => $this->snapshotProvenance(),
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
@@ -235,6 +241,35 @@ final class DevGraphMechanismsCommand extends BaseCommand
         ));
 
         return CapabilityIndex::merge($live, $indexed);
+    }
+
+    /**
+     * When the shipped snapshot was taken, and from which semitexa/dev.
+     *
+     * Reported even when the index is unreadable: "no snapshot is present" is
+     * itself the thing a reader needs to know, because the answer then contains
+     * only what this project has installed and says nothing about the rest of
+     * the framework.
+     *
+     * @return array{generated_at: string|null, source_version: string|null, count: int|null}
+     */
+    private function snapshotProvenance(): array
+    {
+        $index = CapabilityIndex::read(CapabilityIndex::path(ProjectRoot::get()));
+
+        if (!is_array($index)) {
+            return ['generated_at' => null, 'source_version' => null, 'count' => null];
+        }
+
+        $generatedAt = $index['generated_at'] ?? null;
+        $sourceVersion = $index['source_version'] ?? null;
+        $count = $index['count'] ?? null;
+
+        return [
+            'generated_at' => is_string($generatedAt) ? $generatedAt : null,
+            'source_version' => is_string($sourceVersion) ? $sourceVersion : null,
+            'count' => is_int($count) ? $count : null,
+        ];
     }
 
 }

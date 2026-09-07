@@ -16,6 +16,9 @@ final class CapabilityIndex
 {
     public const ARTIFACT = 'semitexa.dev.capability-index/v1';
 
+    /** The package whose release cadence sets this index's snapshot boundary. */
+    private const SOURCE_PACKAGE = 'semitexa/dev';
+
     /**
      * Where the snapshot lives, relative to the monorepo root.
      *
@@ -197,8 +200,9 @@ final class CapabilityIndex
     /**
      * @param list<array<string, mixed>> $capabilities
      * @param list<string> $packages
-     * @return array{artifact: string, generated_at: string, count: int, packages: list<string>,
-     *               content_hash: string, capabilities: list<array<string, mixed>>}
+     * @return array{artifact: string, generated_at: string, source_version: string, count: int,
+     *               packages: list<string>, content_hash: string,
+     *               capabilities: list<array<string, mixed>>}
      */
     public static function build(array $capabilities, array $packages): array
     {
@@ -209,11 +213,68 @@ final class CapabilityIndex
             // blindly — an index is a snapshot, and a silent snapshot is the
             // failure mode.
             'generated_at' => gmdate('c'),
+            // "When" without "from what" is only half a provenance: two indexes
+            // built the same day from different versions of semitexa/dev carry
+            // different package sets, and the timestamp cannot tell them apart.
+            'source_version' => self::sourceVersion(),
             'count' => count($capabilities),
             'packages' => $packages,
             'content_hash' => self::hash($capabilities),
             'capabilities' => $capabilities,
         ];
+    }
+
+    /**
+     * The semitexa/dev this index was generated from.
+     *
+     * Provenance of the CONTENT, not of the artifact that ships it. It answers
+     * "which dev produced these capabilities", which is the half a consumer
+     * cannot work out for itself — the version of semitexa/dev they installed
+     * is already known to them; how old the snapshot inside it is, is not. So
+     * an unchanged index keeps reporting the version that last regenerated it,
+     * and that stays true: if nothing about the capabilities changed between
+     * two dev releases, "known as of the earlier one" is accurate rather than
+     * merely cautious.
+     *
+     * Deliberately outside {@see isInSync()}, which compares capabilities only.
+     * Gating freshness on this string would block a release whose framework
+     * surface is identical, demanding a regeneration whose sole effect is to
+     * rewrite a version — the same reason `generated_at` is kept out of
+     * {@see hash()}, one clock slower.
+     *
+     * A released install answers with the tag it was installed at, which is the
+     * useful case: it names the snapshot boundary exactly. The monorepo answers
+     * with a branch alias (`dev-develop`), which on its own would identify
+     * nothing, so the commit is appended there — two builds from the same branch
+     * are then still distinguishable. Never throws: an index that cannot be
+     * written because provenance lookup failed would be a worse outcome than one
+     * whose provenance reads `unknown`.
+     */
+    private static function sourceVersion(): string
+    {
+        if (!class_exists(\Composer\InstalledVersions::class)) {
+            return 'unknown';
+        }
+
+        try {
+            $version = \Composer\InstalledVersions::getPrettyVersion(self::SOURCE_PACKAGE);
+
+            if (!is_string($version) || $version === '') {
+                return 'unknown';
+            }
+
+            if (!str_starts_with($version, 'dev-')) {
+                return $version;
+            }
+
+            $reference = \Composer\InstalledVersions::getReference(self::SOURCE_PACKAGE);
+
+            return is_string($reference) && $reference !== ''
+                ? $version . '@' . substr($reference, 0, 7)
+                : $version;
+        } catch (\Throwable) {
+            return 'unknown';
+        }
     }
 
     /**

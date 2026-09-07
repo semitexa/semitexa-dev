@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledDeferredDetector;
@@ -101,18 +102,28 @@ final class LintMechanismsCommand extends BaseCommand
         );
 
         $catalog = $this->catalog();
+        $installed = static fn (MechanismFinding $f): bool
+            => $catalog === null || array_key_exists($f->capabilityId, $catalog);
+        $counts = self::partitionByInstalled(
+            array_map(static fn (MechanismFinding $f): string => $f->capabilityId, $findings),
+            $catalog,
+        );
 
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa.dev.mechanism-lint/v1',
                 'count' => count($findings),
+                'actionable' => $counts['actionable'],
+                'notes' => $counts['notes'],
                 'findings' => array_map(
-                    fn (MechanismFinding $f): array => self::describe($f, $catalog),
+                    fn (MechanismFinding $f): array => self::describe($f, $catalog) + [
+                        'installed' => $installed($f),
+                    ],
                     $findings,
                 ),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
-            return $findings === [] ? Command::SUCCESS : Command::FAILURE;
+            return $counts['actionable'] === 0 ? Command::SUCCESS : Command::FAILURE;
         }
 
         if ($findings === []) {
@@ -123,8 +134,23 @@ final class LintMechanismsCommand extends BaseCommand
 
         foreach ($findings as $finding) {
             $described = self::describe($finding, $catalog);
+            $isInstalled = $installed($finding);
             $output->writeln(sprintf('<comment>%s:%d</comment>', $finding->file, $finding->line));
             $output->writeln('  ' . $described['evidence']);
+
+            if (!$isInstalled) {
+                // Named, not demanded: the package this pattern belongs to is
+                // not installed here, and this command never tells a project to
+                // install anything.
+                $output->writeln(sprintf(
+                    '  <info>Note:</info> %s is what %s declares. Not installed here, so this is a remark, not a failure.',
+                    $finding->capabilityId,
+                    self::packageOf($finding->capabilityId) ?? 'another Semitexa package',
+                ));
+                $output->writeln('');
+                continue;
+            }
+
             $output->writeln(sprintf('  <info>Use instead:</info> %s  #[%s]', $finding->capabilityId, $described['declared_by_short']));
             if ($described['summary'] !== '') {
                 $output->writeln('  ' . $described['summary']);
@@ -136,21 +162,102 @@ final class LintMechanismsCommand extends BaseCommand
             $output->writeln('');
         }
 
-        $output->writeln(sprintf('<error>[FAIL]</error> %d hand-rolled mechanism(s).', count($findings)));
+        if ($counts['actionable'] === 0) {
+            $output->writeln(sprintf(
+                '<info>[OK]</info> %d remark(s) about mechanisms this project does not install; nothing actionable here.',
+                $counts['notes'],
+            ));
+
+            return Command::SUCCESS;
+        }
+
+        $output->writeln(sprintf(
+            '<error>[FAIL]</error> %d hand-rolled mechanism(s).%s',
+            $counts['actionable'],
+            $counts['notes'] > 0
+                ? sprintf(' (%d further remark(s) about uninstalled packages did not fail this run.)', $counts['notes'])
+                : '',
+        ));
 
         return Command::FAILURE;
     }
 
     /**
-     * @param array<string, array{summary: string, avoid_when: string, declared_by_short: string}> $catalog
+     * Which Semitexa package declares a capability that is not installed here.
+     *
+     * Read from the shipped ecosystem index, because the live catalog by
+     * definition cannot answer for a package that is absent. Null when the index
+     * is unreadable or does not know the id — the note then names no package
+     * rather than guessing one.
+     */
+    private static function packageOf(string $capabilityId): ?string
+    {
+        $index = CapabilityIndex::read(CapabilityIndex::path(ProjectRoot::get()));
+
+        if (!is_array($index)) {
+            return null;
+        }
+
+        foreach ((array) ($index['capabilities'] ?? []) as $capability) {
+            if (!is_array($capability) || ($capability['id'] ?? null) !== $capabilityId) {
+                continue;
+            }
+
+            $package = $capability['package'] ?? null;
+
+            return is_string($package) && $package !== '' ? $package : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Split findings into the ones this project can act on and the ones it cannot.
+     *
+     * A capability absent from the installed catalog is declared by a package
+     * this project does not have. The observation still stands — the code really
+     * does hand-roll the pattern — but there is no fix available here, so it is
+     * reported as a note and does not fail the run. Only actionable findings set
+     * the exit code.
+     *
+     * @param list<string> $capabilityIds
+     * @param array<string, mixed>|null $catalog installed capabilities, or null when unbuildable
+     * @return array{actionable: int, notes: int}
+     */
+    private static function partitionByInstalled(array $capabilityIds, ?array $catalog): array
+    {
+        // No catalog means nothing was classified. Treat every finding as
+        // actionable rather than inventing a reason to ignore it.
+        if ($catalog === null) {
+            return ['actionable' => count($capabilityIds), 'notes' => 0];
+        }
+
+        $actionable = 0;
+        $notes = 0;
+
+        foreach ($capabilityIds as $id) {
+            if (array_key_exists($id, $catalog)) {
+                $actionable++;
+                continue;
+            }
+
+            $notes++;
+        }
+
+        return ['actionable' => $actionable, 'notes' => $notes];
+    }
+
+    /**
+     * @param array<string, array{summary: string, avoid_when: string, declared_by_short: string}>|null $catalog
      * @return array{file: string, line: int, capability: string, evidence: string, summary: string,
      *               avoid_when: string, declared_by_short: string, details_command: string}
      */
-    private static function describe(MechanismFinding $finding, array $catalog): array
+    private static function describe(MechanismFinding $finding, ?array $catalog): array
     {
         // A finding whose capability is not installed still reports: the
         // observation stands on its own, only the advice is unavailable.
-        $entry = $catalog[$finding->capabilityId] ?? ['summary' => '', 'avoid_when' => '', 'declared_by_short' => ''];
+        $entry = ($catalog[$finding->capabilityId] ?? null)
+            ?? ['summary' => '', 'avoid_when' => '', 'declared_by_short' => ''];
 
         return [
             'file' => $finding->file,
@@ -164,8 +271,18 @@ final class LintMechanismsCommand extends BaseCommand
         ];
     }
 
-    /** @return array<string, array{summary: string, avoid_when: string, declared_by_short: string}> */
-    private function catalog(): array
+    /**
+     * The installed capabilities, or null when the catalog could not be built.
+     *
+     * The distinction matters: an EMPTY catalog is a real answer ("this project
+     * installs no mechanism packages"), while a FAILED one is no answer at all.
+     * Returning [] for both would let a discovery hiccup read as "nothing is
+     * installed" and silently downgrade every finding to a note — turning the
+     * lint green precisely when it can see least.
+     *
+     * @return array<string, array{summary: string, avoid_when: string, declared_by_short: string}>|null
+     */
+    private function catalog(): ?array
     {
         // The advice half of a finding, not the finding itself. `describe()`
         // already reports what it saw when the catalog has nothing to add, so
@@ -174,7 +291,7 @@ final class LintMechanismsCommand extends BaseCommand
         try {
             $entries = (new FrameworkCapabilityCatalog($this->classDiscovery))->all();
         } catch (\Throwable) {
-            return [];
+            return null;
         }
 
         $out = [];
