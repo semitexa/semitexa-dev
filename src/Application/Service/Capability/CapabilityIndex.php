@@ -227,6 +227,21 @@ final class CapabilityIndex
     /**
      * The semitexa/dev this index was generated from.
      *
+     * Provenance of the CONTENT, not of the artifact that ships it. It answers
+     * "which dev produced these capabilities", which is the half a consumer
+     * cannot work out for itself — the version of semitexa/dev they installed
+     * is already known to them; how old the snapshot inside it is, is not. So
+     * an unchanged index keeps reporting the version that last regenerated it,
+     * and that stays true: if nothing about the capabilities changed between
+     * two dev releases, "known as of the earlier one" is accurate rather than
+     * merely cautious.
+     *
+     * Deliberately outside {@see isInSync()}, which compares capabilities only.
+     * Gating freshness on this string would block a release whose framework
+     * surface is identical, demanding a regeneration whose sole effect is to
+     * rewrite a version — the same reason `generated_at` is kept out of
+     * {@see hash()}, one clock slower.
+     *
      * A released install answers with the tag it was installed at, which is the
      * useful case: it names the snapshot boundary exactly. The monorepo answers
      * with a branch alias (`dev-develop`), which on its own would identify
