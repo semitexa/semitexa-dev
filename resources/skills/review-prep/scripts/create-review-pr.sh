@@ -146,20 +146,21 @@ if [ "${SEMITEXA_PR_CODERABBIT:-1}" != "0" ] && [ -n "${pr_number:-}" ]; then
     fi
 fi
 
-# Cursor Bugbot review request.
+# The Cursor Bugbot trigger used to be posted here. Removed 2026-09-07.
 #
-# Once the Cursor GitHub App is installed and the repository is enabled in the
-# Bugbot dashboard, Bugbot reviews every PR update on its own — this comment is
-# only needed when it is configured to run "only when mentioned", and is
-# otherwise one harmless line. It cannot install or enable anything; if Cursor
-# is not on the org the comment simply sits there unanswered.
+# It rested on an assumption that stopped being true: "if Cursor is not on the
+# org the comment simply sits there unanswered", i.e. one harmless line. Cursor
+# IS on the semitexa org now, and the trigger is answered every time —
+# MEASURED on semitexa-dev#69, two seconds after posting:
 #
-# Set SEMITEXA_PR_BUGBOT=0 to skip — same contract as the block above, and it
-# had the same mismatch between the documented opt-out and the code.
-if [ "${SEMITEXA_PR_BUGBOT:-1}" != "0" ] && [ "$created" -eq 1 ] && [ -n "${pr_number:-}" ]; then
-    if gh pr comment "$pr_number" --repo "$repo_slug" --body "bugbot run" >/dev/null 2>&1; then
-        printf 'Requested a Bugbot review on #%s\n' "$pr_number"
-    else
-        printf 'Could not post the Bugbot trigger on #%s\n' "$pr_number" >&2
-    fi
-fi
+#   cursor[bot]: Skipping Bugbot: Bugbot is disabled for this repository.
+#
+# Bugbot is enabled per repository, and no repository is enabled: its dashboard
+# reports 0/0 for every organisation, including two connected long before this.
+# So the line no longer sat quietly unanswered — it guaranteed a reply on every
+# single PR saying nothing was reviewed. Noise on a review channel is not
+# neutral: it is how the findings that matter stop being read.
+#
+# Do not restore this without first confirming a repository is actually enabled
+# in the Bugbot dashboard. Posting a trigger nothing acts on is worse than
+# posting none.
