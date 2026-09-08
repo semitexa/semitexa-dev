@@ -231,11 +231,36 @@ check_logs
 # clone's dev-module Playwright suite assumes the dev environment (Playground
 # tenants, dev domains) and is out of release smoke scope. Browser smoke is
 # skill-owned and runs separately below.
+#
+# Positional targets also BYPASS test:run's own discovery, and that discovery
+# carries a guard this list has to repeat: a release checkout keeps every
+# package repo under packages/, but composer installs only a subset, and the
+# tests of a package that is not installed cannot autoload its own src classes.
+#
+# MEASURED before this guard existed: packages/semitexa-ultimate/tests ran here
+# and produced ELEVEN errors, all "Class Semitexa\Ultimate\...\InitCommand does
+# not exist" — semitexa/ultimate is the project skeleton the clone was built
+# FROM, so its src/ is the clone root and there is no vendor/semitexa/ultimate
+# for its own tests to load. Dev never saw this because dev never takes this
+# path; the same eleven tests are simply not discovered there.
 (
     cd "$RELEASE_ROOT"
     _phpunit_paths=""
     for _dir in packages/*/tests src/modules/*/tests; do
-        [ -d "$_dir" ] && _phpunit_paths="$_phpunit_paths $_dir"
+        [ -d "$_dir" ] || continue
+        _pkg_composer="$(dirname "$_dir")/composer.json"
+        if [ -f "$_pkg_composer" ]; then
+            # jq, not a line-oriented match: the TOP-LEVEL name is the package,
+            # and "name" also appears under authors[] and funding[]. A regex that
+            # takes the first hit can read an author's name as the package, and
+            # then vendor/<that> never exists, so the guard skips a package that
+            # IS installed. Grepping cannot tell the two apart; a parser can.
+            _pkg_name="$(jq -r '.name // empty' "$_pkg_composer" 2>/dev/null || true)"
+            if [ -n "$_pkg_name" ] && [ ! -d "vendor/$_pkg_name" ]; then
+                continue
+            fi
+        fi
+        _phpunit_paths="$_phpunit_paths $_dir"
     done
     # shellcheck disable=SC2086
     "$RELEASE_ROOT/bin/semitexa" test:run $_phpunit_paths
