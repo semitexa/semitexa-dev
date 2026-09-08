@@ -171,14 +171,41 @@ doctor_gate
 # harmless. A release stopped by a genuine low in a dev-only package would be a
 # release someone ships with the gate switched off, which is why low stays a
 # warning.
-audit_gate() {
-    local report summary
-    report="$(cd "$RELEASE_ROOT" && composer audit --locked --format=json 2>/dev/null || true)"
+# Retried, because "no report" is usually the network rather than a verdict.
+# MEASURED from this host: eight probes of repo.packagist.org gave five 200s and
+# three immediate connect failures (time_connect 0.000000, not a slow timeout),
+# and the failures cluster at the start of a burst — it reads like route or DNS
+# warm-up. Composer then writes "could not be fully loaded (curl error 28)" to
+# stderr and prints nothing on stdout, which is the case this gate refuses.
+#
+# Retrying does NOT soften it: an audit that never produced a readable report
+# still fails, and the fail message now says how many attempts it took to
+# conclude that. Without the retry the release stopped on this gate four times
+# in eight runs, each costing a ten-minute preflight, and every one of them was
+# a working network a second later — a check that unreliable teaches operators
+# to rerun until green, which is exactly how a real advisory gets waved through.
+AUDIT_ATTEMPTS=3
 
-    if ! summary="$(printf '%s' "$report" | python3 "$SCRIPT_DIR/release-audit-summary.py" 2>&1)"; then
-        fail "composer audit did not produce a report this gate could read, so no dependency was checked:
+audit_gate() {
+    local report summary attempt
+    summary=""
+
+    for attempt in $(seq 1 "$AUDIT_ATTEMPTS"); do
+        report="$(cd "$RELEASE_ROOT" && composer audit --locked --format=json 2>/dev/null || true)"
+
+        if summary="$(printf '%s' "$report" | python3 "$SCRIPT_DIR/release-audit-summary.py" 2>&1)"; then
+            break
+        fi
+
+        if [ "$attempt" -lt "$AUDIT_ATTEMPTS" ]; then
+            warn "composer audit produced no readable report (attempt ${attempt}/${AUDIT_ATTEMPTS}); retrying"
+            sleep 3
+            continue
+        fi
+
+        fail "composer audit did not produce a report this gate could read after ${AUDIT_ATTEMPTS} attempts, so no dependency was checked:
 $summary"
-    fi
+    done
 
     while IFS= read -r line; do
         case "$line" in
