@@ -171,20 +171,34 @@ doctor_gate
 # harmless. A release stopped by a genuine low in a dev-only package would be a
 # release someone ships with the gate switched off, which is why low stays a
 # warning.
-# Retried, because "no report" is usually the network rather than a verdict.
-# MEASURED from this host: eight probes of repo.packagist.org gave five 200s and
-# three immediate connect failures (time_connect 0.000000, not a slow timeout),
-# and the failures cluster at the start of a burst — it reads like route or DNS
-# warm-up. Composer then writes "could not be fully loaded (curl error 28)" to
-# stderr and prints nothing on stdout, which is the case this gate refuses.
+# Retried, because "no report" here is the network rather than a verdict.
 #
-# Retrying does NOT soften it: an audit that never produced a readable report
-# still fails, and the fail message now says how many attempts it took to
-# conclude that. Without the retry the release stopped on this gate four times
-# in eight runs, each costing a ten-minute preflight, and every one of them was
-# a working network a second later — a check that unreliable teaches operators
-# to rerun until green, which is exactly how a real advisory gets waved through.
-AUDIT_ATTEMPTS=3
+# composer audit needs https://packagist.org/api/security-advisories/ — the API
+# host, NOT repo.packagist.org that serves package metadata. MEASURED from this
+# host by probing that endpoint every 8s for 96s while the release stack ran:
+# reachable in 9 of 12 probes, with drops lasting about 16 seconds and no
+# relation to the stack restart (it answered 8s after one). During a drop
+# composer times out at 10s, exits 100 and prints nothing on stdout — the case
+# this gate refuses, correctly, because an exit code cannot separate "clean"
+# from "never ran".
+#
+# So the retry window has to outlast a drop, not merely repeat inside one: five
+# attempts, twenty seconds apart, is roughly 100 seconds against a 16-second
+# outage. An earlier three-by-three version was tuned against the wrong
+# measurement — repo.packagist.org, which is a different host and was fine —
+# and kept failing.
+#
+# This does NOT soften the gate: an audit that never produces a readable report
+# still fails, and the message says how many attempts it took. Verified with a
+# composer stub that always exits 100.
+#
+# One hole stays open on purpose, because it needs its own change: when the API
+# is unreachable but the local cache holds an advisory list, composer answers
+# from cache, exits 0 and reports an empty list — and this gate reads that as
+# clean. Catching it means reading the stderr warning the call currently
+# discards.
+AUDIT_ATTEMPTS=5
+AUDIT_RETRY_SLEEP=20
 
 audit_gate() {
     local report summary attempt
@@ -199,7 +213,7 @@ audit_gate() {
 
         if [ "$attempt" -lt "$AUDIT_ATTEMPTS" ]; then
             warn "composer audit produced no readable report (attempt ${attempt}/${AUDIT_ATTEMPTS}); retrying"
-            sleep 3
+            sleep "$AUDIT_RETRY_SLEEP"
             continue
         fi
 
