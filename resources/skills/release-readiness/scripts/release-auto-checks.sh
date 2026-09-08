@@ -250,7 +250,12 @@ check_logs
         [ -d "$_dir" ] || continue
         _pkg_composer="$(dirname "$_dir")/composer.json"
         if [ -f "$_pkg_composer" ]; then
-            _pkg_name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_pkg_composer" | head -n 1)"
+            # jq, not a line-oriented match: the TOP-LEVEL name is the package,
+            # and "name" also appears under authors[] and funding[]. A regex that
+            # takes the first hit can read an author's name as the package, and
+            # then vendor/<that> never exists, so the guard skips a package that
+            # IS installed. Grepping cannot tell the two apart; a parser can.
+            _pkg_name="$(jq -r '.name // empty' "$_pkg_composer" 2>/dev/null || true)"
             if [ -n "$_pkg_name" ] && [ ! -d "vendor/$_pkg_name" ]; then
                 continue
             fi
