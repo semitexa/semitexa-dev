@@ -82,7 +82,7 @@ final class BacklogHygiene
         if ($noTasks) {
             $issues[] = 'no-tasks';
         }
-        if ($epic->status === EpicStatus::DONE && $this->isStale($epic->updatedAt)) {
+        if ($epic->status === EpicStatus::DONE && $this->isStale($epic->lastActivity())) {
             $issues[] = 'stale-done';
         }
 
@@ -97,7 +97,7 @@ final class BacklogHygiene
         [$suggestedStatus, $suggestedAction] = match (true) {
             $quality === BacklogQuality::JUNK && !$epic->status->isDiscarded()
                 => [EpicStatus::DISCARDED->value, 'discard placeholder epic'],
-            $epic->status === EpicStatus::DONE && $this->isStale($epic->updatedAt)
+            $epic->status === EpicStatus::DONE && $this->isStale($epic->lastActivity())
                 => [EpicStatus::ARCHIVED->value, 'archive stale completed epic'],
             default => [null, null],
         };
@@ -189,7 +189,7 @@ final class BacklogHygiene
             return false;
         }
         if ($epic->status === EpicStatus::DONE) {
-            return !$this->isStale($epic->updatedAt);
+            return !$this->isStale($epic->lastActivity());
         }
         return $epic->status->isActive();
     }
@@ -234,6 +234,11 @@ final class BacklogHygiene
         return in_array($t, self::PLACEHOLDER_TITLES, true);
     }
 
+    /**
+     * Age is measured from the epic's last ACTIVITY, not from the last write to
+     * its own file — a done epic whose tasks are still being closed out has not
+     * gone quiet, and archiving it out of the active view would hide live work.
+     */
     private function isStale(string $isoTimestamp): bool
     {
         if ($isoTimestamp === '') {

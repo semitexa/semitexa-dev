@@ -192,11 +192,16 @@ doctor_gate
 # still fails, and the message says how many attempts it took. Verified with a
 # composer stub that always exits 100.
 #
-# One hole stays open on purpose, because it needs its own change: when the API
-# is unreachable but the local cache holds an advisory list, composer answers
-# from cache, exits 0 and reports an empty list — and this gate reads that as
-# clean. Catching it means reading the stderr warning the call currently
-# discards.
+# A report therefore means the advisories API was genuinely reached. MEASURED
+# with COMPOSER_DISABLE_NETWORK=1 immediately after a successful run had warmed
+# every cache: exit 100, empty stdout, "Network disabled, request canceled:
+# https://packagist.org/api/security-advisories/". Composer caches repo metadata
+# and zips, never the advisory answer, so there is no cached verdict for this
+# gate to mistake for a fresh one.
+#
+# The "package information was loaded from the local cache" warning composer
+# sometimes prints is about repo.packagist.org, not the advisories API, and
+# under --locked the versions being asked about come from composer.lock anyway.
 AUDIT_ATTEMPTS=5
 AUDIT_RETRY_SLEEP=20
 

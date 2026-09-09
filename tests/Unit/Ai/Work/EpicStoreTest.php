@@ -66,6 +66,88 @@ class EpicStoreTest extends TestCase
         $this->assertSame(['tk-1', 'tk-2'], $ids);
     }
 
+    public function test_last_activity_follows_the_tasks_not_the_epic_file(): void
+    {
+        $tasks = new TaskStore();
+        $store = $this->newEpicStore($tasks);
+        $epicWritten = '2026-04-27T00:00:00+00:00';
+        $store->save(new Epic('ep-a', 't', 'g', EpicStatus::NEW, $epicWritten, $epicWritten));
+
+        $store->save(new Epic('ep-quiet', 't', 'g', EpicStatus::NEW, $epicWritten, $epicWritten));
+
+        $taskMoved = '2026-09-06T10:00:00+00:00';
+        $tasks->save(new Task('tk-1', 'ep-a', 't1', TaskStatus::NEW, 'r', 'low', [], null, 'tk-1', $epicWritten, $epicWritten));
+        $tasks->save(new Task('tk-2', 'ep-a', 't2', TaskStatus::DONE, 'r', 'low', [], null, 'tk-2', $epicWritten, $taskMoved));
+
+        // The epic file has not been touched since April, but work under it
+        // continued in September. Reporting April is what made a live epic
+        // read as abandoned in a listing.
+        $this->assertSame($epicWritten, $store->get('ep-a')->updatedAt);
+        $this->assertSame($taskMoved, $store->get('ep-a')->lastActivity());
+
+        // An epic with no tasks at all still answers, with its own timestamp.
+        $this->assertSame($epicWritten, $store->get('ep-quiet')->lastActivity());
+    }
+
+    public function test_list_derives_last_activity_for_every_epic(): void
+    {
+        $tasks = new TaskStore();
+        $store = $this->newEpicStore($tasks);
+        $old = '2026-04-27T00:00:00+00:00';
+        $store->save(new Epic('ep-a', 't', 'g', EpicStatus::NEW, $old, $old));
+        $store->save(new Epic('ep-b', 't', 'g', EpicStatus::NEW, $old, $old));
+
+        $tasks->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $old, '2026-09-06T00:00:00+00:00'));
+        $tasks->save(new Task('tk-b', 'ep-b', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-b', $old, $old));
+
+        $byId = [];
+        foreach ($store->list() as $epic) {
+            $byId[$epic->id] = $epic;
+        }
+
+        // The single-epic path and the listing path must agree — the listing
+        // reads every task in one pass instead of one pass per epic.
+        $this->assertSame('2026-09-06T00:00:00+00:00', $byId['ep-a']->lastActivity());
+        $this->assertSame($old, $byId['ep-b']->lastActivity());
+        $this->assertSame(['tk-a'], $byId['ep-a']->taskIds);
+    }
+
+    public function test_last_activity_is_exposed_on_the_api_shape(): void
+    {
+        $tasks = new TaskStore();
+        $store = $this->newEpicStore($tasks);
+        $old = '2026-04-27T00:00:00+00:00';
+        $store->save(new Epic('ep-a', 't', 'g', EpicStatus::NEW, $old, $old));
+        $tasks->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $old, '2026-09-07T00:00:00+00:00'));
+
+        $row = $store->get('ep-a')->toArray();
+        $this->assertSame('2026-09-07T00:00:00+00:00', $row['last_activity_at']);
+        $this->assertSame($old, $row['updated_at']);
+
+        // Derived, never persisted: the epic file must not have to be rewritten
+        // every time one of its tasks moves.
+        $this->assertArrayNotHasKey('last_activity_at', $store->get('ep-a')->toFileArray());
+    }
+
+    public function test_last_activity_is_never_older_than_the_epic_write(): void
+    {
+        $tasks = new TaskStore();
+        $store = $this->newEpicStore($tasks);
+        $old = '2026-04-27T00:00:00+00:00';
+        $store->save(new Epic('ep-a', 't', 'g', EpicStatus::NEW, $old, $old));
+        $tasks->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $old, $old));
+
+        // ai:epic update takes the loaded epic through with(updatedAt: now). The
+        // task-derived value rides along unchanged, so without the max() the
+        // object would report activity from April while claiming a write today —
+        // and BacklogHygiene judges done-epic staleness on exactly that field.
+        $loaded = $store->get('ep-a');
+        $touched = $loaded->with(updatedAt: '2026-09-09T12:00:00+00:00');
+
+        $this->assertSame('2026-09-09T12:00:00+00:00', $touched->lastActivity());
+        $this->assertSame('2026-09-09T12:00:00+00:00', $touched->toArray()['last_activity_at']);
+    }
+
     public function test_missing_epic_throws(): void
     {
         $this->expectException(\RuntimeException::class);
