@@ -10,6 +10,11 @@ namespace Semitexa\Dev\Application\Service\Ai\Work;
  * `taskIds` is derived at load time by scanning the task directory — it is
  * not persisted on the epic file, so there's no dual-write consistency
  * problem when a task is created or deleted. See {@see EpicStore::get()}.
+ *
+ * `lastActivityAt` is derived the same way and for the same reason. `updatedAt`
+ * only ever records a write to the epic file itself, so an epic whose tasks are
+ * worked on daily keeps whatever date its goal was last edited — which reads,
+ * to anyone scanning a listing, as abandoned work.
  */
 final readonly class Epic
 {
@@ -26,7 +31,19 @@ final readonly class Epic
         public string $createdAt,
         public string $updatedAt,
         public array $taskIds = [],
+        public string $lastActivityAt = '',
     ) {}
+
+    /**
+     * The most recent activity anywhere under this epic — its own `updatedAt`,
+     * or a task's if a task moved later. Falls back to `updatedAt` for an Epic
+     * built without the store (tests, `fromArray`), so a caller never has to
+     * ask which of the two fields it is holding.
+     */
+    public function lastActivity(): string
+    {
+        return $this->lastActivityAt !== '' ? $this->lastActivityAt : $this->updatedAt;
+    }
 
     public function with(
         ?string $title = null,
@@ -42,13 +59,14 @@ final readonly class Epic
             createdAt: $this->createdAt,
             updatedAt: $updatedAt ?? $this->updatedAt,
             taskIds:   $this->taskIds,
+            lastActivityAt: $this->lastActivityAt,
         );
     }
 
     /**
      * @param list<string> $taskIds
      */
-    public function withTaskIds(array $taskIds): self
+    public function withTaskIds(array $taskIds, string $lastActivityAt = ''): self
     {
         return new self(
             id:        $this->id,
@@ -58,6 +76,7 @@ final readonly class Epic
             createdAt: $this->createdAt,
             updatedAt: $this->updatedAt,
             taskIds:   $taskIds,
+            lastActivityAt: $lastActivityAt,
         );
     }
 
@@ -87,7 +106,10 @@ final readonly class Epic
      */
     public function toArray(): array
     {
-        return $this->toFileArray() + ['task_ids' => $this->taskIds];
+        return $this->toFileArray() + [
+            'task_ids'         => $this->taskIds,
+            'last_activity_at' => $this->lastActivity(),
+        ];
     }
 
     /**

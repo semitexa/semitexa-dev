@@ -17,6 +17,8 @@ use Semitexa\Core\Support\ProjectRoot;
  * `taskIds` on an Epic is derived by scanning the TaskStore on load — the
  * persisted epic file never holds a task list, so creating/deleting a task
  * is a single-file write and can never leave the epic file out of sync.
+ * `lastActivityAt` rides along on the same scan, so an epic reports the last
+ * time anything under it moved rather than the last time its own file did.
  *
  * Container-managed (#[AsService]). The TaskStore collaborator is injected
  * as a readonly property via #[InjectAsReadonly] — same channel every other
@@ -48,7 +50,12 @@ final class EpicStore
             throw new \RuntimeException("epic '{$epicId}' does not exist");
         }
         $epic = Epic::fromArray(JsonFile::read($path));
-        return $epic->withTaskIds($this->taskStore->taskIdsForEpic($epicId));
+        $tasks = $this->taskStore->list($epicId);
+
+        return $epic->withTaskIds(
+            array_map(static fn(Task $t) => $t->id, $tasks),
+            self::lastActivity($epic->updatedAt, $tasks),
+        );
     }
 
     public function save(Epic $epic): void
@@ -66,6 +73,11 @@ final class EpicStore
         if (!is_dir($dir)) {
             return [];
         }
+        // One pass for every task, not one pass per epic: the per-epic helper
+        // rescans the whole task directory, which turned a listing of 292 epics
+        // into 292 scans of 1041 files.
+        $tasksByEpic = $this->taskStore->allByEpic();
+
         $out = [];
         foreach (scandir($dir) ?: [] as $entry) {
             if (!str_ends_with($entry, '.json')) {
@@ -88,10 +100,31 @@ final class EpicStore
                 ]);
                 continue;
             }
-            $out[] = $epic->withTaskIds($this->taskStore->taskIdsForEpic($id));
+            $tasks = $tasksByEpic[$id] ?? [];
+            $out[] = $epic->withTaskIds(
+                array_map(static fn(Task $t) => $t->id, $tasks),
+                self::lastActivity($epic->updatedAt, $tasks),
+            );
         }
         usort($out, static fn(Epic $a, Epic $b) => strcmp($a->createdAt, $b->createdAt));
         return $out;
+    }
+
+    /**
+     * The latest of the epic's own timestamp and its tasks'. Timestamps are
+     * ISO-8601 UTC throughout ai-work, so a string compare is the right compare.
+     *
+     * @param list<Task> $tasks
+     */
+    private static function lastActivity(string $epicUpdatedAt, array $tasks): string
+    {
+        $last = $epicUpdatedAt;
+        foreach ($tasks as $task) {
+            if (strcmp($task->updatedAt, $last) > 0) {
+                $last = $task->updatedAt;
+            }
+        }
+        return $last;
     }
 
     public function pathFor(string $epicId): string

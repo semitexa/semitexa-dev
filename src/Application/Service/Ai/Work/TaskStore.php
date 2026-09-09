@@ -107,6 +107,27 @@ final class TaskStore
         return array_map(static fn(Task $t) => $t->id, $this->list($epicId));
     }
 
+    /**
+     * Every task grouped by its epic id, in ONE pass over the directory.
+     *
+     * {@see taskIdsForEpic()} rescans the whole task directory per call, which
+     * is fine for one epic and quadratic for a listing: EpicStore::list() used
+     * to pay 292 scans of 1041 files. MEASURED before this existed:
+     * `ai:epic list --scope=all` 4.59s against `ai:work list --scope=all`
+     * 1.09s for strictly more records — and `ai:orient`, the first command of
+     * every cold start, pays the same bill.
+     *
+     * @return array<string, list<Task>>
+     */
+    public function allByEpic(): array
+    {
+        $out = [];
+        foreach ($this->list() as $task) {
+            $out[$task->epicId][] = $task;
+        }
+        return $out;
+    }
+
     public function pathFor(string $taskId): string
     {
         return $this->dir() . '/' . $taskId . '.json';
