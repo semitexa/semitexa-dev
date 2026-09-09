@@ -39,10 +39,24 @@ final readonly class Epic
      * or a task's if a task moved later. Falls back to `updatedAt` for an Epic
      * built without the store (tests, `fromArray`), so a caller never has to
      * ask which of the two fields it is holding.
+     *
+     * The max() is not belt-and-braces. `with()` carries the task-derived value
+     * across while advancing `updatedAt`, which is exactly what `ai:epic update`
+     * does, so a plain read of the stored field could report activity older than
+     * the write that just happened. Taking the later of the two makes the
+     * invariant — last activity is never before the epic's own last write —
+     * hold however the object was assembled, rather than in the paths someone
+     * remembered to patch.
      */
     public function lastActivity(): string
     {
-        return $this->lastActivityAt !== '' ? $this->lastActivityAt : $this->updatedAt;
+        if ($this->lastActivityAt === '') {
+            return $this->updatedAt;
+        }
+
+        return strcmp($this->lastActivityAt, $this->updatedAt) >= 0
+            ? $this->lastActivityAt
+            : $this->updatedAt;
     }
 
     public function with(

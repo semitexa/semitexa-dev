@@ -129,6 +129,25 @@ class EpicStoreTest extends TestCase
         $this->assertArrayNotHasKey('last_activity_at', $store->get('ep-a')->toFileArray());
     }
 
+    public function test_last_activity_is_never_older_than_the_epic_write(): void
+    {
+        $tasks = new TaskStore();
+        $store = $this->newEpicStore($tasks);
+        $old = '2026-04-27T00:00:00+00:00';
+        $store->save(new Epic('ep-a', 't', 'g', EpicStatus::NEW, $old, $old));
+        $tasks->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $old, $old));
+
+        // ai:epic update takes the loaded epic through with(updatedAt: now). The
+        // task-derived value rides along unchanged, so without the max() the
+        // object would report activity from April while claiming a write today —
+        // and BacklogHygiene judges done-epic staleness on exactly that field.
+        $loaded = $store->get('ep-a');
+        $touched = $loaded->with(updatedAt: '2026-09-09T12:00:00+00:00');
+
+        $this->assertSame('2026-09-09T12:00:00+00:00', $touched->lastActivity());
+        $this->assertSame('2026-09-09T12:00:00+00:00', $touched->toArray()['last_activity_at']);
+    }
+
     public function test_missing_epic_throws(): void
     {
         $this->expectException(\RuntimeException::class);
