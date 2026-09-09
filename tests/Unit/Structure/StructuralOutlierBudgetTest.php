@@ -59,7 +59,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 779],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 718],
+        // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
+        // shipped in 2026.09.08.2003 and turned the first ai:verify after any
+        // framework update red in every consumer project. The new method is
+        // installerScaffoldDir(), a sibling of skillsSyncScript() answering the
+        // same question for the other gate — "is the thing I compare even here".
+        // Recorded rather than trimmed: most of the growth is the comment saying
+        // why the guard exists, and shrinking that to fit a budget would delete
+        // the part a future reader needs to not remove the guard again.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 750],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new
