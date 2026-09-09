@@ -574,6 +574,24 @@ final class VerificationExecutor
             return $this->skipped($target, 'scaffold_drift: scaffold:sync is unavailable in this project');
         }
 
+        // The command resolving is not the same question as the check applying.
+        // A consumer project INSTALLS semitexa/dev, so scaffold:sync is always
+        // found there — and then refuses, because it needs the installer
+        // scaffold that only the authoring workspace has. Its exit code says 1
+        // for that refusal exactly as it does for real drift, so without this
+        // the refusal was reported as drift.
+        //
+        // That is not hypothetical: `bin/semitexa update` replaces bin/semitexa
+        // as an ordinary scaffold-sync action, bin/semitexa is one of the paths
+        // that schedules this target, so the first ai:verify after any framework
+        // update was red in every consumer project. Reported as semitexa-dev#73.
+        if ($this->installerScaffoldDir() === null) {
+            return $this->skipped(
+                $target,
+                'scaffold_drift: no installer scaffold in this project; the copies it compares exist only in the framework workspace',
+            );
+        }
+
         $buffer = new BufferedOutput();
         $input = new ArrayInput(['command' => 'scaffold:sync', '--check' => true]);
         $input->setInteractive(false);
@@ -662,6 +680,20 @@ final class VerificationExecutor
      * directories to keep in sync at all. Anchoring on the monorepo path makes
      * the absent case a skip, which is what runSkillCopies() promises.
      */
+    /**
+     * The installer scaffold, or null when this is not the authoring workspace.
+     *
+     * Existence only, and deliberately not "is it correct": a scaffold that is
+     * present but wrong is drift, which is {@see runScaffoldDrift()}'s answer to
+     * give. Absent means the check does not apply here at all.
+     */
+    private function installerScaffoldDir(): ?string
+    {
+        $candidate = $this->projectRoot . '/packages/semitexa-installer/scaffold';
+
+        return is_dir($candidate) ? $candidate : null;
+    }
+
     private function skillsSyncScript(): ?string
     {
         // Existence only. Whether it is executable is runSkillCopies()'s call,

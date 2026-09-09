@@ -14,6 +14,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class VerificationExecutorTest extends TestCase
@@ -380,6 +381,67 @@ class VerificationExecutorTest extends TestCase
     /**
      * @param list<VerificationTarget> $targets
      */
+    /**
+     * REGRESSION (semitexa-dev#73). A consumer project installs semitexa/dev, so
+     * scaffold:sync is always FOUND there — and then refuses, because it needs the
+     * installer scaffold only the authoring workspace has. It signals that refusal
+     * with exit 1, the same code it uses for real drift, so the refusal was
+     * reported as drift. `bin/semitexa update` replaces bin/semitexa as an ordinary
+     * scaffold-sync action, and bin/semitexa is one of the paths that schedules
+     * this target, so the first ai:verify after any framework update was red in
+     * every consumer project.
+     */
+    public function test_scaffold_drift_is_skipped_when_there_is_no_installer_scaffold(): void
+    {
+        $app = new Application();
+        // Present and failing, exactly as the real command behaves outside the
+        // authoring workspace. If the guard is removed, this becomes a FAIL.
+        $app->add($this->fakeScaffoldSyncCommand(1, "[ERROR] Installer scaffold not found\n"));
+
+        $plan = $this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_SCAFFOLD_DRIFT, 'scaffold_drift:project', 'r', []),
+        ]);
+        $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
+
+        $this->assertCount(1, $results);
+        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertStringContainsString('no installer scaffold', $results[0]->signal);
+    }
+
+    /** The skip is about absence only — a present scaffold still reports drift. */
+    public function test_scaffold_drift_still_fails_in_the_authoring_workspace(): void
+    {
+        mkdir($this->root . '/packages/semitexa-installer/scaffold', 0755, true);
+
+        $app = new Application();
+        $app->add($this->fakeScaffoldSyncCommand(1, "DRIFT Dockerfile\n"));
+
+        $plan = $this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_SCAFFOLD_DRIFT, 'scaffold_drift:project', 'r', []),
+        ]);
+        $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertStringContainsString('DRIFT', $results[0]->signal);
+    }
+
+    /** scaffold:sync takes --check; a stand-in has to accept it or the executor's input is rejected. */
+    private function fakeScaffoldSyncCommand(int $exit, string $output): Command
+    {
+        return new class($exit, $output) extends Command {
+            public function __construct(private readonly int $exit, private readonly string $output) {
+                parent::__construct('scaffold:sync');
+            }
+            protected function configure(): void {
+                $this->addOption('check', null, InputOption::VALUE_NONE);
+            }
+            protected function execute(InputInterface $input, OutputInterface $sink): int {
+                $sink->write($this->output);
+                return $this->exit;
+            }
+        };
+    }
+
     private function planWith(array $targets): VerificationPlan
     {
         return new VerificationPlan(
