@@ -116,7 +116,40 @@ final class OtlpTraceExporter
         $response = @file_get_contents($endpoint, false, $context);
         if ($response === false) {
             StaticLoggerBridge::warning('trace', 'OTLP collector did not answer', ['endpoint' => $endpoint]);
+
+            return;
         }
+
+        // ignore_errors keeps a 4xx from raising a PHP warning, which also
+        // means file_get_contents returns the error BODY and looks like a
+        // success. Without reading the status back, a misconfigured endpoint
+        // exported nothing and said nothing. Raised in review of
+        // semitexa-dev#78.
+        $status = self::statusOf($http_response_header ?? []);
+        if ($status !== null && ($status < 200 || $status > 299)) {
+            StaticLoggerBridge::warning('trace', 'OTLP collector rejected the export', [
+                'endpoint' => $endpoint,
+                'status' => $status,
+            ]);
+        }
+    }
+
+    /**
+     * The status of the FINAL response in the header list — a redirect chain
+     * leaves one status line per hop, and only the last one is the answer.
+     *
+     * @param list<string> $headers
+     */
+    public static function statusOf(array $headers): ?int
+    {
+        $status = null;
+        foreach ($headers as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $header, $m) === 1) {
+                $status = (int) $m[1];
+            }
+        }
+
+        return $status;
     }
 
     private static function endpoint(): ?string

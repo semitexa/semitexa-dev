@@ -70,4 +70,22 @@ final class OtlpTraceExporterTest extends TestCase
 
         self::assertFalse(OtlpTraceExporter::isConfigured());
     }
+
+    /**
+     * ignore_errors makes file_get_contents hand back the error BODY, so a
+     * rejected export looked exactly like an accepted one. Raised in review of
+     * semitexa-dev#78.
+     */
+    #[Test]
+    public function the_last_status_line_is_the_one_that_counts(): void
+    {
+        self::assertSame(200, OtlpTraceExporter::statusOf(['HTTP/1.1 200 OK', 'Content-Type: application/json']));
+        self::assertSame(401, OtlpTraceExporter::statusOf(['HTTP/1.1 401 Unauthorized']));
+        self::assertSame(
+            204,
+            OtlpTraceExporter::statusOf(['HTTP/1.1 307 Temporary Redirect', 'Location: /v1/traces', 'HTTP/1.1 204 No Content']),
+            'a redirect chain leaves one status per hop; only the final answer matters',
+        );
+        self::assertNull(OtlpTraceExporter::statusOf([]));
+    }
 }
