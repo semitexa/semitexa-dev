@@ -97,6 +97,14 @@ final class TraceBuffer
      */
     public int $rootOpen = 0;
 
+    /**
+     * Whether the finished buffer is written to var/trace. False for a buffer
+     * opened by stage mode alone ({@see ObservatoryStage}): the journal line
+     * gets its phase summary, the disk gets nothing — a file per request would
+     * bury the one trace somebody actually asked for.
+     */
+    public bool $persist = true;
+
     public function __construct(
         public readonly float $startedAt,
         public readonly int $rootCid,
