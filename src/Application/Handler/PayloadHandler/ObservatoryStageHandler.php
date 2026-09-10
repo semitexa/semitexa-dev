@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Core\Lifecycle\CurrentRequestStore;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryStagePayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
@@ -34,8 +35,12 @@ final class ObservatoryStageHandler implements TypedHandlerInterface
                 ->setContent('Not Found');
         }
 
+        // POST only. PayloadHydrator fills setters from the query string on
+        // every method, so `GET /__observatory/stage?on=1` reached this branch
+        // and switched recording on for the whole stack — a read that wrote.
+        // Raised in review of semitexa-dev#78.
         $applied = null;
-        if ($payload->on !== null) {
+        if ($payload->on !== null && $this->isPost()) {
             $applied = ObservatoryMode::full() ? ObservatoryStage::set($payload->on) : false;
         }
 
@@ -47,5 +52,20 @@ final class ObservatoryStageHandler implements TypedHandlerInterface
                 'available' => ObservatoryMode::full(),
                 'applied' => $applied,
             ], JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * Whether this request may change state.
+     *
+     * Read from the live request rather than the payload: the payload is
+     * hydrated identically for GET and POST, which is the whole reason this
+     * check exists. No request in scope (a unit test, a CLI probe) counts as
+     * not a POST — the safe answer for a switch.
+     */
+    private function isPost(): bool
+    {
+        $request = CurrentRequestStore::get();
+
+        return $request !== null && strtoupper($request->getMethod()) === 'POST';
     }
 }

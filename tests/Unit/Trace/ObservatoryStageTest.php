@@ -6,6 +6,12 @@ namespace Semitexa\Dev\Tests\Unit\Trace;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Core\Lifecycle\CurrentRequestStore;
+use Semitexa\Core\Request;
+use Semitexa\Dev\Application\Handler\PayloadHandler\ObservatoryStageHandler;
+use Semitexa\Dev\Application\Payload\Request\ObservatoryStagePayload;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryStage;
 
 final class ObservatoryStageTest extends TestCase
@@ -24,6 +30,7 @@ final class ObservatoryStageTest extends TestCase
         putenv('APP_ENV');
         putenv('SEMITEXA_OBSERVATORY_DIR');
         putenv('SEMITEXA_OBSERVATORY_MODE');
+        CurrentRequestStore::clear();
         @unlink($this->dir . '/stage.on');
         @rmdir($this->dir);
     }
@@ -49,6 +56,51 @@ final class ObservatoryStageTest extends TestCase
 
         ObservatoryStage::set(true);
         self::assertTrue(ObservatoryStage::isOn(), 'setting it again renews the file');
+    }
+
+    /**
+     * PayloadHydrator fills setters from the query string whatever the method,
+     * so a plain link to `/__observatory/stage?on=1` used to switch recording
+     * on for the whole stack. A read must not write. Raised in review of
+     * semitexa-dev#78.
+     */
+    #[Test]
+    public function a_get_carrying_on_1_reads_the_flag_without_setting_it(): void
+    {
+        $this->request('GET');
+
+        $body = json_decode((string) $this->callStage('1')->getContent(), true);
+
+        self::assertFalse(ObservatoryStage::isOn(), 'a GET must never flip the switch');
+        self::assertFalse($body['stage']);
+        self::assertNull($body['applied'], 'nothing was applied, and the answer says so');
+    }
+
+    #[Test]
+    public function a_post_still_sets_and_clears_it(): void
+    {
+        $this->request('POST');
+
+        self::assertTrue(json_decode((string) $this->callStage('1')->getContent(), true)['stage']);
+        self::assertTrue(ObservatoryStage::isOn());
+
+        self::assertFalse(json_decode((string) $this->callStage('0')->getContent(), true)['stage']);
+        self::assertFalse(ObservatoryStage::isOn());
+    }
+
+    private function callStage(string $on): ResourceResponse
+    {
+        $handler = new ObservatoryStageHandler();
+        (new \ReflectionProperty(ObservatoryStageHandler::class, 'gate'))->setValue($handler, new ObservatoryPanelGate());
+        $payload = new ObservatoryStagePayload();
+        $payload->setOn($on);
+
+        return $handler->handle($payload, new ResourceResponse());
+    }
+
+    private function request(string $method): void
+    {
+        CurrentRequestStore::set(new Request($method, '/__observatory/stage', [], ['on' => '1'], [], [], []));
     }
 
     #[Test]
