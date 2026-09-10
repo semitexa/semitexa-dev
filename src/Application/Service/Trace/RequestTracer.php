@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Trace;
 
+use Semitexa\Dev\Application\Service\Trace\Otlp\OtlpTraceExporter;
+
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Environment;
 use Semitexa\Core\Pipeline\RecordingAwareTracerInterface;
@@ -447,7 +449,23 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // stopped early.
         $final = $dir . '/' . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 8) . '.json';
         $tmp = $final . '.tmp';
-        if (@file_put_contents($tmp, $payload) !== false && @rename($tmp, $final)) {
+        $written = @file_put_contents($tmp, $payload) !== false && @rename($tmp, $final);
+
+        // A second destination, not a replacement: the file is what /__trace
+        // reads and a developer opens; the collector is where the same trace
+        // goes when somebody wants it beside their other services. Exported
+        // AFTER the file is on disk, so a collector that hangs cannot cost the
+        // developer the trace they were waiting for. Silent unless
+        // OTEL_EXPORTER_OTLP_ENDPOINT is set.
+        if (OtlpTraceExporter::isConfigured()) {
+            OtlpTraceExporter::export([
+                'totalMs' => $buffer->sinceStartMs(),
+                'rootCid' => $buffer->rootCid,
+                'events' => $buffer->events(),
+            ]);
+        }
+
+        if ($written) {
             return basename($final);
         }
 
