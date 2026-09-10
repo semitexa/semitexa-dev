@@ -37,7 +37,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2087],
         'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1126],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
-        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1246],
+        // A UI skill can now be raised AT a record: handleUiSkill takes the
+        // planner's arguments, and the pipeline path keeps which step the first
+        // UI skill came from instead of discarding it. Methods are unchanged —
+        // the four decisions that came with it (which arguments may reach the
+        // entry URL, what that URL becomes, what the window is called, whether
+        // one onto the same thing is already open) went to UiSkillDialog rather
+        // than in here, which is what this budget caught them doing.
+        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1266],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 932],
         'semitexa-media/src/Domain/Model/MediaVariant.php' => [33, 261],
