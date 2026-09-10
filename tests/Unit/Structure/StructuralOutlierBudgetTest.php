@@ -44,7 +44,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // entry URL, what that URL becomes, what the window is called, whether
         // one onto the same thing is already open) went to UiSkillDialog rather
         // than in here, which is what this budget caught them doing.
-        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1266],
+        // +6 from a review finding: the DialogExists branch returned neither
+        // arguments nor pipeline while the OpenDialog branch beside it did, so
+        // a caller learned that SOMETHING was already open and not which
+        // record. Two constructor arguments and the sentence saying why.
+        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 932],
         'semitexa-media/src/Domain/Model/MediaVariant.php' => [33, 261],

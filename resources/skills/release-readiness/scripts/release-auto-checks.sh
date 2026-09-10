@@ -351,6 +351,17 @@ run_playwright_smoke
 PHPSTAN_CEILING="${PHPSTAN_CEILING:-597}"
 
 phpstan_neutrality_gate() {
+    # An override that is empty or not a number would make every comparison
+    # below a shell error, and `set -e` would end the run somewhere unrelated.
+    # Refuse it by name: the same rule this gate applies to an unreadable
+    # report — something it cannot judge is not something it passes.
+    case "$PHPSTAN_CEILING" in
+        ''|*[!0-9]*)
+            fail "PHPSTAN_CEILING must be a whole number; got '${PHPSTAN_CEILING}'."
+            exit 1
+            ;;
+    esac
+
     info "phpstan: analysing (ceiling ${PHPSTAN_CEILING} above baseline)..."
 
     local report
