@@ -85,7 +85,6 @@ if [ "$CODE_ONLY" -eq 0 ]; then
     sync_file "docker-compose.mysql.yml"
     sync_file "docker-compose.rabbitmq.yml"
     sync_file "docker-compose.redis.yml"
-    sync_file "phpstan.neon"
     sync_file "phpunit.xml.dist"
     sync_file "server.php"
     mkdir -p "$RELEASE_ROOT/bin"
@@ -95,6 +94,24 @@ else
 fi
 
 sync_scaffold_docs
+
+# The analysis config the phpstan gate reads. Project-owned, not clone-owned:
+# the clone owns .env and composer.json (isolated domains, path-repos), and those
+# are still left alone. The baseline is the reason this is here — the clone's copy
+# was a month behind the dev root's, 996 entries against 1141, so the same code
+# measured 850 in the clone and 597 here and the gap looked like a regression the
+# release had introduced. Also the only thing that makes phpstan.neon's own claim
+# about phpstan-bootstrap.php true: it says the file lives at the root "so the
+# release-readiness sync step can copy it into the rls clone", and until now no
+# step did.
+for _phpstan_file in phpstan.neon phpstan-baseline.neon phpstan-bootstrap.php; do
+    if [ -f "$DEV_ROOT/$_phpstan_file" ]; then
+        sync_file "$_phpstan_file"
+    else
+        warn "Skipping $_phpstan_file: not present in $DEV_ROOT"
+    fi
+done
+ok "phpstan analysis config synced (neon, baseline, bootstrap)"
 
 sync_dir "docs"
 sync_dir "public"

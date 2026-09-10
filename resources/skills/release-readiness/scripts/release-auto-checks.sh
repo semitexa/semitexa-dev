@@ -348,7 +348,13 @@ run_playwright_smoke
 # two consecutive runs. Raise this number only by editing it deliberately, with
 # a note saying what grew; a release that quietly bumps it is the drift this
 # exists to notice.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-597}"
+# Measured IN THE RELEASE CONTAINER, because that is where this gate runs. The
+# first number here was 597, taken on the dev host, and the clone reported 604 on
+# byte-identical files: the host has PHP 8.4.1 with phpstan 2.1.40, the container
+# PHP 8.4.25 with phpstan 2.2.13, and a newer analyser simply infers more. Seven
+# messages of apparent regression that no commit caused. Re-measure here, never
+# on the host.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-604}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
@@ -365,7 +371,14 @@ phpstan_neutrality_gate() {
     info "phpstan: analysing (ceiling ${PHPSTAN_CEILING} above baseline)..."
 
     local report
-    report="$(cd "$RELEASE_ROOT" && $COMPOSE exec -T app php -d memory_limit=2G \
+    # Spelled out, like run_playwright_smoke above: there is no COMPOSE variable
+    # in this script, and referring to one made every run die on `set -u` before
+    # phpstan started. The gate then failed closed and said it could not judge —
+    # correct, and the reason it was caught on its first real release.
+    report="$(cd "$RELEASE_ROOT" && docker compose \
+        -f docker-compose.yml -f docker-compose.mysql.yml \
+        -f docker-compose.redis.yml -f docker-compose.ollama.yml \
+        exec -T app php -d memory_limit=2G \
         vendor/bin/phpstan analyse --no-progress --error-format=json 2>/dev/null)" || true
 
     # `file_errors` counts only what phpstan could attribute to a file. A
