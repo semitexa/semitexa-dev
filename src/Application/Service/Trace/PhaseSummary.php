@@ -90,7 +90,12 @@ final class PhaseSummary
             }
         }
 
-        if ($ms === [] && $queries === 0 && $handler === null) {
+        // An empty summary means "nothing to say". A request that was rejected
+        // before hydration, or threw before any stage span closed, has no
+        // timings and no handler — but it has an OUTCOME, and dropping the
+        // record made the panel show that request as a clean 'ok'. Raised in
+        // review of semitexa-dev#78.
+        if ($ms === [] && $queries === 0 && $handler === null && $outcome === 'ok' && $queued === 0) {
             return [];
         }
 

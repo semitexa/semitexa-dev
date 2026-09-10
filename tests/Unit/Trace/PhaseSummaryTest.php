@@ -81,6 +81,25 @@ final class PhaseSummaryTest extends TestCase
     }
 
     #[Test]
+    public function a_request_that_ended_badly_before_any_span_closed_still_reports_it(): void
+    {
+        // Rejected during hydration: no stage span ever closed, no query ran,
+        // no handler was reached. Dropping the summary here made the panel
+        // call that request 'ok'.
+        $rejected = PhaseSummary::fold([
+            ['type' => 'begin', 'name' => 'request', 'context' => ['path' => '/']],
+            ['type' => 'mark', 'name' => 'request.short_circuit', 'context' => ['reason' => 'validation']],
+        ]);
+        self::assertSame(['outcome' => 'rejected', 'detail' => 'validation'], $rejected);
+
+        $threw = PhaseSummary::fold([
+            ['type' => 'mark', 'name' => 'request.exception', 'context' => ['class' => 'RuntimeException']],
+        ]);
+        self::assertSame('exception', $threw['outcome']);
+        self::assertSame('RuntimeException', $threw['detail']);
+    }
+
+    #[Test]
     public function nothing_recognisable_folds_to_nothing(): void
     {
         // A trace made only of marks and unknown spans must not produce a
