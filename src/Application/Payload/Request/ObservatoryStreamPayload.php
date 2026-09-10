@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Payload\Request;
 
 use Semitexa\Core\Attribute\AsPublicPayload;
+use Semitexa\Core\Attribute\SseGateModel;
+use Semitexa\Core\Attribute\TransportType;
 use Semitexa\Core\Http\Response\ResourceResponse;
 
 /**
@@ -16,11 +18,27 @@ use Semitexa\Core\Http\Response\ResourceResponse;
  * is a real process of this system — it appears in the panel's LIVE ring
  * like any other SSE session — which is the whole reason it exists: the
  * panel watching itself over the same kind of connection it draws.
+ *
+ * Declared `transport: TransportType::Sse`, which is what it is: a long-lived
+ * GET the server holds open and pushes on. The declaration is load-bearing —
+ * the framework's route smoke walks every route asserting no 5xx, and without
+ * it this endpoint answered 503 there ("no live Swoole connection to hold
+ * open"), because a synthetic request has no socket. Routes declaring the SSE
+ * transport are skipped from that walk for exactly this reason.
+ *
+ * The gate model is `ChannelToken`: public at the routing layer, gated inside
+ * the handler by {@see \Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate}
+ * — open in dev, and elsewhere the `X-Observatory-Token` header or a direct
+ * loopback peer. No subject is re-authorized per tick, so `Subject` would be a
+ * false promise (and the boot guard rejects it on a public route), and no
+ * bearer session is involved either.
  */
 #[AsPublicPayload(
     path: '/__observatory/stream',
     methods: ['GET'],
     responseWith: ResourceResponse::class,
+    transport: TransportType::Sse,
+    sseGateModel: SseGateModel::ChannelToken,
 )]
 final class ObservatoryStreamPayload
 {
