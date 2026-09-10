@@ -112,11 +112,15 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                     return;
                 }
 
-                TraceContext::begin(new TraceBuffer(
+                $opened = new TraceBuffer(
                     startedAt: (float) hrtime(true),
                     rootCid: TraceContext::identity()['cid'],
                     rootSpan: $name,
-                ));
+                );
+                // Stage mode records everything; only a marked request (or an
+                // SSE connection, which cannot carry a marker) earns a file.
+                $opened->persist = $this->wantsFile($context);
+                TraceContext::begin($opened);
                 $this->orm()->enableQueryLog();
                 // Live attachment: each query lands on the timeline of whichever
                 // trace the EMITTING coroutine belongs to, with a real position
@@ -172,6 +176,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // A local, never a property: the tracer is one instance shared by the
         // whole worker, so anything per-request on it is a coroutine race.
         $traceFile = null;
+        $phases = [];
 
         try {
             // No early return on a missing buffer: an UNMARKED request has no
@@ -211,7 +216,13 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 if ($isRoot) {
                     $this->finalizeQueryLog($buffer);
                     if (!$buffer->failed) {
-                        $traceFile = $this->flush($buffer);
+                        // Folded before the flush so a stage-mode buffer that
+                        // writes no file still tells the journal where its
+                        // time went.
+                        $phases = PhaseSummary::fold($buffer->events());
+                        if ($buffer->persist) {
+                            $traceFile = $this->flush($buffer);
+                        }
                     }
                     TraceContext::end();
                 }
@@ -225,7 +236,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
             // only known post-flush, and the journal line carries it so a
             // consumer can jump from the live row to the full waterfall.
             if (($name === 'request' || $name === 'sse' || $name === 'job') && ObservatoryMode::journals()) {
-                $this->announceEnd($context, $traceFile);
+                $this->announceEnd($context, $traceFile, $phases);
             }
         } catch (\Throwable) {
             // Journal trouble must not degrade tracing, let alone the request.
@@ -321,6 +332,27 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // request of its own - and under Swoole the superglobals are empty, so
         // reading $_GET here would pass every unit test and record nothing in a
         // real worker.
+        if ($this->wantsFile($context)) {
+            return true;
+        }
+
+        // Stage mode: the live panel asked to see inside every request. The
+        // buffer opens, the journal gets the phase summary, no file is written.
+        return ObservatoryStage::isOn();
+    }
+
+    /**
+     * Whether this root asked for a trace FILE: an explicit marker, or an SSE
+     * connection (which cannot carry one — see shouldRecord()).
+     *
+     * @param array<string, mixed> $context
+     */
+    private function wantsFile(array $context): bool
+    {
+        if (($context['sse'] ?? false) === true) {
+            return true;
+        }
+
         $marker = $context['marker'] ?? null;
 
         return is_string($marker) && $marker !== '' && $marker !== '0';
@@ -499,14 +531,17 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 // The KISS transport is served INSIDE RouteExecutor, so its
                 // root opens as a plain request — but for the panel it IS the
                 // live connection, and 20-second "http" rows read as stuck.
+                // The panel's own stream is the same shape.
                 ($context['route'] ?? null) === 'ssr.kiss' => 'sse',
+                ($context['path'] ?? null) === '/__observatory/stream' => 'sse',
                 default => 'http',
             },
             'name' => (string) ($context['route'] ?? $context['path'] ?? $name),
             'worker' => getmypid(),
             'cid' => $identity['cid'],
             'startedAtNs' => (float) hrtime(true),
-            'context' => $this->scrub(array_diff_key($context, ['marker' => true, 'sse' => true])),
+            'context' => $this->scrub(array_diff_key($context, ['marker' => true, 'sse' => true]))
+                + ($name === 'request' ? $this->client() : []),
             // The panel polls its own feed every second; journaling those
             // polls would flood the journal with the act of watching it. The
             // slot still OPENS (so begin/end nesting stays balanced — an
@@ -515,7 +550,11 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
             // mode's sampling rides the same slot for the same reason: the
             // decision is made once here, so a sampled-out begin swallows its
             // own end instead of leaving the reader an end with no begin.
-            'suppressed' => str_starts_with((string) ($context['path'] ?? ''), '/__observatory')
+            // The one exception is the panel's own SSE stream: that is a
+            // real resident connection, and the panel should see itself in
+            // LIVE exactly like any other session.
+            'suppressed' => (str_starts_with((string) ($context['path'] ?? ''), '/__observatory')
+                    && ($context['path'] ?? '') !== '/__observatory/stream')
                 || !ObservatoryMode::sampled(),
         ];
         ObservatoryContext::open($record);
@@ -527,6 +566,32 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         $line = $record;
         unset($line['startedAtNs'], $line['suppressed']);
         ObservatoryJournal::write(['ts' => date('c'), 'event' => 'begin'] + $line);
+        CoroutineSnapshot::maybeWrite();
+    }
+
+    /**
+     * Who sent this request, from the live Swoole request's headers — the
+     * executor hands the tracer no headers, and it should not have to know
+     * which ones an observer finds interesting.
+     *
+     * @return array{client?: string, agent?: string}
+     */
+    private function client(): array
+    {
+        try {
+            if (!class_exists(\Semitexa\Core\Server\SwooleBootstrap::class)) {
+                return [];
+            }
+            $pair = \Semitexa\Core\Server\SwooleBootstrap::getCurrentSwooleRequestResponse();
+            $headers = is_array($pair) && isset($pair[0]) && is_array($pair[0]->header ?? null) ? $pair[0]->header : null;
+            if ($headers === null) {
+                return [];
+            }
+
+            return ClientClassifier::classify($headers);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**
@@ -534,8 +599,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
      * re-dispatch ends only unwind the counter.
      *
      * @param array<string, mixed> $context
+     * @param array<string, mixed> $phases  {@see PhaseSummary::fold()}, [] when no buffer ran
      */
-    private function announceEnd(array $context, ?string $traceFile): void
+    private function announceEnd(array $context, ?string $traceFile, array $phases = []): void
     {
         $record = ObservatoryContext::close();
         if ($record === null || ($record['suppressed'] ?? false) === true) {
@@ -553,6 +619,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         ];
         if ($traceFile !== null) {
             $line['trace'] = $traceFile;
+        }
+        if ($phases !== []) {
+            $line['phases'] = $phases;
         }
         if ($context !== []) {
             $line['context'] = $this->scrub($context);

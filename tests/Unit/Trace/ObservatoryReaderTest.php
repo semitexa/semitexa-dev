@@ -124,4 +124,63 @@ final class ObservatoryReaderTest extends TestCase
 
         self::assertSame(1, $snap['counts']['live'], 'a half-written line must not take the panel down');
     }
+
+    #[Test]
+    public function stream_bootstraps_then_follows_only_new_lines(): void
+    {
+        $path = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        file_put_contents($path, implode("\n", [
+            json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-1-a', 'kind' => 'http', 'name' => '/a', 'worker' => 1]),
+            json_encode(['ts' => date('c'), 'event' => 'end', 'id' => 'p-1-a', 'kind' => 'http', 'name' => '/a', 'worker' => 1, 'durationMs' => 1.5]),
+        ]) . "\n");
+
+        $reader = new ObservatoryReader();
+        $first = $reader->stream(null);
+        self::assertTrue($first['reset']);
+        self::assertCount(2, $first['rows']);
+        self::assertSame(date('Ymd') . ':' . filesize($path), $first['cursor']);
+
+        $quiet = $reader->stream($first['cursor']);
+        self::assertFalse($quiet['reset']);
+        self::assertSame([], $quiet['rows'], 'nothing appended, nothing returned');
+        self::assertSame($first['cursor'], $quiet['cursor']);
+
+        file_put_contents($path, json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-1-b', 'kind' => 'sse', 'name' => '/kiss', 'worker' => 1]) . "\n", FILE_APPEND);
+        $next = $reader->stream($quiet['cursor']);
+        self::assertSame(['p-1-b'], array_column($next['rows'], 'id'));
+        self::assertSame(date('Ymd') . ':' . filesize($path), $next['cursor']);
+    }
+
+    #[Test]
+    public function stream_leaves_a_half_written_line_for_the_next_poll(): void
+    {
+        $path = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        $whole = json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-2-a', 'kind' => 'http', 'name' => '/a', 'worker' => 2]) . "\n";
+        file_put_contents($path, $whole);
+        $reader = new ObservatoryReader();
+        $cursor = $reader->stream(null)['cursor'];
+
+        // A writer mid-line: the bytes are there, the newline is not yet.
+        $partial = json_encode(['ts' => date('c'), 'event' => 'end', 'id' => 'p-2-a', 'kind' => 'http', 'name' => '/a']);
+        file_put_contents($path, substr($partial, 0, 20), FILE_APPEND);
+        $poll = $reader->stream($cursor);
+        self::assertSame([], $poll['rows']);
+        self::assertSame($cursor, $poll['cursor'], 'the cursor must not advance past a line that is not finished');
+
+        file_put_contents($path, substr($partial, 20) . "\n", FILE_APPEND);
+        $poll = $reader->stream($poll['cursor']);
+        self::assertSame(['end'], array_column($poll['rows'], 'event'));
+    }
+
+    #[Test]
+    public function stream_resets_on_a_garbage_or_shrunken_cursor(): void
+    {
+        $path = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        file_put_contents($path, json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-3-a', 'kind' => 'http', 'name' => '/a', 'worker' => 3]) . "\n");
+        $reader = new ObservatoryReader();
+
+        self::assertTrue($reader->stream('not-a-cursor')['reset']);
+        self::assertTrue($reader->stream('20200101:0')['reset'], 'a cursor from another day than yesterday is stale');
+        self::assertTrue($reader->stream(date('Ymd') . ':999999')['reset'], 'a file shorter than the cursor was rotated or replaced');
+    }
 }

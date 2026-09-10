@@ -11,12 +11,16 @@ use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryFeedPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
+use Semitexa\Dev\Application\Service\Trace\CoroutineSnapshot;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 
 /**
- * The JSON snapshot behind `/__observatory` — live processes folded from the
- * Observatory journal. One second of polling reads at most a few MB of NDJSON
- * tail; no state is held between polls, so a worker restart costs nothing.
+ * The JSON behind `/__observatory`: the folded snapshot (live + just finished)
+ * by default, or with `?stream=1&after=<cursor>` the journal itself as a
+ * delta stream, which is what lets the panel animate each request as it
+ * lands instead of re-reading the tail once a second. No state is held
+ * between polls either way — the file is the state, the cursor is a byte
+ * offset into it — so a worker restart costs nothing.
  */
 #[AsPayloadHandler(payload: ObservatoryFeedPayload::class, resource: ResourceResponse::class)]
 final class ObservatoryFeedHandler implements TypedHandlerInterface
@@ -36,9 +40,19 @@ final class ObservatoryFeedHandler implements TypedHandlerInterface
                 ->setContent('Not Found');
         }
 
+        if ($payload->stream) {
+            // The worker answering the panel publishes its own coroutines too;
+            // with several workers each poll lands on a different one, so the
+            // picture fills in within a few polls.
+            CoroutineSnapshot::maybeWrite();
+        }
+        $body = $payload->stream
+            ? $this->reader->stream($payload->after !== '' ? $payload->after : null)
+            : $this->reader->snapshot();
+
         return $resource
             ->setHeader('Content-Type', 'application/json; charset=utf-8')
             ->setHeader('Cache-Control', 'no-store')
-            ->setContent((string) json_encode($this->reader->snapshot(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            ->setContent((string) json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 }

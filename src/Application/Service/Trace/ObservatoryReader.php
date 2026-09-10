@@ -144,6 +144,161 @@ final class ObservatoryReader
     }
 
     /**
+     * How many rows a fresh page is handed before it starts following: enough
+     * history to fill the ticker and the timeline, not enough to stall the
+     * first paint.
+     */
+    private const BOOTSTRAP_ROWS = 300;
+
+    /**
+     * A cursor further behind than this is not caught up on, it is reset: a tab
+     * that slept through an afternoon would otherwise be handed the whole
+     * afternoon in one response, and the panel would animate it all at once.
+     */
+    private const CATCHUP_BYTES = 2_000_000;
+
+    /**
+     * The journal as a stream: every row appended since $cursor, and the cursor
+     * to ask from next time. Cursor is `<day>:<byte offset>` into that day's
+     * file, so following costs one stat and one bounded read per poll, and a
+     * quiet poll reads nothing at all.
+     *
+     * A null, malformed or too-old cursor (or a file that shrank under it —
+     * rotated, deleted, replaced) resets: the last {@see BOOTSTRAP_ROWS} rows
+     * come back with `reset: true`, plus the current `live` list so a process
+     * that began before those rows still shows as running.
+     *
+     * @return array{
+     *     cursor: string,
+     *     rows: list<array<string, mixed>>,
+     *     reset: bool,
+     *     live: list<array<string, mixed>>,
+     *     coroutines: list<array<string, mixed>>,
+     *     generatedAt: string
+     * }
+     */
+    public function stream(?string $cursor): array
+    {
+        $today = date('Ymd');
+        $todayPath = ObservatoryJournal::dir() . '/journal-' . $today . '.ndjson';
+
+        $parsed = $this->parseCursor($cursor);
+        if ($parsed === null) {
+            return $this->bootstrap($todayPath, $today);
+        }
+        [$day, $offset] = $parsed;
+
+        $chunks = [];
+        if ($day !== $today) {
+            // Date rolled over under the follower: finish yesterday's file
+            // from where it stopped, then take today's from the top. Anything
+            // older than yesterday is a stale tab, and a reset is kinder than
+            // replaying a day.
+            if ($day !== date('Ymd', time() - 86400)) {
+                return $this->bootstrap($todayPath, $today);
+            }
+            $oldPath = ObservatoryJournal::dir() . '/journal-' . $day . '.ndjson';
+            $oldSize = (int) (@filesize($oldPath) ?: 0);
+            if ($oldSize > $offset) {
+                $chunks[] = (string) @file_get_contents($oldPath, false, null, $offset, $oldSize - $offset);
+            }
+            $offset = 0;
+        }
+
+        clearstatcache(true, $todayPath);
+        $size = (int) (@filesize($todayPath) ?: 0);
+        if ($size < $offset) {
+            return $this->bootstrap($todayPath, $today);
+        }
+
+        $pending = $size - $offset + array_sum(array_map('strlen', $chunks));
+        if ($pending > self::CATCHUP_BYTES) {
+            return $this->bootstrap($todayPath, $today);
+        }
+
+        $raw = $size > $offset
+            ? (string) @file_get_contents($todayPath, false, null, $offset, $size - $offset)
+            : '';
+
+        // Only whole lines advance the cursor. A writer may be mid-line at the
+        // moment of the read; its tail is left for the next poll rather than
+        // decoded as broken JSON and lost.
+        $lastNewline = strrpos($raw, "
+");
+        if ($lastNewline === false) {
+            $raw = '';
+            $next = $offset;
+        } else {
+            $next = $offset + $lastNewline + 1;
+            $raw = substr($raw, 0, $lastNewline + 1);
+        }
+        $chunks[] = $raw;
+
+        return [
+            'cursor' => $today . ':' . $next,
+            'rows' => $this->decodeRows(implode('', $chunks)),
+            'reset' => false,
+            'live' => [],
+            'coroutines' => CoroutineSnapshot::readAll(),
+            'generatedAt' => date('c'),
+        ];
+    }
+
+    /** @return array{0: string, 1: int}|null */
+    private function parseCursor(?string $cursor): ?array
+    {
+        if ($cursor === null || preg_match('/^(\d{8}):(\d{1,12})$/', $cursor, $m) !== 1) {
+            return null;
+        }
+
+        return [$m[1], (int) $m[2]];
+    }
+
+    /**
+     * @return array{cursor: string, rows: list<array<string, mixed>>, reset: bool, live: list<array<string, mixed>>, coroutines: list<array<string, mixed>>, generatedAt: string}
+     */
+    private function bootstrap(string $todayPath, string $today): array
+    {
+        clearstatcache(true, $todayPath);
+        $size = (int) (@filesize($todayPath) ?: 0);
+        [$lines] = $this->tailLines($todayPath);
+        $rows = [];
+        foreach (array_slice($lines, -self::BOOTSTRAP_ROWS) as $line) {
+            $row = json_decode($line, true);
+            if (is_array($row) && isset($row['event'], $row['id'])) {
+                $rows[] = $row;
+            }
+        }
+
+        return [
+            'cursor' => $today . ':' . $size,
+            'rows' => $rows,
+            'reset' => true,
+            'live' => $this->snapshot()['live'],
+            'coroutines' => CoroutineSnapshot::readAll(),
+            'generatedAt' => date('c'),
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function decodeRows(string $raw): array
+    {
+        $rows = [];
+        foreach (explode("
+", $raw) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $row = json_decode($line, true);
+            if (is_array($row) && isset($row['event'], $row['id'])) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * The last $limit journal records, chronological, optionally filtered.
      * This is `ai:observe tail` without --follow: raw journal rows, exactly
      * what is on disk, so the agent's mental model and the file never drift.

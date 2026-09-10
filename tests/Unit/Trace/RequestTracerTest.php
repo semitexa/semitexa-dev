@@ -610,6 +610,21 @@ final class RequestTracerTest extends TestCase
         self::assertSame([], $this->journalLines(), 'feed polls must never reach the journal');
     }
 
+    #[Test]
+    public function the_panels_own_stream_is_journaled_as_an_sse_session_while_its_polls_stay_silent(): void
+    {
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/__observatory/feed', 'route' => 'ObservatoryFeedPayload']);
+        $tracer->end('request');
+        self::assertSame([], $this->journalLines(), 'the panel polling its own feed must not journal the act of watching');
+
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/__observatory/stream', 'route' => 'ObservatoryStreamPayload']);
+        $tracer->end('request');
+        $lines = $this->journalLines();
+        self::assertSame(['begin', 'end'], array_column($lines, 'event'));
+        self::assertSame('sse', $lines[0]['kind'], 'a held-open stream is a live connection, not a stuck http request');
+    }
+
     /** @return list<array<string, mixed>> */
     private function journalLines(): array
     {
