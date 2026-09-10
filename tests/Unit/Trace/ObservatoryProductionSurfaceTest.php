@@ -37,9 +37,18 @@ final class ObservatoryProductionSurfaceTest extends TestCase
 {
     private string $dir;
 
+    /** @var array<string, string|false> */
+    private array $env = [];
+
     protected function setUp(): void
     {
         $this->dir = sys_get_temp_dir() . '/semitexa-obs-prod-' . uniqid();
+        // Saved, not assumed absent: a process that started with any of these
+        // set would otherwise run every later test without them, which makes
+        // the whole suite order-dependent. Raised in review of semitexa-dev#78.
+        foreach (['APP_ENV', 'SEMITEXA_OBSERVATORY_MODE', 'SEMITEXA_OBSERVATORY_DIR'] as $key) {
+            $this->env[$key] = getenv($key);
+        }
         putenv('APP_ENV=prod');
         putenv('SEMITEXA_OBSERVATORY_MODE');
         putenv('SEMITEXA_OBSERVATORY_DIR=' . $this->dir);
@@ -49,8 +58,9 @@ final class ObservatoryProductionSurfaceTest extends TestCase
 
     protected function tearDown(): void
     {
-        putenv('APP_ENV');
-        putenv('SEMITEXA_OBSERVATORY_DIR');
+        foreach ($this->env as $key => $value) {
+            $value === false ? putenv($key) : putenv($key . '=' . $value);
+        }
         TraceContext::resetFallback();
         ObservatoryContext::reset();
         if (is_dir($this->dir)) {
