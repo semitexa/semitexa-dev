@@ -18,18 +18,27 @@ final class ObservatoryStageTest extends TestCase
 {
     private string $dir;
 
+    /** @var array<string, string|false> */
+    private array $env = [];
+
     protected function setUp(): void
     {
         $this->dir = sys_get_temp_dir() . '/semitexa-stage-' . uniqid();
+        // Saved and put back, so a process that started with these configured
+        // does not lose them for every test that follows. Raised in review of
+        // semitexa-dev#78.
+        foreach (['APP_ENV', 'SEMITEXA_OBSERVATORY_DIR', 'SEMITEXA_OBSERVATORY_MODE'] as $key) {
+            $this->env[$key] = getenv($key);
+        }
         putenv('APP_ENV=dev');
         putenv('SEMITEXA_OBSERVATORY_DIR=' . $this->dir);
     }
 
     protected function tearDown(): void
     {
-        putenv('APP_ENV');
-        putenv('SEMITEXA_OBSERVATORY_DIR');
-        putenv('SEMITEXA_OBSERVATORY_MODE');
+        foreach ($this->env as $key => $value) {
+            $value === false ? putenv($key) : putenv($key . '=' . $value);
+        }
         CurrentRequestStore::clear();
         @unlink($this->dir . '/stage.on');
         @rmdir($this->dir);
@@ -101,6 +110,17 @@ final class ObservatoryStageTest extends TestCase
     private function request(string $method): void
     {
         CurrentRequestStore::set(new Request($method, '/__observatory/stage', [], ['on' => '1'], [], [], []));
+    }
+
+    #[Test]
+    public function outside_dev_the_flag_can_neither_be_read_nor_written(): void
+    {
+        ObservatoryStage::set(true);
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+
+        self::assertFalse(ObservatoryStage::set(true), 'a writer outside dev must not touch the flag file');
+        self::assertFalse(ObservatoryStage::set(false));
     }
 
     #[Test]

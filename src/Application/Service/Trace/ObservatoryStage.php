@@ -57,6 +57,15 @@ final class ObservatoryStage
 
     public static function set(bool $on): bool
     {
+        // Gated here as well as in isOn(). The handler checks the mode before
+        // calling, but this is public API: without the check a caller outside
+        // dev could still write the flag file, and it would then take effect
+        // the next time the same directory was read in dev. Raised in review
+        // of semitexa-dev#78.
+        if (!ObservatoryMode::full()) {
+            return false;
+        }
+
         try {
             $path = self::path();
             if ($on) {
