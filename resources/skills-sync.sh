@@ -158,8 +158,13 @@ process_pair() {
 
 # Every file under the canonical tree, relative to it. Whole-tree rather than a
 # hand-listed set: a file nobody remembered to list is the one that drifts.
+#
+# No -printf: the app image is Alpine, whose BusyBox find has no such action.
+# It printed its usage to stderr instead, and under ai:verify's process runner
+# that stalled the whole check (measured 2026-09-10: 13 minutes in pipe_write
+# before it was killed). -print plus a sed strip works on GNU and BusyBox alike.
 canonical_files() {
-    (cd "$CANONICAL" && find . -type f -printf '%P\n' | sort)
+    (cd "$CANONICAL" && find . -type f -print | sed 's|^\./||' | sort)
 }
 
 for root in "${SKILL_ROOTS[@]}"; do
