@@ -17,7 +17,8 @@ Default assumptions:
   containers come up, via `release-sync-root.sh --code-only`; never the full sync, which would
   overwrite the clone's own `.env` and `composer.json`
 - stop on the first failed automated gate
-- a green automated run includes route smoke checks, SSR helper checks, Playwright browser smoke tests, logs, phpstan, and phpunit
+- a green automated run includes route smoke checks, SSR helper checks, Playwright browser smoke tests, logs, `system:doctor`, `composer audit`, phpstan neutrality, and phpunit
+- the phpstan gate checks NEUTRALITY, not cleanliness: the project sits above its own baseline, so the bar is that a release does not raise the count. `PHPSTAN_CEILING` records it; raise it only deliberately, with a note saying what grew
 - before starting `semitexa.rls`, rewrite its local tenant domains to an isolated release namespace under `*.rls.semitexa.test`; it must never register `semitexa.test`, `framework.semitexa.test`, `os.semitexa.test`, or `platform.semitexa.test` in the shared router
 - browser smoke scope is Semitexa Demo only on `demo.rls.semitexa.test`
 - Semitexa Site, Semitexa OS, and Semitexa Platform are explicitly out of release smoke scope

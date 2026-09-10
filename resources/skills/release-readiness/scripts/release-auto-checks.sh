@@ -336,4 +336,81 @@ run_playwright_smoke() {
 
 run_playwright_smoke
 
+# ── phpstan neutrality ─────────────────────────────────────────────────────
+#
+# NOT a pass/fail gate on a clean analysis: the project sits above its own
+# baseline by hundreds of messages, so demanding zero would block every release
+# and demanding nothing is what let the number get there. The bar is that a
+# release does not make it WORSE — the same bargain StructuralOutlierBudgetTest
+# strikes for class size, which is the guard that has actually caught drift.
+#
+# MEASURED 2026-09-10: 597 errors above a 1141-entry baseline, identical across
+# two consecutive runs. Raise this number only by editing it deliberately, with
+# a note saying what grew; a release that quietly bumps it is the drift this
+# exists to notice.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-597}"
+
+phpstan_neutrality_gate() {
+    # An override that is empty or not a number would make every comparison
+    # below a shell error, and `set -e` would end the run somewhere unrelated.
+    # Refuse it by name: the same rule this gate applies to an unreadable
+    # report — something it cannot judge is not something it passes.
+    case "$PHPSTAN_CEILING" in
+        ''|*[!0-9]*)
+            fail "PHPSTAN_CEILING must be a whole number; got '${PHPSTAN_CEILING}'."
+            exit 1
+            ;;
+    esac
+
+    info "phpstan: analysing (ceiling ${PHPSTAN_CEILING} above baseline)..."
+
+    local report
+    report="$(cd "$RELEASE_ROOT" && $COMPOSE exec -T app php -d memory_limit=2G \
+        vendor/bin/phpstan analyse --no-progress --error-format=json 2>/dev/null)" || true
+
+    # `file_errors` counts only what phpstan could attribute to a file. A
+    # configuration mistake, an unreadable path or an internal error lands in
+    # `errors` instead, and `file_errors` stays 0 — so reading it alone lets the
+    # gate report a clean run for an analysis that never analysed anything. Both
+    # are read, and a path-less error is named separately because it almost
+    # never means "one more violation"; it means the run itself is wrong.
+    local count global_errors
+    count="$(printf '%s' "$report" | php -r \
+        '$d = json_decode(stream_get_contents(STDIN), true);
+         if (!is_array($d["totals"] ?? null)) { exit; }
+         echo (int) ($d["totals"]["file_errors"] ?? 0) + (int) ($d["totals"]["errors"] ?? 0);' 2>/dev/null)"
+    global_errors="$(printf '%s' "$report" | php -r \
+        '$d = json_decode(stream_get_contents(STDIN), true); echo (int) ($d["totals"]["errors"] ?? 0);' 2>/dev/null)"
+
+    # An unreadable report is not a pass. A gate that cannot see is a gate that
+    # says yes to everything, which is how the claim in SKILL.md came to
+    # describe a check nothing ran.
+    if [ -z "$count" ]; then
+        fail "phpstan produced no readable report — cannot judge neutrality."
+        exit 1
+    fi
+
+    if [ "${global_errors:-0}" -gt 0 ]; then
+        fail "phpstan reported ${global_errors} error(s) with no file — the analysis itself failed, not the code."
+        printf '%s' "$report" | php -r \
+            '$d = json_decode(stream_get_contents(STDIN), true);
+             foreach (array_slice($d["errors"] ?? [], 0, 5) as $e) { echo "  - ", is_array($e) ? ($e["message"] ?? "?") : $e, PHP_EOL; }' 2>/dev/null || true
+        exit 1
+    fi
+
+    if [ "$count" -gt "$PHPSTAN_CEILING" ]; then
+        fail "phpstan: ${count} errors above baseline, ceiling is ${PHPSTAN_CEILING}."
+        fail "This release adds $((count - PHPSTAN_CEILING)). Fix them, or raise PHPSTAN_CEILING deliberately."
+        exit 1
+    fi
+
+    if [ "$count" -lt "$PHPSTAN_CEILING" ]; then
+        ok "phpstan: ${count} above baseline — ${PHPSTAN_CEILING} was the ceiling; lower it."
+    else
+        ok "phpstan: ${count} above baseline, unchanged."
+    fi
+}
+
+phpstan_neutrality_gate
+
 ok "Automated release checks passed"
