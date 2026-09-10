@@ -128,7 +128,7 @@ const shortName = (kind, name) => isJob(kind) && typeof name === 'string' && nam
 function ingest(rows, reset, live) {
   const t0 = now();
   if (reset) {
-    S.procs.clear(); S.particles.length = 0;
+    resetDerived();
     for (const p of live) {
       const rec = {id: p.id, kind: p.kind, name: p.name, worker: p.worker, at: t0 - (p.ageS || 0) * 1000, stale: !!p.stale, historic: true, client: 'api'};
       S.procs.set(p.id, rec); touchWorker(rec.worker, rec, 'open');
@@ -164,7 +164,7 @@ function ingest(rows, reset, live) {
     const fin = {id: r.id, kind: r.kind || (open && open.kind) || 'http', name: shortName(r.kind, r.name || (open && open.name) || '?'), worker: r.worker || (open && open.worker),
       durationMs: typeof r.durationMs === 'number' ? r.durationMs : null, phases: r.phases || null, trace: r.trace || null, endedAt: at, ts,
       outcome: (r.phases && r.phases.outcome) || (ctx.status === 'failed' ? 'failed' : 'ok'),
-      error: ctx.error || null, attempt: ctx.attempt || (open && open.attempt) || 1, schedule: ctx.schedule || null,
+      error: ctx.error || null, retry: ctx.retry === true, attempt: ctx.attempt || (open && open.attempt) || 1, schedule: ctx.schedule || null,
       client: open ? open.client : 'api', route: (open && open.route) || r.name};
     S.finished.push(fin); touchWorker(fin.worker, fin, 'close', open); accountPhases(fin);
     if (fin.outcome === 'failed') S.failures.push({name: fin.name, kind: fin.kind, error: fin.error || 'no reason recorded', at, attempt: fin.attempt, id: fin.id});
@@ -180,6 +180,29 @@ function ingest(rows, reset, live) {
   }
   if (rows.length) S.lastRowAt = t0;
   prune();
+}
+// A bootstrap batch REPLACES the picture; it does not extend it. The reader
+// sends one when the cursor is stale, the journal rotated, or catch-up grew
+// past its cap, and its rows include ends the page may already have counted.
+// Keeping the old derived state double-counted the ticker, the rates and the
+// percentiles, and left worker dots for processes that ended long ago.
+// Raised in review of semitexa-dev#78.
+function resetDerived() {
+  S.procs.clear();
+  S.particles.length = 0;
+  S.finished.length = 0;
+  S.failures.length = 0;
+  S.flashes.length = 0;
+  S.sparks.length = 0;
+  S.impulses.length = 0;
+  S.workers.clear();
+  occHist.clear();
+  S.stats = {};
+  S.handlers.clear();
+  S.clients = {human: 0, bot: 0, api: 0};
+  for (const s of S.schedules) { s.lastRunAt = 0; s.runs = 0; }
+  const box = $('#tlist');
+  if (box) box.innerHTML = '<div class="empty">Reconnected — rebuilding from the journal…</div>';
 }
 function rememberPath(p) { if (S.recentPaths.includes(p)) return; S.recentPaths.push(p); if (S.recentPaths.length > 40) S.recentPaths.shift(); }
 function prune() {
@@ -349,7 +372,9 @@ function planJobTail(p, fin, t, dur) {
     p.wps.push({pt: 'done', t: t + dur}, {pt: {x: D.x + 46, y: D.y}, t: t + dur + 350, fade: true}); p.state = 'moving'; p.total = t + dur + 350; return;
   }
   const sched = S.scheduleByClass.get(p.route);
-  const retriable = p.kind === 'scheduler' && sched && (fin.attempt || 1) < sched.maxAttempts;
+  // Two ways to earn a retry: a scheduler run with attempts left under its
+  // schedule, or a queue message the worker requeued (the end line says so).
+  const retriable = fin.retry === true || (p.kind === 'scheduler' && sched && (fin.attempt || 1) < sched.maxAttempts);
   p.error = fin.error; p.attempt = fin.attempt;
   const ring = retriable ? 'retry' : 'failed';
   p.wps.push({pt: 'under_run', t: t + dur * 0.25}, {pt: 'under_' + ring, t: t + dur * 0.75}, {pt: ring + '_in', t: t + dur * 0.9}, {pt: ring, t: t + dur});
