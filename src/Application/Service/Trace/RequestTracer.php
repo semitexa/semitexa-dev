@@ -159,6 +159,15 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 return;
             }
 
+            // Stage mode opens a file-less buffer for the outer request, and an
+            // SSE connection is served INSIDE that request — so without this the
+            // connection's trace, which is never marked and cannot be, silently
+            // stopped being written the moment stage mode was on. Raised in
+            // review of semitexa-dev#78.
+            if (!$buffer->persist && $this->wantsFile($context)) {
+                $buffer->persist = true;
+            }
+
             if ($name === $buffer->rootSpan) {
                 $buffer->rootOpen++;
             }
@@ -487,9 +496,10 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // reads and a developer opens; the collector is where the same trace
         // goes when somebody wants it beside their other services. Exported
         // AFTER the file is on disk, so a collector that hangs cannot cost the
-        // developer the trace they were waiting for. Silent unless
-        // OTEL_EXPORTER_OTLP_ENDPOINT is set.
-        if (OtlpTraceExporter::isConfigured()) {
+        // developer the trace they were waiting for — and only when it IS on
+        // disk, so the collector never holds a trace the developer cannot open
+        // beside it. Silent unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+        if ($written && OtlpTraceExporter::isConfigured()) {
             OtlpTraceExporter::export([
                 'totalMs' => $buffer->sinceStartMs(),
                 'rootCid' => $buffer->rootCid,
@@ -497,11 +507,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
             ]);
         }
 
-        if ($written) {
-            return basename($final);
-        }
-
-        return null;
+        return $written ? basename($final) : null;
     }
 
     /**

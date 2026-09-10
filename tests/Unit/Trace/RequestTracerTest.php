@@ -625,6 +625,47 @@ final class RequestTracerTest extends TestCase
         self::assertSame('sse', $lines[0]['kind'], 'a held-open stream is a live connection, not a stuck http request');
     }
 
+    /**
+     * Stage mode must not cost an SSE connection its trace file.
+     *
+     * The connection is served inside the surrounding request, so in stage
+     * mode it lands in the buffer that request already opened — one deliberately
+     * marked as file-less. Without upgrading it, switching stage mode on
+     * silently stopped SSE traces from being written at all, and an SSE
+     * connection cannot carry the marker that would have asked for one.
+     * Raised in review of semitexa-dev#78.
+     */
+    #[Test]
+    public function an_sse_span_inside_a_stage_mode_request_still_earns_its_trace_file(): void
+    {
+        \Semitexa\Dev\Application\Service\Trace\ObservatoryStage::set(true);
+
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/__semitexa_kiss', 'route' => 'ssr.kiss']);
+        $tracer->begin('sse', ['sse' => true, 'path' => '/__semitexa_kiss']);
+        $tracer->end('sse');
+        $tracer->end('request');
+
+        self::assertCount(1, $this->traceFiles(), 'the connection asked for a file; stage mode must not withhold it');
+
+        \Semitexa\Dev\Application\Service\Trace\ObservatoryStage::set(false);
+    }
+
+    #[Test]
+    public function a_plain_stage_mode_request_still_writes_no_file(): void
+    {
+        \Semitexa\Dev\Application\Service\Trace\ObservatoryStage::set(true);
+
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/', 'route' => 'Home']);
+        $tracer->end('request');
+
+        self::assertSame([], $this->traceFiles(), 'a file per request would bury the one somebody asked for');
+        self::assertNotSame([], $this->journalLines(), 'the journal still gets its phase summary');
+
+        \Semitexa\Dev\Application\Service\Trace\ObservatoryStage::set(false);
+    }
+
     /** @return list<array<string, mixed>> */
     private function journalLines(): array
     {
