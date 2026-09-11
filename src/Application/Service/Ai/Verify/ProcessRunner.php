@@ -13,7 +13,7 @@ interface ProcessRunner
 {
     /**
      * @param list<string> $command argv-style; the runner is responsible for safe quoting
-     * @return array{exit: int, output: string}
+     * @return array{exit: int, output: string, failure?: string}
      */
     public function run(array $command, string $cwd): array;
 }

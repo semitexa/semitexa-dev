@@ -74,7 +74,7 @@ class VerificationExecutorTest extends TestCase
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, new RecordingProcessRunner()))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertSame(1, $results[0]->exitCode);
         $this->assertStringContainsString('not registered', $results[0]->signal);
     }
@@ -99,7 +99,7 @@ class VerificationExecutorTest extends TestCase
         ]);
         $results = (new VerificationExecutor($app, $this->root, new RecordingProcessRunner()))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertStringContainsString('lint blew up', $results[0]->signal);
     }
 
@@ -121,7 +121,7 @@ class VerificationExecutorTest extends TestCase
         $this->assertSame($this->root, $runner->calls[0]['cwd']);
     }
 
-    public function test_syntax_target_skipped_when_file_missing(): void
+    public function test_syntax_target_incomplete_when_file_missing(): void
     {
         $runner = new RecordingProcessRunner();
         $plan = $this->planWith([
@@ -129,19 +129,19 @@ class VerificationExecutorTest extends TestCase
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertStringContainsString('no longer exists', $results[0]->signal);
         $this->assertSame([], $runner->calls);
     }
 
-    public function test_phpunit_target_skipped_without_binary(): void
+    public function test_phpunit_target_incomplete_without_binary(): void
     {
         $plan = $this->planWith([
             new VerificationTarget(VerificationTarget::TYPE_PHPUNIT, 'phpunit:X', 'r', [], testFilter: 'XTest'),
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, new RecordingProcessRunner()))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertStringContainsString('phpunit binary not found', $results[0]->signal);
     }
 
@@ -208,7 +208,7 @@ class VerificationExecutorTest extends TestCase
         $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
 
         $this->assertNotContains('--no-output', $runner->calls[0]['command']);
-        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertStringContainsString('matched no tests', $results[0]->signal);
     }
 
@@ -244,7 +244,7 @@ class VerificationExecutorTest extends TestCase
         $this->assertContains('packages/foo/tests/Unit/Resource', $runner->calls[0]['command']);
     }
 
-    public function test_phpunit_directory_target_skipped_when_directory_missing(): void
+    public function test_phpunit_directory_target_incomplete_when_directory_missing(): void
     {
         $bin = $this->root . '/vendor/bin';
         mkdir($bin, 0755, true);
@@ -265,19 +265,19 @@ class VerificationExecutorTest extends TestCase
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
         $this->assertStringContainsString('no longer exists', $results[0]->signal);
         $this->assertSame([], $runner->calls);
     }
 
-    public function test_unknown_target_type_is_skipped(): void
+    public function test_unknown_target_type_is_incomplete(): void
     {
         $plan = $this->planWith([
             new VerificationTarget('mystery', 'mystery:1', 'r', []),
         ]);
         $results = (new VerificationExecutor(new Application(), $this->root, new RecordingProcessRunner()))->execute($plan);
 
-        $this->assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
     }
 
     // ---- skill_copies ---------------------------------------------------

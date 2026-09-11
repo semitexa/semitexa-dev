@@ -24,8 +24,9 @@ use Symfony\Component\Console\Tester\CommandTester;
  * output shapes verified.
  *
  * We never let the executor actually shell out: every changed file is a
- * fictional path that fails the syntax existence check (skipped) so the
- * lint-target dispatch is what we observe end-to-end.
+ * fictional path that fails the syntax existence check (incomplete) so the
+ * lint-target dispatch is what we observe end-to-end. Passing lints must not
+ * hide the missing required file checks.
  */
 class AiVerifyCommandTest extends TestCase
 {
@@ -62,7 +63,7 @@ class AiVerifyCommandTest extends TestCase
             '--scope' => 'standard',
         ]);
 
-        $this->assertSame(0, $exit);
+        $this->assertSame(1, $exit);
         $lines = $this->ndjsonLines($tester->getDisplay());
 
         $summary = $lines[0];
@@ -77,7 +78,8 @@ class AiVerifyCommandTest extends TestCase
 
         $verdict = end($lines);
         $this->assertSame('verdict', $verdict['kind']);
-        $this->assertSame('pass', $verdict['verdict']);
+        $this->assertSame('incomplete', $verdict['verdict']);
+        $this->assertFalse($verdict['completed']);
     }
 
     public function test_lint_failures_propagate_to_verdict_and_exit_code(): void
@@ -217,8 +219,10 @@ class AiVerifyCommandTest extends TestCase
             '--json'  => true,
         ]);
 
-        $this->assertSame(0, $exit);
+        $this->assertSame(1, $exit);
         $display = $tester->getDisplay();
+        $envelope = json_decode($display, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('trace_appended', $envelope['trace'][0]['kind']);
         $this->assertStringContainsString('"trace_appended"', $display);
 
         $trace = $store->read('ship-x');
@@ -326,8 +330,8 @@ class AiVerifyCommandTest extends TestCase
         ]);
 
         $payload = json_decode(trim($tester->getDisplay()), true);
-        $this->assertSame(0, $exit, 'verdict must be pass for a canonical module');
-        $this->assertSame('pass', $payload['verdict']);
+        $this->assertSame(1, $exit, 'canonical structure cannot hide a missing changed file');
+        $this->assertSame('incomplete', $payload['verdict']);
         $this->assertEmpty($payload['violations'] ?? []);
 
         // Module structure target was scheduled and resulted in pass.

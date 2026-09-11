@@ -16,6 +16,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 #[AsCommand(name: 'ai:context', description: 'Pack prior art + signals for a recipe (NDJSON, agent-facing)')]
 final class AiContextCommand extends BaseCommand
@@ -32,11 +33,33 @@ final class AiContextCommand extends BaseCommand
     {
         $this
             ->addArgument('recipe', InputArgument::REQUIRED, 'Recipe id (see: ai:task)')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope containing the NDJSON records, including trace outcomes')
             ->addOption('module', null, InputOption::VALUE_OPTIONAL, 'Restrict prior art to this module')
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a context_summary event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        if (!$input->getOption('json')) {
+            return $this->executeStream($input, $output);
+        }
+
+        $buffer = new BufferedOutput();
+        $exitCode = $this->executeStream($input, $buffer);
+        $records = array_map(
+            static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+            array_values(array_filter(explode("\n", trim($buffer->fetch())))),
+        );
+        $output->writeln(json_encode([
+            'artifact' => 'semitexa-dev.ai-context/v1',
+            'status' => $exitCode === self::SUCCESS ? 'ok' : 'error',
+            'records' => $records,
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+        return $exitCode;
+    }
+
+    private function executeStream(InputInterface $input, OutputInterface $output): int
     {
         $recipeId = (string) $input->getArgument('recipe');
         $module = $input->getOption('module');

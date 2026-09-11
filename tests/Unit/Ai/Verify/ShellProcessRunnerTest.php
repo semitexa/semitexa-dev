@@ -40,4 +40,48 @@ final class ShellProcessRunnerTest extends TestCase
         self::assertNotSame(0, $r['exit']);
         self::assertNotSame('', $r['output']);
     }
+
+    public function testSilentChildHasADeadline(): void
+    {
+        $started = microtime(true);
+        $result = (new ShellProcessRunner(timeoutSeconds: 0.2))->run([PHP_BINARY, '-r', 'sleep(20);'], sys_get_temp_dir());
+        self::assertLessThan(3, microtime(true) - $started);
+        self::assertSame(124, $result['exit']);
+        self::assertSame('timeout', $result['failure']);
+    }
+
+    public function testOutputFloodHasABoundedBufferAndNonzeroExit(): void
+    {
+        $started = microtime(true);
+        $result = (new ShellProcessRunner(timeoutSeconds: 2, maxOutputBytes: 4096))->run([PHP_BINARY, '-r', 'while (true) { echo str_repeat("x", 8192); }'], sys_get_temp_dir());
+        self::assertLessThan(3, microtime(true) - $started);
+        self::assertSame(125, $result['exit']);
+        self::assertSame('output_limit', $result['failure']);
+        self::assertLessThanOrEqual(4096, strlen($result['output']));
+    }
+
+    public function testDescendantHoldingStdoutCannotOutliveTheDeadline(): void
+    {
+        $marker = sys_get_temp_dir() . '/semitexa-child-marker-' . bin2hex(random_bytes(8));
+        $child = 'usleep(700000); file_put_contents(' . var_export($marker, true) . ', "escaped");';
+        // The direct shell exits immediately. Its child still holds our pipe.
+        $result = (new ShellProcessRunner(timeoutSeconds: 0.2))->run(['sh', '-c', '"$@" &', 'sh', PHP_BINARY, '-r', $child], sys_get_temp_dir());
+        try {
+            self::assertSame(124, $result['exit']);
+            usleep(800000);
+            self::assertFileDoesNotExist($marker, 'the descendant must have been terminated with its process group');
+        } finally {
+            if (is_file($marker)) {
+                unlink($marker);
+            }
+        }
+    }
+
+    public function testArgumentsAreNotInterpretedByAShell(): void
+    {
+        $arg = 'spaces; $(echo unexpected) "quotes"';
+        $result = (new ShellProcessRunner())->run([PHP_BINARY, '-r', 'echo $argv[1];', $arg], sys_get_temp_dir());
+        self::assertSame(0, $result['exit']);
+        self::assertSame($arg, $result['output']);
+    }
 }

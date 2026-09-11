@@ -227,8 +227,8 @@ final class AiTaskCommand extends BaseCommand
                 ],
                 'migrate_or_upgrade' => [
                     ['cmd' => 'ai:epic', 'args' => ['start', '--id=ep-<slug>', '--title="..."', '--goal="..."'], 'why' => 'high-risk work — epic required'],
-                    ['cmd' => 'orm:diff', 'args' => ['--json'], 'why' => 'schema delta if relevant'],
-                    ['cmd' => 'ai:verify', 'args' => ['--scope=broad', '--json'], 'why' => 'broad verification on close'],
+                    ['cmd' => 'orm:diff', 'args' => [], 'why' => 'schema delta if relevant (human-readable output)'],
+                    ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--scope=broad', '--json'], 'why' => 'broad verification on close'],
                 ],
                 'document_or_explain' => [
                     ['cmd' => 'docs:list', 'args' => ['--json'], 'why' => 'existing canonical docs map'],
@@ -244,24 +244,25 @@ final class AiTaskCommand extends BaseCommand
             };
         }
 
-        $commands = [];
-        foreach ($result->recipe->generator_chain as $i => $step) {
-            $args = ['--write', '--json'];
-            if ($i === 0 && $result->suggested_module !== null) {
-                $args[] = "--module={$result->suggested_module}";
-            }
-            $commands[] = [
-                'cmd'  => $step,
-                'args' => $args,
-                'why'  => $i === 0 ? 'first step in the recipe chain' : "step " . ($i + 1) . " in the recipe chain",
-            ];
+        // Keep shared inputs across EVERY step. Individual, incomplete --write
+        // hints used to lose module/name after the first generator in a chain.
+        $args = ['--recipe=' . $id, '--json'];
+        foreach (array_keys($result->recipe->arg_hints) as $option) {
+            $key = ltrim($option, '-');
+            $value = $key === 'module' && $result->suggested_module !== null
+                ? $result->suggested_module
+                : '<' . $key . '>';
+            $args[] = '--arg=' . $key . '=' . $value;
         }
-        $commands[] = [
+        return [[
+            'cmd' => 'make',
+            'args' => $args,
+            'why' => 'fill placeholders and preview the entire recipe; add --write only after reviewing the plan',
+        ], [
             'cmd'  => 'ai:verify',
-            'args' => ['--json'],
-            'why'  => 'always verify after generators run',
-        ];
-        return $commands;
+            'args' => ['--files=<paths>', '--json'],
+            'why'  => 'after writing, verify the created/updated paths returned by the generator',
+        ]];
     }
 
     private function buildNextHint($result): string

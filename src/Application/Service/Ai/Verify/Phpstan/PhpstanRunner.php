@@ -51,18 +51,20 @@ final class PhpstanRunner
         $binary = $this->phpstanBinary ?? $this->discoverPhpstanBinary();
         if ($binary === null) {
             return new PhpstanRunResult(
-                status: PhpstanRunResult::STATUS_SKIPPED,
+                status: PhpstanRunResult::STATUS_ERROR,
                 diagnostics: [],
                 rawSignal: 'phpstan binary not found (looked for vendor/bin/phpstan)',
+                exitCode: 1,
             );
         }
 
-        $config = $this->configPath ?? ($this->projectRoot . '/' . self::CONFIG_REL_PATH);
+        $config = $this->configPath ?? $this->discoverConfig();
         if (!is_file($config)) {
             return new PhpstanRunResult(
-                status: PhpstanRunResult::STATUS_SKIPPED,
+                status: PhpstanRunResult::STATUS_ERROR,
                 diagnostics: [],
                 rawSignal: "phpstan-ai-verify config missing: {$config}",
+                exitCode: 1,
             );
         }
 
@@ -77,18 +79,30 @@ final class PhpstanRunner
             ...$relativePaths,
         ];
 
-        $result = $this->processRunner->run($command, $this->projectRoot);
+        try {
+            $result = $this->processRunner->run($command, $this->projectRoot);
+        } catch (\Throwable $e) {
+            return $this->error('phpstan process failed: ' . $this->compress($e->getMessage()));
+        }
 
         $payload = $this->decode($result['output']);
         if ($payload === null) {
-            return new PhpstanRunResult(
-                status: PhpstanRunResult::STATUS_SKIPPED,
-                diagnostics: [],
-                rawSignal: 'phpstan output was not valid JSON: ' . $this->compress($result['output']),
-            );
+            return $this->error('phpstan output was not valid JSON: ' . $this->compress($result['output']), $result['exit']);
+        }
+        if (!$this->validPayload($payload)) {
+            return $this->error('phpstan output has an invalid or inconsistent result schema', $result['exit']);
         }
 
         $diagnostics = $this->extractDiagnostics($payload);
+
+        // Diagnostics and process success are independent evidence. A crash
+        // that printed an empty object (or even a clean result) is not a pass.
+        if (!in_array($result['exit'], [0, 1], true)
+            || ($result['exit'] === 0 && $diagnostics !== [])
+            || ($result['exit'] === 1 && $diagnostics === [])
+            || $payload['errors'] !== []) {
+            return $this->error('phpstan analysis incomplete or exit/result mismatch (exit ' . $result['exit'] . ')', $result['exit'], $diagnostics);
+        }
 
         $status = $diagnostics === []
             ? PhpstanRunResult::STATUS_PASS
@@ -107,7 +121,47 @@ final class PhpstanRunner
             status: $status,
             diagnostics: $diagnostics,
             rawSignal: $signal,
+            exitCode: $result['exit'],
         );
+    }
+
+    /** @param list<array<string, mixed>> $diagnostics */
+    private function error(string $signal, int $exit = 1, array $diagnostics = []): PhpstanRunResult
+    {
+        return new PhpstanRunResult(PhpstanRunResult::STATUS_ERROR, $diagnostics, $signal, $exit === 0 ? 1 : $exit);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function validPayload(array $payload): bool
+    {
+        $totals = $payload['totals'] ?? null;
+        $files = $payload['files'] ?? null;
+        $errors = $payload['errors'] ?? null;
+        if (!is_array($totals) || !is_array($files) || !is_array($errors) || !array_is_list($errors)
+            || !is_int($totals['errors'] ?? null) || !is_int($totals['file_errors'] ?? null)
+            || $totals['errors'] !== count($errors) || $totals['file_errors'] < 0) {
+            return false;
+        }
+        foreach ($errors as $error) {
+            if (!is_string($error) || $error === '') {
+                return false;
+            }
+        }
+        $messageCount = 0;
+        foreach ($files as $path => $file) {
+            if (!is_string($path) || $path === '' || !is_array($file)
+                || !is_array($file['messages'] ?? null) || !array_is_list($file['messages'])
+                || !is_int($file['errors'] ?? null) || $file['errors'] !== count($file['messages'])) {
+                return false;
+            }
+            foreach ($file['messages'] as $message) {
+                if (!is_array($message) || !is_string($message['message'] ?? null) || $message['message'] === '') {
+                    return false;
+                }
+            }
+            $messageCount += count($file['messages']);
+        }
+        return $messageCount === $totals['file_errors'];
     }
 
     /**
@@ -179,6 +233,9 @@ final class PhpstanRunner
     private function suggestionFor(string $identifier): string
     {
         return match ($identifier) {
+            'semitexa.inertConstructorBody'      => 'Move the constructor body into initialize() and implement Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface, which the container calls once every injected property is populated. The container builds container-managed classes with newInstanceWithoutConstructor(), so this code never runs — it is not merely poor style, it is dead. An empty constructor is fine, and a #[AsCommand] class is exempt: Application::instantiateCommand() builds it with plain new, so its constructor does run.',
+            'semitexa.staticFacadeAccess'        => 'Inject the service via a protected #[InjectAsReadonly] property instead of calling the retired static facade. The static surface still exists, but only for wiring listeners and the static contexts already on the rule\'s allowlist; calling it from anywhere else is what makes the service impossible to substitute in a test.',
+            'semitexa.workerServiceConnectionHandle' => 'Do not hold a live connection handle on a #[AsService] property. One instance is shared across every concurrent request coroutine, so a second coroutine can run on that handle mid-statement and corrupt overlapping transactions. Take a connection from the ConnectionPool per operation, keep it in CoroutineLocal if it must span calls within one request, or mark the class #[ExecutionScoped] only if it is genuinely cloned per request.',
             'semitexa.injectionViaConstructor'   => 'Replace the constructor parameter with a #[InjectAsReadonly] (or #[InjectAsMutable] / #[InjectAsFactory]) protected property and reduce the constructor to either parameterless or a parent::__construct() call.',
             'semitexa.staticContainerAccess'     => 'Drop the ContainerFactory:: call. Declare each required collaborator as a protected #[InjectAsReadonly] property typed against the concrete service contract.',
             'semitexa.injectedPropertyVisibility' => 'Make the injected property `protected`. Public/private visibility is forbidden on #[InjectAs*] / #[Config] properties.',
@@ -188,6 +245,7 @@ final class PhpstanRunner
             'semitexa.unannotatedServiceProperty' => 'Add the appropriate #[InjectAsReadonly] / #[InjectAsMutable] / #[InjectAsFactory] attribute, or remove the property if it is not a service.',
             'semitexa.traitInjection'            => 'Move the injected property out of the trait. Container-managed classes must declare their injection points directly.',
             'semitexa.noOpMapper'                => 'Give the #[AsMapper] a distinct domainModel: create a dedicated domain (business) model class separate from the persistence resource model, point domainModel: at it, and map its fields explicitly inside toDomain() / toSourceModel() instead of cloning the resource model. resourceModel and domainModel must never be the same class.',
+            'semitexa.mapperTypeConversion'      => 'Pass the field straight through in both directions and delete the conversion. The ORM owns COLUMN-TYPE conversion: TypeCaster turns BINARY(16) into a canonical uuid string on every read and back into 16 bytes on every write, so a mapper that converts it again is handed 36 characters and throws. A mapper owns the storage shapes the column type cannot express — a JSON string that becomes an array, an enum spread across columns — and that half stays. Binding a uuid into a raw WHERE is a different thing and belongs in the repository, where nothing hydrates it.',
             'semitexa.domainModelEncapsulation'  => 'Encapsulate the domain model: make every property private and expose it through accessors — a getX() (or isX()/hasX()) for each field, plus a setX() for mutable fields (mark the property readonly if it is immutable). Public/protected fields on a mapped domain model are forbidden; only ORM resource models keep public promoted properties.',
             'semitexa.brokenFqcn'                => 'Vendor migration likely — the referenced FQCN no longer resolves. Check whether the class moved namespaces (e.g. `Foo\\Contract\\X` → `Foo\\Domain\\Contract\\X`, or attribute relocations from `Core\\Attribute\\` to the owning package). Update the `use` statement, inline FQCN, or typehint to the new canonical FQCN. If this is a recently-renamed contract, run `bin/semitexa ai:review-graph:generate` to refresh the impact graph.',
             default                              => 'Fix the issue reported by PHPStan.',
@@ -239,6 +297,17 @@ final class PhpstanRunner
             }
         }
         return $rawIdentifier;
+    }
+
+    private function discoverConfig(): string
+    {
+        $workspace = $this->projectRoot . '/' . self::CONFIG_REL_PATH;
+        if (is_file($workspace)) {
+            return $workspace;
+        }
+        // Resolve relative to the package itself: works with Composer vendor
+        // installs and path repositories without requiring a packages/ tree.
+        return dirname(__DIR__, 6) . '/config/phpstan-ai-verify-consumer.neon';
     }
 
     private function discoverPhpstanBinary(): ?string

@@ -18,6 +18,9 @@
 ##   `staticMethod.notFound`, …) flow through to the NDJSON `violation`
 ##   events verbatim.
 
+includes:
+    - phpstan-ai-verify-rules.neon
+
 parameters:
     level: 0
     reportUnmatchedIgnoredErrors: false
@@ -77,21 +80,3 @@ parameters:
         -
             identifier: phpstanApi.runtimeReflection
             path: %currentWorkingDirectory%/packages/semitexa-core/src/PHPStan/Rules/*
-
-rules:
-    - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
-    - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
-    # Ships in semitexa/core (semitexa-core#108). The packages travel in
-    # lockstep everywhere this config runs (path repos in the workbench and
-    # release clone; consumer installs get exact pins via semitexa/ultimate),
-    # but when merging develop→master, land the core PR before this one.
-    - Semitexa\Core\PHPStan\Rules\StaticFacadeAccessRule
-    - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
-    - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
-    - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
-    - Semitexa\Core\PHPStan\Rules\ConfigOnClassTypeRule
-    - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
-    - Semitexa\Core\PHPStan\Rules\TraitInjectionRule
-    - Semitexa\Core\PHPStan\Rules\WorkerServiceConnectionHandleRule
-    - Semitexa\Core\PHPStan\Rules\NoOpMapperRule
-    - Semitexa\Core\PHPStan\Rules\DomainModelEncapsulationRule

@@ -14,6 +14,7 @@ final readonly class VerificationResult
     public const STATUS_PASS    = 'pass';
     public const STATUS_FAIL    = 'fail';
     public const STATUS_SKIPPED = 'skipped';
+    public const STATUS_INCOMPLETE = 'incomplete';
 
     /**
      * @param list<array<string, mixed>> $diagnostics structured per-target findings
@@ -26,5 +27,11 @@ final readonly class VerificationResult
         public int $exitCode,
         public string $signal,
         public array $diagnostics = [],
+        public bool $required = true,
     ) {}
+
+    public function completed(): bool
+    {
+        return in_array($this->status, [self::STATUS_PASS, self::STATUS_FAIL], true);
+    }
 }

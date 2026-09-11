@@ -45,7 +45,7 @@ final class ContractPlanBuilder
 
         // Implementation file
         $implImports = [
-            'use Semitexa\\Core\\Attributes\\SatisfiesServiceContract;',
+            'use Semitexa\\Core\\Attribute\\SatisfiesServiceContract;',
             "use {$contractNamespace}\\{$interfaceClass};",
         ];
         sort($implImports);

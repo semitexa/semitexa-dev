@@ -30,7 +30,7 @@ final class ServicePlanBuilder
         $namespace = "Semitexa\\Modules\\{$module}\\Domain\\Service";
 
         $imports = [
-            'use Semitexa\\Core\\Attributes\\AsService;',
+            'use Semitexa\\Core\\Attribute\\AsService;',
         ];
 
         sort($imports);

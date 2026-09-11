@@ -58,7 +58,8 @@ final class VerificationExecutor
     {
         $results = [];
         foreach ($plan->targets as $target) {
-            $results[] = match ($target->type) {
+            try {
+                $results[] = match ($target->type) {
                 VerificationTarget::TYPE_LINT             => $this->runLint($target),
                 VerificationTarget::TYPE_SYNTAX           => $this->runSyntax($target),
                 VerificationTarget::TYPE_PHPUNIT          => $this->runPhpunit($target),
@@ -72,11 +73,14 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_DOCS              => $this->runDocsGate($target),
                 default                                   => new VerificationResult(
                     target:   $target,
-                    status:   VerificationResult::STATUS_SKIPPED,
-                    exitCode: 0,
+                    status:   VerificationResult::STATUS_INCOMPLETE,
+                    exitCode: 1,
                     signal:   "unknown target type: {$target->type}",
                 ),
             };
+            } catch (\Throwable $e) {
+                $results[] = $this->failed($target, 'verification could not complete: ' . $this->compress($e->getMessage()));
+            }
         }
         return $results;
     }
@@ -137,7 +141,7 @@ final class VerificationExecutor
         try {
             $command = $this->application->find($commandName);
         } catch (CommandNotFoundException) {
-            return $this->skipped($target, "semitexa/docs is not installed; {$commandName} unavailable");
+            return $this->skipped($target, "semitexa/docs command {$commandName} unavailable; optional documentation tooling", required: false);
         }
 
         $buffer = new BufferedOutput();
@@ -176,7 +180,7 @@ final class VerificationExecutor
 
         return new VerificationResult(
             target:   $target,
-            status:   $r['exit'] === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
+            status:   isset($r['failure']) ? VerificationResult::STATUS_INCOMPLETE : ($r['exit'] === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL),
             exitCode: $r['exit'],
             signal:   $this->lastSignalLine($r['output']),
         );
@@ -216,7 +220,7 @@ final class VerificationExecutor
         }
         if ($abs !== null && (is_file($abs) || $isDir)) {
             $command[] = $rel;
-        } elseif ($filter === null) {
+        } elseif ($rel !== null) {
             // Suite-scoped target lost its directory between plan and
             // execute (e.g. file deleted on disk).
             return $this->skipped($target, "phpunit target directory no longer exists: {$rel}");
@@ -238,14 +242,14 @@ final class VerificationExecutor
             $signal = "phpunit {$describe} matched no tests (discovery gap, not a pass)";
         }
 
-        $status = ($r['exit'] === 0 && ! $noTestsExecuted)
-            ? VerificationResult::STATUS_PASS
-            : VerificationResult::STATUS_FAIL;
+        $status = $noTestsExecuted || isset($r['failure'])
+            ? VerificationResult::STATUS_INCOMPLETE
+            : ($r['exit'] === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL);
 
         return new VerificationResult(
             target:   $target,
             status:   $status,
-            exitCode: $r['exit'],
+            exitCode: $status === VerificationResult::STATUS_INCOMPLETE ? max(1, $r['exit']) : $r['exit'],
             signal:   $signal,
         );
     }
@@ -342,6 +346,7 @@ final class VerificationExecutor
                 'capability_index: not the monorepo (fewer than '
                 . CapabilityIndex::MIN_PACKAGES_FOR_A_FULL_VIEW
                 . ' Semitexa packages on disk); the index can only be built where every package is present',
+                required: false,
             );
         }
 
@@ -412,6 +417,7 @@ final class VerificationExecutor
                 'capability_coverage: not the monorepo (fewer than '
                 . CapabilityIndex::MIN_PACKAGES_FOR_A_FULL_VIEW
                 . ' Semitexa packages on disk); package coverage can only be judged where every package is present',
+                required: false,
             );
         }
 
@@ -486,7 +492,7 @@ final class VerificationExecutor
         return new VerificationResult(
             target:      $target,
             status:      $this->mapPhpstanStatus($result->status),
-            exitCode:    $result->status === PhpstanRunResult::STATUS_FAIL ? 1 : 0,
+            exitCode:    $result->status === PhpstanRunResult::STATUS_PASS ? 0 : max(1, $result->exitCode),
             signal:      $result->rawSignal,
             diagnostics: $result->diagnostics,
         );
@@ -498,7 +504,7 @@ final class VerificationExecutor
             PhpstanRunResult::STATUS_PASS    => VerificationResult::STATUS_PASS,
             PhpstanRunResult::STATUS_FAIL    => VerificationResult::STATUS_FAIL,
             PhpstanRunResult::STATUS_SKIPPED => VerificationResult::STATUS_SKIPPED,
-            default                          => VerificationResult::STATUS_SKIPPED,
+            default                          => VerificationResult::STATUS_INCOMPLETE,
         };
     }
 
@@ -571,7 +577,7 @@ final class VerificationExecutor
         try {
             $command = $this->application->find('scaffold:sync');
         } catch (CommandNotFoundException) {
-            return $this->skipped($target, 'scaffold_drift: scaffold:sync is unavailable in this project');
+            return $this->skipped($target, 'scaffold_drift: scaffold:sync is unavailable in this project', required: $this->installerScaffoldDir() !== null);
         }
 
         // The command resolving is not the same question as the check applying.
@@ -589,6 +595,7 @@ final class VerificationExecutor
             return $this->skipped(
                 $target,
                 'scaffold_drift: no installer scaffold in this project; the copies it compares exist only in the framework workspace',
+                required: false,
             );
         }
 
@@ -631,6 +638,7 @@ final class VerificationExecutor
             return $this->skipped(
                 $target,
                 'skill_copies: skills-sync.sh not found in this project; nothing to keep in sync',
+                required: false,
             );
         }
 
@@ -704,13 +712,14 @@ final class VerificationExecutor
         return is_file($candidate) ? $candidate : null;
     }
 
-    private function skipped(VerificationTarget $target, string $reason): VerificationResult
+    private function skipped(VerificationTarget $target, string $reason, bool $required = true): VerificationResult
     {
         return new VerificationResult(
             target:   $target,
-            status:   VerificationResult::STATUS_SKIPPED,
-            exitCode: 0,
+            status:   $required ? VerificationResult::STATUS_INCOMPLETE : VerificationResult::STATUS_SKIPPED,
+            exitCode: $required ? 1 : 0,
             signal:   $reason,
+            required: $required,
         );
     }
 
@@ -722,7 +731,7 @@ final class VerificationExecutor
     {
         return new VerificationResult(
             target:   $target,
-            status:   VerificationResult::STATUS_FAIL,
+            status:   VerificationResult::STATUS_INCOMPLETE,
             exitCode: 1,
             signal:   $reason,
         );

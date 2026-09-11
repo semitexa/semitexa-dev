@@ -806,7 +806,7 @@ function renderWorkers() {
     box.innerHTML = ws.map(w => {
       const active = now() - w.lastAt < 700, c = co.get(w.pid);
       const dots = [...w.inflight.values()].slice(0, 24).map(p => '<i class="' + (p.stale ? 'stale' : (p.kind === 'sse' ? 'sse' : (p.kind === 'http' ? '' : 'job'))) + '"></i>').join('');
-      const bars = w.hist.map(n => '<i style="height:' + Math.max(1, Math.round(n / max * 14)) + 'px"></i>').join('');
+      const bars = w.hist.map(n => '<i class="h' + Math.max(1, Math.round(n / max * 14)) + '"></i>').join('');
       const age = Math.round((now() - w.lastAt) / 1000);
       // Coroutine occupancy: busy now out of the pool ceiling, with the peak
       // as a tick — the load of this worker at a glance, not a bare count.
@@ -815,7 +815,7 @@ function renderWorkers() {
         const pct = Math.min(100, c.num / c.max * 100), peakPct = Math.min(100, c.peak / c.max * 100);
         const lvl = pct > 75 ? ' hot' : pct > 40 ? ' warm' : '';
         const m60 = occMax60(c.pid);
-        occ = '<div class="occ' + lvl + '" title="' + c.num + ' coroutines now · max ' + m60 + ' in the last 60 s · peak ' + c.peak + ' since worker start · ceiling ' + c.max + ' (' + esc(c.maxSource) + ') · snapshot ' + (c.ageS || 0) + 's old · the coroutine taking the snapshot is not counted"><div class="bar"><i style="width:' + Math.max(pct > 0 ? 1.5 : 0, pct) + '%"></i><b style="left:' + peakPct + '%"></b></div><span><strong>' + c.num + '</strong> busy <em>/ ' + fmtCount(c.max) + '</em> · 60s max ' + m60 + ' · peak ' + c.peak + '</span></div>';
+        occ = '<div class="occ' + lvl + '" title="' + c.num + ' coroutines now · max ' + m60 + ' in the last 60 s · peak ' + c.peak + ' since worker start · ceiling ' + c.max + ' (' + esc(c.maxSource) + ') · snapshot ' + (c.ageS || 0) + 's old · the coroutine taking the snapshot is not counted"><div class="bar"><i class="w' + pctClass(pct, pct > 0 ? 2 : 0) + '"></i><b class="l' + pctClass(peakPct) + '"></b></div><span><strong>' + c.num + '</strong> busy <em>/ ' + fmtCount(c.max) + '</em> · 60s max ' + m60 + ' · peak ' + c.peak + '</span></div>';
       } else if (c) occ = '<div class="occ"><span>' + c.total + ' co</span></div>';
       return '<div class="w' + (active ? ' active' : '') + '"><div class="pid">w' + w.pid + '<small>' + (age < 2 ? 'now' : age < 60 ? age + 's ago' : Math.round(age / 60) + 'm ago') + '</small></div><div class="flight">' + dots + '</div><div class="n">' + [...w.inflight.values()].filter(p => !p.stale).length + '<small>in flight</small></div>' + occ + '<div class="spark">' + bars + '</div></div>';
     }).join('');
@@ -831,12 +831,12 @@ function renderWorkers() {
   const retry = S.particles.filter(p => p.state === 'orbit' && p.ring === 'retry').length;
   const failed = S.particles.filter(p => p.state === 'orbit' && p.ring === 'failed').length;
   $('#bg').innerHTML =
-    '<div class="row"><span class="k"><i style="background:#ffb454"></i>SSE sessions open</span><b>' + liveSse + '</b></div>' +
-    '<div class="row"><span class="k"><i style="background:#c084fc"></i>scheduler runs · 60s</span><b>' + cnt('scheduler') + '</b></div>' +
-    '<div class="row"><span class="k"><i style="background:#34d399"></i>queue jobs · 60s</span><b>' + cnt('queue') + '</b></div>' +
-    '<div class="row"><span class="k"><i style="background:#ffb454"></i>waiting for retry</span><b>' + retry + '</b></div>' +
-    '<div class="row"><span class="k"><i style="background:#ff5f6d"></i>failed · 10 min</span><b' + (failed ? ' class="bad"' : '') + '>' + failed + '</b></div>' +
-    (stale ? '<div class="row"><span class="k"><i style="background:var(--faint)"></i>stale (no end line)</span><b>' + stale + '</b></div>' : '');
+    '<div class="row"><span class="k"><i class="k-sse"></i>SSE sessions open</span><b>' + liveSse + '</b></div>' +
+    '<div class="row"><span class="k"><i class="k-scheduler"></i>scheduler runs · 60s</span><b>' + cnt('scheduler') + '</b></div>' +
+    '<div class="row"><span class="k"><i class="k-queue"></i>queue jobs · 60s</span><b>' + cnt('queue') + '</b></div>' +
+    '<div class="row"><span class="k"><i class="k-retry"></i>waiting for retry</span><b>' + retry + '</b></div>' +
+    '<div class="row"><span class="k"><i class="k-failed"></i>failed · 10 min</span><b' + (failed ? ' class="bad"' : '') + '>' + failed + '</b></div>' +
+    (stale ? '<div class="row"><span class="k"><i class="k-stale"></i>stale (no end line)</span><b>' + stale + '</b></div>' : '');
   renderCron(false);
 }
 function renderTiles() {
@@ -870,16 +870,20 @@ function addTicker(fin, historic) {
   // client stayed, not how slow the server was, so it never reads as slow.
   const d = fin.durationMs === null ? 0 : fin.durationMs, session = fin.kind === 'sse', slow = !session && d > 1000, hot = !session && d > 200;
   el.className = 't ' + fin.kind + (slow ? ' slow' : '') + (fin.outcome !== 'ok' ? ' ' + fin.outcome : '');
-  el.dataset.id = fin.id; if (historic) el.style.animation = 'none';
+  // A class, not el.style.animation: a strict style-src refuses a CSSOM write
+  // exactly as it refuses an inline <style>, and this one runs for every
+  // historic row on load — five refusals before the reader has touched
+  // anything.
+  el.dataset.id = fin.id; el.classList.toggle('historic', !!historic);
   const barW = d <= 0 ? 0 : session ? 0 : Math.min(100, Math.max(2, (Math.log10(1 + d) / Math.log10(30001)) * 100));
   let ph = '';
   if (fin.phases) {
     const parts = PHASE_KEYS.filter(k => typeof fin.phases[k] === 'number').map(k => [k, fin.phases[k]]);
     const sum = parts.reduce((a, [, v]) => a + v, 0) || 1;
-    ph = '<div class="ph">' + parts.map(([k, v]) => '<i class="' + k + '" style="width:' + (v / sum * 100).toFixed(1) + '%" title="' + k + ' ' + fmtMs(v) + '"></i>').join('') + '</div>';
+    ph = '<div class="ph">' + parts.map(([k, v]) => '<i class="' + k + ' w' + pctClass(v / sum * 100) + '" title="' + k + ' ' + fmtMs(v) + '"></i>').join('') + '</div>';
   }
   const sub = fin.phases ? ((fin.phases.by || '') + (fin.phases.q ? ' · ' + fin.phases.q + ' q' : '') + (fin.phases.queued ? ' · queued ' + fin.phases.queued : '') + (fin.phases.detail ? ' · ' + fin.phases.detail : '')) : (fin.error ? fin.error : (fin.kind === 'http' && fin.client ? fin.client : ''));
-  el.innerHTML = '<div class="bar" style="width:' + barW + '%"></div>' +
+  el.innerHTML = '<div class="bar w' + pctClass(barW) + '"></div>' +
     (fin.trace ? '<a class="go" href="/__trace?file=' + encodeURIComponent(fin.trace) + '" title="open waterfall"></a>' : '') +
     '<div class="kind">' + esc(fin.kind) + '</div>' +
     '<div class="name" title="' + esc(fin.name) + (fin.error ? ' — ' + esc(fin.error) : '') + '">' + esc(fin.name) + (sub ? '<small>' + esc(sub) + '</small>' : '') + ph + '</div>' +
@@ -928,14 +932,34 @@ function showTip(hit, pinned) {
   let lx = sp.x + 14, ly = sp.y + 10; if (lx + tw > box.width - 8) lx = sp.x - tw - 14; if (ly + th > box.height - 8) ly = Math.max(8, sp.y - th - 40);
   tip.style.left = Math.max(8, lx) + 'px'; tip.style.top = ly + 'px';
 }
+/* A percentage as a CLASS, rounded to whole percent.
+ *
+ * Not `style="width:42.7%"`. A strict Content-Security-Policy refuses an inline
+ * style attribute exactly as it refuses an inline <script>, and these four
+ * places are the panel's bars — so under a policy every bar rendered flat while
+ * the rest of the page worked. MEASURED on a busy app: 299 refusals in a single
+ * load. Whole percent is finer than the eye resolves on a bar this size, and
+ * `.w0`…`.w100` is a few KB of stylesheet no policy can object to.
+ */
+function pctClass(pct, floor) { return Math.min(100, Math.max(floor || 0, Math.round(pct || 0))); }
+
 function hideTip() { if (S.pinned) return; $('#tip').classList.remove('show'); S.hover = null; }
+
+/* The pointer over the canvas takes one of three fixed shapes, so it is a
+   class rather than a CSSOM write — same reason as the historic row above. */
+function setCursor(el, shape) { el.classList.remove('cur-grab', 'cur-grabbing', 'cur-pointer'); el.classList.add('cur-' + shape); }
 
 /* ------------------------------------------------------------ controls */
 function setLed(state, why) {
   const d = $('#led'); d.className = 'dot' + (S.paused ? ' paused' : state === 'off' ? ' off' : '');
   const via = T.mode === 'sse' ? 'SSE stream' : T.mode === 'polling' ? 'polling 250 ms (SSE unavailable)' : 'connecting…';
-  d.title = state === 'off' ? ('feed unreachable: ' + (why || '')) : 'following the journal over ' + via;
-  $('#meta').textContent = S.paused ? 'paused' : state === 'off' ? 'feed unreachable — retrying' : (S.stage ? 'stage mode · every request records its phases' : 'live · begin/end of every process; phases for traced requests');
+  // The dot's own tooltip carries the state in words. A prose line beside it
+  // used to say the same thing into #meta — a div the redesign left `hidden`
+  // and never styled, so this wrote, every tick, into something no reader
+  // could see. The header says it now through the dot and the transport chip.
+  d.title = state === 'off'
+    ? ('feed unreachable: ' + (why || '') + ' — retrying')
+    : (S.paused ? 'paused' : 'following the journal over ' + via + (S.stage ? ' · stage mode: every request records its phases' : ''));
   const tr = $('#transport'); if (tr) { tr.textContent = T.mode === 'sse' ? 'sse' : T.mode === 'polling' ? 'poll' : '…'; tr.className = 'tr ' + T.mode; tr.title = via; }
 }
 async function refreshStage() { try { const r = await fetch('/__observatory/stage', {cache: 'no-store'}); const d = await r.json(); S.stage = !!d.stage; S.stageAvailable = !!d.available; } catch (e) { } paintStage(); }
@@ -962,10 +986,10 @@ function bindView(rc) {
   rc.addEventListener('pointermove', e => { const l = local(e);
     if (S.pointers.has(e.pointerId)) S.pointers.set(e.pointerId, l);
     if (S.pinch && S.pointers.size === 2) { const [a, b] = [...S.pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); zoomAt(S.pinch.cx, S.pinch.cy, (S.pinch.s * d / S.pinch.d) / S.view.s); return; }
-    if (S.drag) { const dx = l.x - S.drag.sx, dy = l.y - S.drag.sy; if (Math.hypot(dx, dy) > 3) S.drag.moved = true; if (S.drag.moved) { S.view.x = S.drag.vx + dx; S.view.y = S.drag.vy + dy; clampView(); rc.style.cursor = 'grabbing'; } return; }
-    const w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y); rc.style.cursor = hit ? 'pointer' : 'grab'; if (S.pinned) return; if (hit) { S.hover = hit.key; showTip(hit, false); } else hideTip(); });
+    if (S.drag) { const dx = l.x - S.drag.sx, dy = l.y - S.drag.sy; if (Math.hypot(dx, dy) > 3) S.drag.moved = true; if (S.drag.moved) { S.view.x = S.drag.vx + dx; S.view.y = S.drag.vy + dy; clampView(); setCursor(rc, 'grabbing'); } return; }
+    const w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y); setCursor(rc, hit ? 'pointer' : 'grab'); if (S.pinned) return; if (hit) { S.hover = hit.key; showTip(hit, false); } else hideTip(); });
   const up = e => { S.pointers.delete(e.pointerId); if (S.pointers.size < 2) S.pinch = null;
-    if (S.drag) { const wasClick = !S.drag.moved; S.drag = null; rc.style.cursor = 'grab'; if (wasClick) { const l = local(e), w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y);
+    if (S.drag) { const wasClick = !S.drag.moved; S.drag = null; setCursor(rc, 'grab'); if (wasClick) { const l = local(e), w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y);
       if (S.pinned && (!hit || hit.key === S.pinned.key)) { S.pinned = null; $('#tip').classList.remove('show', 'pinned'); return; } if (hit) { S.pinned = hit; showTip(hit, true); } } } };
   rc.addEventListener('pointerup', up); rc.addEventListener('pointercancel', up);
   rc.addEventListener('dblclick', () => fitView());
