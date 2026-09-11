@@ -127,6 +127,11 @@ a{color:inherit;text-decoration:none}
 .cr .n{color:#c084fc;font-weight:700;text-align:right;font-variant-numeric:tabular-nums} .cr .n small{display:block;color:var(--faint);font-weight:500}
 .tip ul li.why{display:block;color:var(--danger);font-size:10.5px;white-space:normal;padding-left:8px;border-left:2px solid color-mix(in srgb,var(--danger) 50%,transparent);margin:1px 0 4px}
 .river canvas{touch-action:none;cursor:grab}
+/* Set by class, never by el.style.cursor — a strict style-src blocks a CSSOM
+   write the same way it blocks an inline <style>. */
+.river canvas.cur-grab{cursor:grab}
+.river canvas.cur-grabbing{cursor:grabbing}
+.river canvas.cur-pointer{cursor:pointer}
 .bg .row{display:flex;justify-content:space-between;font:12px/1.7 var(--mono);color:var(--dim)}
 .bg .row b{color:var(--text);font-weight:600}
 .bg .row .k{display:inline-flex;align-items:center;gap:6px}
@@ -138,6 +143,28 @@ a{color:inherit;text-decoration:none}
 .river canvas{width:100%;height:100%;display:block;flex:1;min-height:0}
 .legend{position:absolute;left:14px;bottom:10px;display:flex;gap:12px;font:11px/1 var(--mono);color:var(--dim);pointer-events:none}
 .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+/* The legend swatches. They were `style="background:…"` attributes in the
+   markup, which a strict Content-Security-Policy blocks exactly like an inline
+   <script> — style-src without 'unsafe-inline' covers attributes too, so the
+   colours vanished on the same consumer where the panel went blank. Kept beside
+   the shape they colour rather than in a token block: these five ARE the kinds
+   a process can be, and they match the particle colours the canvas paints. */
+/* The swatch colours, shared by the canvas legend and the System tab rows.
+   Classes rather than style="background:…" because a strict style-src blocks
+   an inline style ATTRIBUTE exactly as it blocks an inline <script> — measured,
+   not assumed: the panel's own CSP spec reported one refusal per swatch. */
+i.k-http{background:#5b9dff}
+i.k-retry{background:#ffb454}
+i.k-failed{background:#ff5f6d}
+i.k-stale{background:var(--faint)}
+.legend i.k-http{background:#5b9dff}
+i.k-sse{background:#ffb454}
+.legend i.k-sse{background:#ffb454}
+i.k-scheduler{background:#c084fc}
+.legend i.k-scheduler{background:#c084fc}
+i.k-queue{background:#34d399}
+.legend i.k-queue{background:#34d399}
+.legend i.k-replay{background:#f472b6}
 .caption{position:absolute;right:14px;bottom:10px;font:11px/1 var(--mono);color:var(--faint);pointer-events:none;text-align:right}
 .tip{position:absolute;z-index:5;max-width:340px;background:color-mix(in srgb,var(--panel) 96%,transparent);border:1px solid var(--line-2);
   border-radius:12px;padding:12px 14px;box-shadow:0 18px 50px rgba(0,0,0,.45);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
@@ -160,7 +187,11 @@ a{color:inherit;text-decoration:none}
 .t{position:relative;display:grid;grid-template-columns:38px minmax(0,1fr) 30px 58px;gap:8px;align-items:center;padding:6px 8px;
   border-radius:8px;margin-bottom:2px;overflow:hidden;animation:slidein .35s ease-out}
 @keyframes slidein{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-.t .bar{position:absolute;left:0;top:0;bottom:0;width:0;pointer-events:none;
+/* No `width:0` default here any more. Every .t .bar now carries a .wN class,
+   and a (0,2,0) base declaration would outweigh those (0,1,0) classes and pin
+   every bar flat — the very thing the classes exist to stop. The class is the
+   only thing that sets this width. */
+.t .bar{position:absolute;left:0;top:0;bottom:0;pointer-events:none;
   background:linear-gradient(90deg,color-mix(in srgb,var(--http) 20%,transparent),transparent)}
 .t.sse .bar{background:linear-gradient(90deg,color-mix(in srgb,var(--sse) 22%,transparent),transparent)}
 .t.slow .bar{background:linear-gradient(90deg,color-mix(in srgb,var(--danger) 24%,transparent),transparent)}
@@ -188,3 +219,235 @@ a{color:inherit;text-decoration:none}
 .ph i.gate{background:#7dd3fc}.ph i.hydrate{background:#60a5fa}.ph i.resolve{background:#818cf8}.ph i.auth{background:#a78bfa}
 .ph i.listeners{background:#c084fc}.ph i.handler{background:#f59e0b}.ph i.completed{background:#34d399}.ph i.render{background:#2dd4bf}.ph i.rest{background:var(--line-2)}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}
+
+/* Shown only when a file this page links is not on disk. It carries its own
+   colours because the stylesheet is exactly what may be missing. */
+.asset-missing{margin:0;padding:14px 20px;background:#2b0f14;color:#ff5f6d;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* A row already finished when the panel loaded: it did not arrive, so it must
+   not animate in. A class rather than el.style.animation, which a strict
+   style-src refuses once per historic row on every load. */
+.t.historic{animation:none}
+
+/* ---- computed sizes as classes ----------------------------------------
+   The bars used to carry style="width:…%" / style="height:…px". A strict
+   style-src refuses an inline style ATTRIBUTE the same way it refuses an
+   inline <script>, so under a consumer's policy every bar in the panel
+   rendered flat. Whole percent is finer than the eye resolves here; see
+   pctClass() in observatory.js. */
+.spark i.h1{height:1px}
+.spark i.h2{height:2px}
+.spark i.h3{height:3px}
+.spark i.h4{height:4px}
+.spark i.h5{height:5px}
+.spark i.h6{height:6px}
+.spark i.h7{height:7px}
+.spark i.h8{height:8px}
+.spark i.h9{height:9px}
+.spark i.h10{height:10px}
+.spark i.h11{height:11px}
+.spark i.h12{height:12px}
+.spark i.h13{height:13px}
+.spark i.h14{height:14px}
+.w0{width:0%}
+.w1{width:1%}
+.w2{width:2%}
+.w3{width:3%}
+.w4{width:4%}
+.w5{width:5%}
+.w6{width:6%}
+.w7{width:7%}
+.w8{width:8%}
+.w9{width:9%}
+.w10{width:10%}
+.w11{width:11%}
+.w12{width:12%}
+.w13{width:13%}
+.w14{width:14%}
+.w15{width:15%}
+.w16{width:16%}
+.w17{width:17%}
+.w18{width:18%}
+.w19{width:19%}
+.w20{width:20%}
+.w21{width:21%}
+.w22{width:22%}
+.w23{width:23%}
+.w24{width:24%}
+.w25{width:25%}
+.w26{width:26%}
+.w27{width:27%}
+.w28{width:28%}
+.w29{width:29%}
+.w30{width:30%}
+.w31{width:31%}
+.w32{width:32%}
+.w33{width:33%}
+.w34{width:34%}
+.w35{width:35%}
+.w36{width:36%}
+.w37{width:37%}
+.w38{width:38%}
+.w39{width:39%}
+.w40{width:40%}
+.w41{width:41%}
+.w42{width:42%}
+.w43{width:43%}
+.w44{width:44%}
+.w45{width:45%}
+.w46{width:46%}
+.w47{width:47%}
+.w48{width:48%}
+.w49{width:49%}
+.w50{width:50%}
+.w51{width:51%}
+.w52{width:52%}
+.w53{width:53%}
+.w54{width:54%}
+.w55{width:55%}
+.w56{width:56%}
+.w57{width:57%}
+.w58{width:58%}
+.w59{width:59%}
+.w60{width:60%}
+.w61{width:61%}
+.w62{width:62%}
+.w63{width:63%}
+.w64{width:64%}
+.w65{width:65%}
+.w66{width:66%}
+.w67{width:67%}
+.w68{width:68%}
+.w69{width:69%}
+.w70{width:70%}
+.w71{width:71%}
+.w72{width:72%}
+.w73{width:73%}
+.w74{width:74%}
+.w75{width:75%}
+.w76{width:76%}
+.w77{width:77%}
+.w78{width:78%}
+.w79{width:79%}
+.w80{width:80%}
+.w81{width:81%}
+.w82{width:82%}
+.w83{width:83%}
+.w84{width:84%}
+.w85{width:85%}
+.w86{width:86%}
+.w87{width:87%}
+.w88{width:88%}
+.w89{width:89%}
+.w90{width:90%}
+.w91{width:91%}
+.w92{width:92%}
+.w93{width:93%}
+.w94{width:94%}
+.w95{width:95%}
+.w96{width:96%}
+.w97{width:97%}
+.w98{width:98%}
+.w99{width:99%}
+.w100{width:100%}
+.l0{left:0%}
+.l1{left:1%}
+.l2{left:2%}
+.l3{left:3%}
+.l4{left:4%}
+.l5{left:5%}
+.l6{left:6%}
+.l7{left:7%}
+.l8{left:8%}
+.l9{left:9%}
+.l10{left:10%}
+.l11{left:11%}
+.l12{left:12%}
+.l13{left:13%}
+.l14{left:14%}
+.l15{left:15%}
+.l16{left:16%}
+.l17{left:17%}
+.l18{left:18%}
+.l19{left:19%}
+.l20{left:20%}
+.l21{left:21%}
+.l22{left:22%}
+.l23{left:23%}
+.l24{left:24%}
+.l25{left:25%}
+.l26{left:26%}
+.l27{left:27%}
+.l28{left:28%}
+.l29{left:29%}
+.l30{left:30%}
+.l31{left:31%}
+.l32{left:32%}
+.l33{left:33%}
+.l34{left:34%}
+.l35{left:35%}
+.l36{left:36%}
+.l37{left:37%}
+.l38{left:38%}
+.l39{left:39%}
+.l40{left:40%}
+.l41{left:41%}
+.l42{left:42%}
+.l43{left:43%}
+.l44{left:44%}
+.l45{left:45%}
+.l46{left:46%}
+.l47{left:47%}
+.l48{left:48%}
+.l49{left:49%}
+.l50{left:50%}
+.l51{left:51%}
+.l52{left:52%}
+.l53{left:53%}
+.l54{left:54%}
+.l55{left:55%}
+.l56{left:56%}
+.l57{left:57%}
+.l58{left:58%}
+.l59{left:59%}
+.l60{left:60%}
+.l61{left:61%}
+.l62{left:62%}
+.l63{left:63%}
+.l64{left:64%}
+.l65{left:65%}
+.l66{left:66%}
+.l67{left:67%}
+.l68{left:68%}
+.l69{left:69%}
+.l70{left:70%}
+.l71{left:71%}
+.l72{left:72%}
+.l73{left:73%}
+.l74{left:74%}
+.l75{left:75%}
+.l76{left:76%}
+.l77{left:77%}
+.l78{left:78%}
+.l79{left:79%}
+.l80{left:80%}
+.l81{left:81%}
+.l82{left:82%}
+.l83{left:83%}
+.l84{left:84%}
+.l85{left:85%}
+.l86{left:86%}
+.l87{left:87%}
+.l88{left:88%}
+.l89{left:89%}
+.l90{left:90%}
+.l91{left:91%}
+.l92{left:92%}
+.l93{left:93%}
+.l94{left:94%}
+.l95{left:95%}
+.l96{left:96%}
+.l97{left:97%}
+.l98{left:98%}
+.l99{left:99%}
+.l100{left:100%}

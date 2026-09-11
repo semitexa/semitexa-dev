@@ -269,6 +269,80 @@ final class GeneratorForbiddenPatternRegressionTest extends TestCase
         }
     }
 
+    /**
+     * Every class a generated file imports has to exist.
+     *
+     * The forbidden-pattern list above is a deny-list: it catches the stale
+     * names somebody thought to write down. It did not catch four `use`
+     * statements pointing at classes that were never there —
+     * `Semitexa\Core\Attributes\AsResource` and two siblings under the
+     * pluralised namespace, and `Semitexa\Ssr\Http\Response\HtmlResponse`
+     * from before the SSR tree moved. `make:page`, `make:resource`,
+     * `make:service` and `make:contract` all produced code that fatals on
+     * first use, and nothing said so: a bad `use` is not a syntax error, so the
+     * file writes cleanly and only dies when a request reaches it.
+     *
+     * So this is the allow-list half — mechanical, and it needs nobody to
+     * predict which name will rot next.
+     *
+     * Imports inside the generated module's own namespace are skipped: those
+     * name the siblings the generator is creating in the same run, which by
+     * definition do not exist yet.
+     */
+    #[Test]
+    #[DataProvider('planBuilderOutputs')]
+    public function every_class_a_generated_file_imports_exists(string $command, array $contents): void
+    {
+        $imports = 0;
+        $resolved = 0;
+
+        foreach ($contents as $idx => $content) {
+            if (!str_starts_with(ltrim($content), '<?php')) {
+                continue; // twig, json, css, markdown — no imports to resolve
+            }
+
+            preg_match_all('/^use\s+([A-Za-z0-9_]+(?:\\\\[A-Za-z0-9_]+)*)\s*;/m', $content, $matches);
+
+            foreach ($matches[1] as $fqcn) {
+                $imports++;
+
+                // The siblings this same generator run is creating. They do
+                // not exist yet by definition, and never will under the
+                // fixture module name.
+                if (str_starts_with($fqcn, 'Semitexa\Modules\\') || str_starts_with($fqcn, 'App\Modules\\')) {
+                    continue;
+                }
+
+                $resolved++;
+
+                self::assertTrue(
+                    class_exists($fqcn) || interface_exists($fqcn) || trait_exists($fqcn) || enum_exists($fqcn),
+                    "Generator {$command} (file {$idx}) imports {$fqcn}, which does not exist. "
+                    . 'A generated file with a bad `use` writes cleanly and fatals on the first '
+                    . 'request that reaches it, so nothing between here and production reports it.',
+                );
+            }
+        }
+
+        // A generator whose files carry `use` lines must have had some of them
+        // read. Without this the whole test passes by matching nothing, which
+        // is how the four dead imports survived a suite that already rendered
+        // every one of these files.
+        $writesImports = false;
+        foreach ($contents as $content) {
+            if (str_contains($content, "\nuse ")) {
+                $writesImports = true;
+                break;
+            }
+        }
+
+        if ($writesImports) {
+            self::assertGreaterThan(0, $imports, "No import was extracted from {$command}, but its output has `use` lines — the extraction is broken, not the generator.");
+        }
+
+        self::assertTrue(true, 'a generator that imports only its own siblings is legitimately silent here');
+    }
+
     #[Test]
     public function payload_plan_builder_emits_exactly_one_access_attribute(): void
     {

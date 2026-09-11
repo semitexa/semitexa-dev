@@ -14,12 +14,22 @@ use Semitexa\Core\Attribute\AsService;
  * stages, dwelling at each for the share of time that stage took. Workers on
  * the left, the ticker on the right, sixty seconds of history underneath.
  *
- * Self-contained HTML from PHP, same discipline as the trace viewer: dev must
- * not depend on ssr, so no Twig, no asset pipeline, no external fonts. The
- * stylesheet and the script live as plain files under the package's
- * `resources/observatory/` (assets, not code — the module-structure validator
- * does not walk them) and are inlined here, so the page is one request and
- * works on a stack where nothing else does.
+ * HTML from PHP, same discipline as the trace viewer: dev must not depend on
+ * ssr, so no Twig, no asset pipeline, no external fonts. The stylesheet and the
+ * script live as plain files under the package's `resources/observatory/`
+ * (assets, not code — the module-structure validator does not walk them).
+ *
+ * They are LINKED, not inlined. Inlining made the page one request and was
+ * defended on the grounds that it works on a stack where nothing else does —
+ * but the panel is opened precisely where a consumer has conventions of its
+ * own, and under a Content-Security-Policy of the usual shape
+ * (`script-src 'self' 'nonce-…'`) the browser silently refuses an inline script
+ * with no nonce. The panel then paints its shell and stops: every tile «–», no
+ * worker, an EMPTY console, so it reads as broken rather than blocked. Served
+ * from {@see \Semitexa\Dev\Application\Handler\PayloadHandler\ObservatoryAssetHandler}
+ * they are covered by `'self'` and the page carries no inline anything — no
+ * script, no style block, and no `style=` attribute either, since a strict
+ * policy blocks those too.
  *
  * Transport is the journal followed as a delta stream (`/__observatory/feed
  * ?stream=1&after=<cursor>`) polled at 250 ms while anything moves, 1 s when
@@ -33,8 +43,7 @@ final class ObservatoryHtmlRenderer
 {
     public function render(): string
     {
-        $css = $this->asset('observatory.css');
-        $js = $this->asset('observatory.js');
+        $notice = $this->missingAssetNotice();
 
         return <<<HTML
 <!DOCTYPE html>
@@ -44,9 +53,10 @@ final class ObservatoryHtmlRenderer
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Observatory · Semitexa</title>
-<style>{$css}</style>
+<link rel="stylesheet" href="/__observatory/asset/observatory.css">
 </head>
 <body>
+{$notice}
 <div class="obs">
   <header class="head panel">
     <div class="brand"><span class="dot" id="led"></span><h1>Semitexa <span>Observatory</span></h1><span class="tr" id="transport" title="transport">…</span></div>
@@ -70,7 +80,6 @@ final class ObservatoryHtmlRenderer
       <button class="btn" id="b-full" type="button">⛶ <kbd>F</kbd></button>
       <a class="link" href="/__trace">history →</a>
     </div>
-    <div class="meta" id="meta" hidden></div>
   </header>
 
   <section class="workers panel">
@@ -102,7 +111,7 @@ final class ObservatoryHtmlRenderer
 
   <section class="river panel" id="river">
     <canvas id="river-canvas"></canvas>
-    <div class="legend"><span><i style="background:#5b9dff"></i>http</span><span><i style="background:#ffb454"></i>sse</span><span><i style="background:#c084fc"></i>scheduler</span><span><i style="background:#34d399"></i>queue</span><span><i style="background:#f472b6"></i>replay</span></div>
+    <div class="legend"><span><i class="k-http"></i>http</span><span><i class="k-sse"></i>sse</span><span><i class="k-scheduler"></i>scheduler</span><span><i class="k-queue"></i>queue</span><span><i class="k-replay"></i>replay</span></div>
     <div class="zoomctl">
       <button type="button" id="z-in" title="zoom in (+)">+</button>
       <button type="button" id="z-out" title="zoom out (−)">−</button>
@@ -123,7 +132,7 @@ final class ObservatoryHtmlRenderer
     <canvas id="tl-canvas"></canvas>
   </section>
 </div>
-<script>{$js}</script>
+<script src="/__observatory/asset/observatory.js"></script>
 </body>
 </html>
 HTML;
@@ -134,21 +143,32 @@ HTML;
      * blank page: the operator is looking at this to debug, and a debugger
      * that fails silently is the one thing it must not be.
      */
-    private function asset(string $name): string
+    /**
+     * A missing asset must SAY so.
+     *
+     * The panel has no other voice: a stylesheet that 404s leaves an unstyled
+     * page, and a script that 404s leaves the shell frozen at «–» — which is
+     * the same picture as being blocked by a policy, and the reason that bug
+     * took a consumer report to find. So the asset route answers 404 and this
+     * page carries a line that names what is missing, visible without the
+     * stylesheet because it brings its own.
+     */
+    private function missingAssetNotice(): string
     {
-        $path = self::assetDir() . '/' . $name;
-        $body = is_file($path) ? @file_get_contents($path) : false;
-        if ($body === false) {
-            $safe = htmlspecialchars($path, ENT_QUOTES);
-
-            return str_ends_with($name, '.css')
-                ? "body::before{content:'Observatory asset missing: {$safe}';color:#ff5f6d;font:14px monospace;padding:20px;display:block}"
-                : "console.error('Observatory asset missing: ' + " . json_encode($path) . ');';
+        $missing = [];
+        foreach (['observatory.css', 'observatory.js'] as $name) {
+            if (!is_file(self::assetDir() . '/' . $name)) {
+                $missing[] = $name;
+            }
         }
 
-        // A literal </script> in the script would end the tag early; the
-        // stylesheet gets the same treatment for symmetry.
-        return str_ireplace(['</script', '</style'], ['<\\/script', '<\\/style'], $body);
+        if ($missing === []) {
+            return '';
+        }
+
+        return '<p role="alert" class="asset-missing">Observatory asset missing: '
+            . htmlspecialchars(implode(', ', $missing), ENT_QUOTES)
+            . ' — expected under ' . htmlspecialchars(self::assetDir(), ENT_QUOTES) . '</p>';
     }
 
     public static function assetDir(): string

@@ -6,7 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Application\Service\Capability\CapabilityRegistry;
+use Semitexa\Dev\Application\Service\Capability\RuntimeCommandCatalog;
 use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
 use Semitexa\Dev\Application\Service\Generation\Support\CapabilityManifestFormatter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -30,7 +30,18 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $capabilities = CapabilityRegistry::all();
+        $application = $this->getApplication();
+
+        if ($application === null) {
+            // Only reachable if someone runs this command outside a console
+            // application. Saying so beats emitting an empty manifest that
+            // reads as "this installation has no commands".
+            $io->error('The command catalog is derived from the running console application, and there is none here.');
+
+            return self::FAILURE;
+        }
+
+        $capabilities = (new RuntimeCommandCatalog())->all($application);
 
         $manifest = new CapabilityManifest(
             artifact: 'semitexa.ai-capabilities/v1',
@@ -45,28 +56,41 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         }
 
         $io->title('Semitexa Dev — Available Commands');
+
+        // Grouped and compact. The list used to be eighteen hand-written
+        // entries and printing each in full was reasonable; it is a hundred and
+        // seventy-three derived ones now, and a wall of sections with empty
+        // «Use when:» lines is less readable than no list at all. Inputs and
+        // guidance are in --json, which is what an agent reads anyway.
+        $byKind = [];
         foreach ($capabilities as $cap) {
-            $io->section($cap->name);
-            $io->text($cap->summary);
-            $io->text("Kind: {$cap->kind}");
-            $io->text("Use when: {$cap->use_when}");
-            $io->text("Avoid when: {$cap->avoid_when}");
+            $byKind[$cap->kind][] = $cap;
+        }
+        ksort($byKind);
 
-            if ($cap->required_inputs) {
-                $io->text('Required inputs:');
-                foreach ($cap->required_inputs as $name => $meta) {
-                    $io->text("  --{$name} ({$meta['type']}): {$meta['description']}");
-                }
+        $guided = 0;
+        foreach ($byKind as $kind => $group) {
+            $io->section($kind . ' (' . count($group) . ')');
+            $rows = [];
+            foreach ($group as $cap) {
+                $guided += $cap->use_when !== '' ? 1 : 0;
+                $rows[] = [$cap->name, self::clip($cap->summary, 86)];
             }
-
-            if ($cap->optional_inputs) {
-                $io->text('Optional inputs:');
-                foreach ($cap->optional_inputs as $name => $meta) {
-                    $io->text("  --{$name} ({$meta['type']}): {$meta['description']}");
-                }
-            }
+            $io->table([], $rows);
         }
 
+        $io->text(sprintf(
+            '%d command(s); %d carry written guidance. `--json` adds inputs, outputs and when NOT to use each.',
+            count($capabilities),
+            $guided,
+        ));
+
         return self::SUCCESS;
+    }
+
+    /** A summary long enough to choose by, short enough to scan a hundred of. */
+    private static function clip(string $text, int $max): string
+    {
+        return mb_strlen($text) <= $max ? $text : mb_substr($text, 0, $max - 1) . '…';
     }
 }

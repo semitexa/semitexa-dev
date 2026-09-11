@@ -29,12 +29,12 @@ final class ResourcePlanBuilder
         $kebabName = $this->inflector->toKebab($params['name']);
 
         $namespace = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response";
-        $templatePath = $params['template'] ?? "@project-layouts-{$module}/{$kebabName}.html.twig";
+        $templatePath = $params['template'] ?? "@project-layouts-{$module}/pages/{$kebabName}.html.twig";
 
         $imports = [
-            'use Semitexa\\Core\\Attributes\\AsResource;',
+            'use Semitexa\\Core\\Attribute\\AsResource;',
             'use Semitexa\\Core\\Contract\\ResourceInterface;',
-            'use Semitexa\\Ssr\\Http\\Response\\HtmlResponse;',
+            'use Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse;',
         ];
 
         sort($imports);

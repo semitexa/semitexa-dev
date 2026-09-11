@@ -29,7 +29,6 @@ final class PackageTestCoverageRatchetTest extends TestCase
     private const UNTESTED = [
         'semitexa-demo' => 327,
         'semitexa-files' => 4,
-        'semitexa-mail' => 42,
         'semitexa-music' => 4,
         'semitexa-showcase-kit' => 4,
         'semitexa-theme-sky' => 1,
