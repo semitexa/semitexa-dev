@@ -14,7 +14,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'dev:graph:capabilities', description: 'List all available generator and introspection commands with inputs, outputs, and usage guidance')]
+#[AsCommand(name: 'dev:graph:capabilities', description: 'List the commands this build actually has; --json adds inputs, outputs and usage guidance')]
 final class DevGraphCapabilitiesCommand extends BaseCommand
 {
     public function __construct()

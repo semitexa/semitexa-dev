@@ -72,7 +72,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // deleting the explanation of a correctness guard to buy nine lines —
         // that is how the guard gets removed by the next reader who cannot see
         // what it is for.
-        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 709],
+        // 709 -> 718 on 2026-09-11, still 24 methods. Review pointed out that
+        // the guard reported a row that VANISHED mid-update and a write that
+        // FAILED with the same `false`, and all four writers turned both into a
+        // DeferredRenderingException — so a consumed request racing its own
+        // last slot made the renderer log a failed finalisation and abandon the
+        // rest. The three outcomes are now distinct and the nine lines are the
+        // sentence explaining which is which.
+        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 718],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
