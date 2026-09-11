@@ -1,0 +1,14 @@
+# Consumer projects have vendor/, not the framework authoring packages/ tree.
+includes:
+    - phpstan-ai-verify-rules.neon
+
+parameters:
+    level: 0
+    reportUnmatchedIgnoredErrors: false
+    bootstrapFiles:
+        - %currentWorkingDirectory%/vendor/autoload.php
+        - %currentWorkingDirectory%/vendor/semitexa/core/bootstrap/phpstan.php
+    ignoreErrors:
+        -
+            identifier: phpstanApi.runtimeReflection
+            path: %currentWorkingDirectory%/vendor/semitexa/core/src/PHPStan/Rules/*

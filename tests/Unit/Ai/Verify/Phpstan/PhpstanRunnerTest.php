@@ -107,17 +107,17 @@ class PhpstanRunnerTest extends TestCase
         $runner = $this->runnerWithFakeProcess(1, (string) $json);
         $result = $runner->run(['Foo.php']);
 
-        $this->assertSame(PhpstanRunResult::STATUS_FAIL, $result->status);
+        $this->assertSame(PhpstanRunResult::STATUS_ERROR, $result->status);
         $this->assertCount(1, $result->diagnostics);
         $this->assertSame('phpstan.error', $result->diagnostics[0]['identifier']);
     }
 
-    public function test_unparseable_output_is_reported_as_skipped(): void
+    public function test_unparseable_output_is_reported_as_error(): void
     {
         $runner = $this->runnerWithFakeProcess(0, "not JSON at all\nsome garbage\n");
         $result = $runner->run(['Foo.php']);
 
-        $this->assertSame(PhpstanRunResult::STATUS_SKIPPED, $result->status);
+        $this->assertSame(PhpstanRunResult::STATUS_ERROR, $result->status);
         $this->assertSame([], $result->diagnostics);
         $this->assertStringContainsString('not valid JSON', $result->rawSignal);
     }
@@ -145,7 +145,7 @@ class PhpstanRunnerTest extends TestCase
         $this->assertFalse($process->called, 'PHPStan must not be spawned for an empty file list');
     }
 
-    public function test_missing_phpstan_binary_yields_skipped_with_actionable_signal(): void
+    public function test_missing_phpstan_binary_yields_error_with_actionable_signal(): void
     {
         $runner = new PhpstanRunner(
             projectRoot: sys_get_temp_dir() . '/no-phpstan-here',
@@ -156,8 +156,41 @@ class PhpstanRunnerTest extends TestCase
         );
 
         $result = $runner->run(['Foo.php']);
-        $this->assertSame(PhpstanRunResult::STATUS_SKIPPED, $result->status);
+        $this->assertSame(PhpstanRunResult::STATUS_ERROR, $result->status);
         $this->assertStringContainsString('phpstan binary not found', $result->rawSignal);
+    }
+
+    public function testEmptyObjectsAndInconsistentPayloadsNeverPass(): void
+    {
+        foreach (['{}', '{"totals":{"errors":0,"file_errors":0},"files":{},"errors":{}}', '{"totals":{"errors":0,"file_errors":1},"files":{},"errors":[]}'] as $json) {
+            foreach ([0, 1, 2, 124] as $exit) {
+                // Empty JSON object and empty JSON array both decode to [];
+                // that is compatible for empty errors/files, but not totals.
+                $result = $this->runnerWithFakeProcess($exit, $json)->run(['Foo.php']);
+                if ($exit === 0 && str_contains($json, '"file_errors":0')) {
+                    self::assertSame(PhpstanRunResult::STATUS_PASS, $result->status);
+                } else {
+                    self::assertSame(PhpstanRunResult::STATUS_ERROR, $result->status, $json);
+                    self::assertNotSame(0, $result->exitCode);
+                }
+            }
+        }
+    }
+
+    public function testCleanPayloadWithNonzeroExitIsAnInfrastructureError(): void
+    {
+        $json = '{"totals":{"errors":0,"file_errors":0},"files":{},"errors":[]}';
+        foreach ([1, 2, 124, 137] as $exit) {
+            $result = $this->runnerWithFakeProcess($exit, $json)->run(['Foo.php']);
+            self::assertSame(PhpstanRunResult::STATUS_ERROR, $result->status);
+            self::assertSame($exit, $result->exitCode);
+        }
+    }
+
+    public function testMalformedDiagnosticCannotBeSilentlyDropped(): void
+    {
+        $json = '{"totals":{"errors":0,"file_errors":1},"files":{"Foo.php":{"errors":1,"messages":[null]}},"errors":[]}';
+        self::assertSame(PhpstanRunResult::STATUS_ERROR, $this->runnerWithFakeProcess(1, $json)->run(['Foo.php'])->status);
     }
 
     private function runnerWithFakeProcess(int $exit, string $output, string $projectRoot = '/var/www/html'): PhpstanRunner

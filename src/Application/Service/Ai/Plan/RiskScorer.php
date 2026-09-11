@@ -53,7 +53,7 @@ final class RiskScorer
 
         if ($moduleHint !== null && in_array($recipe->id, ['add_module'], true)) {
             $reasons[] = "creating new module {$moduleHint}";
-            $requiredSteps[] = 'register module in composer autoload + run composer dump-autoload';
+            $requiredSteps[] = 'keep the module under src/modules; discovery handles autoloading without per-module Composer entries';
         }
 
         if ($recipe->id === 'rename_symbol') {
@@ -77,7 +77,9 @@ final class RiskScorer
         $modules = [];
         foreach ($files as $f) {
             if (preg_match('#^src/modules/([^/]+)/#', $f, $m) === 1) {
-                $modules[$m[1]] = true;
+                $modules['module:' . $m[1]] = true;
+            } elseif (preg_match('#^packages/([^/]+)/#', $f, $m) === 1) {
+                $modules['package:' . $m[1]] = true;
             }
         }
         return array_keys($modules);

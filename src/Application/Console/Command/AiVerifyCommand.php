@@ -22,6 +22,7 @@ use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * Agent-facing verifier: takes a diff or file list, plans the precise lint /
@@ -119,7 +120,7 @@ final class AiVerifyCommand extends BaseCommand
         $results = $executor->execute($plan);
 
         $verdict = $this->verdict($results);
-        $exit = $verdict === VerificationResult::STATUS_FAIL ? self::FAILURE : self::SUCCESS;
+        $exit = in_array($verdict, [VerificationResult::STATUS_PASS, VerificationResult::STATUS_SKIPPED], true) ? self::SUCCESS : self::FAILURE;
 
         $impact = null;
         if ((bool) $input->getOption('impact')) {
@@ -128,12 +129,17 @@ final class AiVerifyCommand extends BaseCommand
 
         $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
         if ($jsonMode) {
+            $traceOutput = new BufferedOutput();
+            $this->maybeAppendToTrace($input, $traceOutput, $plan, $results, $verdict, $envelope);
+            $envelope['trace'] = array_map(
+                static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+                array_values(array_filter(explode("\n", trim($traceOutput->fetch())))),
+            );
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
         } else {
             $this->emitNdjson($output, $plan, $results, $verdict, $impact);
+            $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
         }
-
-        $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
 
         return $exit;
     }
@@ -152,13 +158,14 @@ final class AiVerifyCommand extends BaseCommand
     ): void {
         $counts = $this->countByStatus($results);
         $summary = sprintf(
-            'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d',
+            'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d incomplete=%d',
             $verdict,
             $plan->effectiveScope,
             count($plan->targets),
             $counts['pass'] ?? 0,
             $counts['fail'] ?? 0,
             $counts['skipped'] ?? 0,
+            $counts['incomplete'] ?? 0,
         );
         $this->traceAppender->appendIfActive($input, $output, TraceEventKind::VERIFY_RESULT, $summary, $envelope);
     }
@@ -327,7 +334,7 @@ final class AiVerifyCommand extends BaseCommand
     private function verdict(array $results): string
     {
         if ($results === []) {
-            return VerificationResult::STATUS_PASS;
+            return VerificationResult::STATUS_INCOMPLETE;
         }
         $hasFail = false;
         $allSkipped = true;
@@ -342,7 +349,24 @@ final class AiVerifyCommand extends BaseCommand
         if ($hasFail) {
             return VerificationResult::STATUS_FAIL;
         }
+        if (!$this->completed($results)) {
+            return VerificationResult::STATUS_INCOMPLETE;
+        }
         return $allSkipped ? VerificationResult::STATUS_SKIPPED : VerificationResult::STATUS_PASS;
+    }
+
+    /** @param list<VerificationResult> $results */
+    private function completed(array $results): bool
+    {
+        if ($results === []) {
+            return false;
+        }
+        foreach ($results as $result) {
+            if ($result->required && !$result->completed()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -415,6 +439,7 @@ final class AiVerifyCommand extends BaseCommand
             'results'         => array_map(fn($r) => $this->serializeResult($r), $results),
             'violations'      => $violations,
             'verdict'         => $verdict,
+            'completed'       => $this->completed($results),
             'counts'          => $this->countByStatus($results),
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
@@ -501,12 +526,12 @@ final class AiVerifyCommand extends BaseCommand
                 ['cmd' => 'ai:orient', 'args' => ['--json'], 'why' => 'pick up the next task'],
             ];
         }
-        if ($verdict === VerificationResult::STATUS_FAIL) {
+        if (in_array($verdict, [VerificationResult::STATUS_FAIL, VerificationResult::STATUS_INCOMPLETE], true)) {
             $failingFile = null;
             $hasStructureFailure = false;
             $hasDiFailure = false;
             foreach ($results as $r) {
-                if ($r->status === VerificationResult::STATUS_FAIL) {
+                if (in_array($r->status, [VerificationResult::STATUS_FAIL, VerificationResult::STATUS_INCOMPLETE], true)) {
                     if ($r->target->type === VerificationTarget::TYPE_MODULE_STRUCTURE) {
                         $hasStructureFailure = true;
                     }
@@ -536,13 +561,13 @@ final class AiVerifyCommand extends BaseCommand
                 ];
             }
             if ($failingFile !== null) {
-                $out[] = ['cmd' => 'ai:review-graph:impact', 'args' => [$failingFile, '--json'], 'why' => 'find callers affected by the failing file'];
+                $out[] = ['cmd' => 'ai:ask', 'args' => ['path', '--path=' . $failingFile, '--json'], 'why' => 'inspect the failing file before querying symbol impact'];
             }
             $out[] = ['cmd' => 'logs:app', 'args' => ['--grep=error', '--lines=200', '--level=ERROR', '--json'], 'why' => 'runtime errors that might explain the failure'];
             return $out;
         }
         return [
-            ['cmd' => 'ai:verify', 'args' => ['--scope=standard', '--json'], 'why' => 'no actionable verification ran — try standard scope'],
+            ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--scope=standard', '--json'], 'why' => 'no actionable verification ran — select files and try standard scope'],
         ];
     }
 
@@ -610,6 +635,7 @@ final class AiVerifyCommand extends BaseCommand
         $verdictLine = [
             'kind'    => 'verdict',
             'verdict' => $verdict,
+            'completed' => $this->completed($results),
             'counts'  => $this->countByStatus($results),
         ];
         if ($impact !== null) {
@@ -645,6 +671,8 @@ final class AiVerifyCommand extends BaseCommand
             'status'    => $result->status,
             'exit_code' => $result->exitCode,
             'signal'    => $result->signal,
+            'required'  => $result->required,
+            'completed' => $result->completed(),
         ];
         if ($result->diagnostics !== []) {
             $out['diagnostics_count'] = count($result->diagnostics);
@@ -658,7 +686,7 @@ final class AiVerifyCommand extends BaseCommand
      */
     private function countByStatus(array $results): array
     {
-        $counts = ['pass' => 0, 'fail' => 0, 'skipped' => 0];
+        $counts = ['pass' => 0, 'fail' => 0, 'skipped' => 0, 'incomplete' => 0];
         foreach ($results as $r) {
             $counts[$r->status] = ($counts[$r->status] ?? 0) + 1;
         }

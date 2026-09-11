@@ -17,6 +17,7 @@ final readonly class PhpstanRunResult
     public const STATUS_PASS    = 'pass';
     public const STATUS_FAIL    = 'fail';
     public const STATUS_SKIPPED = 'skipped';
+    public const STATUS_ERROR   = 'error';
 
     /**
      * @param list<array<string, mixed>> $diagnostics
@@ -25,5 +26,6 @@ final readonly class PhpstanRunResult
         public string $status,
         public array $diagnostics,
         public string $rawSignal,
+        public int $exitCode = 0,
     ) {}
 }

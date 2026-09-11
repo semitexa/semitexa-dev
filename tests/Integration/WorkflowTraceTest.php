@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Console\Command\AiContextCommand;
+use Semitexa\Dev\Application\Console\Command\AiPlanCommand;
 use Semitexa\Dev\Application\Console\Command\AiTaskCommand;
 use Semitexa\Dev\Application\Console\Command\AiTraceCommand;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
@@ -160,6 +161,47 @@ class WorkflowTraceTest extends TestCase
         );
     }
 
+    public function testContextAndPlanJsonPreserveRecordsAndTraceOutcomes(): void
+    {
+        $app = $this->buildApplication();
+        $this->runCommand($app, 'ai:trace', ['action' => 'start', '--id' => 'json-workflow']);
+        foreach (['ai:context', 'ai:plan'] as $name) {
+            $tester = $this->runCommand($app, $name, [
+                'recipe' => 'add_authenticated_json_route',
+                '--json' => true,
+                '--trace' => 'json-workflow',
+            ]);
+            self::assertSame(0, $tester->getStatusCode());
+            $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame('ok', $payload['status']);
+            self::assertSame('summary', $payload['records'][0]['kind']);
+            self::assertContains('trace_appended', array_column($payload['records'], 'kind'));
+            self::assertCount(1, explode("\n", trim($tester->getDisplay())));
+        }
+        self::assertCount(2, (new TraceStore())->read('json-workflow')->events);
+    }
+
+    public function testJsonErrorsAreOneEnvelopeAndRemainNonzero(): void
+    {
+        $app = $this->buildApplication();
+        foreach (['ai:context', 'ai:plan'] as $name) {
+            $tester = $this->runCommand($app, $name, ['recipe' => 'unknown-recipe', '--json' => true]);
+            self::assertSame(1, $tester->getStatusCode());
+            $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame('error', $payload['status']);
+            self::assertSame('error', $payload['records'][0]['kind']);
+        }
+    }
+
+    public function testPlanStillEmitsNdjsonByDefault(): void
+    {
+        $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['recipe' => 'refactor_existing_code']);
+        self::assertSame(0, $tester->getStatusCode());
+        $records = array_map(static fn(string $line) => json_decode($line, true, 512, JSON_THROW_ON_ERROR), explode("\n", trim($tester->getDisplay())));
+        self::assertSame('summary', $records[0]['kind']);
+        self::assertContains('step', array_column($records, 'kind'));
+    }
+
     private function buildApplication(): Application
     {
         $traceStore = new TraceStore();
@@ -180,6 +222,9 @@ class WorkflowTraceTest extends TestCase
         $contextCommand = new AiContextCommand();
         PropertyInjector::inject($contextCommand, $appenderContainer);
 
+        $planCommand = new AiPlanCommand();
+        PropertyInjector::inject($planCommand, $appenderContainer);
+
         $makeCommand = new MakeCommand();
         PropertyInjector::inject($makeCommand, $appenderContainer);
 
@@ -190,6 +235,7 @@ class WorkflowTraceTest extends TestCase
         $app->add($traceCommand);
         $app->add($taskCommand);
         $app->add($contextCommand);
+        $app->add($planCommand);
         $app->add($makeCommand);
         $app->add($verifyCommand);
 

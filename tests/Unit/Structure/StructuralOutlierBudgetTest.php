@@ -82,6 +82,19 @@ final class StructuralOutlierBudgetTest extends TestCase
         // method; the class is no more tangled than it was, just eight lines
         // longer for two things it previously got wrong.
         'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 779],
+        // Newly recorded on 2026-09-11 at 25/713, crossing the 700-line line
+        // from 684. The command now has to report a verdict that distinguishes
+        // "every required target ran" from "nothing objected", so it carries
+        // completed(), an incomplete count in the trace summary, and an exit
+        // code that fails on an incomplete run rather than only on a failing
+        // one. That is the point of the change, and it is the part that cost
+        // the lines.
+        //
+        // Recorded rather than split: the growth is one concern, not a second
+        // one moving in. If this file is split later it should be along the
+        // envelope/trace seam, which is a deliberate refactor and not something
+        // to do under the pressure of a budget number.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 713],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
@@ -92,7 +105,16 @@ final class StructuralOutlierBudgetTest extends TestCase
         // Recorded rather than trimmed: most of the growth is the comment saying
         // why the guard exists, and shrinking that to fit a budget would delete
         // the part a future reader needs to not remove the guard again.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 750],
+        // 22/750 -> 22/759 on 2026-09-11: the skipped/incomplete split. A target
+        // that was SUPPOSED to run and did not used to be recorded as skipped
+        // with exit 0, which reads as a pass — the same false green that once
+        // let five lints go unrun without anyone noticing. Every such result is
+        // now INCOMPLETE with exit 1, and only genuinely optional tooling (the
+        // docs commands, absent when semitexa/docs is not installed) keeps
+        // skipped. NO NEW METHOD: the count is still 22, so the class is no
+        // more tangled than it was, just nine lines longer for a distinction it
+        // previously could not make.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 759],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new
