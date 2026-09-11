@@ -59,6 +59,20 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 207],
         'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 759],
+        // Newly recorded on 2026-09-11, at 24/709: it crossed the 700-line
+        // threshold by nine lines, and every one of them is the guard that
+        // stops a partial write from RESURRECTING a deleted row. Table::set()
+        // creates a row on a key it does not have, all four writers here check
+        // and write as two steps, and no lock spans the two — so a remove()
+        // landing between them used to leave a fragment holding a slot in a
+        // fixed-size table forever.
+        //
+        // Recorded rather than trimmed to fit. The class is a genuine outlier
+        // and extracting the row lifecycle out of it is worth doing, but not by
+        // deleting the explanation of a correctness guard to buy nine lines —
+        // that is how the guard gets removed by the next reader who cannot see
+        // what it is for.
+        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 709],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer

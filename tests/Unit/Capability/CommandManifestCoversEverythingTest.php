@@ -79,13 +79,23 @@ final class CommandManifestCoversEverythingTest extends TestCase
         $cap = $this->manifest()['probe:thing'];
 
         self::assertArrayHasKey('subject', $cap->required_inputs, 'a required argument is required');
-        self::assertArrayHasKey('--name', $cap->required_inputs, 'an option that needs a value is required');
         self::assertSame('What to act on', $cap->required_inputs['subject']['description']);
+        self::assertSame(['subject'], array_keys($cap->required_inputs), 'an argument is the only thing that can be required');
 
         self::assertArrayHasKey('extra', $cap->optional_inputs);
         self::assertSame('fallback', $cap->optional_inputs['extra']['default'] ?? null);
         self::assertArrayHasKey('--json', $cap->optional_inputs);
         self::assertSame('flag', $cap->optional_inputs['--json']['type']);
+
+        // `VALUE_REQUIRED` says an option that IS supplied must carry a value.
+        // It does not say the option must be supplied — Symfony has no such
+        // concept — and reading it as one told a caller to pass `--name` to a
+        // command that runs perfectly without it, while giving it no way to
+        // tell that apart from an argument the command genuinely refuses to run
+        // without. The value requirement is recorded as what it is.
+        self::assertArrayHasKey('--name', $cap->optional_inputs, 'no option is ever a required input');
+        self::assertSame('required', $cap->optional_inputs['--name']['value'] ?? null);
+        self::assertArrayNotHasKey('value', $cap->optional_inputs['--json'], 'a flag takes no value to require');
 
         self::assertSame(['--name', '--json'], $cap->supports);
     }

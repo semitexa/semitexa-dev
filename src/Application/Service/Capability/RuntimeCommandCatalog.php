@@ -164,9 +164,22 @@ final class RuntimeCommandCatalog
                 'description' => $option->getDescription(),
             ];
 
+            // An option is NEVER a required input. Symfony has no such concept:
+            // `VALUE_REQUIRED` says that an option, IF SUPPLIED, must carry a
+            // value — it does not say the option must be supplied. Reading it
+            // as a requirement made the manifest wrong in both directions at
+            // once: `probe:thing` was reported as requiring `--name` when it
+            // does not, while `make:payload`, which genuinely refuses to run
+            // without module, name, path, method and response, had its
+            // `--graphql-field` listed beside them as though it were the same
+            // kind of obligation. A caller reading this to decide what to pass
+            // was being told to pass things that are optional and given no way
+            // to tell which ones actually matter.
+            //
+            // The value requirement is still worth recording, so it is recorded
+            // as what it is — a property of the option, not of the command.
             if ($option->isValueRequired()) {
-                $required['--' . $option->getName()] = $meta;
-                continue;
+                $meta['value'] = 'required';
             }
 
             $default = $option->getDefault();

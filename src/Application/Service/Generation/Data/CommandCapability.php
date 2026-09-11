@@ -13,7 +13,7 @@ final readonly class CommandCapability
      * @param string $use_when
      * @param string $avoid_when
      * @param array<string, array{type: string, description: string}> $required_inputs
-     * @param array<string, array{type: string, description: string, default?: mixed}> $optional_inputs
+     * @param array<string, array{type: string, description: string, value?: string, default?: mixed}> $optional_inputs
      * @param array<string, string> $outputs
      * @param list<string> $supports
      * @param list<string> $follow_up
