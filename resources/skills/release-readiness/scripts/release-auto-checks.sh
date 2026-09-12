@@ -354,7 +354,18 @@ run_playwright_smoke
 # PHP 8.4.25 with phpstan 2.2.13, and a newer analyser simply infers more. Seven
 # messages of apparent regression that no commit caused. Re-measure here, never
 # on the host.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-604}"
+#
+# 604 -> 538 on 2026-09-12, measured in the release container during the
+# Cavavera 2026.09.11.1941 preflight, which reported "538 above baseline — 604
+# was the ceiling; lower it." Sixty-six messages went away in one release: the
+# typed accessors on the GraphQL result, the narrowed container catch in the
+# Twig extension catalog, the three-state registry write, and the record types
+# that replaced hand-written array shapes each removed a cluster of them.
+#
+# Lowered deliberately rather than left: a ceiling that stays above the real
+# count is not a ratchet, it is sixty-six messages of room for the next
+# regression to hide in, and the gate would pass while the number climbed back.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-538}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
