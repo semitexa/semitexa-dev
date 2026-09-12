@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Builder\EventListenerPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -155,7 +156,7 @@ final class MakeEventListenerCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
@@ -179,7 +180,7 @@ final class MakeEventListenerCommand extends BaseCommand
                     'handle() must return void',
                 ],
             ]));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
@@ -189,6 +190,6 @@ final class MakeEventListenerCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
-        return self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 }

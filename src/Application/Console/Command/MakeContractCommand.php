@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Builder\ContractPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -117,11 +118,10 @@ final class MakeContractCommand extends BaseCommand
         $result = $writer->write($plan->files, (bool) $input->getOption('force'));
         $result = (new PostWriteLinter($this->getApplication()))->lintAfterWrite($result);
         $result = $result->withReplayArgs($replayArgs);
-        $hasConflicts = $result->conflicts !== [];
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return $hasConflicts ? self::FAILURE : self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
@@ -151,7 +151,7 @@ final class MakeContractCommand extends BaseCommand
                 ],
                 'suggested_next_prompt' => "Run: bin/semitexa contracts:list --json to verify the binding",
             ]));
-            return $hasConflicts ? self::FAILURE : self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
@@ -161,6 +161,6 @@ final class MakeContractCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
-        return $hasConflicts ? self::FAILURE : self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 }

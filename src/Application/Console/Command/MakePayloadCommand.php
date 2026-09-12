@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Builder\PayloadPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -155,7 +156,7 @@ final class MakePayloadCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
@@ -178,7 +179,7 @@ final class MakePayloadCommand extends BaseCommand
                 ],
                     'suggested_next_prompt' => "Now create the handler: bin/semitexa make:handler --module={$module} --name={$name} --payload={$name} --resource={$name} --write",
             ]));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
@@ -188,6 +189,6 @@ final class MakePayloadCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
-        return self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 }

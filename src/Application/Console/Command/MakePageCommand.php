@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -147,7 +148,7 @@ final class MakePageCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
@@ -185,7 +186,7 @@ final class MakePageCommand extends BaseCommand
                 'mechanisms' => $this->mechanismHints(),
                 'suggested_next_prompt' => "Open the handler at src/modules/{$module}/src/Application/Handler/PayloadHandler/{$inflector->toHandlerClass($name)}.php and implement the business logic.",
             ]));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
@@ -200,7 +201,7 @@ final class MakePageCommand extends BaseCommand
 
         $this->announceMechanisms($output);
 
-        return self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 
     /**

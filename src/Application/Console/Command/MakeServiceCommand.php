@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Builder\ServicePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -110,7 +111,7 @@ final class MakeServiceCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
@@ -133,7 +134,7 @@ final class MakeServiceCommand extends BaseCommand
                     'Service must be final class',
                 ],
             ]));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
@@ -143,6 +144,6 @@ final class MakeServiceCommand extends BaseCommand
             $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
         }
 
-        return self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 }
