@@ -84,6 +84,11 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
 
     public function begin(string $name, array $context = []): void
     {
+        // Cheap and idempotent: after the first call this is one static null
+        // check. Installed here because the tracer running at all is the
+        // precondition for any of it being answerable.
+        LogOriginAttribution::install();
+
         try {
             // The Observatory journal sees EVERY root process wherever the
             // journal is on (dev always, monitor mode on prod), marked or

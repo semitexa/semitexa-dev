@@ -31,6 +31,22 @@ final class PhaseSummary
     ];
 
     /**
+     * Statuses that mean the system understood the request and declined it.
+     *
+     * A refusal is not a failure, and the picture draws them differently: a
+     * refused request leaves the river where it was stopped, a crashed one is
+     * an error. Both arrive here as an exception — the pre-hydration gate has
+     * no other way to stop the pipeline — so the mapped status is what tells
+     * them apart.
+     *
+     * 404 is deliberately absent: "no such thing" is not "not for you", and
+     * every unrouted probe on a public site would flood the refusal ring.
+     * 400/415/422 are absent too — a request rejected for its SHAPE already
+     * arrives as a short_circuit and never reaches this branch.
+     */
+    private const REFUSAL_STATUSES = [401, 403, 429];
+
+    /**
      * @param  list<array<string, mixed>> $events
      * @return array<string, mixed>
      */
@@ -75,6 +91,13 @@ final class PhaseSummary
                     $outcome = 'exception';
                     $class = $event['context']['class'] ?? null;
                     $detail = is_string($class) ? self::short($class) : null;
+                } elseif ($name === 'request.exception.mapped' && $outcome === 'exception') {
+                    // Keep $detail: the class that refused is more use to a
+                    // reader than the word "refused", and the ring shows it.
+                    $status = $event['context']['status'] ?? null;
+                    if (is_int($status) && in_array($status, self::REFUSAL_STATUSES, true)) {
+                        $outcome = 'rejected';
+                    }
                 } elseif ($name === 'request.short_circuit' && $outcome === 'ok') {
                     $outcome = 'rejected';
                     $reason = $event['context']['reason'] ?? null;

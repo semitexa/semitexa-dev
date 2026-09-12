@@ -179,6 +179,20 @@ final class TraceBuffer
         $this->depths[$cid] = $this->depth($cid) + 1;
     }
 
+    /**
+     * The span this coroutine is innermost inside, or null if it is inside none.
+     *
+     * enter() appends and leave() unsets, and PHP arrays keep insertion order,
+     * so the last remaining key is the most recently opened span that has not
+     * closed — which is the block whatever is running now belongs to.
+     */
+    public function innermostOpen(int $cid): ?string
+    {
+        $open = $this->open[$cid] ?? [];
+
+        return $open === [] ? null : (string) array_key_last($open);
+    }
+
     /** @return float|null start time in nanoseconds, or null if this coroutine never opened the span */
     public function leave(int $cid, string $name): ?float
     {

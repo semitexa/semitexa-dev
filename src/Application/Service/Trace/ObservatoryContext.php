@@ -79,6 +79,21 @@ final class ObservatoryContext
         }
     }
 
+    /**
+     * The id of the process open on THIS coroutine, without disturbing it.
+     *
+     * Read-only on purpose: close() is the only other way to reach the record
+     * and it decrements the nesting count, so a reader that used it would end
+     * processes by looking at them.
+     */
+    public static function currentId(): ?string
+    {
+        $slot = self::get();
+        $id = $slot['record']['id'] ?? null;
+
+        return is_string($id) && $id !== '' ? $id : null;
+    }
+
     /** @return array{record: array<string, mixed>, open: int}|null */
     private static function get(): ?array
     {

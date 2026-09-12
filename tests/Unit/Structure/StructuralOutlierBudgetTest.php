@@ -131,7 +131,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 742],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 827],
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 720],
+        // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
+        // so an observer can tell a refusal from a crash — a gate declines by
+        // throwing, and until this the two arrived as the same event. One
+        // statement, one local to hold the response that was previously mapped
+        // inline, and the six lines saying why. No new method; the file is no
+        // more tangled than it was.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 728],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

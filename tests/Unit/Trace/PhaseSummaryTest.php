@@ -50,6 +50,62 @@ final class PhaseSummaryTest extends TestCase
     }
 
     #[Test]
+    public function an_exception_mapped_to_a_refusal_status_is_a_refusal_not_a_crash(): void
+    {
+        // A pre-hydration gate declines by throwing — it has no other way to
+        // stop the pipeline — so without the mapped status a 401 and a service
+        // blowing up are the same event to every reader of this summary.
+        $out = PhaseSummary::fold([
+            ['type' => 'mark', 'name' => 'request.exception', 'context' => ['class' => 'Semitexa\\Authorization\\Exception\\AuthenticationRequiredException']],
+            ['type' => 'mark', 'name' => 'request.exception.mapped', 'context' => ['status' => 401]],
+        ]);
+
+        self::assertSame('rejected', $out['outcome']);
+        self::assertSame(
+            'AuthenticationRequiredException',
+            $out['detail'],
+            'the class that refused is more use to a reader than the word "refused"',
+        );
+    }
+
+    #[Test]
+    public function an_exception_mapped_to_a_server_error_stays_a_crash(): void
+    {
+        $out = PhaseSummary::fold([
+            ['type' => 'mark', 'name' => 'request.exception', 'context' => ['class' => 'RuntimeException']],
+            ['type' => 'mark', 'name' => 'request.exception.mapped', 'context' => ['status' => 500]],
+        ]);
+
+        self::assertSame('exception', $out['outcome']);
+    }
+
+    #[Test]
+    public function a_missing_route_is_not_a_refusal(): void
+    {
+        // "No such thing" is not "not for you". Were 404 in the refusal set,
+        // every unrouted probe on a public site would flood the refusal ring.
+        $out = PhaseSummary::fold([
+            ['type' => 'mark', 'name' => 'request.exception', 'context' => ['class' => 'Semitexa\\Core\\Exception\\NotFoundException']],
+            ['type' => 'mark', 'name' => 'request.exception.mapped', 'context' => ['status' => 404]],
+        ]);
+
+        self::assertSame('exception', $out['outcome']);
+    }
+
+    #[Test]
+    public function a_mapped_status_cannot_promote_a_request_that_never_threw(): void
+    {
+        // The branch is guarded on outcome === 'exception'. A stray mark must
+        // not be able to turn a served request into a refused one.
+        $out = PhaseSummary::fold([
+            ['type' => 'end', 'name' => 'pipeline.handler', 'durationMs' => 1.0],
+            ['type' => 'mark', 'name' => 'request.exception.mapped', 'context' => ['status' => 403]],
+        ]);
+
+        self::assertSame('ok', $out['outcome']);
+    }
+
+    #[Test]
     public function a_validation_short_circuit_is_rejected_unless_something_threw(): void
     {
         $rejected = PhaseSummary::fold([
