@@ -16,6 +16,7 @@ final readonly class GenerationResult
      * @param list<string> $replay_args
      * @param array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null $verify
      * @param array{status: string, checks: array<string, array{status: string, summary: string}>}|null $lint
+     * @param list<array{path: string, reason: string, detail: string}>|null $errors what the writer refused or what the filesystem said, absent on a clean run
      */
     public function __construct(
         public string $command,
@@ -27,6 +28,7 @@ final readonly class GenerationResult
         public array $replay_args = [],
         public ?array $verify = null,
         public ?array $lint = null,
+        public ?array $errors = null,
     ) {}
 
     public function withLint(?array $lint): self
@@ -41,6 +43,7 @@ final readonly class GenerationResult
             replay_args: $this->replay_args,
             verify: $this->verify,
             lint: $lint,
+            errors: $this->errors,
         );
     }
 
@@ -59,6 +62,7 @@ final readonly class GenerationResult
             replay_args: $replayArgs,
             verify: $this->verify,
             lint: $this->lint,
+            errors: $this->errors,
         );
     }
 
@@ -78,6 +82,9 @@ final readonly class GenerationResult
         }
         if ($this->lint !== null) {
             $out['lint'] = $this->lint;
+        }
+        if ($this->errors !== null) {
+            $out['errors'] = $this->errors;
         }
         return $out;
     }
