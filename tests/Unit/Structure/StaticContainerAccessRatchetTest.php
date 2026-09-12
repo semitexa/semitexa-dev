@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Structure;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\AcceptedViolations;
 
 /**
  * Static container access, counted across the whole repository.
@@ -52,34 +53,30 @@ final class StaticContainerAccessRatchetTest extends TestCase
     ];
 
     /**
-     * MEASURED 2026-09-06: down from 16. The eleven that were removed were
-     * classes the container builds, so they could take the container as an
-     * injected typed property — the UiDispatchHandler pattern.
+     * The accepted sites, read from the ONE registry the `phpstan_di` gate also
+     * reads. They used to live here as a private const, and the gate knew
+     * nothing about them — so touching one of these files produced a red
+     * ai:verify on a violation this project had already settled, and the only
+     * ways out were to fix what was deliberately left alone or to learn to
+     * ignore a red gate. Two lists is also how sixteen of these accumulated
+     * unnoticed in the first place.
      *
-     * These five cannot, and each for a stated reason. None is a TODO with a
-     * date on it; they are the cases where property injection is not the
-     * answer, and the entry says why so the next reader does not re-derive it.
+     * MEASURED 2026-09-06: down from 16 to five. The eleven that went were
+     * classes the container builds, so they could take it as an injected
+     * property — the UiDispatchHandler pattern.
+     *
+     * @return array<string, int>
      */
-    private const KNOWN = [
-        // Builds a NEW request-scoped container rather than reading the
-        // current one. Nothing to inject: the container it wants does not
-        // exist yet. Same tier as ReplayRunner, which the rule blesses by name.
-        'packages/semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => 1,
-
-        // Constructed directly, not by the container (they declare their own
-        // constructors), so an injected property is never filled. Fixing these
-        // means changing who builds them, which is not a one-step change.
-        'packages/semitexa-ledger/src/Application/Service/CommandProcessor.php' => 1,
-        'packages/semitexa-ledger/src/Application/Service/LedgerReplayer.php' => 1,
-        'packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php' => 1,
-        'packages/semitexa-graphql/src/Application/Service/Runtime/ContainerHandlerInvoker.php' => 2,
-    ];
+    private static function known(): array
+    {
+        return AcceptedViolations::countsForRule('semitexa.staticContainerAccess');
+    }
 
     #[Test]
     public function no_production_class_reaches_the_container_statically_beyond_the_known_five(): void
     {
         $found = $this->staticAccessSites();
-        $known = self::KNOWN;
+        $known = self::known();
         ksort($known);
 
         self::assertSame(
@@ -89,7 +86,7 @@ final class StaticContainerAccessRatchetTest extends TestCase
             . "A NEW entry: inject the container as a typed property instead — see UiDispatchHandler,\n"
             . "  #[InjectAsReadonly] protected ContainerInterface \$container;\n"
             . "  (or SemitexaContainer when you need resolve(), which PSR-11 cannot express).\n"
-            . "A MISSING entry: good — delete it from KNOWN.",
+            . "A MISSING entry: good — delete it from AcceptedViolations.",
         );
     }
 
@@ -108,7 +105,7 @@ final class StaticContainerAccessRatchetTest extends TestCase
         // counted. If the matcher went blind, these would vanish too.
         $blessed = 0;
         foreach ($files as $path => $source) {
-            if (preg_match(self::pattern(), $source) === 1 && !isset(self::KNOWN[$path])) {
+            if (preg_match(self::pattern(), $source) === 1 && !isset(self::known()[$path])) {
                 $blessed++;
             }
         }

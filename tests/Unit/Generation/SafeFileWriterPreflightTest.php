@@ -238,6 +238,27 @@ final class SafeFileWriterPreflightTest extends TestCase
     }
 
     #[Test]
+    public function a_project_root_reached_through_a_symlink_still_accepts_writes(): void
+    {
+        // A consumer install is often reached through a symlinked path, and the
+        // confinement check resolves BOTH sides — otherwise the root would
+        // never prefix-match its own files and every generation would be
+        // refused as an escape.
+        $link = $this->root . '-via-link';
+        symlink($this->root, $link);
+
+        try {
+            $writer = new SafeFileWriter($link, 'make:thing');
+            $result = $writer->write([$this->file('src/Thing.php', '<?php // ok')]);
+
+            self::assertSame('success', $result->status, 'a symlinked project root is not an escape');
+            self::assertFileExists($this->root . '/src/Thing.php');
+        } finally {
+            @unlink($link);
+        }
+    }
+
+    #[Test]
     public function an_ordinary_nested_generation_still_works(): void
     {
         $writer = new SafeFileWriter($this->root, 'make:thing');

@@ -104,25 +104,78 @@ final class PhpstanRunner
             return $this->error('phpstan analysis incomplete or exit/result mismatch (exit ' . $result['exit'] . ')', $result['exit'], $diagnostics);
         }
 
-        $status = $diagnostics === []
+        // Split AFTER the exit/diagnostic cross-check above: that check is
+        // about whether PHPStan itself behaved, and must see what it actually
+        // reported.
+        [$unresolved, $accepted] = $this->partitionAccepted($diagnostics);
+
+        $status = $unresolved === []
             ? PhpstanRunResult::STATUS_PASS
             : PhpstanRunResult::STATUS_FAIL;
 
-        $signal = $diagnostics === []
+        $signal = $unresolved === []
             ? 'phpstan_di → 0 violations'
             : sprintf(
                 'phpstan_di → %d violation(s); first: %s %s',
-                count($diagnostics),
-                $diagnostics[0]['identifier'] ?? 'phpstan.error',
-                $diagnostics[0]['path'] ?? '?',
+                count($unresolved),
+                $unresolved[0]['identifier'] ?? 'phpstan.error',
+                $unresolved[0]['path'] ?? '?',
             );
+
+        if ($accepted !== []) {
+            // Named, never hidden. The point of the registry is that a reader
+            // learns both that the rule fired and that somebody already decided
+            // about it — the opposite of a baseline.
+            $signal .= sprintf(' (%d accepted: %s)', count($accepted), $accepted[0]['path'] ?? '?');
+        }
 
         return new PhpstanRunResult(
             status: $status,
-            diagnostics: $diagnostics,
+            diagnostics: array_merge($unresolved, $accepted),
             rawSignal: $signal,
             exitCode: $result['exit'],
         );
+    }
+
+    /**
+     * Separate the violations this project has already decided about from the
+     * ones it has not.
+     *
+     * An accepted diagnostic keeps everything it had and gains the decision:
+     * severity drops to `accepted` and the reason travels with it, so the
+     * envelope can say "the rule fired here, and here is why that is allowed"
+     * instead of either failing or going quiet.
+     *
+     * The allowance is counted. Accepting one occurrence in a file does not
+     * accept a second that shows up later — the extra ones stay unresolved.
+     *
+     * @param list<array<string, mixed>> $diagnostics
+     * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>} [unresolved, accepted]
+     */
+    private function partitionAccepted(array $diagnostics): array
+    {
+        $unresolved = [];
+        $accepted = [];
+        $used = [];
+
+        foreach ($diagnostics as $diagnostic) {
+            $path = (string) ($diagnostic['path'] ?? '');
+            $rule = (string) ($diagnostic['identifier'] ?? '');
+            $key = $path . "\0" . $rule;
+            $allowance = AcceptedViolations::allowanceFor($path, $rule);
+
+            if ($allowance === 0 || ($used[$key] ?? 0) >= $allowance) {
+                $unresolved[] = $diagnostic;
+                continue;
+            }
+
+            $used[$key] = ($used[$key] ?? 0) + 1;
+            $diagnostic['severity'] = 'accepted';
+            $diagnostic['accepted_reason'] = AcceptedViolations::reasonFor($path, $rule);
+            $accepted[] = $diagnostic;
+        }
+
+        return [$unresolved, $accepted];
     }
 
     /** @param list<array<string, mixed>> $diagnostics */
