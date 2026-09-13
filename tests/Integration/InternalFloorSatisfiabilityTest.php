@@ -57,7 +57,18 @@ final class InternalFloorSatisfiabilityTest extends TestCase
 
         foreach ($classesAtTag as $relative) {
             @mkdir($dir . '/src/' . dirname($relative), 0777, true);
-            file_put_contents($dir . '/src/' . $relative, "<?php\n");
+            // A REAL declaration, not an empty file. The gate asks what a
+            // revision DECLARES, not which paths exist — a file that is there
+            // but declares nothing is exactly the case where composer loads it
+            // and still raises `Class not found`.
+            $namespace = 'Semitexa\\Core';
+            if (dirname($relative) !== '.') {
+                $namespace .= '\\' . str_replace('/', '\\', dirname($relative));
+            }
+            file_put_contents(
+                $dir . '/src/' . $relative,
+                "<?php\n\nnamespace {$namespace};\n\nclass " . basename($relative, '.php') . " {}\n",
+            );
         }
 
         $q = escapeshellarg($dir);
@@ -354,7 +365,10 @@ final class InternalFloorSatisfiabilityTest extends TestCase
             'name' => 'semitexa/core',
             'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'lib/']],
         ]));
-        file_put_contents($dir . '/lib/Support/Row.php', "<?php\n");
+        file_put_contents(
+            $dir . '/lib/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass Row {}\n",
+        );
 
         $q = escapeshellarg($dir);
         exec("git -C {$q} init -q 2>&1");
@@ -495,7 +509,10 @@ final class InternalFloorSatisfiabilityTest extends TestCase
             'autoload' => ['psr-4' => ['Semitexa\\Core\\' => ['src/', 'lib/']]],
         ]));
         // Present in the SECOND directory only — the candidate list must reach it.
-        file_put_contents($dir . '/lib/Support/Row.php', "<?php\n");
+        file_put_contents(
+            $dir . '/lib/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass Row {}\n",
+        );
 
         $q = escapeshellarg($dir);
         exec("git -C {$q} init -q 2>&1");
@@ -522,7 +539,10 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         mkdir($dir . '/src/Support', 0777, true);
         // No autoload block at the tag at all.
         file_put_contents($dir . '/composer.json', (string) json_encode(['name' => 'semitexa/core']));
-        file_put_contents($dir . '/src/Support/Row.php', "<?php\n");
+        file_put_contents(
+            $dir . '/src/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass Row {}\n",
+        );
 
         $q = escapeshellarg($dir);
         exec("git -C {$q} init -q 2>&1");
@@ -729,17 +749,16 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         $result = $this->gate(['RELEASE_VERSION' => '2026.09.13.1900']);
 
         self::assertSame(1, $result['exit'], $result['output']);
-        self::assertStringContainsString('not in the tree that is about to become it', $result['output']);
+        self::assertStringContainsString('does not declare it', $result['output']);
     }
 
     /**
      * LONGEST PREFIX WINS, as composer resolves it.
      *
-     * Taking the first match in declaration order meant a generic
-     * `Semitexa\Core\` declared before `Semitexa\Core\Special\` mapped a
-     * Special class through the generic directory — a path composer would never
-     * load — and the floor was approved on the strength of a file that is not
-     * the file.
+     * The verdict comes from what the revision DECLARES, so the prefix no
+     * longer decides pass or fail — but it still decides the path the failure
+     * NAMES, and a message pointing at a file composer would never load sends
+     * whoever reads it to the wrong place.
      */
     #[Test]
     public function the_longest_matching_psr4_prefix_decides_the_path(): void
@@ -754,9 +773,11 @@ final class InternalFloorSatisfiabilityTest extends TestCase
                 'Semitexa\\Core\\Special\\' => 'special/',
             ]],
         ]));
-        // Present where the GENERIC prefix would look, absent where the
-        // specific one — which is the one composer uses.
-        file_put_contents($dir . '/src/Special/Row.php', "<?php\n");
+        // Declared nowhere; only the two mapped directories exist.
+        file_put_contents(
+            $dir . '/src/Other.php',
+            "<?php\n\nnamespace Semitexa\\Core;\n\nclass Other {}\n",
+        );
 
         $q = escapeshellarg($dir);
         exec("git -C {$q} init -q 2>&1");
@@ -771,7 +792,12 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         $result = $this->gate();
 
         self::assertSame(1, $result['exit'], $result['output']);
-        self::assertStringContainsString('special/Row.php', $result['output'], 'the specific prefix names the path');
+        self::assertStringContainsString(
+            'special/Row.php',
+            $result['output'],
+            'the longest matching prefix names the path, as composer would resolve it',
+        );
+        self::assertStringNotContainsString('src/Special/Row.php', $result['output']);
     }
 
     /**
@@ -795,6 +821,94 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         ]));
         file_put_contents(
             $dir . '/src/Application/Reader.php',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Row;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /**
+     * A FILE THAT EXISTS BUT DECLARES NOTHING is the case a path check cannot
+     * see. Composer includes it and still raises `Class not found`, so the gate
+     * would have approved the exact failure it exists to prevent.
+     */
+    #[Test]
+    public function a_path_that_exists_without_the_class_is_not_enough(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Support', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+        // Right path, wrong contents — the class arrives in a later release.
+        file_put_contents(
+            $dir . '/src/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass SomethingElse {}\n",
+        );
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('does not declare it', $result['output']);
+    }
+
+    /**
+     * Two bracketed namespace blocks in one file may import different classes
+     * under the same local name. Keyed only by that name, the later import
+     * overwrote the earlier and the first went unchecked.
+     */
+    #[Test]
+    public function two_blocks_importing_the_same_local_name_are_both_checked(): void
+    {
+        $this->provider('2026.09.13.1330', ['Existing/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace A {\n"
+            . "    use Semitexa\\Core\\Missing\\Row;\n\n    class One {}\n}\n\n"
+            . "namespace B {\n"
+            . "    use Semitexa\\Core\\Existing\\Row;\n\n    class Two {}\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Missing\\Row', $result['output']);
+    }
+
+    /**
+     * Production code a package autoloads from somewhere other than src/ is
+     * still production code. Hardcoding the scan root meant such a file could
+     * use a class absent from the promised release unnoticed.
+     */
+    #[Test]
+    public function a_consumer_source_root_outside_src_is_scanned(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/lib/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4', 'semitexa/core' => '>=2026.09.13.0749 || dev-master'],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => 'lib/']],
+        ]));
+        file_put_contents(
+            $dir . '/lib/Application/Reader.php',
             "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
             . "use Semitexa\\Core\\Support\\Row;\n\nfinal class Reader {}\n",
         );

@@ -198,6 +198,7 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 $target,
                 $promise['version'],
                 $promise['kind'],
+                $package['roots'],
             ));
         }
 
@@ -234,6 +235,7 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 $target,
                 $latest,
                 'wildcard',
+                $package['roots'],
             ));
         }
     }
@@ -255,6 +257,7 @@ function verifyAgainstTag(
     array $target,
     string $version,
     string $kind,
+    array $consumerRoots = ['src'],
 ): array {
     $problems = [];
 
@@ -277,7 +280,7 @@ function verifyAgainstTag(
         $tree = workingTree($target['dir']);
         $psr4 = $target['psr4'];
         if ($tree !== null && $psr4 !== []) {
-            return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, 'planned', $tree, $psr4);
+            return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, 'planned', $tree, $psr4, $consumerRoots);
         }
         $tree = null;
     }
@@ -316,7 +319,7 @@ function verifyAgainstTag(
         )];
     }
 
-    return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, $kind, $tree, $psr4);
+    return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, $kind, $tree, $psr4, $consumerRoots);
 }
 
 /**
@@ -336,89 +339,73 @@ function verifyAgainstTree(
     string $kind,
     array $tree,
     array $psr4,
+    array $consumerRoots = ['src'],
 ): array {
     $problems = [];
+    $declared = declaredClasses($target['dir'], $kind === 'planned' ? null : $version, $psr4);
 
-    foreach (importsFrom($packageDir, $psr4) as $class => $candidatePaths) {
-        foreach ($candidatePaths as $candidate) {
-            if (in_array($candidate, $tree, true)) {
-                continue 2;
-            }
-        }
-        if ($kind === 'planned') {
-            if (classDeclaredInTree($target['dir'], $class, $psr4)) {
-                continue;
-            }
-
-            $problems[] = sprintf(
-                '%s uses %s and floors %s at %s, the release being cut, but %s is not in the tree '
-                . 'that is about to become it',
-                $name,
-                $class,
-                $dependency,
-                $version,
-                $candidatePaths[0] ?? '(unmapped)',
-            );
+    foreach (importsFrom($packageDir, $psr4, $consumerRoots) as $class => $candidatePaths) {
+        if (isset($declared[$class])) {
             continue;
         }
 
-        if (classDeclaredAtTag($target['dir'], $version, $class, $psr4)) {
-            continue;
-        }
+        $where = $candidatePaths[0] ?? '(unmapped)';
 
-        $problems[] = $kind === 'wildcard'
-            ? sprintf(
-                '%s uses %s but requires %s at "*", and NO released %s contains %s '
-                . '(newest is %s) — floor it at the release that ships the class',
+        $problems[] = match ($kind) {
+            'wildcard' => sprintf(
+                '%s uses %s but requires %s at "*", and NO released %s declares it '
+                . '(newest is %s; expected %s) — floor it at the release that ships the class',
                 $name,
                 $class,
                 $dependency,
                 $dependency,
-                $candidatePaths[0] ?? '(unmapped)',
                 $version,
-            )
-            : sprintf(
-                '%s uses %s but %s %s at %s, where %s does not exist',
+                $where,
+            ),
+            'planned' => sprintf(
+                '%s uses %s and floors %s at %s, the release being cut, but the tree that is about '
+                . 'to become it does not declare it (expected %s)',
+                $name,
+                $class,
+                $dependency,
+                $version,
+                $where,
+            ),
+            default => sprintf(
+                '%s uses %s but %s %s at %s, which does not declare it (expected %s)',
                 $name,
                 $class,
                 $kind === 'pin' ? 'pins' : 'floors',
                 $dependency,
                 $version,
-                $candidatePaths[0] ?? '(unmapped)',
-            );
+                $where,
+            ),
+        };
     }
 
     return $problems;
 }
 
 /**
- * Whether a class is DECLARED anywhere in a package at a tag, regardless of
- * which file holds it.
+ * EVERY class a package declares at a revision, as fully qualified names.
  *
- * The path check above is a proxy: PSR-4 says a class lives in the file its
- * name maps to, and it almost always does. `Semitexa\Core\Tenant\Layer\ThemeValue`
- * is the exception that proves the proxy needs a second opinion — it is a
- * second class declared inside ThemeLayer.php, so no ThemeValue.php exists in
- * any release, yet the class resolves fine through the classmap. Reporting it
- * would fail every release over something that has worked for months, and a
- * gate that cries wolf gets switched off.
+ * The gate used to ask "does the PSR-4 path exist in the tree", which is a
+ * proxy, and each way the proxy was wrong needed its own patch: a class
+ * declared in a sibling file (Semitexa\Core\Tenant\Layer\ThemeValue lives
+ * inside ThemeLayer.php, so no ThemeValue.php exists in any release), a
+ * same-named class in an unrelated namespace answering for the real one, and a
+ * file that exists at that revision but does not yet declare the class it
+ * later would. Composer loads the file and still raises `Class not found`.
  *
- * Only ever called on a MISS, so the cost is one grep per finding rather than
- * one per import.
+ * Asking what is DECLARED answers all three at once, and costs one `git grep`
+ * per (package, revision) rather than one lookup per import.
+ *
+ * @param array<string, list<string>> $psr4
+ * @param string|null $tag null reads the working tree — the release being cut
+ * @return array<string, true> FQCN => true
  */
-function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4): bool
+function declaredClasses(string $dir, ?string $tag, array $psr4): array
 {
-    $short = $fqcn;
-    $namespace = '';
-    $lastSeparator = strrpos($short, '\\');
-    if ($lastSeparator !== false) {
-        $namespace = substr($fqcn, 0, $lastSeparator);
-        $short = substr($short, $lastSeparator + 1);
-    }
-    if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
-        return false;
-    }
-
     $paths = [];
     foreach ($psr4 as $dirs) {
         foreach ($dirs as $sourceDir) {
@@ -427,94 +414,55 @@ function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4)
     }
 
     $command = sprintf(
-        'git -C %s grep -lE %s %s%s 2>/dev/null',
+        'git -C %s grep -nE %s %s--%s 2>/dev/null',
         escapeshellarg($dir),
-        escapeshellarg('^[a-z ]*(class|interface|trait|enum) ' . $short . '\b'),
-        escapeshellarg($tag),
-        $paths === [] ? '' : ' -- ' . implode(' ', $paths),
+        escapeshellarg('^ *(namespace |(final |abstract |readonly |final readonly )*(class|interface|trait|enum) )'),
+        $tag === null ? '' : escapeshellarg($tag) . ' ',
+        $paths === [] ? '' : ' ' . implode(' ', $paths),
     );
 
     exec($command, $lines, $code);
-    if ($code !== 0 || $lines === []) {
-        return false;
+    if ($code !== 0) {
+        return [];
     }
 
-    // THE SHORT NAME IS NOT THE CLASS. `Semitexa\Core\Newer\Row` is not
-    // satisfied by a `Row` sitting in `Semitexa\Core\Other` — accepting that
-    // would approve a floor that still produces `Class not found`, which is the
-    // one thing this whole check exists to prevent. The declaring file's own
-    // namespace has to agree.
+    $declared = [];
+    $namespaceByFile = [];
+
     foreach ($lines as $line) {
-        // `git grep -l <tag> -- paths` prints `<tag>:<path>`.
-        $path = str_contains($line, ':') ? substr($line, strpos($line, ':') + 1) : $line;
+        // `git grep -n` prints `<rev>:<path>:<line>:<text>`, or `<path>:<line>:<text>`
+        // without a revision. Split from the LEFT by the known number of fields
+        // so a colon inside the text cannot confuse it.
+        $parts = explode(':', $line, $tag === null ? 3 : 4);
+        if (count($parts) < ($tag === null ? 3 : 4)) {
+            continue;
+        }
+        $path = $tag === null ? $parts[0] : $parts[1];
+        $text = trim($tag === null ? $parts[2] : $parts[3]);
 
-        $show = sprintf(
-            'git -C %s show %s 2>/dev/null',
-            escapeshellarg($dir),
-            escapeshellarg($tag . ':' . $path),
-        );
-        $contents = [];
-        exec($show, $contents, $showCode);
-        if ($showCode !== 0) {
+        // `\\\\` and not `\\`: PHP turns '\\' into a single backslash, which
+        // then escapes the `]` and leaves an unterminated character class —
+        // preg_match warns and returns false, so EVERY namespace line is
+        // skipped and every class is recorded unqualified. Silent, and it
+        // makes the whole index useless.
+        if (preg_match('/^namespace\s+([A-Za-z0-9_\\\\]+)\s*[;{]/', $text, $m) === 1) {
+            $namespaceByFile[$path] = trim($m[1], '\\');
             continue;
         }
 
-        if (declaresClassInNamespace(implode("\n", $contents), $namespace, $short)) {
-            return true;
+        if (preg_match(
+            '/^(?:final\s+|abstract\s+|readonly\s+)*(?:class|interface|trait|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/',
+            $text,
+            $m,
+        ) !== 1) {
+            continue;
         }
+
+        $namespace = $namespaceByFile[$path] ?? '';
+        $declared[$namespace === '' ? $m[1] : $namespace . '\\' . $m[1]] = true;
     }
 
-    return false;
-}
-
-/**
- * Whether a file declares exactly `$namespace\$short`.
- *
- * Tokenized for the same reason the import scan is: a `namespace` or `class`
- * word inside a comment or a string must not answer this question.
- */
-function declaresClassInNamespace(string $contents, string $namespace, string $short): bool
-{
-    $tokens = PhpToken::tokenize($contents);
-    $current = '';
-
-    for ($i = 0, $n = count($tokens); $i < $n; $i++) {
-        $token = $tokens[$i];
-
-        if ($token->is(T_NAMESPACE)) {
-            $current = '';
-            for ($j = $i + 1; $j < $n; $j++) {
-                $text = $tokens[$j]->text;
-                if ($text === ';' || $text === '{') {
-                    break;
-                }
-                if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
-                    continue;
-                }
-                $current .= $text;
-            }
-            $current = trim($current, '\\');
-            continue;
-        }
-
-        if (!$token->is([T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM])) {
-            continue;
-        }
-
-        // The next meaningful token is the declared name — unless this is an
-        // anonymous class or a `::class` constant, neither of which declares one.
-        for ($j = $i + 1; $j < $n; $j++) {
-            if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
-                continue;
-            }
-            if ($tokens[$j]->is(T_STRING) && $tokens[$j]->text === $short && $current === $namespace) {
-                return true;
-            }
-            break;
-        }
-    }
-
-    return false;
+    return $declared;
 }
 
 /**
@@ -651,9 +599,25 @@ function indexPackages(string $packagesDir): array
             }
         }
 
+        $ownPsr4 = normalizePsr4($json['autoload']['psr-4'] ?? null) ?? [];
+
+        // The package's OWN source roots, from its autoload block. Hardcoding
+        // `src` missed production code a package autoloads from anywhere else,
+        // and such code could use a sibling class absent from the promised
+        // release while the gate reported success.
+        $roots = [];
+        foreach ($ownPsr4 as $dirs) {
+            foreach ($dirs as $dir) {
+                if ($dir !== '') {
+                    $roots[] = $dir;
+                }
+            }
+        }
+
         $packages[$json['name']] = [
             'dir' => dirname($composerPath),
-            'psr4' => normalizePsr4($json['autoload']['psr-4'] ?? null) ?? [],
+            'psr4' => $ownPsr4,
+            'roots' => $roots === [] ? ['src'] : array_values(array_unique($roots)),
             'promises' => $promises,
             'wildcards' => $wildcards,
         ];
@@ -749,13 +713,15 @@ function psr4AtTag(string $dir, string $tag): ?array
  * @param array<string, list<string>> $psr4 namespace prefix => source directories
  * @return array<string, list<string>> FQCN => candidate paths in the target package
  */
-function importsFrom(string $packageDir, array $psr4): array
+function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src']): array
 {
     $found = [];
-    $sourceDir = $packageDir . '/src';
-    if (!is_dir($sourceDir)) {
-        return $found;
-    }
+
+    foreach (array_unique($scanRoots) as $root) {
+        $sourceDir = $packageDir . '/' . $root;
+        if (!is_dir($sourceDir)) {
+            continue;
+        }
 
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($sourceDir));
     foreach ($files as $file) {
@@ -788,6 +754,7 @@ function importsFrom(string $packageDir, array $psr4): array
             }
         }
     }
+    }
 
     return $found;
 }
@@ -807,6 +774,7 @@ function importsFrom(string $packageDir, array $psr4): array
 function usedClasses(string $contents): array
 {
     $imports = importedClasses($contents);
+    $aliases = $imports['aliases'];
     $classes = [];
     $tokens = PhpToken::tokenize($contents);
     $usedAsPrefix = [];
@@ -821,9 +789,9 @@ function usedClasses(string $contents): array
             // file actually reaches is the resolved one.
             $segments = explode('\\', $token->text);
             $head = array_shift($segments);
-            if (isset($imports[$head]) && $segments !== []) {
-                $usedAsPrefix[$head] = true;
-                $classes[$imports[$head] . '\\' . implode('\\', $segments)] = true;
+            if (isset($aliases[$head]) && $segments !== []) {
+                $usedAsPrefix[$aliases[$head]] = true;
+                $classes[$aliases[$head] . '\\' . implode('\\', $segments)] = true;
             }
             continue;
         }
@@ -853,8 +821,8 @@ function usedClasses(string $contents): array
         $classes[$name] = true;
     }
 
-    foreach ($imports as $shortName => $class) {
-        if (!isset($usedAsPrefix[$shortName])) {
+    foreach ($imports['classes'] as $class) {
+        if (!isset($usedAsPrefix[$class])) {
             $classes[$class] = true;
         }
     }
@@ -913,12 +881,13 @@ function precededByNew(array $tokens, int $from): bool
  * `use function` and `use const` are skipped, and so are trait `use` statements
  * inside a class body: only namespace-level imports name a class file.
  *
- * @return array<string, string> local name (alias or short name) => FQCN
+ * @return array{classes: list<string>, aliases: array<string, string>}
  */
 function importedClasses(string $contents): array
 {
     $tokens = PhpToken::tokenize($contents);
-    $imports = [];
+    $classes = [];
+    $aliases = [];
     $depth = 0;
     $namespaceBraceDepths = [];
     $inNamespaceDeclaration = false;
@@ -1069,10 +1038,15 @@ function importedClasses(string $contents): array
         $flush();
 
         foreach ($found as $shortName => $class) {
-            $imports[$shortName] = $class;
+            // Collected as a LIST, so two blocks in one file that import
+            // different classes under the same local name both survive.
+            // Keying only by the local name let the later one overwrite the
+            // earlier, and the first went unchecked.
+            $classes[] = $class;
+            $aliases[$shortName] = $class;
         }
     }
 
-    return $imports;
+    return ['classes' => $classes, 'aliases' => $aliases];
 }
 
