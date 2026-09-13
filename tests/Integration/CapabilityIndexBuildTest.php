@@ -164,12 +164,46 @@ final class CapabilityIndexBuildTest extends TestCase
     #[Test]
     public function the_index_names_the_directories_that_are_not_packages(): void
     {
-        $found = CapabilityIndex::nonPackageDirectoriesOnDisk(ProjectRoot::get());
+        // Against a FIXTURE tree, not the checkout. The authoring workspace has
+        // semitexa-installer and semitexa-companion; the release clone has
+        // neither, because it installs Composer packages and nothing else — so
+        // naming them here made the test pass in one environment and fail in
+        // the other for no reason anyone could act on.
+        $root = sys_get_temp_dir() . '/semitexa-nonpkg-' . uniqid('', true);
+        mkdir($root . '/packages/semitexa-probe-docker', 0777, true);
+        mkdir($root . '/packages/semitexa-probe-extension', 0777, true);
+        mkdir($root . '/packages/semitexa-probe-package', 0777, true);
 
-        self::assertArrayHasKey('semitexa-installer', $found);
-        self::assertArrayHasKey('semitexa-companion', $found);
-        self::assertStringContainsString('docker', strtolower($found['semitexa-installer']));
-        self::assertStringContainsString('extension', strtolower($found['semitexa-companion']));
+        try {
+            touch($root . '/packages/semitexa-probe-docker/Dockerfile');
+            touch($root . '/packages/semitexa-probe-extension/manifest.json');
+            file_put_contents($root . '/packages/semitexa-probe-package/composer.json', '{"name":"semitexa/probe"}');
+            // A marker file does NOT make a package a non-package: this one has
+            // both, and the composer.json has to win.
+            touch($root . '/packages/semitexa-probe-package/Dockerfile');
+
+            $found = CapabilityIndex::nonPackageDirectoriesOnDisk($root);
+
+            self::assertSame(
+                ['semitexa-probe-docker', 'semitexa-probe-extension'],
+                array_keys($found),
+                'classified by marker file, and only for directories without a composer.json',
+            );
+            self::assertStringContainsString('docker', strtolower($found['semitexa-probe-docker']));
+            self::assertStringContainsString('extension', strtolower($found['semitexa-probe-extension']));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($root));
+        }
+    }
+
+    /**
+     * And whatever the real checkout holds is classified consistently — the
+     * invariant that survives both environments.
+     */
+    #[Test]
+    public function nothing_listed_as_a_non_package_has_a_composer_json(): void
+    {
+        $found = CapabilityIndex::nonPackageDirectoriesOnDisk(ProjectRoot::get());
 
         foreach (array_keys($found) as $directory) {
             self::assertFileDoesNotExist(
@@ -177,6 +211,8 @@ final class CapabilityIndexBuildTest extends TestCase
                 "{$directory} has a composer.json, so it IS a package and must not be listed here",
             );
         }
+
+        self::assertIsArray($found);
     }
 
     /** And a package is never listed among them. */
