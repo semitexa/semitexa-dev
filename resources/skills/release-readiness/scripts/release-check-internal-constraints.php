@@ -587,13 +587,20 @@ function indexPackages(string $packagesDir): array
 
                 $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?';
 
+                // TRIMMED first, like the form check does. A constraint with
+                // leading whitespace is valid to composer and was accepted as
+                // well-formed, but these anchored patterns missed it — so it
+                // was recorded as neither promise nor wildcard and verified by
+                // nothing at all.
+                $constraint = trim($constraint);
+
                 // The `|| dev-master` escape is not part of the promise being
                 // checked; the floor is.
                 if (preg_match('/^>=\s*(' . $version . ')/i', $constraint, $m) === 1) {
                     $promises[$dependency] = ['version' => $m[1], 'kind' => 'floor'];
-                } elseif (preg_match('/^(' . $version . ')$/i', trim($constraint), $m) === 1) {
+                } elseif (preg_match('/^(' . $version . ')$/i', $constraint, $m) === 1) {
                     $promises[$dependency] = ['version' => $m[1], 'kind' => 'pin'];
-                } elseif (trim($constraint) === '*' && !isset($promises[$dependency])) {
+                } elseif ($constraint === '*' && !isset($promises[$dependency])) {
                     $wildcards[] = $dependency;
                 }
             }
@@ -778,9 +785,26 @@ function usedClasses(string $contents): array
     $classes = [];
     $tokens = PhpToken::tokenize($contents);
     $usedAsPrefix = [];
+    $fileNamespace = '';
 
     for ($i = 0, $n = count($tokens); $i < $n; $i++) {
         $token = $tokens[$i];
+
+        if ($token->is(T_NAMESPACE)) {
+            $fileNamespace = '';
+            for ($j = $i + 1, $n2 = count($tokens); $j < $n2; $j++) {
+                $text = $tokens[$j]->text;
+                if ($text === ';' || $text === '{') {
+                    break;
+                }
+                if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                    continue;
+                }
+                $fileNamespace .= $text;
+            }
+            $fileNamespace = trim($fileNamespace, '\\');
+            continue;
+        }
 
         if ($token->is(T_NAME_QUALIFIED)) {
             // `CoreSupport\Row` after `use Semitexa\Core\Support as CoreSupport;`
@@ -792,6 +816,16 @@ function usedClasses(string $contents): array
             if (isset($aliases[$head]) && $segments !== []) {
                 $usedAsPrefix[$aliases[$head]] = true;
                 $classes[$aliases[$head] . '\\' . implode('\\', $segments)] = true;
+                continue;
+            }
+
+            // In the GLOBAL namespace a qualified name resolves exactly as
+            // written, so `new Semitexa\Core\Support\Row()` with no leading
+            // slash names the sibling class. Inside a namespace it would mean
+            // something relative to that namespace instead, which is never the
+            // sibling — so this applies only when there is no namespace.
+            if ($fileNamespace === '' && str_contains($token->text, '\\')) {
+                $classes[ltrim($token->text, '\\')] = true;
             }
             continue;
         }
@@ -811,10 +845,10 @@ function usedClasses(string $contents): array
 
         // `\Semitexa\Core\helper()` is a FUNCTION call and emits the same
         // token. Recording it would send the gate looking for helper.php and
-        // fail a release that is perfectly satisfiable. `new \Foo\Bar()` is
-        // also followed by `(`, so the preceding `new` is what tells them
-        // apart.
-        if (nextMeaningfulText($tokens, $i) === '(' && !precededByNew($tokens, $i)) {
+        // fail a release that is perfectly satisfiable. `new \Foo\Bar()` and
+        // `#[\Foo\Bar()]` are also followed by `(`, so what PRECEDES the name
+        // is what tells them apart.
+        if (nextMeaningfulText($tokens, $i) === '(' && !precededByClassContext($tokens, $i)) {
             continue;
         }
 
@@ -844,15 +878,22 @@ function nextMeaningfulText(array $tokens, int $from): string
     return '';
 }
 
-/** Whether the nearest preceding meaningful token is `new`. */
-function precededByNew(array $tokens, int $from): bool
+/**
+ * Whether the nearest preceding meaningful token introduces a CLASS.
+ *
+ * `new \Foo\Bar()` and `#[\Foo\Bar()]` are both a name followed by `(`, and
+ * both name a class. Only `new` was recognised, so a fully qualified attribute
+ * with arguments was discarded as a function call and a floor predating the
+ * attribute class could pass.
+ */
+function precededByClassContext(array $tokens, int $from): bool
 {
     for ($i = $from - 1; $i >= 0; $i--) {
         if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
             continue;
         }
 
-        return $tokens[$i]->is(T_NEW);
+        return $tokens[$i]->is([T_NEW, T_ATTRIBUTE]);
     }
 
     return false;

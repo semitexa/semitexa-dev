@@ -918,4 +918,62 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(1, $result['exit'], $result['output']);
         self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
     }
+
+    /**
+     * A fully qualified ATTRIBUTE with arguments is a class reference, not a
+     * function call — it is a name followed by `(`, exactly like `new`, and
+     * only `new` was recognised.
+     */
+    #[Test]
+    public function a_fully_qualified_attribute_with_arguments_is_a_class(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "#[\\Semitexa\\Core\\Support\\Row(live: true)]\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /**
+     * In the GLOBAL namespace a qualified name resolves exactly as written, so
+     * `new Semitexa\Core\Support\Row()` with no leading slash names the
+     * sibling class. Inside a namespace the same text would mean something
+     * relative to it, which is why this is conditioned on there being none.
+     */
+    #[Test]
+    public function a_qualified_name_in_the_global_namespace_is_resolved(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nfinal class GlobalReader\n{\n"
+            . "    public function run(): object\n    {\n"
+            . "        return new Semitexa\\Core\\Support\\Row();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /** A constraint with leading whitespace is valid, and must still be verified. */
+    #[Test]
+    public function a_constraint_with_leading_whitespace_is_still_indexed(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumer('  >=2026.09.13.0749 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
 }
