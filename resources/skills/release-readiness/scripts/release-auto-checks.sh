@@ -386,7 +386,21 @@ run_playwright_smoke
 # replaces. Expect 379 once those merges land; if the gate reads higher on the
 # first release after this note, the difference is the release's own, not this
 # measurement's.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-379}"
+#
+# 379 -> 363, same day, second pass. This one was the custom rule rather than
+# the analyser's own: semitexa.explicitOptionalDependency, 38 violations of
+# "package absence must not be modelled through runtime checks". Every single
+# class_exists() it flagged named a class in the SAME package, or one in
+# semitexa/core or semitexa/locale -- plain `require` entries. The Twig
+# extensions showed the shape: the guard decided whether a function was
+# REGISTERED while the method body called the class unguarded, so an absent
+# class fataled either way. Three of them could switch off real work -- locale
+# validation on an input, the deferred-request table, per-request tenant
+# cleanup.
+#
+# Measured the same way as the line above: in the release container, with
+# develop's package code staged into the clone and reverted afterwards.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-363}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
