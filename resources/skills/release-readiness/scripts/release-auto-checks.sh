@@ -426,7 +426,11 @@ run_playwright_smoke
 # tree. 365 baseline entries went with them — strict cannot report an entry
 # whose file is no longer analysed, so leaving them would have been invisible
 # rot of exactly the kind this gate exists to catch.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-179}"
+#
+# 179 -> 177 on the first preflight that ran the strict gate: it measured 177
+# and said "lower it", which is the ratchet doing its job. The two are the
+# Pub/Sub message annotation from review of ssr#116.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-177}"
 
 # The analyser this ceiling and this baseline were measured with. Not a
 # preference — a precondition: every number in this gate is meaningless when
