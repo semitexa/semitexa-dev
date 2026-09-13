@@ -90,6 +90,43 @@ final class SafeFileWriterPreflightTest extends TestCase
         self::assertStringContainsString($reason, strtolower(json_encode($result->errors, JSON_THROW_ON_ERROR)));
     }
 
+    /**
+     * A generator that plans one path twice has a defect, and the writer used
+     * to publish the last content and report success for both: the caller was
+     * told two files landed, one of which never existed as planned. Refused as
+     * a batch, like every other preflight refusal.
+     */
+    #[Test]
+    public function the_same_path_planned_twice_is_refused_rather_than_half_applied(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:thing');
+
+        $result = $writer->write([
+            $this->file('src/Thing.php', '<?php echo 1;'),
+            $this->file('src/Other.php'),
+            $this->file('src/Thing.php', '<?php echo 2;'),
+        ]);
+
+        self::assertSame('rejected', $result->status);
+        self::assertSame([], $result->created, 'a refused batch writes nothing at all');
+        self::assertFileDoesNotExist($this->root . '/src/Thing.php');
+        self::assertFileDoesNotExist($this->root . '/src/Other.php');
+
+        $reported = json_encode($result->errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        self::assertStringContainsString('duplicate', $reported);
+        self::assertStringContainsString('src/Thing.php', $reported);
+    }
+
+    #[Test]
+    public function two_different_paths_are_not_a_duplicate(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:thing');
+
+        $result = $writer->write([$this->file('src/Thing.php'), $this->file('src/Other.php')]);
+
+        self::assertSame(['src/Thing.php', 'src/Other.php'], $result->created);
+    }
+
     #[Test]
     public function a_write_through_a_symlinked_directory_is_refused(): void
     {
