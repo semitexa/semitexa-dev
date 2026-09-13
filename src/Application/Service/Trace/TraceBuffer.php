@@ -112,6 +112,22 @@ final class TraceBuffer
      */
     public bool $persist = true;
 
+    /**
+     * Whether this trace may also go to an OTLP collector.
+     *
+     * Separate from {@see self::$persist} because the two questions are
+     * different: the FILE is what /__trace reads, and an SSE connection earns
+     * one so the panel can show the session. The COLLECTOR is somebody's APM,
+     * and a trace nobody asked for does not belong in it — least of all at the
+     * price it costs. MEASURED 2026-09-12 on loopback: 248us for 16 spans,
+     * 903us for 256, and a collector that merely answers slowly holds the
+     * worker for the full OTEL_EXPORTER_OTLP_TIMEOUT_SECONDS (2s) on EVERY
+     * disconnect, because the POST is synchronous and inside the request.
+     *
+     * So it follows the marker, not the file.
+     */
+    public bool $exportable = false;
+
     public function __construct(
         public readonly float $startedAt,
         public readonly int $rootCid,
