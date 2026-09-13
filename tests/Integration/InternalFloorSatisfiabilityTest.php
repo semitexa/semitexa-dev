@@ -553,4 +553,61 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertStringNotContainsString('helper', $result['output']);
     }
+
+    /**
+     * A SHORT NAME IS NOT A CLASS.
+     *
+     * The declaration escape hatch greps the tag for `class Row`, which a `Row`
+     * in an unrelated namespace also answers. Accepting it would approve a floor
+     * that still produces `Class not found` — the one thing this check exists
+     * to prevent, defeated by the thing added to stop it crying wolf.
+     */
+    #[Test]
+    public function a_same_named_class_in_another_namespace_does_not_satisfy_the_import(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Other', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+        // A Row exists — in the wrong namespace.
+        file_put_contents(
+            $dir . '/src/Other/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Other;\n\nclass Row {}\n",
+        );
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Newer\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Newer\\Row', $result['output']);
+    }
+
+    /** A mixed grouped import with a nested path and a function reads correctly. */
+    #[Test]
+    public function a_mixed_group_with_a_nested_path_reads_only_the_class(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\{Support\\Row, function helper};\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+        self::assertStringNotContainsString('helper', $result['output'], 'the function is not a class file');
+    }
 }

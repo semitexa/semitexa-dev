@@ -347,8 +347,10 @@ function verifyAgainstTag(
 function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4): bool
 {
     $short = $fqcn;
+    $namespace = '';
     $lastSeparator = strrpos($short, '\\');
     if ($lastSeparator !== false) {
+        $namespace = substr($fqcn, 0, $lastSeparator);
         $short = substr($short, $lastSeparator + 1);
     }
     if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
@@ -371,8 +373,86 @@ function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4)
     );
 
     exec($command, $lines, $code);
+    if ($code !== 0 || $lines === []) {
+        return false;
+    }
 
-    return $code === 0 && $lines !== [];
+    // THE SHORT NAME IS NOT THE CLASS. `Semitexa\Core\Newer\Row` is not
+    // satisfied by a `Row` sitting in `Semitexa\Core\Other` — accepting that
+    // would approve a floor that still produces `Class not found`, which is the
+    // one thing this whole check exists to prevent. The declaring file's own
+    // namespace has to agree.
+    foreach ($lines as $line) {
+        // `git grep -l <tag> -- paths` prints `<tag>:<path>`.
+        $path = str_contains($line, ':') ? substr($line, strpos($line, ':') + 1) : $line;
+
+        $show = sprintf(
+            'git -C %s show %s 2>/dev/null',
+            escapeshellarg($dir),
+            escapeshellarg($tag . ':' . $path),
+        );
+        $contents = [];
+        exec($show, $contents, $showCode);
+        if ($showCode !== 0) {
+            continue;
+        }
+
+        if (declaresClassInNamespace(implode("\n", $contents), $namespace, $short)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Whether a file declares exactly `$namespace\$short`.
+ *
+ * Tokenized for the same reason the import scan is: a `namespace` or `class`
+ * word inside a comment or a string must not answer this question.
+ */
+function declaresClassInNamespace(string $contents, string $namespace, string $short): bool
+{
+    $tokens = PhpToken::tokenize($contents);
+    $current = '';
+
+    for ($i = 0, $n = count($tokens); $i < $n; $i++) {
+        $token = $tokens[$i];
+
+        if ($token->is(T_NAMESPACE)) {
+            $current = '';
+            for ($j = $i + 1; $j < $n; $j++) {
+                $text = $tokens[$j]->text;
+                if ($text === ';' || $text === '{') {
+                    break;
+                }
+                if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                    continue;
+                }
+                $current .= $text;
+            }
+            $current = trim($current, '\\');
+            continue;
+        }
+
+        if (!$token->is([T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM])) {
+            continue;
+        }
+
+        // The next meaningful token is the declared name — unless this is an
+        // anonymous class or a `::class` constant, neither of which declares one.
+        for ($j = $i + 1; $j < $n; $j++) {
+            if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                continue;
+            }
+            if ($tokens[$j]->is(T_STRING) && $tokens[$j]->text === $short && $current === $namespace) {
+                return true;
+            }
+            break;
+        }
+    }
+
+    return false;
 }
 
 /**
