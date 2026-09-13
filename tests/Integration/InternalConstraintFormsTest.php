@@ -80,6 +80,44 @@ final class InternalConstraintFormsTest extends TestCase
         self::assertSame(0, $result['exit'], 'the form review asked for must not fail the release: ' . $result['output']);
     }
 
+    /**
+     * A floor WITHOUT this escape made the workspace unbuildable, and the
+     * release that introduced the first floors failed preflight on it.
+     *
+     * Packages are developed as path repositories, where composer takes the
+     * version from the git branch — `dev-master` — and a branch version
+     * satisfies no date floor. The path repo is canonical, so composer cannot
+     * fall back to Packagist either: it reports the whole set as
+     * uninstallable. The escape says "this release or newer, OR the local
+     * checkout".
+     */
+    #[Test]
+    public function a_floor_may_admit_the_local_checkout(): void
+    {
+        $result = $this->gateOn('>=2026.09.13.0749 || dev-master');
+
+        self::assertSame(0, $result['exit'], 'a path-repo workspace cannot resolve without this: ' . $result['output']);
+    }
+
+    /**
+     * On an EXACT pin it is refused: ultimate's pins exist to name one
+     * release, and an escape would defeat the pin.
+     */
+    #[Test]
+    public function an_exact_pin_may_not_admit_the_local_checkout(): void
+    {
+        self::assertSame(1, $this->gateOn('2026.09.13.0749 || dev-master')['exit']);
+    }
+
+    /** And the escape is only ever that branch, not any branch. */
+    #[Test]
+    public function only_the_master_checkout_is_admitted(): void
+    {
+        foreach (['>=2026.09.13.0749 || dev-develop', '>=2026.09.13.0749 || dev-main', '>=2026.09.13.0749 || *'] as $bad) {
+            self::assertSame(1, $this->gateOn($bad)['exit'], "'{$bad}' must not pass the gate");
+        }
+    }
+
     #[Test]
     public function the_two_forms_that_always_worked_still_do(): void
     {

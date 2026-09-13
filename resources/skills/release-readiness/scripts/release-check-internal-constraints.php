@@ -84,11 +84,30 @@ foreach ($violations as $violation) {
 exit(1);
 
 /**
- * Three forms, and each says something different.
+ * Four forms, and each says something different.
  *
- *   *                     this package works with any release of that one
- *   2026.09.13.0749       exactly this release (what ultimate's pins are)
- *   >=2026.09.13.0749     a FLOOR: the release where the API it calls appeared
+ *   *                            works with any release of that one
+ *   2026.09.13.0749              exactly this release (ultimate's pins)
+ *   >=2026.09.13.0749            a FLOOR: where the API it calls appeared
+ *   >=2026.09.13.0749 || dev-master   the same floor, plus the local checkout
+ *
+ * THE `|| dev-master` IS NOT OPTIONAL ON A FLOOR, and the release that added
+ * the first floors proved it by failing preflight outright. Packages are
+ * developed as PATH REPOSITORIES, where composer takes the version from the
+ * git branch -- `dev-master` -- and a branch version satisfies no date floor.
+ * The path repo is also canonical, so composer cannot fall back to Packagist:
+ * it simply reports the whole set as uninstallable. A floor without the escape
+ * is a floor that makes the workspace unbuildable while protecting a consumer
+ * who was never at risk from the local checkout.
+ *
+ * `dev-master` and not `dev-develop`: composer resolution runs in the release
+ * clone, which this flow keeps on master by construction. It is also safe for
+ * consumers -- a branch version needs an explicit dev minimum-stability, which
+ * a project that installs released packages does not have.
+ *
+ * (Never a `version` field in the package to sidestep this. It poisons two
+ * things at once: path-repo resolution, and Packagist, which silently skips
+ * every tag whose version does not match it.)
  *
  * The floor exists because `*` cannot express a minimum, and a consumer who
  * installs one package directly -- `composer require semitexa/ledger` beside a
@@ -113,5 +132,12 @@ function isCompatibleInternalConstraint(string $constraint): bool
 
     $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-(?:alpha|beta|rc\d+|p\d+))?';
 
-    return preg_match('/^(?:>=\s*)?' . $version . '$/i', $constraint) === 1;
+    // An exact pin, or a floor with the optional `|| dev-master` escape the
+    // path-repo workspace needs. The escape is only accepted on a FLOOR: on an
+    // exact pin it would defeat the pin, which is what ultimate's are for.
+    if (preg_match('/^' . $version . '$/i', $constraint) === 1) {
+        return true;
+    }
+
+    return preg_match('/^>=\s*' . $version . '(?:\s*\|\|\s*dev-master)?$/i', $constraint) === 1;
 }
