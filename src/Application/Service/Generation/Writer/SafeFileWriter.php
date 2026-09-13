@@ -174,6 +174,16 @@ final class SafeFileWriter implements FileWriterInterface
             if ($segment === '.' || $segment === '..') {
                 return $refuse('traversal', "the path contains a '{$segment}' segment");
             }
+
+            // `src//Thing.php` and `src/Thing.php` are the same file to the
+            // filesystem and two different strings to the duplicate check, so a
+            // batch planning both passed preflight, wrote one file, and reported
+            // two as created — with the second content and no error. One
+            // spelling per file, and the spelling is the one the caller gave.
+            // Raised in review of dev#83.
+            if ($segment === '') {
+                return $refuse('alias', 'the path has an empty segment; one file must have exactly one spelling');
+            }
         }
 
         return $this->refuseResolvedLocation($relative);
@@ -321,10 +331,17 @@ final class SafeFileWriter implements FileWriterInterface
         }
 
         $errors = [];
+        // Checks that actually COMPLETED. The early return below used to report
+        // count($errors), so one clean file plus one parse error plus a runner
+        // failure said "checked 1" — the number of problems, not the number of
+        // files looked at. Raised in review of dev#83.
+        $checked = 0;
+
         foreach ($phpFiles as $rel) {
             $full = $this->basePath . '/' . $rel;
             if (!is_file($full)) {
                 $errors[] = ['file' => $rel, 'message' => 'created file is missing during verification'];
+                $checked++;
                 continue;
             }
 
@@ -344,11 +361,15 @@ final class SafeFileWriter implements FileWriterInterface
                     ? ['status' => 'skipped', 'checked' => 0, 'errors' => [], 'reason' => (string) $outcome['failure']]
                     : [
                         'status' => 'fail',
-                        'checked' => count($errors),
+                        'checked' => $checked,
                         'errors' => $errors,
                         'reason' => 'stopped early: ' . (string) $outcome['failure'],
                     ];
             }
+
+            // The runner answered about this file, so the check completed —
+            // whatever it says next.
+            $checked++;
 
             if ($outcome['exit'] !== 0) {
                 $message = trim($outcome['output']);
@@ -361,7 +382,7 @@ final class SafeFileWriter implements FileWriterInterface
 
         return [
             'status'  => $errors === [] ? 'pass' : 'fail',
-            'checked' => count($phpFiles),
+            'checked' => $checked,
             'errors'  => $errors,
         ];
     }

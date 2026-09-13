@@ -69,6 +69,8 @@ final class SafeFileWriterPreflightTest extends TestCase
             'null byte'           => ["src/thing\0.php", 'control'],
             'newline'             => ["src/thing\n.php", 'control'],
             'empty'               => ['', 'empty'],
+            'double slash'        => ['src//thing.php', 'alias'],
+            'trailing slash'      => ['src/thing.php/', 'alias'],
         ];
     }
 
@@ -115,6 +117,27 @@ final class SafeFileWriterPreflightTest extends TestCase
         $reported = json_encode($result->errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         self::assertStringContainsString('duplicate', $reported);
         self::assertStringContainsString('src/Thing.php', $reported);
+    }
+
+    /**
+     * `src//Thing.php` and `src/Thing.php` are the same file to the filesystem
+     * and two different strings to the duplicate check, so a batch planning both
+     * wrote ONE file and reported TWO as created, with the second content and no
+     * error at all. Raised in review of dev#83.
+     */
+    #[Test]
+    public function a_second_spelling_of_one_path_is_refused_rather_than_written_twice(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:thing');
+
+        $result = $writer->write([
+            $this->file('src/Thing.php', '<?php echo 1;'),
+            $this->file('src//Thing.php', '<?php echo 2;'),
+        ], force: true);
+
+        self::assertSame('rejected', $result->status);
+        self::assertSame([], $result->created, 'it used to report both spellings as created');
+        self::assertFileDoesNotExist($this->root . '/src/Thing.php');
     }
 
     #[Test]

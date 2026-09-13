@@ -1132,11 +1132,15 @@ function tipHtml(hit) {
     // for the ring, so a historic one has no stage to name — 'gate' rather than
     // a guess.
     const stageOf = f => (S.particles.find(p => p.id === f.id && p.ring === 'refused') || {}).refusedAt;
+    // A refusal records WHO refused in phases.detail — the gate class — and
+    // `error` is only set when something threw. Reading error alone left every
+    // ordinary refusal without a reason here, while the ticker showed it.
+    const reasonOf = f => f.error || (f.phases && f.phases.detail) || '';
     // An empty ring is ambiguous and must not be read as "nobody was turned
     // away": outcome=rejected is derived from trace events, so with stage mode
     // off a refusal is journalled as a plain ok and never reaches this ring.
     extra = rs.length
-      ? '<ul>' + rs.slice(-8).reverse().map(f => '<li><b>' + esc(f.path || f.route || f.name) + '</b><span>' + esc(stageOf(f) || 'gate') + '</span></li>' + (f.error ? '<li class="why">' + esc(f.error) + '</li>' : '')).join('') + '</ul>'
+      ? '<ul>' + rs.slice(-8).reverse().map(f => '<li><b>' + esc(f.path || f.route || f.name) + '</b><span>' + esc(stageOf(f) || 'gate') + '</span></li>' + (reasonOf(f) ? '<li class="why">' + esc(reasonOf(f)) + '</li>' : '')).join('') + '</ul>'
       : (S.stage
         ? '<p><em>Nothing was turned away in the last 60 s.</em></p>'
         : '<p><em>Nothing here — but <b>stage</b> is off, so a refusal is recorded as a plain <code>ok</code> and never reaches this ring. Switch it on to see refusals at all.</em></p>');

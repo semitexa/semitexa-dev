@@ -70,6 +70,41 @@ final class SafeFileWriterVerifyFailureTest extends TestCase
     }
 
     /**
+     * `checked` is a count of files LOOKED AT, and the early return reported
+     * count($errors) — the number of problems. One clean file plus one parse
+     * error plus a runner failure said "checked 1". Raised in review of dev#83.
+     */
+    #[Test]
+    public function checked_counts_the_files_looked_at_not_the_problems_found(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([
+            ['exit' => 0, 'output' => 'No syntax errors detected'],
+            ['exit' => 255, 'output' => 'PHP Parse error: syntax error'],
+            ['exit' => 0, 'output' => '', 'failure' => 'timed out after 30s'],
+        ]));
+
+        $result = $writer->write([$this->file('A.php'), $this->file('B.php'), $this->file('C.php')]);
+
+        self::assertSame('fail', $result->verify['status']);
+        self::assertSame(2, $result->verify['checked'], 'two files were checked before the runner broke');
+        self::assertCount(1, $result->verify['errors']);
+    }
+
+    #[Test]
+    public function a_clean_run_counts_every_file_it_checked(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([
+            ['exit' => 0, 'output' => ''],
+            ['exit' => 0, 'output' => ''],
+        ]));
+
+        $result = $writer->write([$this->file('A.php'), $this->file('B.php')]);
+
+        self::assertSame('pass', $result->verify['status']);
+        self::assertSame(2, $result->verify['checked']);
+    }
+
+    /**
      * The other order is the one the distinction exists for: nothing was found
      * before the runner broke, so there is nothing to report against the files.
      */
