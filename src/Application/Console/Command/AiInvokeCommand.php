@@ -540,11 +540,47 @@ final class AiInvokeCommand extends BaseCommand
             $io->writeln(json_encode($envelope['resource'], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'null');
         }
 
-        if (!empty($envelope['next_command'])) {
+        $next = is_array($envelope['next_command'] ?? null) ? $envelope['next_command'] : [];
+        if ($next !== []) {
             $io->section('Next');
-            foreach ($envelope['next_command'] as $nc) {
-                $io->writeln("  → bin/semitexa {$nc['cmd']} " . implode(' ', $nc['args']) . "   # {$nc['why']}");
+            foreach ($next as $nc) {
+                if (!is_array($nc)) {
+                    continue;
+                }
+
+                $args = [];
+                foreach (is_array($nc['args'] ?? null) ? $nc['args'] : [] as $arg) {
+                    if (is_string($arg)) {
+                        $args[] = self::shellArg($arg);
+                    }
+                }
+
+                $cmd = is_string($nc['cmd'] ?? null) ? $nc['cmd'] : '';
+                $why = is_string($nc['why'] ?? null) ? $nc['why'] : '';
+                $io->writeln("  → bin/semitexa {$cmd} " . implode(' ', $args) . "   # {$why}");
             }
         }
+    }
+
+    /**
+     * One argument, as a shell would have to be given it.
+     *
+     * This line is printed to be copied and run. A payload is JSON, so it
+     * carries quotes and spaces as a matter of course —
+     * `--payload={"title":"a thing"}` pasted raw loses its quotes and splits
+     * into two arguments — and a value carrying `$(...)` or a backtick would be
+     * run by the shell rather than passed to the command. The JSON envelope is
+     * unaffected: it holds the arguments themselves, and a reader that executes
+     * them does not go through a shell. Raised in review of dev#83.
+     */
+    private static function shellArg(string $arg): string
+    {
+        // Left alone when there is nothing a shell would do to it — the common
+        // case, and quoting it would only make the line harder to read.
+        if ($arg !== '' && preg_match('/^[A-Za-z0-9_@%+=:,.\/-]+$/', $arg) === 1) {
+            return $arg;
+        }
+
+        return escapeshellarg($arg);
     }
 }

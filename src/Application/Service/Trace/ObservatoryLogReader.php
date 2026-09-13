@@ -90,6 +90,15 @@ final class ObservatoryLogReader
     private function tailLines(): array
     {
         $path = $this->path();
+
+        // A worker lives for days and PHP caches what it learned about this
+        // file the first time. Another worker appends to app.log every second
+        // and rotates it nightly, so a stale size makes the window start at an
+        // offset that is no longer near the end — scanning further and further
+        // back as the file grows, and past EOF once it rotates, which returns
+        // nothing at all. Raised in review of dev#83.
+        clearstatcache(true, $path);
+
         if (!is_file($path) || !is_readable($path)) {
             return [];
         }

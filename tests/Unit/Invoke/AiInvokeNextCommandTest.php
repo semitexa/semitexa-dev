@@ -129,6 +129,32 @@ final class AiInvokeNextCommandTest extends TestCase
     }
 
     /**
+     * The human line is printed to be copied and run, so it goes through a
+     * shell — and a payload is JSON, which carries quotes and spaces as a
+     * matter of course. Pasted raw, `--payload={"title":"a thing"}` loses its
+     * quotes and splits in two; a value carrying a command substitution would
+     * be run rather than passed. The envelope's own args stay raw, because a
+     * reader that executes them does not go through a shell.
+     */
+    #[Test]
+    public function an_argument_is_quoted_for_the_shell_only_where_it_has_to_be(): void
+    {
+        $quote = new \ReflectionMethod(AiInvokeCommand::class, 'shellArg');
+
+        self::assertSame('--json', $quote->invoke(null, '--json'), 'quoting this would only make the line harder to read');
+        self::assertSame('--route=/items/7', $quote->invoke(null, '--route=/items/7'));
+
+        self::assertSame(
+            '\'--payload={"title":"a thing"}\'',
+            $quote->invoke(null, '--payload={"title":"a thing"}'),
+        );
+
+        $dangerous = $quote->invoke(null, '--payload={"x":"$(whoami)"}');
+        self::assertStringStartsWith("'", $dangerous, 'a command substitution must reach the command, not the shell');
+        self::assertStringContainsString('$(whoami)', $dangerous);
+    }
+
+    /**
      * The suggestion still has to be runnable when the payload is withheld —
      * the target is the part that cannot be guessed from the conversation.
      */

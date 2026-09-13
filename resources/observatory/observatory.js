@@ -1321,7 +1321,18 @@ function boot() {
     if (!document.hidden) {
       drawRiver(t);
       if (t - lastSpotlight > 160) { lastSpotlight = t; renderSpotlight(t); }
-      if (t - lastPanels > 400) { lastPanels = t; renderWorkers(); renderTiles(); drawTimeline(t); if (S.pinned) showTip(S.pinned, true); }
+      if (t - lastPanels > 400) {
+        lastPanels = t; renderWorkers(); renderTiles(); drawTimeline(t);
+        if (S.pinned) {
+          // Ask again as well as redraw. loadLogs() was called only on the
+          // pin, so its TTL was never consulted a second time and a pinned
+          // block showed the tail as it was at that instant — for as long as
+          // it stayed pinned. The TTL is what limits the traffic; this is what
+          // lets it expire. Raised in review of dev#83.
+          if (S.pinned.stage && S.pinned.stage.phase) loadLogs(spanName(S.pinned.stage.phase));
+          showTip(S.pinned, true);
+        }
+      }
     }
     requestAnimationFrame(frame);
   };
