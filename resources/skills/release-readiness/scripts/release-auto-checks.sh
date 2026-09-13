@@ -400,7 +400,11 @@ run_playwright_smoke
 #
 # Measured the same way as the line above: in the release container, with
 # develop's package code staged into the clone and reverted afterwards.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-363}"
+#
+# 363 -> 357: the last stale baseline entry went, and with it three real errors
+# it had been hiding. `composer phpstan:strict` now reports ZERO unmatched
+# entries — the baseline finally describes only errors that exist.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-357}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
