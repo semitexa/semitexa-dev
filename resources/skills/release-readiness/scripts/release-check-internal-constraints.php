@@ -628,21 +628,26 @@ function indexPackages(string $packagesDir): array
 
         $promises = [];
         $wildcards = [];
-        foreach ($json['require'] ?? [] as $dependency => $constraint) {
-            if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
-                continue;
-            }
+        // BOTH sections, matching the form check above. Reading only `require`
+        // left a require-dev floor accepted as well-formed by one pass and
+        // verified by neither.
+        foreach (['require', 'require-dev'] as $section) {
+            foreach ($json[$section] ?? [] as $dependency => $constraint) {
+                if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
+                    continue;
+                }
 
-            $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?';
+                $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?';
 
-            // The `|| dev-master` escape is not part of the promise being
-            // checked; the floor is.
-            if (preg_match('/^>=\s*(' . $version . ')/i', $constraint, $m) === 1) {
-                $promises[$dependency] = ['version' => $m[1], 'kind' => 'floor'];
-            } elseif (preg_match('/^(' . $version . ')$/i', trim($constraint), $m) === 1) {
-                $promises[$dependency] = ['version' => $m[1], 'kind' => 'pin'];
-            } elseif (trim($constraint) === '*') {
-                $wildcards[] = $dependency;
+                // The `|| dev-master` escape is not part of the promise being
+                // checked; the floor is.
+                if (preg_match('/^>=\s*(' . $version . ')/i', $constraint, $m) === 1) {
+                    $promises[$dependency] = ['version' => $m[1], 'kind' => 'floor'];
+                } elseif (preg_match('/^(' . $version . ')$/i', trim($constraint), $m) === 1) {
+                    $promises[$dependency] = ['version' => $m[1], 'kind' => 'pin'];
+                } elseif (trim($constraint) === '*' && !isset($promises[$dependency])) {
+                    $wildcards[] = $dependency;
+                }
             }
         }
 
@@ -759,15 +764,27 @@ function importsFrom(string $packageDir, array $psr4): array
         }
 
         foreach (usedClasses((string) file_get_contents($file->getPathname())) as $class) {
+            // LONGEST prefix wins, as composer resolves it. Taking the first
+            // match in declaration order meant a generic `Semitexa\Core\`
+            // declared before `Semitexa\Core\Special\` mapped a Special class
+            // through the generic one — a path composer would never load, and a
+            // floor approved on the strength of a file that is not the file.
+            $bestPrefix = null;
             foreach ($psr4 as $prefix => $dirs) {
                 if (!str_starts_with($class, $prefix)) {
                     continue;
                 }
-                $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
-                foreach ($dirs as $dir) {
-                    $found[$class][] = $dir . '/' . $relative . '.php';
+                if ($bestPrefix === null || strlen($prefix) > strlen($bestPrefix)) {
+                    $bestPrefix = $prefix;
                 }
-                break;
+            }
+            if ($bestPrefix === null) {
+                continue;
+            }
+
+            $relative = str_replace('\\', '/', substr($class, strlen($bestPrefix)));
+            foreach ($psr4[$bestPrefix] as $dir) {
+                $found[$class][] = $dir . '/' . $relative . '.php';
             }
         }
     }

@@ -731,4 +731,77 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(1, $result['exit'], $result['output']);
         self::assertStringContainsString('not in the tree that is about to become it', $result['output']);
     }
+
+    /**
+     * LONGEST PREFIX WINS, as composer resolves it.
+     *
+     * Taking the first match in declaration order meant a generic
+     * `Semitexa\Core\` declared before `Semitexa\Core\Special\` mapped a
+     * Special class through the generic directory — a path composer would never
+     * load — and the floor was approved on the strength of a file that is not
+     * the file.
+     */
+    #[Test]
+    public function the_longest_matching_psr4_prefix_decides_the_path(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Special', 0777, true);
+        mkdir($dir . '/special', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => [
+                'Semitexa\\Core\\' => 'src/',
+                'Semitexa\\Core\\Special\\' => 'special/',
+            ]],
+        ]));
+        // Present where the GENERIC prefix would look, absent where the
+        // specific one — which is the one composer uses.
+        file_put_contents($dir . '/src/Special/Row.php', "<?php\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Special\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('special/Row.php', $result['output'], 'the specific prefix names the path');
+    }
+
+    /**
+     * A promise in require-dev is a promise. The form check already covered
+     * both sections; the satisfiability check read only `require`, so a
+     * require-dev floor was accepted as well-formed by one pass and verified
+     * by neither.
+     */
+    #[Test]
+    public function a_floor_in_require_dev_is_verified_too(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/src/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4'],
+            'require-dev' => ['semitexa/core' => '>=2026.09.13.0749 || dev-master'],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => 'src/']],
+        ]));
+        file_put_contents(
+            $dir . '/src/Application/Reader.php',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Row;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
 }
