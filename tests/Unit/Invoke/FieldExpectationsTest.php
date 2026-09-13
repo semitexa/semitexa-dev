@@ -207,4 +207,42 @@ final class FieldExpectationsTest extends TestCase
         self::assertSame(0, $this->check(['note='], ['note' => ''])['failed']);
         self::assertSame(1, $this->check(['note='], ['note' => 'x'])['failed']);
     }
+
+    /**
+     * The leak that survived the first redaction fix: sensitivity was decided
+     * from the ACTUAL value, so a path that was not found had none to inspect,
+     * `$isSecret` came out false, and the caller's own
+     * `--expect-field=password=hunter2` went into the envelope verbatim. The
+     * envelope is built to be pasted around. Raised in review of dev#84.
+     */
+    #[Test]
+    public function a_secret_expectation_is_masked_even_when_the_field_is_absent(): void
+    {
+        $out = FieldExpectations::fromOptions(['password=hunter2'])->check(['user' => 'ada']);
+
+        self::assertFalse($out['results'][0]['ok']);
+        self::assertSame('no such path in the resource', $out['results'][0]['reason']);
+        self::assertNotSame('hunter2', $out['results'][0]['expected']);
+        self::assertTrue($out['results'][0]['expected_redacted']);
+        self::assertStringNotContainsString('hunter2', json_encode($out, JSON_THROW_ON_ERROR));
+    }
+
+    /** Including when the handler returned no resource at all. */
+    #[Test]
+    public function a_secret_expectation_is_masked_when_there_is_no_resource(): void
+    {
+        $out = FieldExpectations::fromOptions(['credentials.apiKey=sk-live-9'])->check(null);
+
+        self::assertStringNotContainsString('sk-live-9', json_encode($out, JSON_THROW_ON_ERROR));
+    }
+
+    /** An ordinary missing field still says what was expected. */
+    #[Test]
+    public function an_ordinary_expectation_is_still_readable_when_absent(): void
+    {
+        $out = FieldExpectations::fromOptions(['status=active'])->check(['user' => 'ada']);
+
+        self::assertSame('active', $out['results'][0]['expected']);
+        self::assertArrayNotHasKey('expected_redacted', $out['results'][0]);
+    }
 }

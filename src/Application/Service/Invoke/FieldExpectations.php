@@ -110,7 +110,13 @@ final readonly class FieldExpectations
             }
 
             $maskedRendered = $found ? self::maskedDisplay($shown, $path) : null;
-            $isSecret = $found && $maskedRendered !== $rendered;
+            // Sensitivity is a property of the PATH, not of whether a value
+            // happened to be there. `--expect-field=password=hunter2` against a
+            // resource with no `password` field found nothing, so `$isSecret`
+            // was false and the caller's own secret went into the envelope
+            // verbatim — the exact leak the mask was added to stop, through the
+            // one branch that had no value to mask. Raised in review of dev#84.
+            $isSecret = self::pathNamesASecret($path) || ($found && $maskedRendered !== $rendered);
 
             $entry = [
                 'path' => $path,
@@ -118,7 +124,10 @@ final readonly class FieldExpectations
                 // `--expect-field=password=hunter2` printed the secret verbatim
                 // in an envelope built to be pasted around — back in through
                 // the door the mask was guarding.
-                'expected' => $isSecret ? $maskedRendered : $expected,
+                // The mask stands in when the path was never found: there is
+                // no displayed value to borrow, and the expectation still must
+                // not be echoed.
+                'expected' => $isSecret ? ($maskedRendered ?? ContextRedactor::MASK) : $expected,
                 'ok' => $ok,
             ];
             if ($isSecret) {
@@ -147,6 +156,24 @@ final readonly class FieldExpectations
     }
 
     /**
+     * Does any segment of this path name a secret?
+     *
+     * Asked of the path rather than of a value, so a MISSING field is judged
+     * the same way a present one is. The needle list lives in one place; see
+     * {@see ContextRedactor::isSensitiveKey()}.
+     */
+    private static function pathNamesASecret(string $path): bool
+    {
+        foreach (explode('.', $path) as $segment) {
+            if (ContextRedactor::isSensitiveKey($segment)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * What may be SHOWN for this path.
      *
      * Read out of the redacted copy, so the redactor's own rules decide. It
@@ -156,7 +183,7 @@ final readonly class FieldExpectations
      * honoured rather than worked around: the nearest surviving ancestor IS the
      * mask, and showing it is both truthful and safe.
      *
-     * @param array<string, mixed>|null $shown
+     * @param array<mixed>|null $shown
      */
     private static function maskedDisplay(?array $shown, string $path): ?string
     {
@@ -190,7 +217,7 @@ final readonly class FieldExpectations
     }
 
     /**
-     * @param array<string, mixed>|null $resource
+     * @param array<mixed>|null $resource
      * @return array{0: bool, 1: mixed} [found, value]
      */
     private static function lookup(?array $resource, string $path): array

@@ -39,7 +39,7 @@ final readonly class CulpritStackTrace
     ];
 
     /**
-     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string}|null $culprit
+     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string|null}|null $culprit
      * @param list<array<string, mixed>> $frames
      * @param list<string> $source
      */
@@ -242,7 +242,7 @@ final readonly class CulpritStackTrace
     }
 
     /**
-     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string} $culprit
+     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string|null} $culprit
      * @return list<string>
      */
     private static function sourceFor(array $culprit, ?SourceSliceReader $reader): array

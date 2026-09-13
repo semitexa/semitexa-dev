@@ -106,14 +106,28 @@ final class AiVerifyCommand extends BaseCommand
                 // whose records are dispatched by `kind`, so an envelope
                 // without one is a record such a consumer cannot place — and
                 // every ordinary run ends with a `verdict` record.
+                // An empty plan, so this answer reaches `--trace` the way every
+                // other one does. Returning before maybeAppendToTrace() left a
+                // traced workflow with no `verify_result` and no trace status
+                // for the run at all — a gap in an audit trail reads as a step
+                // that was never taken. Raised in review of dev#84.
+                $emptyPlan = new VerificationPlan($scope, $scope, [], []);
+                $envelope = [
+                    'artifact' => 'semitexa-dev.verify-report/v1',
+                    'generated_at' => date('c'),
+                    'verdict' => 'nothing_to_verify',
+                    'changed_files' => [],
+                    'dirty_scan' => $scan,
+                ];
+
                 if ($jsonMode) {
-                    $output->writeln(json_encode([
-                        'artifact' => 'semitexa-dev.verify-report/v1',
-                        'generated_at' => date('c'),
-                        'verdict' => 'nothing_to_verify',
-                        'changed_files' => [],
-                        'dirty_scan' => $scan,
-                    ], JSON_UNESCAPED_SLASHES));
+                    $traceOutput = new BufferedOutput();
+                    $this->maybeAppendToTrace($input, $traceOutput, $emptyPlan, [], 'nothing_to_verify', $envelope);
+                    $envelope['trace'] = array_map(
+                        static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+                        array_values(array_filter(explode("\n", trim($traceOutput->fetch())))),
+                    );
+                    $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
 
                     return self::SUCCESS;
                 }
@@ -124,10 +138,18 @@ final class AiVerifyCommand extends BaseCommand
                 $output->writeln(json_encode([
                     'kind' => 'verdict',
                     'verdict' => 'nothing_to_verify',
-                    'completed' => true,
+                    // FALSE, and deliberately so. Nothing ran, and `completed`
+                    // is what a consumer reads to decide whether the required
+                    // checks happened — saying true here offered an empty run
+                    // as verification evidence, and contradicted
+                    // VerifyReportSerializer::completed([]) besides. Raised in
+                    // review of dev#84.
+                    'completed' => false,
                     'counts' => [],
                     'dirty_scan' => $scan,
                 ], JSON_UNESCAPED_SLASHES));
+
+                $this->maybeAppendToTrace($input, $output, $emptyPlan, [], 'nothing_to_verify', $envelope);
 
                 return self::SUCCESS;
             }

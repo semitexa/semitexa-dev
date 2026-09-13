@@ -6,10 +6,16 @@ namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
+use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -51,11 +57,27 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
+    /**
+     * Wired the way the container wires it. The clean-tree answer now reaches
+     * `--trace` like every other answer, so it touches the trace appender, and
+     * a bare `new AiVerifyCommand()` leaves that property uninitialized.
+     */
+    private function command(?TraceStore $store = null): AiVerifyCommand
+    {
+        $appender = new TraceAutoAppender();
+        PropertyInjector::inject($appender, new ArrayContainer([TraceStore::class => $store ?? new TraceStore()]));
+
+        $command = new AiVerifyCommand();
+        PropertyInjector::inject($command, new ArrayContainer([TraceAutoAppender::class => $appender]));
+        $command->setName('ai:verify');
+
+        return $command;
+    }
+
     /** @return array{exit: int, envelope: array<string, mixed>} */
     private function runDirty(): array
     {
-        $command = new AiVerifyCommand();
-        $command->setName('ai:verify');
+        $command = $this->command();
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--dirty' => true, '--json' => true], $command->getDefinition()), $output);
@@ -95,8 +117,7 @@ final class VerifyDirtyCleanTreeTest extends TestCase
     #[Test]
     public function the_default_mode_answer_is_an_ndjson_verdict_record(): void
     {
-        $command = new AiVerifyCommand();
-        $command->setName('ai:verify');
+        $command = $this->command();
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--dirty' => true], $command->getDefinition()), $output);
@@ -165,8 +186,7 @@ final class VerifyDirtyCleanTreeTest extends TestCase
      */
     private function emitted(VerificationPlan $plan, ?array $scan): string
     {
-        $command = new AiVerifyCommand();
-        $command->setName('ai:verify');
+        $command = $this->command();
         $output = new BufferedOutput();
 
         $method = new \ReflectionMethod(AiVerifyCommand::class, 'emitNdjson');
@@ -213,13 +233,85 @@ final class VerifyDirtyCleanTreeTest extends TestCase
     #[Test]
     public function the_generic_empty_case_still_fails(): void
     {
-        $command = new AiVerifyCommand();
-        $command->setName('ai:verify');
+        $command = $this->command();
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--json' => true], $command->getDefinition()), $output);
 
         self::assertSame(1, $exit);
         self::assertStringContainsString('no changed files supplied', $output->fetch());
+    }
+
+    /**
+     * `completed` is what a consumer reads to decide whether the required
+     * checks actually ran. An empty run said `true` — offering itself as
+     * verification evidence while its own verdict said nothing was verified,
+     * and contradicting VerifyReportSerializer::completed([]) besides. Raised
+     * in review of dev#84.
+     */
+    #[Test]
+    public function an_empty_run_does_not_claim_its_checks_completed(): void
+    {
+        $command = $this->command();
+        $output = new BufferedOutput();
+        $command->run(new ArrayInput(['--dirty' => true], $command->getDefinition()), $output);
+
+        $verdict = self::recordOfKind(self::ndjson($output->fetch()), 'verdict');
+
+        self::assertSame('nothing_to_verify', $verdict['verdict']);
+        self::assertFalse($verdict['completed'], 'nothing ran, so nothing completed');
+        self::assertFalse(
+            (new VerifyReportSerializer())->completed([]),
+            'and the serializer agrees, which is the point',
+        );
+    }
+
+    /**
+     * The clean answer used to return before `maybeAppendToTrace()`, so a
+     * workflow running `ai:verify --dirty --trace=<id>` recorded nothing at all
+     * for the run. A gap in an audit trail reads as a step that was never
+     * taken. Raised in review of dev#84.
+     */
+    #[Test]
+    public function a_clean_run_still_reaches_an_active_trace(): void
+    {
+        $store = new TraceStore();
+        $store->openOrCreate('clean-x', 'A clean checkout');
+
+        $command = $this->command($store);
+        $output = new BufferedOutput();
+        $exit = $command->run(
+            new ArrayInput(['--dirty' => true, '--trace' => 'clean-x'], $command->getDefinition()),
+            $output,
+        );
+
+        self::assertSame(0, $exit);
+        self::assertStringContainsString('"trace_appended"', $output->fetch());
+
+        $events = $store->read('clean-x')->events;
+        self::assertCount(1, $events, 'the run has to appear in the trail');
+        self::assertSame(TraceEventKind::VERIFY_RESULT, $events[0]->eventKind);
+        self::assertSame('nothing_to_verify', $events[0]->payload['verdict']);
+        self::assertArrayHasKey('dirty_scan', $events[0]->payload, 'with the reach of the scan that found nothing');
+    }
+
+    /** And in --json mode the appended record travels inside the envelope. */
+    #[Test]
+    public function the_json_envelope_carries_the_trace_record_too(): void
+    {
+        $store = new TraceStore();
+        $store->openOrCreate('clean-json', 'A clean checkout');
+
+        $command = $this->command($store);
+        $output = new BufferedOutput();
+        $command->run(
+            new ArrayInput(['--dirty' => true, '--json' => true, '--trace' => 'clean-json'], $command->getDefinition()),
+            $output,
+        );
+
+        $envelope = (array) json_decode(trim($output->fetch()), true);
+
+        self::assertSame('trace_appended', $envelope['trace'][0]['kind'] ?? null);
+        self::assertCount(1, $store->read('clean-json')->events);
     }
 }
