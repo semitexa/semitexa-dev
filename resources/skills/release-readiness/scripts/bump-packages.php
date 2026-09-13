@@ -119,10 +119,27 @@ if (!is_dir($packagesDir)) {
     exit(1);
 }
 
+$allDirs = glob($packagesDir . '/*', GLOB_ONLYDIR) ?: [];
+
 $dirs = array_filter(
-    glob($packagesDir . '/*', GLOB_ONLYDIR) ?: [],
+    $allDirs,
     static fn(string $d) => is_file($d . '/composer.json'),
 );
+
+// NAMED, not silently dropped. `packages/semitexa-*` is the glob that defines
+// the package set, and two directories inside it are not Composer packages:
+// semitexa-installer is a Docker project that publishes an image, and
+// semitexa-companion is a browser extension. Neither has a composer.json and
+// neither is ever tagged here.
+//
+// Saying nothing about them made every release end with "Released 10
+// package(s)" over an eleven-directory merge, which reads like something was
+// forgotten — and cost somebody the time to go and prove it had not been.
+$notPackages = array_map(
+    'basename',
+    array_values(array_diff($allDirs, $dirs)),
+);
+sort($notPackages);
 
 $errors = 0;
 $candidates = [];
@@ -359,6 +376,12 @@ if ($updatedPackages !== [] && !$noPush) {
 }
 
 echo "\n\033[1;32mDone.\033[0m Released " . count($updatedPackages) . " package(s).\n";
+
+if ($notPackages !== []) {
+    echo 'Not released, and not a mistake: ' . implode(', ', $notPackages)
+        . ' — directories under packages/ with no composer.json, so not Composer packages. '
+        . "They ship by their own routes; see docs/workspace/ARCHITECTURE.md.\n";
+}
 
 function printUsage(): void
 {
