@@ -578,7 +578,7 @@ function latestReleaseTag(string $dir): ?string
 }
 
 /**
- * @return array<string, array{dir: string, psr4: array<string, string>, floors: array<string, string>, wildcards: list<string>}>
+ * @return array<string, array{dir: string, psr4: array<string, list<string>>, roots: list<string>, files: list<string>, promises: array<string, array{version: string, kind: string}>, wildcards: list<string>}>
  */
 function indexPackages(string $packagesDir): array
 {
@@ -729,7 +729,7 @@ function treeAtTag(string $dir, string $tag): ?array
  * composer.json (in which case the caller keeps today's map rather than
  * treating every import as unresolvable).
  *
- * @return array<string, string>|null namespace prefix => source directory
+ * @return array<string, list<string>>|null namespace prefix => source directories
  */
 function psr4AtTag(string $dir, string $tag): ?array
 {
