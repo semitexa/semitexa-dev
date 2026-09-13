@@ -61,6 +61,18 @@ final class SafeFileWriter implements FileWriterInterface
                 continue;
             }
 
+            if (isset($plans[$file->path])) {
+                // Silently keeping the last one published one file and reported
+                // success for two. A generator that plans the same path twice
+                // has a defect, and half-applying it hides which half won.
+                $errors[] = [
+                    'path' => $file->path,
+                    'reason' => 'duplicate',
+                    'detail' => 'the batch plans this path more than once; only one of them could ever be written',
+                ];
+                continue;
+            }
+
             $plans[$file->path] = ['full' => $this->basePath . '/' . $file->path, 'content' => $file->content];
         }
 
@@ -324,7 +336,18 @@ final class SafeFileWriter implements FileWriterInterface
             // them as syntax errors blamed a perfectly good one — and failed
             // the command for it.
             if (($outcome['failure'] ?? null) !== null) {
-                return ['status' => 'skipped', 'checked' => 0, 'errors' => [], 'reason' => (string) $outcome['failure']];
+                // Whatever was already found stands. Returning `skipped` here
+                // threw away a real parse error found in an earlier file — and
+                // GenerationExitCode treats skipped as success, so the command
+                // exited 0 having written code known not to parse.
+                return $errors === []
+                    ? ['status' => 'skipped', 'checked' => 0, 'errors' => [], 'reason' => (string) $outcome['failure']]
+                    : [
+                        'status' => 'fail',
+                        'checked' => count($errors),
+                        'errors' => $errors,
+                        'reason' => 'stopped early: ' . (string) $outcome['failure'],
+                    ];
             }
 
             if ($outcome['exit'] !== 0) {

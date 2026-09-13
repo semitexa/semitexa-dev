@@ -495,6 +495,7 @@ final class VerificationExecutor
             exitCode:    $result->status === PhpstanRunResult::STATUS_PASS ? 0 : max(1, $result->exitCode),
             signal:      $result->rawSignal,
             diagnostics: $result->diagnostics,
+            accepted:    $result->accepted,
         );
     }
 

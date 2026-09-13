@@ -167,7 +167,10 @@ final class PhpstanRunner
         foreach ($diagnostics as $diagnostic) {
             $path = (string) ($diagnostic['path'] ?? '');
             $rule = (string) ($diagnostic['identifier'] ?? '');
-            $key = $path . "\0" . $rule;
+            // Canonical, because allowanceFor() is: keyed by the raw spelling,
+            // the workspace and vendor paths for ONE file each consume the
+            // allowance separately and two diagnostics slip through as one.
+            $key = AcceptedViolations::canonicalise($path) . "\0" . $rule;
             $allowance = AcceptedViolations::allowanceFor($path, $rule);
 
             if ($allowance === 0 || ($used[$key] ?? 0) >= $allowance) {

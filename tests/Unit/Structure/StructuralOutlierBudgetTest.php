@@ -101,7 +101,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // one moving in. If this file is split later it should be along the
         // envelope/trace seam, which is a deliberate refactor and not something
         // to do under the pressure of a budget number.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 713],
+        //
+        // 25/713 -> 25/719 on 2026-09-13, in review of dev#83: an accepted
+        // violation is no longer subtracted silently. The envelope now carries
+        // the `accepted` block whole — which rule, in which file, and the reason
+        // it was allowed — because a verdict of `pass` that quietly ignored a
+        // known violation reads exactly like one with nothing to ignore. Six
+        // lines, NO NEW METHOD.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 719],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
@@ -121,7 +128,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // skipped. NO NEW METHOD: the count is still 22, so the class is no
         // more tangled than it was, just nine lines longer for a distinction it
         // previously could not make.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 759],
+        // 22/759 -> 22/760 on 2026-09-13: one line, carrying that same
+        // `accepted` block through to the result so the command has something
+        // to report. NO NEW METHOD.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 760],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new

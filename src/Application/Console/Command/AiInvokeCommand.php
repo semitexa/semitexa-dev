@@ -56,6 +56,9 @@ final class AiInvokeCommand extends BaseCommand
     #[InjectAsReadonly]
     protected AttributeDiscovery $attributeDiscovery;
 
+    /** The payload exactly as the caller wrote it, for the follow-up commands. */
+    private ?string $invokedPayloadJson = null;
+
     public function __construct()
     {
         parent::__construct('ai:invoke');
@@ -84,6 +87,7 @@ final class AiInvokeCommand extends BaseCommand
         $routePath    = (string) ($input->getOption('route') ?? '');
         $method       = strtoupper((string) ($input->getOption('method') ?? 'GET'));
         $payloadJson  = (string) ($input->getOption('payload') ?? '{}');
+        $this->invokedPayloadJson = $payloadJson;
 
         if ($handlerClass === '' && $routePath === '') {
             return $this->emitError($output, $envelope, 'either --handler=<FQCN> or --route=<path> is required', 'input');
@@ -379,20 +383,99 @@ final class AiInvokeCommand extends BaseCommand
      * @param array<string, mixed> $envelope
      * @return list<array{cmd: string, args: list<string>, why: string}>
      */
+    /**
+     * How the target was addressed, in the form the next command needs.
+     *
+     * @param array<string, mixed> $target
+     * @return list<string>
+     */
+    private function targetArgs(array $target): array
+    {
+        $route = is_string($target['route_path'] ?? null) ? $target['route_path'] : null;
+        $method = is_string($target['method'] ?? null) ? $target['method'] : null;
+        $handler = is_string($target['handler_class'] ?? null) ? $target['handler_class'] : null;
+
+        if ($route !== null) {
+            $args = ['--route=' . $route];
+            if ($method !== null && $method !== 'GET') {
+                $args[] = '--method=' . $method;
+            }
+
+            return $args;
+        }
+
+        return $handler !== null ? ['--handler=' . $handler] : [];
+    }
+
+    /**
+     * The caller's payload, repeated only when repeating it gives nothing away.
+     *
+     * A suggested command is part of the envelope, and the envelope is printed,
+     * piped and pasted around — so the same gate that masks `payload_input`
+     * decides this. If the redactor would change ANY of it, the argument is
+     * left out entirely and {@see payloadHint()} says why: the caller still has
+     * what they typed, and this output does not become the copy of it that the
+     * masking was there to prevent.
+     *
+     * @return list<string>
+     */
+    private function payloadArg(): array
+    {
+        return $this->payloadIsSafeToRepeat() ? ['--payload=' . $this->invokedPayloadJson] : [];
+    }
+
+    private function payloadHint(): string
+    {
+        return $this->payloadIsSafeToRepeat()
+            ? ''
+            : ' — pass your own --payload again, it is not repeated here because the redactor masks part of it';
+    }
+
+    private function payloadIsSafeToRepeat(): bool
+    {
+        if ($this->invokedPayloadJson === null || $this->invokedPayloadJson === '{}') {
+            return false;
+        }
+
+        $decoded = json_decode($this->invokedPayloadJson, true);
+
+        return is_array($decoded) && ContextRedactor::redact($decoded) === $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $envelope
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
     private function buildNextCommands(array $envelope): array
     {
         $out = [];
         $verdict = $envelope['verdict'] ?? 'ok';
-        $target = $envelope['target'] ?? [];
-        $handler = $target['handler_class'] ?? null;
+        /** @var array<string, mixed> $target */
+        $target = is_array($envelope['target'] ?? null) ? $envelope['target'] : [];
+        $handler = is_string($target['handler_class'] ?? null) ? $target['handler_class'] : null;
+
+        // Every ai:invoke suggestion has to carry its target, or the command it
+        // names fails on the required-target check before it does anything. The
+        // payload is carried from what the caller actually passed, not from the
+        // redacted copy in the envelope — a suggestion that runs a different
+        // input than the one being discussed is worse than none.
+        $targetArgs = $this->targetArgs($target);
 
         if ($verdict === 'refused') {
-            $out[] = ['cmd' => 'ai:invoke', 'args' => ['--preview', '--json'], 'why' => 'resolve the target and see what would run, without executing it'];
+            $out[] = [
+                'cmd' => 'ai:invoke',
+                'args' => [...$targetArgs, ...$this->payloadArg(), '--preview', '--json'],
+                'why' => 'resolve the target and see what would run, without executing it' . $this->payloadHint(),
+            ];
             return $out;
         }
 
         if ($verdict === 'preview') {
-            $out[] = ['cmd' => 'ai:invoke', 'args' => ['--json'], 'why' => 'run it for real (dev only) once the target looks right'];
+            $out[] = [
+                'cmd' => 'ai:invoke',
+                'args' => [...$targetArgs, ...$this->payloadArg(), '--json'],
+                'why' => 'run it for real (dev only) once the target looks right' . $this->payloadHint(),
+            ];
             return $out;
         }
 

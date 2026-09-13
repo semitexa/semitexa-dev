@@ -57,7 +57,7 @@ final class SafeFileWriterPreflightTest extends TestCase
         return new PlannedFile($path, $content, FileType::PhpClass);
     }
 
-    /** @return list<array{string, string}> */
+    /** @return array<string, array{string, string}> The key names the case in the test report. */
     public static function refusedPaths(): array
     {
         return [

@@ -10,6 +10,7 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -195,9 +196,7 @@ final class MakePageCommand extends BaseCommand
                 $io->text("  - {$path}");
             }
         }
-        if ($result->conflicts) {
-            $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
-        }
+        GenerationOutcomeRenderer::renderProblems($io, $result);
 
         $this->announceMechanisms($output);
 

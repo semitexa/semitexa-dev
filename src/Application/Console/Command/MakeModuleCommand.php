@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\ModulePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -121,6 +122,8 @@ final class MakeModuleCommand extends BaseCommand
             ));
             $io->text($this->buildNextText($target));
         }
+
+        GenerationOutcomeRenderer::renderProblems($io, $result);
 
         return GenerationExitCode::forResult($result);
     }

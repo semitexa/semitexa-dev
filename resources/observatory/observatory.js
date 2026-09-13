@@ -55,6 +55,9 @@ const HUNG_MS = 5000;
 /* How long a successful log read stays good. Short enough that a pinned block
    keeps up with a live tail, long enough that pinning is not a request loop. */
 const LOGS_TTL_MS = 4000;
+/* Long enough for a slow journal read, short enough that a pinned block that
+   got nothing can be retried by pinning it again. */
+const LOGS_TIMEOUT_MS = 5000;
 
 /* ------------------------------------------------------------ state */
 const S = {
@@ -371,7 +374,10 @@ function planRefused(p, fin, from) {
   for (let i = start; i <= stop; i++) { wps.push({pt: STAGES[i].key, t}); if (i < stop) t += move; }
   // The turn upwards is deliberately slower than the run in: the moment of
   // refusal is the only thing worth watching in this particle's whole life.
-  const turn = Math.max(420, T * 0.5) / S.speed;
+  // T comes from travelMs(), which has already divided by S.speed — dividing
+  // again made the turn 4x slower at half speed and 16x at quarter, so a
+  // particle could spend most of its 60s life still on its way to the ring.
+  const turn = Math.max(420 / S.speed, T * 0.5);
   wps.push({pt: 'refused_in', t: t + turn * 0.6}, {pt: 'refused', t: t + turn});
   p.wps = wps; p.born = now(); p.state = 'toOrbit'; p.ring = 'refused'; p.color = '#ffb454'; p.total = t + turn;
   p.reason = (fin.phases && fin.phases.detail) || null;
@@ -1164,8 +1170,13 @@ async function loadLogs(block) {
   if (held && held.state === 'ok' && (now() - (held.at || 0)) < LOGS_TTL_MS) return;
   if (held && held.state === 'loading') return;
   S.logs.set(block, {state: 'loading', lines: []});
+  // A fetch that never settles would leave this block 'loading' for the life
+  // of the page, and the guard above then refuses every retry — the one state
+  // from which the panel cannot recover on its own.
+  const abort = new AbortController();
+  const bail = setTimeout(() => abort.abort(), LOGS_TIMEOUT_MS);
   try {
-    const r = await fetch('/__observatory/logs?block=' + encodeURIComponent(block), {cache: 'no-store', headers: {Accept: 'application/json'}});
+    const r = await fetch('/__observatory/logs?block=' + encodeURIComponent(block), {cache: 'no-store', headers: {Accept: 'application/json'}, signal: abort.signal});
     const d = await r.json();
     S.logs.set(block, d.allowed === false
       ? {state: 'denied', lines: [], at: now()}
@@ -1173,6 +1184,8 @@ async function loadLogs(block) {
     if (d.allowed === false) S.logs.get(block).reason = d.reason || 'not available here';
   } catch (e) {
     S.logs.set(block, {state: 'error', lines: [], at: now()});
+  } finally {
+    clearTimeout(bail);
   }
 }
 function logsHtml(block) {

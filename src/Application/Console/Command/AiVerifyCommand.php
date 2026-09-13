@@ -677,6 +677,12 @@ final class AiVerifyCommand extends BaseCommand
         if ($result->diagnostics !== []) {
             $out['diagnostics_count'] = count($result->diagnostics);
         }
+        if ($result->accepted !== []) {
+            // In full, with their reasons. A count and the first path in the
+            // signal line told a reader that something was excused without ever
+            // saying what or why.
+            $out['accepted'] = $result->accepted;
+        }
         return $out;
     }
 

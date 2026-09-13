@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\TestPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
@@ -117,9 +118,7 @@ final class MakeTestCommand extends BaseCommand
         if ($result->created) {
             $io->success('Created: ' . implode(', ', $result->created));
         }
-        if ($result->conflicts) {
-            $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
-        }
+        GenerationOutcomeRenderer::renderProblems($io, $result);
 
         return GenerationExitCode::forResult($result);
     }

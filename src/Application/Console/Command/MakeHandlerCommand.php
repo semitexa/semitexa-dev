@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\HandlerPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
@@ -183,9 +184,7 @@ final class MakeHandlerCommand extends BaseCommand
         if ($result->created) {
             $io->success('Created: ' . implode(', ', $result->created));
         }
-        if ($result->conflicts) {
-            $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
-        }
+        GenerationOutcomeRenderer::renderProblems($io, $result);
 
         return GenerationExitCode::forResult($result);
     }

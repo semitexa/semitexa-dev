@@ -26,7 +26,7 @@ final class ShippedDocsAnnounceMechanismsTest extends TestCase
     private const ROOT = __DIR__ . '/../../../..';
     private const SCAFFOLD = self::ROOT . '/packages/semitexa-ultimate';
 
-    /** @return list<array{string, string}> */
+    /** @return array<string, array{string, string}> The key names the case in the test report. */
     public static function shippedDocs(): array
     {
         return [
