@@ -210,6 +210,9 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 if (in_array($relativePath, $tree, true)) {
                     continue;
                 }
+                if (classDeclaredAtTag($target['dir'], $floorVersion, $class, $psr4)) {
+                    continue;
+                }
 
                 $problems[] = sprintf(
                     '%s imports %s but floors %s at %s, where %s does not exist',
@@ -221,13 +224,143 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 );
             }
         }
+
+        // `*` IS THE ONE FORM THAT PROMISES NOTHING, which is why the check
+        // above skips it — and exactly why it needs one of its own.
+        //
+        // A package that calls a sibling's BRAND-NEW class while requiring it
+        // at `*` resolves against every released version, including the ones
+        // without that class. semitexa/mail called SandboxGuard while requiring
+        // semitexa/core at `*`: composer accepts a lockfile with yesterday's
+        // core, and every send fatals on `Class not found` — outside a sandbox
+        // too. A reviewer found that; the floor check waved it through.
+        //
+        // The narrowest statement that is always true: if the class exists in
+        // NO released version of the sibling, the constraint cannot be
+        // satisfied by anything on Packagist today. That is a fact, not a
+        // judgement about which versions a consumer might pick.
+        foreach ($package['wildcards'] as $dependency) {
+            $target = $packages[$dependency] ?? null;
+            if ($target === null) {
+                continue;
+            }
+
+            $latest = latestReleaseTag($target['dir']);
+            if ($latest === null) {
+                // Nothing released yet; there is no version to be wrong about.
+                continue;
+            }
+
+            $tree = treeAtTag($target['dir'], $latest);
+            if ($tree === null) {
+                continue;
+            }
+
+            $psr4 = psr4AtTag($target['dir'], $latest) ?? $target['psr4'];
+
+            foreach (importsFrom($package['dir'], $psr4) as $class => $relativePath) {
+                if (in_array($relativePath, $tree, true)) {
+                    continue;
+                }
+                if (classDeclaredAtTag($target['dir'], $latest, $class, $psr4)) {
+                    continue;
+                }
+
+                $problems[] = sprintf(
+                    '%s imports %s but requires %s at "*", and NO released %s contains %s '
+                    . '(newest is %s) — floor it at the release that ships the class',
+                    $name,
+                    $class,
+                    $dependency,
+                    $dependency,
+                    $relativePath,
+                    $latest,
+                );
+            }
+        }
     }
 
     return $problems;
 }
 
 /**
- * @return array<string, array{dir: string, psr4: array<string, string>, floors: array<string, string>}>
+ * Whether a class is DECLARED anywhere in a package at a tag, regardless of
+ * which file holds it.
+ *
+ * The path check above is a proxy: PSR-4 says a class lives in the file its
+ * name maps to, and it almost always does. `Semitexa\Core\Tenant\Layer\ThemeValue`
+ * is the exception that proves the proxy needs a second opinion — it is a
+ * second class declared inside ThemeLayer.php, so no ThemeValue.php exists in
+ * any release, yet the class resolves fine through the classmap. Reporting it
+ * would fail every release over something that has worked for months, and a
+ * gate that cries wolf gets switched off.
+ *
+ * Only ever called on a MISS, so the cost is one grep per finding rather than
+ * one per import.
+ */
+function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4): bool
+{
+    $short = $fqcn;
+    $lastSeparator = strrpos($short, '\\');
+    if ($lastSeparator !== false) {
+        $short = substr($short, $lastSeparator + 1);
+    }
+    if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
+        return false;
+    }
+
+    $paths = [];
+    foreach ($psr4 as $sourceDir) {
+        $paths[] = escapeshellarg($sourceDir);
+    }
+
+    $command = sprintf(
+        'git -C %s grep -lE %s %s%s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg('^[a-z ]*(class|interface|trait|enum) ' . $short . '\b'),
+        escapeshellarg($tag),
+        $paths === [] ? '' : ' -- ' . implode(' ', $paths),
+    );
+
+    exec($command, $lines, $code);
+
+    return $code === 0 && $lines !== [];
+}
+
+/**
+ * The newest release tag in a package, or null when nothing is released.
+ *
+ * Date-based tags (`YYYY.MM.DD.HHMM`) sort correctly as strings, so the newest
+ * is the last one. Anything that is not a release tag is ignored rather than
+ * ranked.
+ */
+function latestReleaseTag(string $dir): ?string
+{
+    $command = sprintf('git -C %s tag --list 2>/dev/null', escapeshellarg($dir));
+    exec($command, $lines, $code);
+    if ($code !== 0) {
+        return null;
+    }
+
+    $releases = [];
+    foreach ($lines as $tag) {
+        $tag = trim($tag);
+        if (preg_match('/^\d{4}\.\d{2}\.\d{2}\.\d{4}$/', $tag) === 1) {
+            $releases[] = $tag;
+        }
+    }
+
+    if ($releases === []) {
+        return null;
+    }
+
+    sort($releases);
+
+    return (string) end($releases);
+}
+
+/**
+ * @return array<string, array{dir: string, psr4: array<string, string>, floors: array<string, string>, wildcards: list<string>}>
  */
 function indexPackages(string $packagesDir): array
 {
@@ -247,6 +380,7 @@ function indexPackages(string $packagesDir): array
         }
 
         $floors = [];
+        $wildcards = [];
         foreach ($json['require'] ?? [] as $dependency => $constraint) {
             if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
                 continue;
@@ -255,6 +389,8 @@ function indexPackages(string $packagesDir): array
             // checked; the floor is.
             if (preg_match('/^>=\s*(\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?)/i', $constraint, $m) === 1) {
                 $floors[$dependency] = $m[1];
+            } elseif (trim($constraint) === '*') {
+                $wildcards[] = $dependency;
             }
         }
 
@@ -262,6 +398,7 @@ function indexPackages(string $packagesDir): array
             'dir' => dirname($composerPath),
             'psr4' => $psr4,
             'floors' => $floors,
+            'wildcards' => $wildcards,
         ];
     }
 
@@ -379,6 +516,12 @@ function importsFrom(string $packageDir, array $psr4): array
  *  - The word `use` inside a comment, a string, or a closure's `use (...)`
  *    clause is matched as though it were an import.
  *
+ * The alias is dropped at TOKEN level, on T_AS. Doing it by string surgery is
+ * its own trap: searching the joined text for "as" turns
+ * `use Semitexa\Orm\Metadata\HasColumnReferences;` into
+ * `Semitexa\Orm\Metadata\H`, and the gate then fails releases over a file
+ * nobody ever imported. Measured, in this repository, on six packages.
+ *
  * `use function` and `use const` are skipped, and so are trait `use` statements
  * inside a class body: only namespace-level imports name a class file.
  *
@@ -406,32 +549,77 @@ function importedClasses(string $contents): array
             continue;
         }
 
-        // Collect the whole statement, so grouped and comma-separated forms
-        // are read as one thing rather than a first name and some leftovers.
-        $statement = '';
+        $prefix = '';
+        $current = '';
+        $skippingAlias = false;
+        $isClassImport = null;
+        $found = [];
+
+        $flush = static function () use (&$current, &$prefix, &$found): void {
+            $name = ltrim($prefix . $current, '\\');
+            if ($name !== '') {
+                $found[] = $name;
+            }
+            $current = '';
+        };
+
         $j = $i + 1;
         for (; $j < $n; $j++) {
-            $text = $tokens[$j]->text;
+            $piece = $tokens[$j];
+            $text = $piece->text;
+
             if ($text === ';') {
                 break;
             }
-            if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            if ($piece->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
                 continue;
             }
-            $statement .= $text;
+
+            if ($isClassImport === null) {
+                // The first meaningful token decides what kind of `use` this is.
+                // `(` is a closure capture, which imports no class at all.
+                $isClassImport = !$piece->is([T_FUNCTION, T_CONST]) && $text !== '(';
+                if ($isClassImport === false) {
+                    break;
+                }
+            }
+
+            if ($piece->is(T_AS)) {
+                $skippingAlias = true;
+                continue;
+            }
+            if ($text === ',') {
+                $skippingAlias = false;
+                $flush();
+                continue;
+            }
+            if ($text === '{') {
+                $prefix = $current;
+                $current = '';
+                continue;
+            }
+            if ($text === '}') {
+                $skippingAlias = false;
+                $flush();
+                $prefix = '';
+                continue;
+            }
+            if ($skippingAlias) {
+                continue;
+            }
+
+            $current .= $text;
         }
+
         $i = $j;
 
-        // `use ($captured)` on a closure — not an import at all.
-        if ($statement === '' || str_starts_with($statement, '(')) {
-            continue;
-        }
-        // `use function foo;` / `use const BAR;` name no class file.
-        if (str_starts_with($statement, 'function') || str_starts_with($statement, 'const')) {
+        if ($isClassImport !== true) {
             continue;
         }
 
-        foreach (expandUseStatement($statement) as $class) {
+        $flush();
+
+        foreach ($found as $class) {
             $classes[$class] = true;
         }
     }
@@ -439,54 +627,3 @@ function importedClasses(string $contents): array
     return array_keys($classes);
 }
 
-/**
- * Expand one `use` statement body into the class names it imports.
- *
- * Handles the plain, aliased, comma-separated and grouped forms:
- *   A\B\C            A\B\CasD        A\B,C\D        A\B\{C,DasE}
- *
- * @return list<string>
- */
-function expandUseStatement(string $statement): array
-{
-    $open = strpos($statement, '{');
-    if ($open !== false) {
-        $prefix = substr($statement, 0, $open);
-        $inner = rtrim(substr($statement, $open + 1), '}');
-        $classes = [];
-        foreach (explode(',', $inner) as $piece) {
-            $name = stripAlias($piece);
-            if ($name !== '') {
-                $classes[] = ltrim($prefix, '\\') . $name;
-            }
-        }
-
-        return $classes;
-    }
-
-    $classes = [];
-    foreach (explode(',', $statement) as $piece) {
-        $name = stripAlias($piece);
-        if ($name !== '') {
-            $classes[] = ltrim($name, '\\');
-        }
-    }
-
-    return $classes;
-}
-
-/** Drop a trailing `as Alias` — the tokens arrive with whitespace removed. */
-function stripAlias(string $piece): string
-{
-    $position = strrpos($piece, 'as');
-    if ($position !== false && $position > 0) {
-        $tail = substr($piece, $position + 2);
-        // `as` is only an alias keyword when what follows is a bare name and
-        // what precedes it ends a class name — never inside e.g. `Database`.
-        if ($tail !== '' && !str_contains($tail, '\\') && ctype_upper($tail[0])) {
-            $piece = substr($piece, 0, $position);
-        }
-    }
-
-    return trim($piece);
-}

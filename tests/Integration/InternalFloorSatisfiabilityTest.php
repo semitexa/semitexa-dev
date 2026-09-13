@@ -166,14 +166,79 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertStringContainsString('not in', $result['output']);
     }
 
-    /** `*` promises nothing, so there is nothing to verify against. */
+    /**
+     * `*` makes no VERSION promise, so there is no floor to verify — but it is
+     * not therefore unfalsifiable. If the class exists in no released version
+     * at all, the requirement cannot be met by anything on Packagist today,
+     * whichever version a consumer resolves to.
+     *
+     * semitexa/mail called SandboxGuard while requiring semitexa/core at `*`.
+     * Composer accepts a lockfile with yesterday's core and every send fatals
+     * on `Class not found` — outside a sandbox too. The floor check waved it
+     * through, because `*` was the one form nothing looked at.
+     */
     #[Test]
-    public function a_wildcard_is_not_checked(): void
+    public function a_wildcard_still_fails_when_no_release_contains_the_class(): void
     {
         $this->provider('2026.09.13.1330', ['Support/Other.php']);
         $this->consumer('*', 'Semitexa\\Core\\Support\\Row');
 
-        self::assertSame(0, $this->gate()['exit'], 'a wildcard makes no promise to break');
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('NO released semitexa/core', $result['output']);
+        self::assertStringContainsString('2026.09.13.1330', $result['output'], 'name the newest release checked');
+    }
+
+    /** And a wildcard whose class IS released stays unchecked, as before. */
+    #[Test]
+    public function a_wildcard_whose_class_is_released_is_left_alone(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumer('*', 'Semitexa\\Core\\Support\\Row');
+
+        self::assertSame(0, $this->gate()['exit'], 'a wildcard is not a floor and must not be treated as one');
+    }
+
+    /**
+     * The path check is a PROXY for "is this class resolvable", and a proxy
+     * needs a second opinion before it fails a release.
+     *
+     * `Semitexa\Core\Tenant\Layer\ThemeValue` is a second class declared
+     * inside ThemeLayer.php, so no ThemeValue.php exists in any release — yet
+     * the class resolves fine. Reporting it would fail every release over
+     * something that has worked for months, and a gate that cries wolf is a
+     * gate someone switches off.
+     */
+    #[Test]
+    public function a_class_declared_in_another_file_is_not_reported_missing(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Tenant', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+        // Two classes, one file — no SideCar.php anywhere in the tree.
+        file_put_contents(
+            $dir . '/src/Tenant/Holder.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Tenant;\n\n"
+            . "class Holder {}\n\nreadonly class SideCar {}\n",
+        );
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Tenant\\SideCar');
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
     }
 
     /** An import from outside the floored package is none of this check's business. */
