@@ -34,8 +34,16 @@ final class StructuralOutlierBudgetTest extends TestCase
         // over-cap attempt no longer pays for a full graphql document execution
         // before being answered 429. The union type, the resolution line and the
         // comment saying why it sits below the caps are the whole increase.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2087],
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1126],
+        // +1/+2/+3 lines on 2026-09-13, adopting Semitexa\Core\Support\Row:
+        // reading a loosely-typed row (a Swoole\Table row, a backtrace frame, a
+        // DB row) went from `(string) ($row['col'] ?? '')` at the call site to
+        // one narrowing that can be read and tested. That was the largest
+        // phpstan cluster in the project — 83 "Cannot cast mixed to X" — and it
+        // also removed a fatal: casting an ARRAY value that way raises "Array
+        // to string conversion" rather than yielding the default, so a
+        // malformed row took the worker down. NO NEW METHODS in any of the three.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2088],
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1128],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -58,7 +66,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-core/src/Request.php' => [31, 443],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 207],
-        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 759],
+        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 762],
         // Newly recorded on 2026-09-11, at 24/709: it crossed the 700-line
         // threshold by nine lines, and every one of them is the guard that
         // stops a partial write from RESURRECTING a deleted row. Table::set()

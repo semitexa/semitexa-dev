@@ -365,7 +365,28 @@ run_playwright_smoke
 # Lowered deliberately rather than left: a ceiling that stays above the real
 # count is not a ratchet, it is sixty-six messages of room for the next
 # regression to hide in, and the gate would pass while the number climbed back.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-538}"
+#
+# 538 -> 379 on 2026-09-13. The largest single cluster in the project was 83
+# "Cannot cast mixed to X": a Swoole\Table row, a debug_backtrace() frame and a
+# decoded JSON body all arrive as `array<mixed, mixed>`, and the habit around
+# that was `(string) ($row['col'] ?? '')` at the point of use. That is wrong
+# twice -- the analyser cannot see a string there, and casting an ARRAY value
+# raises "Array to string conversion" rather than yielding the default, so a
+# malformed row took a worker down. Semitexa\Core\Support\Row narrows once,
+# where it can be tested; adopting it across the SSE subsystem, the ORM queue
+# and query, the Swoole bootstrap and the UiPlayground feeds removed 107.
+#
+# MEASURED THE HARD WAY, and the note above is why. The dev container reports
+# 375 for the same tree: it runs phpstan 2.1.40 against the clone's 2.2.13, and
+# four messages differ on byte-identical files. So this number was taken HERE,
+# in the release container, with develop's package code staged into the clone
+# and then reverted -- because at the time of measuring, core/orm/ssr had not
+# yet merged to master and the clone reported 508, of which every one of the
+# 133 extra was `unknown class Semitexa\Core\Support\Row` and the casts it
+# replaces. Expect 379 once those merges land; if the gate reads higher on the
+# first release after this note, the difference is the release's own, not this
+# measurement's.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-379}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
