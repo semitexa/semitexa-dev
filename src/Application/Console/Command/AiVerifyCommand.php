@@ -92,6 +92,25 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         if ($paths === []) {
+            // `--dirty` finding nothing is an ANSWER, not a misuse: the tree is
+            // clean. Telling that caller to "pass --dirty" is advice they just
+            // took, and failing the run would make `ai:verify --dirty` red on
+            // every clean checkout. It is not a pass either — nothing was
+            // verified — so it gets a verdict of its own, with the scan's reach
+            // attached so the reader can see what was asked.
+            if ((bool) $input->getOption('dirty')) {
+                $scanner = new DirtyWorkspaceScanner($this->getProjectRoot());
+                $output->writeln(json_encode([
+                    'artifact' => 'semitexa-dev.verify-report/v1',
+                    'generated_at' => date('c'),
+                    'verdict' => 'nothing_to_verify',
+                    'changed_files' => [],
+                    'dirty_scan' => $scanner->report(),
+                ], JSON_UNESCAPED_SLASHES));
+
+                return self::SUCCESS;
+            }
+
             $this->emitError($output, 'no changed files supplied — pass --files, --git-ref, --diff-stdin or --dirty', $jsonMode);
             return self::FAILURE;
         }

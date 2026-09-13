@@ -115,7 +115,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // knows about git repositories belongs anyway. What is left is the
         // option, two call sites and the comments explaining why the answer
         // carries its own reach. METHOD COUNT UNCHANGED at 25.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 731],
+        // 25/731 -> 25/750 on 2026-09-13, in self-review of the same flag: a
+        // clean tree now gets its own verdict instead of the generic "pass
+        // --files, --git-ref, --diff-stdin or --dirty" error, which told the
+        // caller to do the thing they had just done and exited 1 on every
+        // clean checkout. Nineteen lines, most of them the comment saying why
+        // it is neither a pass nor a failure. METHOD COUNT UNCHANGED at 25.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 750],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
