@@ -98,8 +98,11 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         file_put_contents($dir . '/src/Application/Reader.php', $body);
     }
 
-    /** @return array{exit: int, output: string} */
-    private function gate(): array
+    /**
+     * @param array<string, string> $env extra environment for the gate process
+     * @return array{exit: int, output: string}
+     */
+    private function gate(array $env = []): array
     {
         $script = dirname(__DIR__, 2)
             . '/resources/skills/release-readiness/scripts/release-check-internal-constraints.php';
@@ -110,7 +113,7 @@ final class InternalFloorSatisfiabilityTest extends TestCase
             $descriptors,
             $pipes,
             null,
-            ['RELEASE_ROOT' => $this->root, 'PATH' => getenv('PATH') ?: '/usr/bin:/bin'],
+            $env + ['RELEASE_ROOT' => $this->root, 'PATH' => getenv('PATH') ?: '/usr/bin:/bin'],
         );
         self::assertIsResource($process);
 
@@ -609,5 +612,123 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(1, $result['exit'], $result['output']);
         self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
         self::assertStringNotContainsString('helper', $result['output'], 'the function is not a class file');
+    }
+
+    /**
+     * A NAMESPACE alias resolves to the class, not to the namespace.
+     *
+     * `use Semitexa\Core\Support as CoreSupport;` then `new CoreSupport\Row()`
+     * recorded the import itself, so the gate looked for Support.php — absent
+     * in every release — and failed a release that was fine, while never
+     * checking Row at all.
+     */
+    #[Test]
+    public function a_namespace_alias_resolves_to_the_class_it_reaches(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support as CoreSupport;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): object\n    {\n"
+            . "        return new CoreSupport\\Row();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+        self::assertStringNotContainsString('Support.php', $result['output'], 'the namespace is not a class file');
+    }
+
+    /**
+     * A fully qualified FUNCTION call emits the same token as a class name.
+     * Recording it sent the gate looking for helper.php and failed a release
+     * that was perfectly satisfiable.
+     */
+    #[Test]
+    public function a_fully_qualified_function_call_is_not_a_class(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): mixed\n    {\n"
+            . "        return \\Semitexa\\Core\\helper();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringNotContainsString('helper', $result['output']);
+    }
+
+    /** But `new \Foo\Bar()` is followed by `(` too, and IS a class. */
+    #[Test]
+    public function a_fully_qualified_constructor_is_still_a_class(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): object\n    {\n"
+            . "        return new \\Semitexa\\Core\\Support\\Row();\n"
+            . "    }\n}\n",
+        );
+
+        self::assertSame(1, $this->gate()['exit'], 'the `new` is what tells it from a function call');
+    }
+
+    /**
+     * THE RELEASE BEING CUT HAS NO TAG YET, and this gate runs in preflight,
+     * before finalize creates any. A package that starts calling a sibling API
+     * introduced in the SAME release otherwise had no constraint that could
+     * pass: `*` fails because no release contains the class, and a floor at the
+     * planned version fails because that tag does not exist. The release could
+     * not reach finalize at all.
+     */
+    #[Test]
+    public function a_floor_on_the_release_being_cut_is_verified_against_the_tree(): void
+    {
+        // Released WITHOUT Row; the working tree has it, as it would during prep.
+        $this->provider('2026.09.13.1330', ['Support/Other.php']);
+        $dir = $this->root . '/packages/semitexa-core';
+        file_put_contents(
+            $dir . '/src/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nfinal class Row {}\n",
+        );
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m row 2>&1");
+
+        $this->consumer('>=2026.09.13.1900 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $withPlanned = $this->gate(['RELEASE_VERSION' => '2026.09.13.1900']);
+        self::assertSame(0, $withPlanned['exit'], $withPlanned['output']);
+
+        // And ONLY for the version the release flow names. Any other absent tag
+        // still fails closed — a typo must not be answered by "the class is
+        // here now".
+        $withoutPlanned = $this->gate();
+        self::assertSame(1, $withoutPlanned['exit'], $withoutPlanned['output']);
+        self::assertStringContainsString('that tag is not in', $withoutPlanned['output']);
+    }
+
+    /** And a class that is NOT in the tree still fails, planned version or not. */
+    #[Test]
+    public function a_floor_on_the_release_being_cut_still_fails_for_a_class_that_is_not_there(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Other.php']);
+        $this->consumer('>=2026.09.13.1900 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate(['RELEASE_VERSION' => '2026.09.13.1900']);
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('not in the tree that is about to become it', $result['output']);
     }
 }
