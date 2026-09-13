@@ -32,7 +32,6 @@ final class PackageTestCoverageRatchetTest extends TestCase
         'semitexa-music' => 4,
         'semitexa-showcase-kit' => 4,
         'semitexa-theme-sky' => 1,
-        'semitexa-workflow' => 42,
     ];
 
     #[Test]

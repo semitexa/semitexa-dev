@@ -1,7 +1,7 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-09-07T03:48:26+00:00",
-    "source_version": "dev-develop@7912910",
+    "generated_at": "2026-09-13T13:52:50+00:00",
+    "source_version": "dev-develop@3bbb0c9",
     "count": 62,
     "packages": [
         "semitexa/api",
@@ -47,6 +47,10 @@
         "semitexa/webhooks",
         "semitexa/workflow"
     ],
+    "not_packages": {
+        "semitexa-companion": "browser extension",
+        "semitexa-installer": "docker project (publishes an image, not a Composer package)"
+    },
     "content_hash": "4cd084000636fe725134e634409e0111c896189008d368f4c5856d80912a23b9",
     "capabilities": [
         {

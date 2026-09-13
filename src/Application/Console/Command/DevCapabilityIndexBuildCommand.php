@@ -80,19 +80,29 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
         // classmap would omit the packages least likely to be installed
         // anywhere — which are the only ones it exists to advertise.
         $capabilities = (new FrameworkCapabilityCatalog($this->classDiscovery))->everythingOnDisk($root);
-        $payload = CapabilityIndex::build($capabilities, $packagesOnDisk);
+        $nonPackages = CapabilityIndex::nonPackageDirectoriesOnDisk($root);
+        $payload = CapabilityIndex::build($capabilities, $packagesOnDisk, $nonPackages);
         $path = CapabilityIndex::path($root);
 
         if ($check) {
             $shipped = CapabilityIndex::read($path);
 
             $shippedCapabilities = is_array($shipped['capabilities'] ?? null) ? $shipped['capabilities'] : null;
-            $matches = CapabilityIndex::isInSync($capabilities, $shipped);
+            $capabilitiesMatch = CapabilityIndex::isInSync($capabilities, $shipped);
+            // not_packages is derived from disk but deliberately outside
+            // content_hash, so the capability hash cannot see it drift. Compared
+            // on its own, or a new non-package directory (or one that gained or
+            // lost its marker file) would leave the gate reporting the index
+            // current while this field is wrong.
+            $nonPackagesMatch = CapabilityIndex::nonPackagesAreInSync($nonPackages, $shipped);
+            $matches = $capabilitiesMatch && $nonPackagesMatch;
 
             if ($json) {
                 $output->writeln((string) json_encode([
                     'artifact' => CapabilityIndex::ARTIFACT,
                     'in_sync' => $matches,
+                    'capabilities_in_sync' => $capabilitiesMatch,
+                    'not_packages_in_sync' => $nonPackagesMatch,
                     'shipped_hash' => $shippedCapabilities === null
                         ? null
                         : CapabilityIndex::hash(array_values($shippedCapabilities)),
@@ -100,9 +110,14 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
                     'expected_hash' => $payload['content_hash'],
                 ], JSON_UNESCAPED_SLASHES));
             } else {
-                $output->writeln($matches
-                    ? '<info>[OK]</info> Capability index is current.'
-                    : '<error>[FAIL]</error> Capability index is stale — run bin/semitexa dev:capability-index:build');
+                if ($matches) {
+                    $output->writeln('<info>[OK]</info> Capability index is current.');
+                } else {
+                    $output->writeln(sprintf(
+                        '<error>[FAIL]</error> Capability index is stale (%s) — run bin/semitexa dev:capability-index:build',
+                        $capabilitiesMatch ? 'not_packages' : ($nonPackagesMatch ? 'capabilities' : 'capabilities and not_packages'),
+                    ));
+                }
             }
 
             return $matches ? Command::SUCCESS : Command::FAILURE;

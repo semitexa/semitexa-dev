@@ -63,6 +63,18 @@ foreach ($composerFiles as $composerPath) {
 
 if ($violations === []) {
     echo "[OK] Internal Semitexa package constraints are compatible with UTC date-based releases.\n";
+
+    $unsatisfiable = checkFloorsAreSatisfiable($packagesDir);
+    if ($unsatisfiable !== []) {
+        fwrite(STDERR, "A floor names a release that does not contain what this package imports:\n");
+        foreach ($unsatisfiable as $problem) {
+            fwrite(STDERR, '- ' . $problem . "\n");
+        }
+        fwrite(STDERR, "\nRaise the floor to the release that first shipped the class, or stop importing it.\n");
+        exit(1);
+    }
+
+    echo "[OK] Every internal floor names a release that actually contains the classes its package imports.\n";
     exit(0);
 }
 
@@ -141,3 +153,1097 @@ function isCompatibleInternalConstraint(string $constraint): bool
 
     return preg_match('/^>=\s*' . $version . '(?:\s*\|\|\s*dev-master)?$/i', $constraint) === 1;
 }
+
+/**
+ * A FLOOR THAT NAMES A RELEASE WITHOUT THE CLASS IS WORSE THAN NO FLOOR.
+ *
+ * The form check above asks whether a constraint is spelled correctly. This
+ * asks the question that actually matters: `semitexa/ssr` floored core at the
+ * release before the one that introduced `Semitexa\Core\Support\Row`, while
+ * importing Row in thirteen files. Composer resolves that happily and the
+ * worker dies on `Class not found` at the first request — which is the exact
+ * failure the floor exists to turn into a resolution error.
+ *
+ * A human found that in review. Nothing here would have.
+ *
+ * The check: for every `>=` floor on a sibling, read the classes this package
+ * IMPORTS from that sibling's namespace, and confirm each one's file exists in
+ * the sibling AT THAT TAG. One `git ls-tree` per (package, tag) rather than a
+ * lookup per import — the tree is read once and membership tested in memory.
+ *
+ * @return list<string> one sentence per unsatisfiable import
+ */
+function checkFloorsAreSatisfiable(string $packagesDir): array
+{
+    $packages = indexPackages($packagesDir);
+    $problems = [];
+
+    foreach ($packages as $name => $package) {
+        // A FLOOR and an EXACT PIN are both promises about a specific release,
+        // so both are verified the same way. An exact pin used to be recorded
+        // as neither floor nor wildcard and was therefore never inspected at
+        // all — a package pinned to a release predating a class it imports
+        // passed the gate and failed at the first request.
+        foreach ($package['promises'] as $dependency => $promise) {
+            $target = $packages[$dependency] ?? null;
+            if ($target === null) {
+                // Not in this workspace; nothing local to verify against.
+                continue;
+            }
+
+            $problems = array_merge($problems, verifyAgainstTag(
+                $name,
+                $package['dir'],
+                $dependency,
+                $target,
+                $promise['version'],
+                $promise['kind'],
+                $package['roots'],
+                $package['files'],
+            ));
+        }
+
+        // `*` IS THE ONE FORM THAT PROMISES NOTHING, which is why the checks
+        // above skip it — and exactly why it needs one of its own.
+        //
+        // A package that calls a sibling's BRAND-NEW class while requiring it
+        // at `*` resolves against every released version, including the ones
+        // without that class. semitexa/mail called SandboxGuard while requiring
+        // semitexa/core at `*`: composer accepts a lockfile with yesterday's
+        // core, and every send fatals on `Class not found` — outside a sandbox
+        // too. A reviewer found that; the floor check waved it through.
+        //
+        // The narrowest statement that is always true: if the class exists in
+        // NO released version of the sibling, the constraint cannot be
+        // satisfied by anything on Packagist today. That is a fact, not a
+        // judgement about which versions a consumer might pick.
+        foreach ($package['wildcards'] as $dependency) {
+            $target = $packages[$dependency] ?? null;
+            if ($target === null) {
+                continue;
+            }
+
+            $latest = latestReleaseTag($target['dir']);
+            if ($latest === null) {
+                // Nothing released yet; there is no version to be wrong about.
+                continue;
+            }
+
+            $problems = array_merge($problems, verifyAgainstTag(
+                $name,
+                $package['dir'],
+                $dependency,
+                $target,
+                $latest,
+                'wildcard',
+                $package['roots'],
+                $package['files'],
+            ));
+        }
+    }
+
+    return $problems;
+}
+
+/**
+ * Check every class one package uses from another against one tag of it.
+ *
+ * @param array{dir: string, psr4: array<string, list<string>>} $target
+ * @param 'floor'|'pin'|'wildcard' $kind
+ * @return list<string>
+ */
+function verifyAgainstTag(
+    string $name,
+    string $packageDir,
+    string $dependency,
+    array $target,
+    string $version,
+    string $kind,
+    array $consumerRoots = ['src'],
+    array $consumerFiles = [],
+): array {
+    $problems = [];
+
+    $tree = treeAtTag($target['dir'], $version);
+    $psr4 = $tree === null ? null : psr4AtTag($target['dir'], $version);
+
+    // THE RELEASE BEING CUT HAS NO TAG YET, and this gate runs in preflight —
+    // before release-finalize.sh creates any. Without this, a package that
+    // starts calling a sibling API introduced in the SAME coordinated release
+    // has no constraint that can pass: `*` fails because no release contains
+    // the class, and a floor at the planned version fails because that tag does
+    // not exist. The release could not reach finalize at all.
+    //
+    // Only the version the release flow explicitly names in RELEASE_VERSION is
+    // treated this way, and only against the synchronized master tree that is
+    // about to BECOME that tag. A floor on any other absent tag still fails
+    // closed — a typo must not be answered by "well, the class is here now".
+    $plannedVersion = trim((string) getenv('RELEASE_VERSION'));
+    if ($tree === null && $plannedVersion !== '' && $version === $plannedVersion) {
+        $tree = workingTree($target['dir']);
+        $psr4 = $target['psr4'];
+        if ($tree !== null && $psr4 !== []) {
+            return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, 'planned', $tree, $psr4, $consumerRoots, $consumerFiles);
+        }
+        $tree = null;
+    }
+
+    if ($tree === null) {
+        if ($kind === 'wildcard') {
+            return [];
+        }
+
+        return [sprintf(
+            '%s %s %s at %s, but that tag is not in %s — fetch tags, or it names a release that does not exist',
+            $name,
+            $kind === 'pin' ? 'pins' : 'floors',
+            $dependency,
+            $version,
+            basename($target['dir']),
+        )];
+    }
+
+    // THE MAP MUST COME FROM THE SAME TAG AS THE TREE. Today's autoload block
+    // describes today's layout; if the provider moved its sources since that
+    // release, mapping a class through the current map and looking it up in the
+    // OLD tree compares two different layouts.
+    //
+    // And when the tagged map cannot be read, the gate FAILS rather than
+    // falling back to the current one — falling back is the same mixing of
+    // revisions in a quieter form. Something the gate cannot see is not
+    // something it approves.
+    if ($psr4 === null) {
+        return [sprintf(
+            '%s names %s at %s, but that tag has no readable autoload.psr-4 map — '
+            . 'nothing can be verified against it',
+            $name,
+            $dependency,
+            $version,
+        )];
+    }
+
+    return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, $kind, $tree, $psr4, $consumerRoots, $consumerFiles);
+}
+
+/**
+ * The comparison itself, once a tree and a matching autoload map are in hand.
+ *
+ * @param array{dir: string, psr4: array<string, list<string>>} $target
+ * @param list<string> $tree
+ * @param array<string, list<string>> $psr4
+ * @return list<string>
+ */
+function verifyAgainstTree(
+    string $name,
+    string $packageDir,
+    string $dependency,
+    array $target,
+    string $version,
+    string $kind,
+    array $tree,
+    array $psr4,
+    array $consumerRoots = ['src'],
+    array $consumerFiles = [],
+): array {
+    $problems = [];
+    $declared = declaredClasses($target['dir'], $kind === 'planned' ? null : $version, $psr4);
+
+    // DISCOVERY uses today's prefixes as well as the tagged ones. Which classes
+    // belong to this dependency is a question about the namespaces a consumer
+    // can be referencing NOW; a prefix the provider added after the floored tag
+    // exists in no tagged map, so every reference under it would be skipped and
+    // never compared with what that tag declares. Verification still happens
+    // against the tagged declarations — only the "does this belong to them"
+    // question is asked of the wider map.
+    $discoveryPsr4 = $psr4;
+    foreach ($target['psr4'] as $prefix => $dirs) {
+        $discoveryPsr4[$prefix] ??= $dirs;
+    }
+
+    foreach (importsFrom($packageDir, $discoveryPsr4, $consumerRoots, $consumerFiles) as $class => $candidatePaths) {
+        if (isset($declared[$class])) {
+            continue;
+        }
+
+        $where = $candidatePaths[0] ?? '(unmapped)';
+
+        $problems[] = match ($kind) {
+            'wildcard' => sprintf(
+                '%s uses %s but requires %s at "*", and NO released %s declares it '
+                . '(newest is %s; expected %s) — floor it at the release that ships the class',
+                $name,
+                $class,
+                $dependency,
+                $dependency,
+                $version,
+                $where,
+            ),
+            'planned' => sprintf(
+                '%s uses %s and floors %s at %s, the release being cut, but the tree that is about '
+                . 'to become it does not declare it (expected %s)',
+                $name,
+                $class,
+                $dependency,
+                $version,
+                $where,
+            ),
+            default => sprintf(
+                '%s uses %s but %s %s at %s, which does not declare it (expected %s)',
+                $name,
+                $class,
+                $kind === 'pin' ? 'pins' : 'floors',
+                $dependency,
+                $version,
+                $where,
+            ),
+        };
+    }
+
+    return $problems;
+}
+
+/**
+ * EVERY class a package declares at a revision, as fully qualified names.
+ *
+ * The gate used to ask "does the PSR-4 path exist in the tree", which is a
+ * proxy, and each way the proxy was wrong needed its own patch: a class
+ * declared in a sibling file (Semitexa\Core\Tenant\Layer\ThemeValue lives
+ * inside ThemeLayer.php, so no ThemeValue.php exists in any release), a
+ * same-named class in an unrelated namespace answering for the real one, and a
+ * file that exists at that revision but does not yet declare the class it
+ * later would. Composer loads the file and still raises `Class not found`.
+ *
+ * Asking what is DECLARED answers all three at once, and costs one `git grep`
+ * per (package, revision) rather than one lookup per import.
+ *
+ * @param array<string, list<string>> $psr4
+ * @param string|null $tag null reads the working tree — the release being cut
+ * @return array<string, true> FQCN => true
+ */
+function declaredClasses(string $dir, ?string $tag, array $psr4): array
+{
+    $paths = [];
+    foreach ($psr4 as $dirs) {
+        foreach ($dirs as $sourceDir) {
+            $paths[] = escapeshellarg($sourceDir);
+        }
+    }
+
+    $command = sprintf(
+        'git -C %s grep -nE %s %s--%s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg('^ *(namespace |(final |abstract |readonly |final readonly )*(class|interface|trait|enum) )'),
+        $tag === null ? '' : escapeshellarg($tag) . ' ',
+        $paths === [] ? '' : ' ' . implode(' ', $paths),
+    );
+
+    exec($command, $lines, $code);
+    if ($code !== 0) {
+        return [];
+    }
+
+    $declared = [];
+    $namespaceByFile = [];
+
+    foreach ($lines as $line) {
+        // `git grep -n` prints `<rev>:<path>:<line>:<text>`, or `<path>:<line>:<text>`
+        // without a revision. Split from the LEFT by the known number of fields
+        // so a colon inside the text cannot confuse it.
+        $parts = explode(':', $line, $tag === null ? 3 : 4);
+        if (count($parts) < ($tag === null ? 3 : 4)) {
+            continue;
+        }
+        $path = $tag === null ? $parts[0] : $parts[1];
+        $text = trim($tag === null ? $parts[2] : $parts[3]);
+
+        // `\\\\` and not `\\`: PHP turns '\\' into a single backslash, which
+        // then escapes the `]` and leaves an unterminated character class —
+        // preg_match warns and returns false, so EVERY namespace line is
+        // skipped and every class is recorded unqualified. Silent, and it
+        // makes the whole index useless.
+        if (preg_match('/^namespace\s+([A-Za-z0-9_\\\\]+)\s*[;{]/', $text, $m) === 1) {
+            $namespaceByFile[$path] = trim($m[1], '\\');
+            continue;
+        }
+
+        if (preg_match(
+            '/^(?:final\s+|abstract\s+|readonly\s+)*(?:class|interface|trait|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/',
+            $text,
+            $m,
+        ) !== 1) {
+            continue;
+        }
+
+        $namespace = $namespaceByFile[$path] ?? '';
+        $declared[$namespace === '' ? $m[1] : $namespace . '\\' . $m[1]] = true;
+    }
+
+    return $declared;
+}
+
+/**
+ * Every tracked path in a package's current checkout, or null when it is not a
+ * readable git repository.
+ *
+ * @return list<string>|null
+ */
+function workingTree(string $dir): ?array
+{
+    $command = sprintf('git -C %s ls-files 2>/dev/null', escapeshellarg($dir));
+    exec($command, $lines, $code);
+
+    return $code === 0 && $lines !== [] ? $lines : null;
+}
+
+/**
+ * The working-tree twin of {@see classDeclaredAtTag}, for the release being cut.
+ *
+ * @param array<string, list<string>> $psr4
+ */
+function classDeclaredInTree(string $dir, string $fqcn, array $psr4): bool
+{
+    $short = $fqcn;
+    $namespace = '';
+    $lastSeparator = strrpos($short, '\\');
+    if ($lastSeparator !== false) {
+        $namespace = substr($fqcn, 0, $lastSeparator);
+        $short = substr($short, $lastSeparator + 1);
+    }
+    if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
+        return false;
+    }
+
+    $paths = [];
+    foreach ($psr4 as $dirs) {
+        foreach ($dirs as $sourceDir) {
+            $paths[] = escapeshellarg($sourceDir);
+        }
+    }
+
+    $command = sprintf(
+        'git -C %s grep -lE %s --%s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg('^[a-z ]*(class|interface|trait|enum) ' . $short . '\b'),
+        $paths === [] ? '' : ' ' . implode(' ', $paths),
+    );
+
+    exec($command, $lines, $code);
+    if ($code !== 0 || $lines === []) {
+        return false;
+    }
+
+    foreach ($lines as $path) {
+        $contents = @file_get_contents($dir . '/' . $path);
+        if ($contents === false) {
+            continue;
+        }
+        if (declaresClassInNamespace($contents, $namespace, $short)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * The newest release tag in a package, or null when nothing is released.
+ *
+ * Date-based tags (`YYYY.MM.DD.HHMM`) sort correctly as strings, so the newest
+ * is the last one. Anything that is not a release tag is ignored rather than
+ * ranked.
+ */
+function latestReleaseTag(string $dir): ?string
+{
+    $command = sprintf('git -C %s tag --list 2>/dev/null', escapeshellarg($dir));
+    exec($command, $lines, $code);
+    if ($code !== 0) {
+        return null;
+    }
+
+    $releases = [];
+    foreach ($lines as $tag) {
+        $tag = trim($tag);
+        if (preg_match('/^\d{4}\.\d{2}\.\d{2}\.\d{4}$/', $tag) === 1) {
+            $releases[] = $tag;
+        }
+    }
+
+    if ($releases === []) {
+        return null;
+    }
+
+    sort($releases);
+
+    return (string) end($releases);
+}
+
+/**
+ * @return array<string, array{dir: string, psr4: array<string, list<string>>, roots: list<string>, files: list<string>, promises: array<string, array{version: string, kind: string}>, wildcards: list<string>}>
+ */
+function indexPackages(string $packagesDir): array
+{
+    $packages = [];
+
+    foreach (glob($packagesDir . '/*/composer.json') ?: [] as $composerPath) {
+        $json = json_decode((string) file_get_contents($composerPath), true);
+        if (!is_array($json) || !is_string($json['name'] ?? null)) {
+            continue;
+        }
+
+        $promises = [];
+        $wildcards = [];
+        // BOTH sections, matching the form check above. Reading only `require`
+        // left a require-dev floor accepted as well-formed by one pass and
+        // verified by neither.
+        foreach (['require', 'require-dev'] as $section) {
+            foreach ($json[$section] ?? [] as $dependency => $constraint) {
+                if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
+                    continue;
+                }
+
+                $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?';
+
+                // TRIMMED first, like the form check does. A constraint with
+                // leading whitespace is valid to composer and was accepted as
+                // well-formed, but these anchored patterns missed it — so it
+                // was recorded as neither promise nor wildcard and verified by
+                // nothing at all.
+                $constraint = trim($constraint);
+
+                // The `|| dev-master` escape is not part of the promise being
+                // checked; the floor is.
+                if (preg_match('/^>=\s*(' . $version . ')/i', $constraint, $m) === 1) {
+                    $promises[$dependency] = ['version' => $m[1], 'kind' => 'floor'];
+                } elseif (preg_match('/^(' . $version . ')$/i', $constraint, $m) === 1) {
+                    $promises[$dependency] = ['version' => $m[1], 'kind' => 'pin'];
+                } elseif ($constraint === '*' && !isset($promises[$dependency])) {
+                    $wildcards[] = $dependency;
+                }
+            }
+        }
+
+        $ownPsr4 = normalizePsr4($json['autoload']['psr-4'] ?? null) ?? [];
+
+        // The package's OWN source roots, from its autoload block. Hardcoding
+        // `src` missed production code a package autoloads from anywhere else,
+        // and such code could use a sibling class absent from the promised
+        // release while the gate reported success.
+        // autoload-dev too, because promises are collected from require-dev as
+        // well: a floor can predate a class the package's own tests use, and
+        // scanning only the production roots would never see it.
+        $devPsr4 = normalizePsr4($json['autoload-dev']['psr-4'] ?? null) ?? [];
+
+        $roots = [];
+        foreach ([$ownPsr4, $devPsr4] as $map) {
+            foreach ($map as $dirs) {
+                foreach ($dirs as $dir) {
+                    $roots[] = $dir;
+                }
+            }
+        }
+
+        // `autoload.files` is PHP composer EXECUTES on load, and it need not
+        // sit under any PSR-4 root — a root bootstrap.php that touches a
+        // sibling class is the case. Scanning only the mapped directories left
+        // such a file unread, so the promised tag could lack the class and the
+        // gate still report success.
+        $files = [];
+        foreach (['autoload', 'autoload-dev'] as $section) {
+            foreach ($json[$section]['files'] ?? [] as $file) {
+                if (is_string($file) && $file !== '') {
+                    $files[] = $file;
+                }
+            }
+        }
+
+        $packages[$json['name']] = [
+            'dir' => dirname($composerPath),
+            'psr4' => $ownPsr4,
+            'roots' => $roots === [] ? ['src'] : array_values(array_unique($roots)),
+            'files' => array_values(array_unique($files)),
+            'promises' => $promises,
+            'wildcards' => $wildcards,
+        ];
+    }
+
+    return $packages;
+}
+
+/**
+ * A PSR-4 block as prefix => LIST of source directories.
+ *
+ * Composer lets one prefix map to several directories. Keeping only
+ * string-valued entries silently dropped such a prefix, and every class under
+ * it then went unmapped and unchecked — a fail-open in a gate that exists to
+ * fail closed.
+ *
+ * @return array<string, list<string>>|null null when there is no usable map
+ */
+function normalizePsr4(mixed $map): ?array
+{
+    if (!is_array($map)) {
+        return null;
+    }
+
+    $psr4 = [];
+    foreach ($map as $prefix => $paths) {
+        if (!is_string($prefix)) {
+            continue;
+        }
+        foreach ((array) $paths as $path) {
+            if (!is_string($path)) {
+                continue;
+            }
+            // `"Semitexa\\Ssr\\": ""` is valid and means the PACKAGE ROOT.
+            // Left as an empty string it was dropped as "no directory", so a
+            // package that maps its namespace to its own root was scanned at
+            // `src` instead — or not at all — and the files that actually hold
+            // its code went unread.
+            $psr4[$prefix][] = rtrim($path, '/') === '' ? '.' : rtrim($path, '/');
+        }
+    }
+
+    return $psr4 === [] ? null : $psr4;
+}
+
+/**
+ * Every path in a package at one tag, or null when the tag is not there.
+ *
+ * @return list<string>|null
+ */
+function treeAtTag(string $dir, string $tag): ?array
+{
+    $command = sprintf(
+        'git -C %s ls-tree -r --name-only %s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg($tag),
+    );
+
+    exec($command, $lines, $code);
+
+    return $code === 0 && $lines !== [] ? $lines : null;
+}
+
+/**
+ * The PSR-4 map as it stood AT a tag, or null when the tag has no readable
+ * composer.json (in which case the caller keeps today's map rather than
+ * treating every import as unresolvable).
+ *
+ * @return array<string, list<string>>|null namespace prefix => source directories
+ */
+function psr4AtTag(string $dir, string $tag): ?array
+{
+    $command = sprintf(
+        'git -C %s show %s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg($tag . ':composer.json'),
+    );
+
+    exec($command, $lines, $code);
+    if ($code !== 0 || $lines === []) {
+        return null;
+    }
+
+    $json = json_decode(implode("\n", $lines), true);
+    if (!is_array($json)) {
+        return null;
+    }
+
+    return normalizePsr4($json['autoload']['psr-4'] ?? null);
+}
+
+/**
+ * Classes this package imports from another's namespaces, as tag-relative
+ * paths.
+ *
+ * `use function` and `use const` are skipped: they are not class files, and a
+ * floor that guarantees a class says nothing about them either way.
+ *
+ * @param array<string, list<string>> $psr4 namespace prefix => source directories
+ * @return array<string, list<string>> FQCN => candidate paths in the target package
+ */
+function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src'], array $scanFiles = []): array
+{
+    $found = [];
+
+    foreach (array_unique($scanFiles) as $relativeFile) {
+        $path = $packageDir . '/' . $relativeFile;
+        if (is_file($path)) {
+            collectReferences((string) file_get_contents($path), $psr4, $found);
+        }
+    }
+
+    foreach (array_unique($scanRoots) as $root) {
+        $sourceDir = $packageDir . '/' . $root;
+        if (!is_dir($sourceDir)) {
+            continue;
+        }
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($sourceDir));
+    foreach ($files as $file) {
+        if (!$file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        collectReferences((string) file_get_contents($file->getPathname()), $psr4, $found);
+    }
+    }
+
+    return $found;
+}
+
+/**
+ * Map one file's references onto candidate paths in the target package.
+ *
+ * @param array<string, list<string>> $psr4
+ * @param array<string, list<string>> $found accumulated by reference
+ */
+function collectReferences(string $contents, array $psr4, array &$found): void
+{
+    foreach (usedClasses($contents) as $class) {
+        // LONGEST prefix wins, as composer resolves it. Taking the first match
+        // in declaration order meant a generic `Semitexa\Core\` declared
+        // before `Semitexa\Core\Special\` mapped a Special class through the
+        // generic one — a path composer would never load, and a floor approved
+        // on the strength of a file that is not the file.
+        $bestPrefix = null;
+        foreach ($psr4 as $prefix => $dirs) {
+            if (!str_starts_with($class, $prefix)) {
+                continue;
+            }
+            if ($bestPrefix === null || strlen($prefix) > strlen($bestPrefix)) {
+                $bestPrefix = $prefix;
+            }
+        }
+        if ($bestPrefix === null) {
+            continue;
+        }
+
+        $relative = str_replace('\\', '/', substr($class, strlen($bestPrefix)));
+        foreach ($psr4[$bestPrefix] as $dir) {
+            $found[$class][] = ($dir === '.' ? '' : $dir . '/') . $relative . '.php';
+        }
+    }
+}
+
+/**
+ * Every class of another package this file names — imported OR written out.
+ *
+ * An import is not the only way to reach a sibling's class.
+ * `new \Semitexa\Core\Support\Row()` names it just as surely, and this
+ * workspace has 140 distinct cross-package references written that way. A scan
+ * that only entered on `use` was blind to every one of them, so a class added
+ * after the floored release could be called from a fully-qualified reference
+ * and the gate would still report success.
+ *
+ * @return list<string>
+ */
+function usedClasses(string $contents): array
+{
+    $imports = importedClasses($contents);
+    $aliasesByBlock = $imports['aliases'];
+    $block = 0;
+    $classes = [];
+    $tokens = PhpToken::tokenize($contents);
+    $usedAsPrefix = [];
+    $fileNamespace = '';
+
+    for ($i = 0, $n = count($tokens); $i < $n; $i++) {
+        $token = $tokens[$i];
+
+        if ($token->is(T_NAMESPACE)) {
+            // The same counter importedClasses() keeps, over the same token
+            // sequence, so a block's aliases are the ones its own imports set.
+            $block++;
+            $fileNamespace = '';
+            for ($j = $i + 1, $n2 = count($tokens); $j < $n2; $j++) {
+                $text = $tokens[$j]->text;
+                if ($text === ';' || $text === '{') {
+                    break;
+                }
+                if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                    continue;
+                }
+                $fileNamespace .= $text;
+            }
+            $fileNamespace = trim($fileNamespace, '\\');
+            continue;
+        }
+
+        if ($token->is(T_NAME_QUALIFIED)) {
+            // `CoreSupport\Row` after `use Semitexa\Core\Support as CoreSupport;`
+            // — a NAMESPACE alias. Recording the import itself would look for
+            // Support.php, which does not exist and never did; the class the
+            // file actually reaches is the resolved one.
+            $segments = explode('\\', $token->text);
+            $head = strtolower((string) array_shift($segments));
+            $aliases = $aliasesByBlock[$block] ?? [];
+            if (isset($aliases[$head]) && $segments !== []) {
+                $usedAsPrefix[$aliases[$head]] = true;
+                $classes[$aliases[$head] . '\\' . implode('\\', $segments)] = true;
+                continue;
+            }
+
+            // In the GLOBAL namespace a qualified name resolves exactly as
+            // written, so `new Semitexa\Core\Support\Row()` with no leading
+            // slash names the sibling class. Inside a namespace it would mean
+            // something relative to that namespace instead, which is never the
+            // sibling — so this applies only when there is no namespace.
+            if ($fileNamespace === '' && str_contains($token->text, '\\')) {
+                $classes[ltrim($token->text, '\\')] = true;
+            }
+            continue;
+        }
+
+        // T_NAME_FULLY_QUALIFIED is `\Foo\Bar` wherever it appears — a `new`,
+        // a static call, a type, an attribute, a catch. Relative names are not
+        // collected beyond the alias case above: they resolve through the
+        // file's own imports, which this already has.
+        if (!$token->is(T_NAME_FULLY_QUALIFIED)) {
+            continue;
+        }
+
+        $name = ltrim($token->text, '\\');
+        if ($name === '' || !str_contains($name, '\\')) {
+            continue;
+        }
+
+        // `\Semitexa\Core\helper()` is a FUNCTION call and emits the same
+        // token. Recording it would send the gate looking for helper.php and
+        // fail a release that is perfectly satisfiable. `new \Foo\Bar()` and
+        // `#[\Foo\Bar()]` are also followed by `(`, so what PRECEDES the name
+        // is what tells them apart.
+        if (nextMeaningfulText($tokens, $i) === '(' && !precededByClassContext($tokens, $i)) {
+            continue;
+        }
+
+        // `\Semitexa\Core\VERSION` is a namespaced CONSTANT and is followed
+        // by no parenthesis at all, so the call test above does not see it and
+        // the gate went looking for a class named VERSION.
+        //
+        // Excluded only on the shapes that cannot be a class reference: an
+        // all-caps last segment, with none of the positive signals that a name
+        // really is a class. The bias is deliberate — an ambiguous name is kept
+        // as a class, because missing one is silent while flagging one is loud.
+        if (looksLikeConstantReference($tokens, $i, $name)) {
+            continue;
+        }
+
+        $classes[$name] = true;
+    }
+
+    foreach ($imports['classes'] as $class) {
+        if (!isset($usedAsPrefix[$class])) {
+            $classes[$class] = true;
+        }
+    }
+
+    return array_keys($classes);
+}
+
+/**
+ * Whether a fully qualified name is a CONSTANT read rather than a class.
+ *
+ * True only when the last segment carries no lowercase letter AND none of the
+ * positive class signals is present: a following `::` (static access or
+ * `::class`), a following variable / `...` / `&` (a type position), or a
+ * preceding `new`, attribute, `instanceof`, `extends`, `implements` or `:`
+ * (a return type).
+ */
+function looksLikeConstantReference(array $tokens, int $at, string $name): bool
+{
+    $separator = strrpos($name, '\\');
+    $last = $separator === false ? $name : substr($name, $separator + 1);
+    if ($last === '' || strtoupper($last) !== $last) {
+        return false;
+    }
+
+    $next = nextMeaningfulToken($tokens, $at);
+    if ($next !== null) {
+        if ($next->text === '::' || $next->text === '...' || $next->text === '&') {
+            return false;
+        }
+        if ($next->is(T_VARIABLE)) {
+            return false;
+        }
+    }
+
+    $previous = previousMeaningfulToken($tokens, $at);
+    if ($previous !== null) {
+        if ($previous->is([T_NEW, T_ATTRIBUTE, T_INSTANCEOF, T_EXTENDS, T_IMPLEMENTS])) {
+            return false;
+        }
+        if ($previous->text === ':' || $previous->text === '?' || $previous->text === '|') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/** The next token that is not whitespace or a comment, or null. */
+function nextMeaningfulToken(array $tokens, int $from): ?PhpToken
+{
+    for ($i = $from + 1, $n = count($tokens); $i < $n; $i++) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i];
+    }
+
+    return null;
+}
+
+/** The previous token that is not whitespace or a comment, or null. */
+function previousMeaningfulToken(array $tokens, int $from): ?PhpToken
+{
+    for ($i = $from - 1; $i >= 0; $i--) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i];
+    }
+
+    return null;
+}
+
+/** The text of the next token that is not whitespace or a comment. */
+function nextMeaningfulText(array $tokens, int $from): string
+{
+    for ($i = $from + 1, $n = count($tokens); $i < $n; $i++) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i]->text;
+    }
+
+    return '';
+}
+
+/**
+ * Whether the nearest preceding meaningful token introduces a CLASS.
+ *
+ * `new \Foo\Bar()` and `#[\Foo\Bar()]` are both a name followed by `(`, and
+ * both name a class. Only `new` was recognised, so a fully qualified attribute
+ * with arguments was discarded as a function call and a floor predating the
+ * attribute class could pass.
+ */
+function precededByClassContext(array $tokens, int $from): bool
+{
+    for ($i = $from - 1; $i >= 0; $i--) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i]->is([T_NEW, T_ATTRIBUTE]);
+    }
+
+    return false;
+}
+
+/**
+ * Every class name a file imports at namespace level.
+ *
+ * TOKENIZED, not matched. A regex over `use ...;` lines gets three things
+ * wrong, and all three break a gate that is supposed to fail closed:
+ *
+ *  - GROUPED imports — `use Semitexa\Core\Support\{Row, Other};` — match
+ *    nothing, because `{` is not part of a class name. The gate then reports
+ *    success for a floor whose tag has no Row.php, which is the exact runtime
+ *    "class not found" it exists to prevent.
+ *  - COMMA-SEPARATED imports — `use A\B, C\D;` — yield only the first name.
+ *  - The word `use` inside a comment, a string, or a closure's `use (...)`
+ *    clause is matched as though it were an import.
+ *
+ * The alias is dropped at TOKEN level, on T_AS. Doing it by string surgery is
+ * its own trap: searching the joined text for "as" turns
+ * `use Semitexa\Orm\Metadata\HasColumnReferences;` into
+ * `Semitexa\Orm\Metadata\H`, and the gate then fails releases over a file
+ * nobody ever imported. Measured, in this repository, on six packages.
+ *
+ * `use function` and `use const` are skipped, and so are trait `use` statements
+ * inside a class body: only namespace-level imports name a class file.
+ *
+ * @return array{classes: list<string>, aliases: array<int, array<string, string>>} aliases keyed by namespace block
+ */
+function importedClasses(string $contents): array
+{
+    $tokens = PhpToken::tokenize($contents);
+    $classes = [];
+    $aliases = [];
+    $depth = 0;
+    $block = 0;
+    $namespaceBraceDepths = [];
+    $inNamespaceDeclaration = false;
+
+    for ($i = 0, $n = count($tokens); $i < $n; $i++) {
+        $token = $tokens[$i];
+
+        // A BRACED namespace — `namespace Semitexa\Ssr { use ...; }` — opens a
+        // brace that is not a class body, and counting it would skip every
+        // genuine import inside. Its depth is remembered so the matching `}`
+        // closes it rather than looking like a class ending.
+        if ($token->is(T_NAMESPACE)) {
+            $inNamespaceDeclaration = true;
+            $block++;
+            continue;
+        }
+        if ($inNamespaceDeclaration && ($token->text === ';' || $token->text === '{')) {
+            if ($token->text === '{') {
+                $depth++;
+                $namespaceBraceDepths[$depth] = true;
+            }
+            $inNamespaceDeclaration = false;
+            continue;
+        }
+
+        // Trait `use` lives inside a class body; namespace-level `use` does not.
+        if ($token->text === '{') {
+            $depth++;
+            continue;
+        }
+        if ($token->text === '}') {
+            unset($namespaceBraceDepths[$depth]);
+            $depth--;
+            continue;
+        }
+
+        $classBodyDepth = $depth - count($namespaceBraceDepths);
+        if (!$token->is(T_USE) || $classBodyDepth > 0) {
+            continue;
+        }
+
+        $prefix = '';
+        $current = '';
+        $skippingAlias = false;
+        $skippingItem = false;
+        $isClassImport = null;
+        /** @var array<string, string> $found */
+        $found = [];
+
+        $alias = '';
+        $flush = static function () use (&$current, &$prefix, &$found, &$alias): void {
+            $name = ltrim($prefix . $current, '\\');
+            if ($name !== '') {
+                $shortName = $alias;
+                if ($shortName === '') {
+                    $separator = strrpos($name, '\\');
+                    $shortName = $separator === false ? $name : substr($name, $separator + 1);
+                }
+                // Lowercased: PHP resolves namespace and class names
+                // case-insensitively, so `use ... as CoreSupport` is reached by
+                // `coresupport\Row`. An exact-key lookup missed that, recorded
+                // the IMPORT as a class instead, and failed a valid floor for
+                // lacking Support.php.
+                $found[strtolower($shortName)] = $name;
+            }
+            $current = '';
+            $alias = '';
+        };
+
+        $j = $i + 1;
+        for (; $j < $n; $j++) {
+            $piece = $tokens[$j];
+            $text = $piece->text;
+
+            if ($text === ';') {
+                break;
+            }
+            if ($piece->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                continue;
+            }
+
+            if ($isClassImport === null) {
+                // The first meaningful token decides what kind of `use` this is.
+                // `(` is a closure capture, which imports no class at all.
+                $isClassImport = !$piece->is([T_FUNCTION, T_CONST]) && $text !== '(';
+                if ($isClassImport === false) {
+                    break;
+                }
+            }
+
+            if ($piece->is(T_AS)) {
+                $skippingAlias = true;
+                $alias = '';
+                continue;
+            }
+            if ($skippingAlias && $piece->is(T_STRING)) {
+                // The alias is the NAME an unqualified reference in this file
+                // will use, so it has to be kept, not merely skipped: a
+                // namespace alias is how `new CoreSupport\Row()` reaches
+                // Semitexa\Core\Support\Row.
+                $alias = $text;
+                continue;
+            }
+            if ($piece->is([T_FUNCTION, T_CONST])) {
+                // `use Foo\{Bar, function helper};` — the kind may also appear
+                // per ITEM inside a group, not only before the whole statement.
+                $skippingItem = true;
+                continue;
+            }
+            if ($text === ',') {
+                $skippingAlias = false;
+                if ($skippingItem) {
+                    $skippingItem = false;
+                    $current = '';
+                    $alias = '';
+                    continue;
+                }
+                $flush();
+                continue;
+            }
+            if ($text === '{') {
+                $prefix = $current;
+                $current = '';
+                continue;
+            }
+            if ($text === '}') {
+                $skippingAlias = false;
+                if ($skippingItem) {
+                    $skippingItem = false;
+                    $current = '';
+                    $alias = '';
+                } else {
+                    $flush();
+                }
+                $prefix = '';
+                continue;
+            }
+            if ($skippingAlias || $skippingItem) {
+                continue;
+            }
+
+            $current .= $text;
+        }
+
+        $i = $j;
+
+        if ($isClassImport !== true) {
+            continue;
+        }
+
+        if ($skippingItem) {
+            $current = '';
+        }
+        $flush();
+
+        foreach ($found as $shortName => $class) {
+            // Collected as a LIST, so two blocks in one file that import
+            // different classes under the same local name both survive.
+            // Keying only by the local name let the later one overwrite the
+            // earlier, and the first went unchecked.
+            $classes[] = $class;
+            // Aliases are scoped to their BLOCK for the same reason: a
+            // file-wide map resolved `Dup\Row` in the first block through the
+            // second block's import, checking a class the first block never
+            // names while the one it does name goes unchecked.
+            $aliases[$block][$shortName] = $class;
+        }
+    }
+
+    return ['classes' => $classes, 'aliases' => $aliases];
+}
+
