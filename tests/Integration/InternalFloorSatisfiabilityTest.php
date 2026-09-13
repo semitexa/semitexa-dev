@@ -1146,4 +1146,108 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertStringNotContainsString('Support.php', $result['output'], 'the namespace is not a class file');
     }
+
+    /**
+     * An ALIAS belongs to its namespace block. A file-wide map resolved both
+     * `Dup\Row` references through the second block's import, so the class the
+     * first block actually names was never checked — and it is the one that
+     * fails at runtime.
+     */
+    #[Test]
+    public function an_alias_is_resolved_through_its_own_block(): void
+    {
+        $this->provider('2026.09.13.1330', ['Existing/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace A {\n"
+            . "    use Semitexa\\Core\\Missing as Dup;\n\n"
+            . "    class One { public function f(): object { return new Dup\\Row(); } }\n}\n\n"
+            . "namespace B {\n"
+            . "    use Semitexa\\Core\\Existing as Dup;\n\n"
+            . "    class Two { public function g(): object { return new Dup\\Row(); } }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Missing\\Row', $result['output']);
+    }
+
+    /**
+     * A namespaced CONSTANT is followed by no parenthesis, so the function-call
+     * test never saw it and the gate looked for a class named VERSION.
+     */
+    #[Test]
+    public function a_fully_qualified_constant_is_not_a_class(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): string\n    {\n"
+            . "        return \\Semitexa\\Core\\VERSION;\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringNotContainsString('VERSION', $result['output']);
+    }
+
+    /**
+     * But an ALL-CAPS name with a class signal is still a class — the bias is
+     * deliberate, since missing a reference is silent and flagging one is loud.
+     */
+    #[Test]
+    public function an_all_caps_class_used_statically_is_still_checked(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): string\n    {\n"
+            . "        return \\Semitexa\\Core\\Support\\API::name();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\API', $result['output']);
+    }
+
+    /**
+     * `autoload.files` is PHP composer EXECUTES on load, and it need not sit
+     * under any PSR-4 root. Scanning only the mapped directories left a root
+     * bootstrap unread, so the promised tag could lack a class the file
+     * instantiates while the gate reported success.
+     */
+    #[Test]
+    public function an_autoload_files_entry_is_scanned(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/src', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4', 'semitexa/core' => '>=2026.09.13.0749 || dev-master'],
+            'autoload' => [
+                'psr-4' => ['Semitexa\\Ssr\\' => 'src/'],
+                'files' => ['bootstrap.php'],
+            ],
+        ]));
+        file_put_contents(
+            $dir . '/bootstrap.php',
+            "<?php\n\n\$row = new \\Semitexa\\Core\\Support\\Row();\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
 }

@@ -199,6 +199,7 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 $promise['version'],
                 $promise['kind'],
                 $package['roots'],
+                $package['files'],
             ));
         }
 
@@ -236,6 +237,7 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 $latest,
                 'wildcard',
                 $package['roots'],
+                $package['files'],
             ));
         }
     }
@@ -258,6 +260,7 @@ function verifyAgainstTag(
     string $version,
     string $kind,
     array $consumerRoots = ['src'],
+    array $consumerFiles = [],
 ): array {
     $problems = [];
 
@@ -280,7 +283,7 @@ function verifyAgainstTag(
         $tree = workingTree($target['dir']);
         $psr4 = $target['psr4'];
         if ($tree !== null && $psr4 !== []) {
-            return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, 'planned', $tree, $psr4, $consumerRoots);
+            return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, 'planned', $tree, $psr4, $consumerRoots, $consumerFiles);
         }
         $tree = null;
     }
@@ -319,7 +322,7 @@ function verifyAgainstTag(
         )];
     }
 
-    return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, $kind, $tree, $psr4, $consumerRoots);
+    return verifyAgainstTree($name, $packageDir, $dependency, $target, $version, $kind, $tree, $psr4, $consumerRoots, $consumerFiles);
 }
 
 /**
@@ -340,6 +343,7 @@ function verifyAgainstTree(
     array $tree,
     array $psr4,
     array $consumerRoots = ['src'],
+    array $consumerFiles = [],
 ): array {
     $problems = [];
     $declared = declaredClasses($target['dir'], $kind === 'planned' ? null : $version, $psr4);
@@ -356,7 +360,7 @@ function verifyAgainstTree(
         $discoveryPsr4[$prefix] ??= $dirs;
     }
 
-    foreach (importsFrom($packageDir, $discoveryPsr4, $consumerRoots) as $class => $candidatePaths) {
+    foreach (importsFrom($packageDir, $discoveryPsr4, $consumerRoots, $consumerFiles) as $class => $candidatePaths) {
         if (isset($declared[$class])) {
             continue;
         }
@@ -638,10 +642,25 @@ function indexPackages(string $packagesDir): array
             }
         }
 
+        // `autoload.files` is PHP composer EXECUTES on load, and it need not
+        // sit under any PSR-4 root — a root bootstrap.php that touches a
+        // sibling class is the case. Scanning only the mapped directories left
+        // such a file unread, so the promised tag could lack the class and the
+        // gate still report success.
+        $files = [];
+        foreach (['autoload', 'autoload-dev'] as $section) {
+            foreach ($json[$section]['files'] ?? [] as $file) {
+                if (is_string($file) && $file !== '') {
+                    $files[] = $file;
+                }
+            }
+        }
+
         $packages[$json['name']] = [
             'dir' => dirname($composerPath),
             'psr4' => $ownPsr4,
             'roots' => $roots === [] ? ['src'] : array_values(array_unique($roots)),
+            'files' => array_values(array_unique($files)),
             'promises' => $promises,
             'wildcards' => $wildcards,
         ];
@@ -743,9 +762,16 @@ function psr4AtTag(string $dir, string $tag): ?array
  * @param array<string, list<string>> $psr4 namespace prefix => source directories
  * @return array<string, list<string>> FQCN => candidate paths in the target package
  */
-function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src']): array
+function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src'], array $scanFiles = []): array
 {
     $found = [];
+
+    foreach (array_unique($scanFiles) as $relativeFile) {
+        $path = $packageDir . '/' . $relativeFile;
+        if (is_file($path)) {
+            collectReferences((string) file_get_contents($path), $psr4, $found);
+        }
+    }
 
     foreach (array_unique($scanRoots) as $root) {
         $sourceDir = $packageDir . '/' . $root;
@@ -759,34 +785,45 @@ function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src']
             continue;
         }
 
-        foreach (usedClasses((string) file_get_contents($file->getPathname())) as $class) {
-            // LONGEST prefix wins, as composer resolves it. Taking the first
-            // match in declaration order meant a generic `Semitexa\Core\`
-            // declared before `Semitexa\Core\Special\` mapped a Special class
-            // through the generic one — a path composer would never load, and a
-            // floor approved on the strength of a file that is not the file.
-            $bestPrefix = null;
-            foreach ($psr4 as $prefix => $dirs) {
-                if (!str_starts_with($class, $prefix)) {
-                    continue;
-                }
-                if ($bestPrefix === null || strlen($prefix) > strlen($bestPrefix)) {
-                    $bestPrefix = $prefix;
-                }
-            }
-            if ($bestPrefix === null) {
-                continue;
-            }
-
-            $relative = str_replace('\\', '/', substr($class, strlen($bestPrefix)));
-            foreach ($psr4[$bestPrefix] as $dir) {
-                $found[$class][] = ($dir === '.' ? '' : $dir . '/') . $relative . '.php';
-            }
-        }
+        collectReferences((string) file_get_contents($file->getPathname()), $psr4, $found);
     }
     }
 
     return $found;
+}
+
+/**
+ * Map one file's references onto candidate paths in the target package.
+ *
+ * @param array<string, list<string>> $psr4
+ * @param array<string, list<string>> $found accumulated by reference
+ */
+function collectReferences(string $contents, array $psr4, array &$found): void
+{
+    foreach (usedClasses($contents) as $class) {
+        // LONGEST prefix wins, as composer resolves it. Taking the first match
+        // in declaration order meant a generic `Semitexa\Core\` declared
+        // before `Semitexa\Core\Special\` mapped a Special class through the
+        // generic one — a path composer would never load, and a floor approved
+        // on the strength of a file that is not the file.
+        $bestPrefix = null;
+        foreach ($psr4 as $prefix => $dirs) {
+            if (!str_starts_with($class, $prefix)) {
+                continue;
+            }
+            if ($bestPrefix === null || strlen($prefix) > strlen($bestPrefix)) {
+                $bestPrefix = $prefix;
+            }
+        }
+        if ($bestPrefix === null) {
+            continue;
+        }
+
+        $relative = str_replace('\\', '/', substr($class, strlen($bestPrefix)));
+        foreach ($psr4[$bestPrefix] as $dir) {
+            $found[$class][] = ($dir === '.' ? '' : $dir . '/') . $relative . '.php';
+        }
+    }
 }
 
 /**
@@ -804,7 +841,8 @@ function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src']
 function usedClasses(string $contents): array
 {
     $imports = importedClasses($contents);
-    $aliases = $imports['aliases'];
+    $aliasesByBlock = $imports['aliases'];
+    $block = 0;
     $classes = [];
     $tokens = PhpToken::tokenize($contents);
     $usedAsPrefix = [];
@@ -814,6 +852,9 @@ function usedClasses(string $contents): array
         $token = $tokens[$i];
 
         if ($token->is(T_NAMESPACE)) {
+            // The same counter importedClasses() keeps, over the same token
+            // sequence, so a block's aliases are the ones its own imports set.
+            $block++;
             $fileNamespace = '';
             for ($j = $i + 1, $n2 = count($tokens); $j < $n2; $j++) {
                 $text = $tokens[$j]->text;
@@ -836,6 +877,7 @@ function usedClasses(string $contents): array
             // file actually reaches is the resolved one.
             $segments = explode('\\', $token->text);
             $head = strtolower((string) array_shift($segments));
+            $aliases = $aliasesByBlock[$block] ?? [];
             if (isset($aliases[$head]) && $segments !== []) {
                 $usedAsPrefix[$aliases[$head]] = true;
                 $classes[$aliases[$head] . '\\' . implode('\\', $segments)] = true;
@@ -875,6 +917,18 @@ function usedClasses(string $contents): array
             continue;
         }
 
+        // `\Semitexa\Core\VERSION` is a namespaced CONSTANT and is followed
+        // by no parenthesis at all, so the call test above does not see it and
+        // the gate went looking for a class named VERSION.
+        //
+        // Excluded only on the shapes that cannot be a class reference: an
+        // all-caps last segment, with none of the positive signals that a name
+        // really is a class. The bias is deliberate — an ambiguous name is kept
+        // as a class, because missing one is silent while flagging one is loud.
+        if (looksLikeConstantReference($tokens, $i, $name)) {
+            continue;
+        }
+
         $classes[$name] = true;
     }
 
@@ -885,6 +939,74 @@ function usedClasses(string $contents): array
     }
 
     return array_keys($classes);
+}
+
+/**
+ * Whether a fully qualified name is a CONSTANT read rather than a class.
+ *
+ * True only when the last segment carries no lowercase letter AND none of the
+ * positive class signals is present: a following `::` (static access or
+ * `::class`), a following variable / `...` / `&` (a type position), or a
+ * preceding `new`, attribute, `instanceof`, `extends`, `implements` or `:`
+ * (a return type).
+ */
+function looksLikeConstantReference(array $tokens, int $at, string $name): bool
+{
+    $separator = strrpos($name, '\\');
+    $last = $separator === false ? $name : substr($name, $separator + 1);
+    if ($last === '' || strtoupper($last) !== $last) {
+        return false;
+    }
+
+    $next = nextMeaningfulToken($tokens, $at);
+    if ($next !== null) {
+        if ($next->text === '::' || $next->text === '...' || $next->text === '&') {
+            return false;
+        }
+        if ($next->is(T_VARIABLE)) {
+            return false;
+        }
+    }
+
+    $previous = previousMeaningfulToken($tokens, $at);
+    if ($previous !== null) {
+        if ($previous->is([T_NEW, T_ATTRIBUTE, T_INSTANCEOF, T_EXTENDS, T_IMPLEMENTS])) {
+            return false;
+        }
+        if ($previous->text === ':' || $previous->text === '?' || $previous->text === '|') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/** The next token that is not whitespace or a comment, or null. */
+function nextMeaningfulToken(array $tokens, int $from): ?PhpToken
+{
+    for ($i = $from + 1, $n = count($tokens); $i < $n; $i++) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i];
+    }
+
+    return null;
+}
+
+/** The previous token that is not whitespace or a comment, or null. */
+function previousMeaningfulToken(array $tokens, int $from): ?PhpToken
+{
+    for ($i = $from - 1; $i >= 0; $i--) {
+        if ($tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            continue;
+        }
+
+        return $tokens[$i];
+    }
+
+    return null;
 }
 
 /** The text of the next token that is not whitespace or a comment. */
@@ -945,7 +1067,7 @@ function precededByClassContext(array $tokens, int $from): bool
  * `use function` and `use const` are skipped, and so are trait `use` statements
  * inside a class body: only namespace-level imports name a class file.
  *
- * @return array{classes: list<string>, aliases: array<string, string>}
+ * @return array{classes: list<string>, aliases: array<int, array<string, string>>} aliases keyed by namespace block
  */
 function importedClasses(string $contents): array
 {
@@ -953,6 +1075,7 @@ function importedClasses(string $contents): array
     $classes = [];
     $aliases = [];
     $depth = 0;
+    $block = 0;
     $namespaceBraceDepths = [];
     $inNamespaceDeclaration = false;
 
@@ -965,6 +1088,7 @@ function importedClasses(string $contents): array
         // closes it rather than looking like a class ending.
         if ($token->is(T_NAMESPACE)) {
             $inNamespaceDeclaration = true;
+            $block++;
             continue;
         }
         if ($inNamespaceDeclaration && ($token->text === ';' || $token->text === '{')) {
@@ -1112,7 +1236,11 @@ function importedClasses(string $contents): array
             // Keying only by the local name let the later one overwrite the
             // earlier, and the first went unchecked.
             $classes[] = $class;
-            $aliases[$shortName] = $class;
+            // Aliases are scoped to their BLOCK for the same reason: a
+            // file-wide map resolved `Dup\Row` in the first block through the
+            // second block's import, checking a class the first block never
+            // names while the one it does name goes unchecked.
+            $aliases[$block][$shortName] = $class;
         }
     }
 
