@@ -188,11 +188,31 @@ final readonly class CulpritStackTrace
     /** @param array{file: string, line: int, function: string, class: ?string} $frame */
     private static function isPlumbing(array $frame): bool
     {
+        // Vendor-ness belongs to the CALLEE, not to where it was called from.
+        //
+        // A frame stores the callee in class/function and the CALL SITE in
+        // file/line, so testing `$frame['file']` answered the wrong question
+        // twice: an application callback invoked by vendor code read as
+        // plumbing and got collapsed — losing the actual culprit — while a
+        // vendor method called from application code escaped the test
+        // entirely. Ask where the method is DECLARED. Raised in review of
+        // dev#84.
+        $declaredIn = self::declaringFile($frame);
+        if ($declaredIn !== null) {
+            return str_contains($declaredIn, '/vendor/') || self::isPlumbingNamespace($frame['class']);
+        }
+
+        // Nothing to reflect on — a closure, an internal function, a class
+        // that is not loaded. The call site is then the only signal there is.
         if ($frame['file'] !== '' && str_contains($frame['file'], '/vendor/')) {
             return true;
         }
 
-        $class = $frame['class'];
+        return self::isPlumbingNamespace($frame['class']);
+    }
+
+    private static function isPlumbingNamespace(?string $class): bool
+    {
         if ($class === null) {
             return false;
         }
@@ -204,6 +224,49 @@ final readonly class CulpritStackTrace
         }
 
         return false;
+    }
+
+    /**
+     * Where the callee is declared, or null when that cannot be established.
+     *
+     * `class_exists($class, false)` — autoload is DELIBERATELY off. A class
+     * that genuinely appears in a stack frame is already loaded, so nothing is
+     * lost; and reflecting on an arbitrary name that is not would autoload it,
+     * which under PSR-4 can pull in a file of function definitions and take the
+     * worker down. Diagnosing an exception must not be able to cause one.
+     *
+     * @param array{file: string, line: int, function: string, class: ?string} $frame
+     */
+    private static function declaringFile(array $frame): ?string
+    {
+        $class = $frame['class'];
+        $function = $frame['function'];
+
+        try {
+            if ($class !== null) {
+                if (!class_exists($class, false) && !interface_exists($class, false) && !trait_exists($class, false)) {
+                    return null;
+                }
+
+                $reflection = new \ReflectionClass($class);
+                $file = $reflection->hasMethod($function)
+                    ? $reflection->getMethod($function)->getFileName()
+                    : $reflection->getFileName();
+
+                return $file === false ? null : $file;
+            }
+
+            if ($function !== '' && function_exists($function)) {
+                $file = (new \ReflectionFunction($function))->getFileName();
+
+                return $file === false ? null : $file;
+            }
+        } catch (\Throwable) {
+            // A diagnostic must never be the thing that fails.
+            return null;
+        }
+
+        return null;
     }
 
     /**

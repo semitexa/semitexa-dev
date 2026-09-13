@@ -349,6 +349,49 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertSame('src/B.php', $merged[0]['originalPath'] ?? null);
     }
 
+    /**
+     * Staged for deletion and then written again at the same path: git reports
+     * `D path` followed by `?? path`. Keeping only the deletion made the
+     * planner skip a file sitting right there, so a syntax error in its new
+     * contents verified clean. Raised in review of dev#84.
+     */
+    #[Test]
+    public function a_recreated_file_is_not_left_as_a_deletion(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_DELETED],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_ADDED],
+        ]);
+
+        self::assertCount(1, $merged);
+        self::assertSame(ChangedFile::STATUS_ADDED, $merged[0]['status'], 'the file is there to verify');
+    }
+
+    /** A deletion never overrides a record of a live file, whichever order. */
+    #[Test]
+    public function a_deletion_does_not_override_a_live_file(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_MODIFIED],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_DELETED],
+        ]);
+
+        self::assertSame(ChangedFile::STATUS_MODIFIED, $merged[0]['status']);
+    }
+
+    /** A rename learned after a deletion keeps both facts. */
+    #[Test]
+    public function a_rename_after_a_deletion_keeps_the_previous_name(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_DELETED],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_RENAMED, 'originalPath' => 'src/B.php'],
+        ]);
+
+        self::assertSame(ChangedFile::STATUS_RENAMED, $merged[0]['status']);
+        self::assertSame('src/B.php', $merged[0]['originalPath']);
+    }
+
     /** And two plain duplicates still collapse to the first, unchanged. */
     #[Test]
     public function two_plain_duplicates_collapse_to_one(): void

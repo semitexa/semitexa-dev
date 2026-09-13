@@ -78,30 +78,51 @@ done
 
 drifted=0
 moved=0
+failed=0
 
 copy_pair() {
     local src="$1" dst="$2" label="$3"
 
+    # A missing source is a FAILURE in a mutating mode, not a note. `drifted`
+    # is only consulted by --check, so sync and adopt used to print "already in
+    # sync" and exit 0 after a copy that never happened — running --adopt
+    # before the root phpstan-strict.neon exists did exactly that. And this
+    # script runs under `set -uo pipefail`, not `set -e`, so a failed mkdir or
+    # cp does not end it either: both are tracked and checked after the loop.
+    # Raised in review of dev#84, by both reviewers.
     if [ ! -f "$src" ]; then
         printf 'MISSING: %s\n' "$label" >&2
         drifted=$((drifted + 1))
-        return
+        [ "$MODE" = "check" ] || failed=$((failed + 1))
+        return 1
     fi
 
     if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-        return
+        return 0
     fi
 
     drifted=$((drifted + 1))
     if [ "$MODE" = "check" ]; then
         printf 'DRIFT: %s\n' "$label"
-        return
+        return 0
     fi
 
-    mkdir -p "$(dirname "$dst")"
-    cp "$src" "$dst"
+    if ! mkdir -p "$(dirname "$dst")"; then
+        printf 'FAILED (mkdir): %s\n' "$label" >&2
+        failed=$((failed + 1))
+        return 1
+    fi
+
+    if ! cp "$src" "$dst"; then
+        printf 'FAILED (cp): %s\n' "$label" >&2
+        failed=$((failed + 1))
+        return 1
+    fi
+
+    # Counted only once both commands have succeeded.
     moved=$((moved + 1))
     printf 'SYNCED: %s\n' "$label"
+    return 0
 }
 
 for pair in "${PAIRS[@]}"; do
@@ -109,16 +130,16 @@ for pair in "${PAIRS[@]}"; do
     root="$PROJECT_ROOT/${pair##*:}"
 
     if [ "$MODE" = "adopt" ]; then
-        copy_pair "$root" "$canon" "${pair##*:} -> resources/phpstan/${pair%%:*}"
+        copy_pair "$root" "$canon" "${pair##*:} -> resources/phpstan/${pair%%:*}" || true
     else
-        copy_pair "$canon" "$root" "${pair##*:}"
+        copy_pair "$canon" "$root" "${pair##*:}" || true
     fi
 done
 
 # The script syncs itself, the way skills-sync.sh does — otherwise the one file
 # that keeps the others versioned is the one nothing versions.
 if [ "$MODE" != "adopt" ]; then
-    copy_pair "$PROJECT_ROOT/packages/semitexa-dev/resources/$SELF" "$PROJECT_ROOT/bin/$SELF" "bin/$SELF"
+    copy_pair "$PROJECT_ROOT/packages/semitexa-dev/resources/$SELF" "$PROJECT_ROOT/bin/$SELF" "bin/$SELF" || true
 fi
 
 if [ "$MODE" = "check" ]; then
@@ -130,6 +151,11 @@ if [ "$MODE" = "check" ]; then
     fi
     printf 'All phpstan files match resources/phpstan.\n'
     exit 0
+fi
+
+if [ "$failed" -gt 0 ]; then
+    printf '%d file(s) could not be synced. Nothing here is in a known state.\n' "$failed" >&2
+    exit 1
 fi
 
 if [ "$moved" -eq 0 ]; then

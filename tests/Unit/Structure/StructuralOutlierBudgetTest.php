@@ -165,7 +165,25 @@ final class StructuralOutlierBudgetTest extends TestCase
         // taking `originalPath` with it, which is what ContractMoveResolver
         // needs to find consumers of the old contract. It now merges the
         // richer entry in. Eighteen lines, METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 709],
+        // 709 -> 740 in review of dev#84, three reviewer-found correctness
+        // fixes and their reasons. The clean `--dirty` answer now carries
+        // `completed`, `counts` and `restart` off VerifyReportSerializer — it
+        // was the one answer missing them, so a consumer reading the stable v1
+        // schema had to special-case it. And dedupe() learned that a deletion
+        // never wins over a record of a live file: `D path` then `?? path` is
+        // a file staged for deletion and written again, and keeping only the
+        // deletion made the planner skip a file sitting right there.
+        // METHOD COUNT UNCHANGED at 19.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 740],
+        // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
+        // review of dev#84 and the ratchet said so. The addition is a refusal:
+        // `--preview` with `--expect-field` resolved the target, returned
+        // SUCCESS and evaluated no expectation, so a caller relying on the
+        // documented failure exit for an assertion got a green run that
+        // verified nothing. Recorded rather than extracted because the class is
+        // one command with one flow; if it grows again, the envelope-building
+        // half is the seam — the same one VerifyReportSerializer was cut along.
+        'semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => [18, 713],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that

@@ -245,4 +245,63 @@ final class FieldExpectationsTest extends TestCase
         self::assertSame('active', $out['results'][0]['expected']);
         self::assertArrayNotHasKey('expected_redacted', $out['results'][0]);
     }
+
+    /**
+     * ContextRedactor does TWO jobs at once: it masks secrets and it bounds
+     * output (past 200 characters, and for deep or large structures). Treating
+     * "the redacted copy differs" as the secret signal conflated them, and the
+     * cost was not cosmetic: the caller's EXPECTED value was replaced with the
+     * bounded ACTUAL one, so a failed assertion could print the same text on
+     * both sides and hide what was really compared. Raised twice in review of
+     * dev#84, by both reviewers.
+     */
+    #[Test]
+    public function a_long_ordinary_value_is_not_a_secret(): void
+    {
+        $shared = str_repeat('a', 250);
+        $out = FieldExpectations::fromOptions(['note=' . $shared . 'EXPECTED'])
+            ->check(['note' => $shared . 'ACTUAL']);
+
+        $row = $out['results'][0];
+        self::assertFalse($row['ok'], 'the two differ past the bound');
+        self::assertArrayNotHasKey('expected_redacted', $row, 'a long string is not a secret');
+        self::assertStringContainsString('EXPECTED', $row['expected'], 'the caller must still see what they asked for');
+        self::assertNotSame($row['expected'], $row['actual'], 'a failure must never show both sides as equal');
+    }
+
+    /** Bounded is not secret, but it is not whole either — and says so. */
+    #[Test]
+    public function a_bounded_value_is_marked_as_bounded(): void
+    {
+        $out = FieldExpectations::fromOptions(['note=short'])
+            ->check(['note' => str_repeat('b', 400)]);
+
+        self::assertTrue($out['results'][0]['actual_bounded']);
+        self::assertArrayNotHasKey('actual_redacted', $out['results'][0]);
+    }
+
+    /** A short ordinary value carries neither marker. */
+    #[Test]
+    public function an_ordinary_value_carries_no_marker(): void
+    {
+        $out = FieldExpectations::fromOptions(['note=hi'])->check(['note' => 'hi']);
+
+        self::assertTrue($out['results'][0]['ok']);
+        self::assertArrayNotHasKey('actual_bounded', $out['results'][0]);
+        self::assertArrayNotHasKey('actual_redacted', $out['results'][0]);
+    }
+
+    /**
+     * `--expect-field="$EXPECT"` with an empty variable used to drop the
+     * assertion silently, and the command then exited 0 having checked
+     * nothing — from an option whose entire job is a yes/no guarantee.
+     */
+    #[Test]
+    public function a_blank_entry_is_refused_rather_than_dropped(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('empty value');
+
+        FieldExpectations::fromOptions(['status=ok', '   ']);
+    }
 }

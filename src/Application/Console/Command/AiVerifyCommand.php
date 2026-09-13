@@ -111,13 +111,26 @@ final class AiVerifyCommand extends BaseCommand
                 // traced workflow with no `verify_result` and no trace status
                 // for the run at all — a gap in an audit trail reads as a step
                 // that was never taken. Raised in review of dev#84.
+                //
+                // AND the report keeps its CONTRACT. This branch used to write
+                // its own envelope, so a clean run was the one answer missing
+                // `completed`, `counts` and `restart` — a consumer reading the
+                // stable v1 schema had to special-case it, or fail on the
+                // absent keys. The fields come off VerifyReportSerializer, the
+                // same source the other two paths use, so there is one
+                // definition of what an empty result looks like. Raised in
+                // review of dev#84 by both reviewers.
                 $emptyPlan = new VerificationPlan($scope, $scope, [], []);
+                $report = new VerifyReportSerializer();
                 $envelope = [
                     'artifact' => 'semitexa-dev.verify-report/v1',
                     'generated_at' => date('c'),
                     'verdict' => 'nothing_to_verify',
+                    'completed' => $report->completed([]),
+                    'counts' => $report->countByStatus([]),
                     'changed_files' => [],
                     'dirty_scan' => $scan,
+                    'restart' => $report->restartAdvice([]),
                 ];
 
                 if ($jsonMode) {
@@ -135,6 +148,10 @@ final class AiVerifyCommand extends BaseCommand
                 // The same two records a run WITH changes emits, so a consumer
                 // reads the scan out of one place regardless of the answer.
                 $output->writeln(json_encode(['kind' => 'dirty_scan'] + $scan, JSON_UNESCAPED_SLASHES));
+                $output->writeln((string) json_encode(
+                    ['kind' => 'restart'] + $report->restartAdvice([]),
+                    JSON_UNESCAPED_SLASHES,
+                ));
                 $output->writeln(json_encode([
                     'kind' => 'verdict',
                     'verdict' => 'nothing_to_verify',
@@ -144,8 +161,8 @@ final class AiVerifyCommand extends BaseCommand
                     // as verification evidence, and contradicted
                     // VerifyReportSerializer::completed([]) besides. Raised in
                     // review of dev#84.
-                    'completed' => false,
-                    'counts' => [],
+                    'completed' => $report->completed([]),
+                    'counts' => $report->countByStatus([]),
                     'dirty_scan' => $scan,
                 ], JSON_UNESCAPED_SLASHES));
 
@@ -395,23 +412,37 @@ final class AiVerifyCommand extends BaseCommand
         foreach ($entries as $entry) {
             $key = $entry['path'];
             if (isset($seen[$key])) {
-                // First-wins, EXCEPT for what the first one does not know.
-                // `--files=<renamed destination> --dirty` supplies the path
-                // manually as a plain modification and the scanner then finds
-                // the same path as a rename; dropping the second entry whole
-                // discarded `originalPath`, so ContractMoveResolver never
-                // expanded consumers of the old contract and the run came back
-                // green with stale references in it. A rename is strictly more
-                // than a modification of the same file, so it wins. Raised in
-                // review of dev#84.
+                // First-wins, EXCEPT where the first entry knows less. Two
+                // ways that happens, and both produced a false green.
+                //
+                // A RENAME arriving second: `--files=<renamed destination>
+                // --dirty` supplies the path by hand as a plain modification
+                // and the scanner then finds the same path as a rename.
+                // Dropping the second entry discarded `originalPath`, so
+                // ContractMoveResolver never expanded consumers of the old
+                // contract.
+                //
+                // A RECREATED file arriving second: staged for deletion and
+                // then written again at the same path, git reports `D path`
+                // followed by `?? path`. Keeping only the deletion made the
+                // planner skip a file that is sitting right there, so a syntax
+                // error in its new contents verified clean. If ANY source says
+                // the path exists, it exists — a deletion never wins over a
+                // record of a live file. Both raised in review of dev#84.
                 $at = $seen[$key];
                 $original = $entry['originalPath'] ?? '';
-                if ($original !== '' && ($out[$at]['originalPath'] ?? '') === '') {
-                    $out[$at] = [
-                        'path' => $key,
-                        'status' => $entry['status'],
-                        'originalPath' => $original,
-                    ];
+                $existingOriginal = $out[$at]['originalPath'] ?? '';
+                $learnsOrigin = $original !== '' && $existingOriginal === '';
+                $wasDeleted = $out[$at]['status'] === ChangedFile::STATUS_DELETED;
+                $isAlive = $entry['status'] !== ChangedFile::STATUS_DELETED;
+
+                if ($learnsOrigin || ($wasDeleted && $isAlive)) {
+                    $merged = ['path' => $key, 'status' => $entry['status']];
+                    $keptOriginal = $original !== '' ? $original : $existingOriginal;
+                    if ($keptOriginal !== '') {
+                        $merged['originalPath'] = $keptOriginal;
+                    }
+                    $out[$at] = $merged;
                 }
                 continue;
             }

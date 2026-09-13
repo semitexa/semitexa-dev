@@ -113,6 +113,24 @@ final class AiInvokeCommand extends BaseCommand
         } catch (\InvalidArgumentException $e) {
             return $this->emitError($output, $envelope, $e->getMessage(), 'input');
         }
+
+        // REFUSED, not quietly ignored. `--preview` resolves the target and
+        // returns SUCCESS without calling handle(), so there is no resource for
+        // an expectation to be checked against — and a caller relying on the
+        // documented failure exit for an assertion got a green run that
+        // verified nothing. The two options ask for opposite things: one says
+        // do not execute, the other says tell me about the result. Raised in
+        // review of dev#84.
+        if (!$expectations->isEmpty() && (bool) $input->getOption('preview')) {
+            return $this->emitError(
+                $output,
+                $envelope,
+                '--expect-field cannot be combined with --preview: nothing is executed, so there is no '
+                . 'resource to assert against. Drop --preview to check the expectations, or drop '
+                . '--expect-field to preview the target.',
+                'input',
+            );
+        }
         $rawResource = null;
 
         $decoded = json_decode($payloadJson, true);

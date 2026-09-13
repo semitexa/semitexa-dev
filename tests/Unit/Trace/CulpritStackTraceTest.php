@@ -234,4 +234,54 @@ final class CulpritStackTraceTest extends TestCase
         self::assertSame($e->getLine(), $trace->culprit['line']);
         self::assertGreaterThan(0, $trace->culprit['line'], 'never :0');
     }
+
+    /**
+     * The case the synthetic frames above cannot reach: a REAL class, whose
+     * declaration can be reflected on.
+     *
+     * A frame stores the callee in class/function and the CALL SITE in
+     * file/line, so judging vendor-ness by `file` classified an application
+     * callback invoked from vendor code as plumbing and collapsed the actual
+     * culprit. Here the callee is this test class — declared under packages/,
+     * not vendor/ — while the call site claims to be inside vendor. It must
+     * still be the culprit. Raised in review of dev#84.
+     */
+    #[Test]
+    public function a_real_callee_is_judged_by_where_it_is_declared(): void
+    {
+        $trace = $this->withFrames([
+            ['file' => '/app/vendor/somebody/lib/Runner.php', 'line' => 3, 'function' => 'a_real_callee_is_judged_by_where_it_is_declared', 'class' => self::class],
+        ]);
+
+        self::assertSame(self::class, $trace->culprit['class'], 'called FROM vendor, but not OF vendor');
+    }
+
+    /**
+     * And the other direction: a real vendor class called from application
+     * code used to escape the check entirely, because the call site was not
+     * under vendor/.
+     */
+    #[Test]
+    public function a_real_vendor_callee_is_plumbing_even_when_called_from_app_code(): void
+    {
+        $trace = $this->withFrames([
+            ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 9, 'function' => 'getMessage', 'class' => \PHPUnit\Framework\Assert::class],
+            ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 42, 'function' => 'handle', 'class' => 'App\\Modules\\Shop\\Handler'],
+        ]);
+
+        self::assertSame('App\\Modules\\Shop\\Handler', $trace->culprit['class'], 'the vendor frame is skipped');
+    }
+
+    /** An unloaded class name must not be autoloaded just to classify a frame. */
+    #[Test]
+    public function classifying_a_frame_never_autoloads(): void
+    {
+        $absent = 'Definitely\\Not\\Loaded\\ClassName';
+        $trace = $this->withFrames([
+            ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 42, 'function' => 'handle', 'class' => $absent],
+        ]);
+
+        self::assertFalse(class_exists($absent, false), 'the diagnostic must not load what it inspects');
+        self::assertSame($absent, $trace->culprit['class']);
+    }
 }

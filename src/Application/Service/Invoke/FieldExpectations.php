@@ -49,14 +49,25 @@ final readonly class FieldExpectations
         $parsed = [];
 
         foreach ($raw as $entry) {
-            // Blankness is CHECKED on a trimmed copy, and the entry itself is
-            // left alone. Trimming it discarded significant whitespace in the
+            // A blank entry is REFUSED, not skipped.
+            //
+            // `--expect-field="$EXPECT"` with an empty variable used to drop
+            // the assertion silently; isEmpty() then reported nothing to check
+            // and the command exited 0 having verified nothing — the opposite
+            // of what an option whose whole job is a yes/no guarantee should
+            // do. Every other malformed entry is rejected as input; so is this
+            // one. Raised in review of dev#84.
+            //
+            // Blankness is judged on a trimmed COPY and the entry itself is
+            // left alone: trimming it discarded significant whitespace in the
             // expected value -- `--expect-field='name=Ada '` could never match
             // a resource value of `"Ada "`, and an expectation of a single
-            // space became an expectation of the empty string. Raised in
-            // review of dev#84.
+            // space became an expectation of the empty string.
             if (trim($entry) === '') {
-                continue;
+                throw new \InvalidArgumentException(
+                    '--expect-field was given an empty value. Omit the option to check nothing; '
+                    . 'a blank one cannot be told from an assertion that was meant to be there.',
+                );
             }
 
             $at = strpos($entry, '=');
@@ -122,24 +133,32 @@ final readonly class FieldExpectations
             }
 
             $maskedRendered = $found ? self::maskedDisplay($shown, $path) : null;
-            // Sensitivity is a property of the PATH, not of whether a value
-            // happened to be there. `--expect-field=password=hunter2` against a
-            // resource with no `password` field found nothing, so `$isSecret`
-            // was false and the caller's own secret went into the envelope
-            // verbatim — the exact leak the mask was added to stop, through the
-            // one branch that had no value to mask. Raised in review of dev#84.
-            $isSecret = self::pathNamesASecret($path) || ($found && $maskedRendered !== $rendered);
+            // Sensitivity is a property of the PATH and of NOTHING ELSE.
+            //
+            // It used to also count "the redacted copy differs from the raw
+            // value", which conflated two jobs ContextRedactor does at once:
+            // masking secrets AND bounding output (it truncates past 200
+            // characters and collapses deep or large structures). So an
+            // ordinary long string was classified secret, and the line below
+            // then replaced the caller's EXPECTED value with the bounded
+            // ACTUAL one — a failed assertion could print identical expected
+            // and actual text and hide what was really compared. Raised twice
+            // in review of dev#84, by both reviewers.
+            //
+            // `$maskedRendered` keeps its one job: the safe thing to DISPLAY.
+            $isSecret = self::pathNamesASecret($path);
 
             $entry = [
                 'path' => $path,
-                // The caller's own text is masked whenever the path is, or
-                // `--expect-field=password=hunter2` printed the secret verbatim
-                // in an envelope built to be pasted around — back in through
-                // the door the mask was guarding.
-                // The mask stands in when the path was never found: there is
-                // no displayed value to borrow, and the expectation still must
-                // not be echoed.
-                'expected' => $isSecret ? ($maskedRendered ?? ContextRedactor::MASK) : $expected,
+                // The caller's own text is masked whenever the PATH is secret,
+                // or `--expect-field=password=hunter2` printed the secret
+                // verbatim in an envelope built to be pasted around — back in
+                // through the door the mask was guarding.
+                //
+                // The mask itself, not the displayed actual value: echoing the
+                // actual back as "expected" is how the two could come out
+                // looking equal on a failure.
+                'expected' => $isSecret ? ContextRedactor::MASK : $expected,
                 'ok' => $ok,
             ];
             if ($isSecret) {
@@ -158,6 +177,12 @@ final readonly class FieldExpectations
                     // Said out loud: the comparison used the real value, this
                     // line is only what may be shown.
                     $entry['actual_redacted'] = true;
+                } elseif ($maskedRendered !== $rendered) {
+                    // Not secret, but not whole either: ContextRedactor bounds
+                    // output as well as masking it — past 200 characters, and
+                    // for deep or large structures. Marked separately so a
+                    // reader does not take a truncated value for the value.
+                    $entry['actual_bounded'] = true;
                 }
             }
 
