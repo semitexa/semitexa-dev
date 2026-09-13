@@ -63,6 +63,18 @@ foreach ($composerFiles as $composerPath) {
 
 if ($violations === []) {
     echo "[OK] Internal Semitexa package constraints are compatible with UTC date-based releases.\n";
+
+    $unsatisfiable = checkFloorsAreSatisfiable($packagesDir);
+    if ($unsatisfiable !== []) {
+        fwrite(STDERR, "A floor names a release that does not contain what this package imports:\n");
+        foreach ($unsatisfiable as $problem) {
+            fwrite(STDERR, '- ' . $problem . "\n");
+        }
+        fwrite(STDERR, "\nRaise the floor to the release that first shipped the class, or stop importing it.\n");
+        exit(1);
+    }
+
+    echo "[OK] Every internal floor names a release that actually contains the classes its package imports.\n";
     exit(0);
 }
 
@@ -140,4 +152,174 @@ function isCompatibleInternalConstraint(string $constraint): bool
     }
 
     return preg_match('/^>=\s*' . $version . '(?:\s*\|\|\s*dev-master)?$/i', $constraint) === 1;
+}
+
+/**
+ * A FLOOR THAT NAMES A RELEASE WITHOUT THE CLASS IS WORSE THAN NO FLOOR.
+ *
+ * The form check above asks whether a constraint is spelled correctly. This
+ * asks the question that actually matters: `semitexa/ssr` floored core at the
+ * release before the one that introduced `Semitexa\Core\Support\Row`, while
+ * importing Row in thirteen files. Composer resolves that happily and the
+ * worker dies on `Class not found` at the first request — which is the exact
+ * failure the floor exists to turn into a resolution error.
+ *
+ * A human found that in review. Nothing here would have.
+ *
+ * The check: for every `>=` floor on a sibling, read the classes this package
+ * IMPORTS from that sibling's namespace, and confirm each one's file exists in
+ * the sibling AT THAT TAG. One `git ls-tree` per (package, tag) rather than a
+ * lookup per import — the tree is read once and membership tested in memory.
+ *
+ * @return list<string> one sentence per unsatisfiable import
+ */
+function checkFloorsAreSatisfiable(string $packagesDir): array
+{
+    $packages = indexPackages($packagesDir);
+    $problems = [];
+
+    foreach ($packages as $name => $package) {
+        foreach ($package['floors'] as $dependency => $floorVersion) {
+            $target = $packages[$dependency] ?? null;
+            if ($target === null) {
+                // Not in this workspace; nothing local to verify against.
+                continue;
+            }
+
+            $tree = treeAtTag($target['dir'], $floorVersion);
+            if ($tree === null) {
+                $problems[] = sprintf(
+                    '%s floors %s at %s, but that tag is not in %s — fetch tags, or the floor names a release that does not exist',
+                    $name,
+                    $dependency,
+                    $floorVersion,
+                    basename($target['dir']),
+                );
+                continue;
+            }
+
+            foreach (importsFrom($package['dir'], $target['psr4']) as $class => $relativePath) {
+                if (in_array($relativePath, $tree, true)) {
+                    continue;
+                }
+
+                $problems[] = sprintf(
+                    '%s imports %s but floors %s at %s, where %s does not exist',
+                    $name,
+                    $class,
+                    $dependency,
+                    $floorVersion,
+                    $relativePath,
+                );
+            }
+        }
+    }
+
+    return $problems;
+}
+
+/**
+ * @return array<string, array{dir: string, psr4: array<string, string>, floors: array<string, string>}>
+ */
+function indexPackages(string $packagesDir): array
+{
+    $packages = [];
+
+    foreach (glob($packagesDir . '/*/composer.json') ?: [] as $composerPath) {
+        $json = json_decode((string) file_get_contents($composerPath), true);
+        if (!is_array($json) || !is_string($json['name'] ?? null)) {
+            continue;
+        }
+
+        $psr4 = [];
+        foreach ($json['autoload']['psr-4'] ?? [] as $prefix => $dir) {
+            if (is_string($prefix) && is_string($dir)) {
+                $psr4[$prefix] = rtrim($dir, '/');
+            }
+        }
+
+        $floors = [];
+        foreach ($json['require'] ?? [] as $dependency => $constraint) {
+            if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
+                continue;
+            }
+            // The `|| dev-master` escape is not part of the promise being
+            // checked; the floor is.
+            if (preg_match('/^>=\s*(\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?)/i', $constraint, $m) === 1) {
+                $floors[$dependency] = $m[1];
+            }
+        }
+
+        $packages[$json['name']] = [
+            'dir' => dirname($composerPath),
+            'psr4' => $psr4,
+            'floors' => $floors,
+        ];
+    }
+
+    return $packages;
+}
+
+/**
+ * Every path in a package at one tag, or null when the tag is not there.
+ *
+ * @return list<string>|null
+ */
+function treeAtTag(string $dir, string $tag): ?array
+{
+    $command = sprintf(
+        'git -C %s ls-tree -r --name-only %s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg($tag),
+    );
+
+    exec($command, $lines, $code);
+
+    return $code === 0 && $lines !== [] ? $lines : null;
+}
+
+/**
+ * Classes this package imports from another's namespaces, as tag-relative
+ * paths.
+ *
+ * `use function` and `use const` are skipped: they are not class files, and a
+ * floor that guarantees a class says nothing about them either way.
+ *
+ * @param array<string, string> $psr4 namespace prefix => source directory
+ * @return array<string, string> FQCN => path inside the target package
+ */
+function importsFrom(string $packageDir, array $psr4): array
+{
+    $found = [];
+    $sourceDir = $packageDir . '/src';
+    if (!is_dir($sourceDir)) {
+        return $found;
+    }
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($sourceDir));
+    foreach ($files as $file) {
+        if (!$file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $contents = (string) file_get_contents($file->getPathname());
+        // preg_match_all returns the COUNT of matches, not a boolean.
+        $count = preg_match_all('/^use\s+(?!function\s|const\s)([A-Za-z0-9_\\\\]+)\s*(?:as\s+\w+)?;/m', $contents, $matches);
+        if ($count === false || $count === 0) {
+            continue;
+        }
+
+        foreach ($matches[1] as $class) {
+            foreach ($psr4 as $prefix => $dir) {
+                if (!str_starts_with($class, $prefix)) {
+                    continue;
+                }
+                $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
+                $found[$class] = $dir . '/' . $relative . '.php';
+                break;
+            }
+        }
+    }
+
+    return $found;
 }
