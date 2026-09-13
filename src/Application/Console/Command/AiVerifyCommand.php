@@ -99,13 +99,24 @@ final class AiVerifyCommand extends BaseCommand
             // verified — so it gets a verdict of its own, with the scan's reach
             // attached so the reader can see what was asked.
             if ((bool) $input->getOption('dirty')) {
-                $scanner = new DirtyWorkspaceScanner($this->getProjectRoot());
-                $output->writeln(json_encode([
+                $scan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+
+                // In the SAME shape the mode promises. Default mode is NDJSON
+                // whose records are dispatched by `kind`, so an envelope
+                // without one is a record such a consumer cannot place — and
+                // every ordinary run ends with a `verdict` record.
+                $output->writeln(json_encode($jsonMode ? [
                     'artifact' => 'semitexa-dev.verify-report/v1',
                     'generated_at' => date('c'),
                     'verdict' => 'nothing_to_verify',
                     'changed_files' => [],
-                    'dirty_scan' => $scanner->report(),
+                    'dirty_scan' => $scan,
+                ] : [
+                    'kind' => 'verdict',
+                    'verdict' => 'nothing_to_verify',
+                    'completed' => true,
+                    'counts' => [],
+                    'dirty_scan' => $scan,
                 ], JSON_UNESCAPED_SLASHES));
 
                 return self::SUCCESS;

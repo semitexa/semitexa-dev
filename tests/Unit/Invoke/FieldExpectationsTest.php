@@ -110,6 +110,51 @@ final class FieldExpectationsTest extends TestCase
         self::assertTrue($result['actual_redacted']);
     }
 
+    /**
+     * `<array>` was meant to be unspellable, and a caller can spell it — so an
+     * assertion against a list passed. Scalar-ness is part of the verdict now,
+     * not a property of the label. Raised in review of dev#84.
+     */
+    #[Test]
+    public function spelling_the_type_label_does_not_make_it_match(): void
+    {
+        foreach ([['items' => [1, 2]], ['items' => new \stdClass()]] as $resource) {
+            $result = $this->check(['items=<' . get_debug_type($resource['items']) . '>'], $resource)['results'][0];
+
+            self::assertFalse($result['ok'], 'a type description is not a value');
+            self::assertStringContainsString('no --expect-field value can equal', $result['reason']);
+        }
+    }
+
+    /**
+     * Masking only the actual left the caller's own expected text printing the
+     * secret verbatim — back in through the door the mask was guarding.
+     */
+    #[Test]
+    public function the_expected_side_is_masked_too(): void
+    {
+        $result = $this->check(['password=hunter2'], ['password' => 'hunter2'])['results'][0];
+
+        self::assertTrue($result['ok'], 'the comparison still sees the real values');
+        self::assertNotSame('hunter2', $result['expected']);
+        self::assertNotSame('hunter2', $result['actual']);
+        self::assertTrue($result['expected_redacted']);
+        self::assertSame([], array_filter(
+            [$result['expected'], $result['actual']],
+            static fn (string $v): bool => str_contains($v, 'hunter2'),
+        ), 'nothing in the report may carry it');
+    }
+
+    /** An ordinary field is reported as written, not masked into uselessness. */
+    #[Test]
+    public function an_ordinary_expected_value_is_left_alone(): void
+    {
+        $result = $this->check(['title=Ada'], ['title' => 'Ada'])['results'][0];
+
+        self::assertSame('Ada', $result['expected']);
+        self::assertArrayNotHasKey('expected_redacted', $result);
+    }
+
     #[Test]
     public function a_resource_that_never_arrived_fails_every_expectation(): void
     {

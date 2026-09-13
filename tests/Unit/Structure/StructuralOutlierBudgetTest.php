@@ -121,7 +121,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // caller to do the thing they had just done and exited 1 on every
         // clean checkout. Nineteen lines, most of them the comment saying why
         // it is neither a pass nor a failure. METHOD COUNT UNCHANGED at 25.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 750],
+        // 750 -> 761 in review of dev#84: the empty --dirty answer now honours
+        // the output mode. Default mode is NDJSON dispatched by `kind`, and
+        // emitting the single-envelope shape there handed such a consumer a
+        // record it could not place. Eleven lines for the second shape and the
+        // comment. METHOD COUNT UNCHANGED at 25.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 761],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that

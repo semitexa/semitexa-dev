@@ -84,6 +84,38 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         );
     }
 
+    /**
+     * Default mode is NDJSON whose records are dispatched by `kind`, and every
+     * ordinary run ends with a `verdict` record. The first version emitted the
+     * single-envelope shape here regardless of mode, so a default-mode consumer
+     * got a record it could not place. Raised in review of dev#84.
+     */
+    #[Test]
+    public function the_default_mode_answer_is_an_ndjson_verdict_record(): void
+    {
+        $command = new AiVerifyCommand();
+        $command->setName('ai:verify');
+        $output = new BufferedOutput();
+
+        $exit = $command->run(new ArrayInput(['--dirty' => true], $command->getDefinition()), $output);
+        $record = (array) json_decode(trim($output->fetch()), true);
+
+        self::assertSame(0, $exit);
+        self::assertSame('verdict', $record['kind'] ?? null, 'NDJSON consumers dispatch on this');
+        self::assertSame('nothing_to_verify', $record['verdict']);
+        self::assertArrayHasKey('dirty_scan', $record, 'the reach travels in both shapes');
+    }
+
+    /** And --json still gets the single envelope, with its artifact id. */
+    #[Test]
+    public function the_json_mode_answer_is_still_one_envelope(): void
+    {
+        $envelope = $this->runDirty()['envelope'];
+
+        self::assertSame('semitexa-dev.verify-report/v1', $envelope['artifact']);
+        self::assertArrayNotHasKey('kind', $envelope);
+    }
+
     /** Without the flag, no paths is still a misuse and still fails. */
     #[Test]
     public function the_generic_empty_case_still_fails(): void

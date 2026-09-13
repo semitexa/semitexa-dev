@@ -58,7 +58,7 @@ final readonly class DirtyWorkspaceScanner
         $scanned = array_keys($this->repositories());
         $unscannable = [];
 
-        if (!is_dir($root . '/.git')) {
+        if (!self::isRepository($root)) {
             // Named explicitly: in the authoring workspace the root is not a
             // repository, so nothing under src/ can report a change and a
             // reader must not take silence for cleanliness.
@@ -66,7 +66,7 @@ final readonly class DirtyWorkspaceScanner
         }
 
         foreach ($this->packageDirectories() as $rel => $abs) {
-            if (!is_dir($abs . '/.git')) {
+            if (!self::isRepository($abs)) {
                 $unscannable[] = $rel;
             }
         }
@@ -88,17 +88,32 @@ final readonly class DirtyWorkspaceScanner
         $root = $this->root();
         $roots = [];
 
-        if (is_dir($root . '/.git')) {
+        if (self::isRepository($root)) {
             $roots[''] = $root;
         }
 
         foreach ($this->packageDirectories() as $rel => $abs) {
-            if (is_dir($abs . '/.git')) {
+            if (self::isRepository($abs)) {
                 $roots[$rel] = $abs;
             }
         }
 
         return $roots;
+    }
+
+    /**
+     * Is this path a git repository?
+     *
+     * `.git` is a DIRECTORY in an ordinary clone and a FILE in a linked
+     * worktree — one line pointing at the real gitdir. Testing only for the
+     * directory skipped every worktree checkout silently: `changedFiles()`
+     * came back empty and `--dirty` reported a clean tree, which is the exact
+     * false green the scan report exists to prevent. Raised in review of
+     * dev#84.
+     */
+    private static function isRepository(string $path): bool
+    {
+        return is_dir($path . '/.git') || is_file($path . '/.git');
     }
 
     /** @return array<string, string> repo-relative => absolute */

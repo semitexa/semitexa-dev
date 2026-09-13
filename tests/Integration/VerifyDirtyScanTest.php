@@ -125,6 +125,38 @@ final class VerifyDirtyScanTest extends TestCase
     }
 
     /**
+     * `.git` is a DIRECTORY in an ordinary clone and a FILE in a linked
+     * worktree. Testing only for the directory skipped every worktree
+     * checkout silently — empty answer, exit 0, "nothing to verify" — which is
+     * the exact false green the scan report exists to prevent. Raised in
+     * review of dev#84.
+     */
+    #[Test]
+    public function a_linked_worktree_is_a_repository_too(): void
+    {
+        $repo = $this->root . '/packages/semitexa-one';
+        file_put_contents($repo . '/kept.txt', "one\n");
+        $this->initRepo($repo);
+
+        $tree = $this->root . '/packages/semitexa-two';
+        $q = escapeshellarg($repo);
+        rmdir($tree);
+        exec("git -C {$q} -c safe.directory={$q} worktree add -q " . escapeshellarg($tree) . " -b wt 2>&1", $out, $code);
+        if ($code !== 0 || !is_file($tree . '/.git')) {
+            self::markTestSkipped('git worktree unavailable here: ' . implode(' / ', $out));
+        }
+
+        file_put_contents($tree . '/fresh.txt', "two\n");
+
+        $report = $this->scanner()->report();
+        self::assertContains('packages/semitexa-two', $report['scanned'], 'a worktree is a repository');
+        self::assertNotContains('packages/semitexa-two', $report['unscannable']);
+
+        $paths = array_column($this->scanner()->changedFiles(), 'path');
+        self::assertContains('packages/semitexa-two/fresh.txt', $paths, 'its change must not go unseen');
+    }
+
+    /**
      * The half that keeps the answer honest: a package directory that is not a
      * repository is NAMED, so silence is never mistaken for cleanliness.
      */

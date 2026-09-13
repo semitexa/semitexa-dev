@@ -90,25 +90,44 @@ final readonly class FieldExpectations
 
             [$found, $actual] = self::lookup($resource, $path);
             $rendered = $found ? self::render($actual) : null;
-            $ok = $found && $rendered === $expected;
+
+            // Scalar-ness is part of the verdict, not a property of the label.
+            // `<array>` was supposed to be unspellable; a caller can spell it,
+            // and then an assertion against a list passed. Raised in review of
+            // dev#84.
+            $comparable = $found && self::isComparable($actual);
+            $ok = $comparable && $rendered === $expected;
 
             if (!$ok) {
                 $failed++;
             }
 
+            // The EXPECTED side is masked too. Masking only the actual left the
+            // caller's own `--expect-field=password=hunter2` printed verbatim
+            // in an envelope built to be pasted around — the secret came back
+            // in through the door the mask was guarding. Raised in review of
+            // dev#84.
+            $leaf = self::leafKey($path);
+            $maskedExpectation = self::render(ContextRedactor::redact([$leaf => $expected])[$leaf] ?? $expected);
+
             $entry = [
                 'path' => $path,
-                'expected' => $expected,
+                'expected' => $maskedExpectation,
                 'ok' => $ok,
             ];
+            if ($maskedExpectation !== $expected) {
+                $entry['expected_redacted'] = true;
+            }
 
             if (!$found) {
                 $entry['actual'] = null;
                 $entry['reason'] = 'no such path in the resource';
+            } elseif (!$comparable) {
+                $entry['actual'] = $rendered;
+                $entry['reason'] = 'the value is ' . get_debug_type($actual) . ', which no --expect-field value can equal';
             } else {
                 // The redactor decides by KEY name, so it is asked about the
                 // leaf the value actually sits under.
-                $leaf = self::leafKey($path);
                 $masked = self::render(ContextRedactor::redact([$leaf => $actual])[$leaf] ?? $actual);
                 $entry['actual'] = $masked;
                 if ($masked !== $rendered) {
@@ -122,6 +141,18 @@ final readonly class FieldExpectations
         }
 
         return ['checked' => count($results), 'failed' => $failed, 'results' => $results];
+    }
+
+    /**
+     * Can this value be compared at all?
+     *
+     * Only scalars and null. Everything else renders as its type, and that
+     * rendering is a description rather than a value — treating it as one made
+     * `--expect-field=items=<array>` pass against any array.
+     */
+    private static function isComparable(mixed $value): bool
+    {
+        return $value === null || is_scalar($value);
     }
 
     private static function leafKey(string $path): string
