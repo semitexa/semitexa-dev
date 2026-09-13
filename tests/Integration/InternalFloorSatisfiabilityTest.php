@@ -373,4 +373,62 @@ final class InternalFloorSatisfiabilityTest extends TestCase
 
         self::assertSame(0, $result['exit'], $result['output']);
     }
+
+    /**
+     * A BRACED namespace still has namespace-level imports.
+     *
+     * `namespace X { use Y; }` opens a brace that is not a class body. Counting
+     * it as one skipped every genuine import inside the block, and the gate
+     * reported success while the floored tag had no such file — the fail-open
+     * again, one level deeper.
+     */
+    #[Test]
+    public function an_import_inside_a_braced_namespace_is_still_an_import(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application {\n"
+            . "    use Semitexa\\Core\\Support\\Row;\n\n"
+            . "    final class Reader\n    {\n        use Nothing;\n    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /** A lowercase alias is still an alias — capitalization proves nothing. */
+    #[Test]
+    public function a_lowercase_alias_does_not_corrupt_the_class_name(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Row as row;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+    }
+
+    /**
+     * And a class whose own name contains "as" survives. Stripping the alias by
+     * string search turned `HasColumnReferences` into `H` and reported six
+     * packages here for a file nobody imports.
+     */
+    #[Test]
+    public function a_class_name_containing_as_is_not_truncated(): void
+    {
+        $this->provider('2026.09.13.1330', ['Metadata/HasColumnReferences.php']);
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Metadata\\HasColumnReferences');
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringNotContainsString('Metadata/H.php', $result['output']);
+    }
 }

@@ -532,9 +532,28 @@ function importedClasses(string $contents): array
     $tokens = PhpToken::tokenize($contents);
     $classes = [];
     $depth = 0;
+    $namespaceBraceDepths = [];
+    $inNamespaceDeclaration = false;
 
     for ($i = 0, $n = count($tokens); $i < $n; $i++) {
         $token = $tokens[$i];
+
+        // A BRACED namespace — `namespace Semitexa\Ssr { use ...; }` — opens a
+        // brace that is not a class body, and counting it would skip every
+        // genuine import inside. Its depth is remembered so the matching `}`
+        // closes it rather than looking like a class ending.
+        if ($token->is(T_NAMESPACE)) {
+            $inNamespaceDeclaration = true;
+            continue;
+        }
+        if ($inNamespaceDeclaration && ($token->text === ';' || $token->text === '{')) {
+            if ($token->text === '{') {
+                $depth++;
+                $namespaceBraceDepths[$depth] = true;
+            }
+            $inNamespaceDeclaration = false;
+            continue;
+        }
 
         // Trait `use` lives inside a class body; namespace-level `use` does not.
         if ($token->text === '{') {
@@ -542,10 +561,13 @@ function importedClasses(string $contents): array
             continue;
         }
         if ($token->text === '}') {
+            unset($namespaceBraceDepths[$depth]);
             $depth--;
             continue;
         }
-        if (!$token->is(T_USE) || $depth > 0) {
+
+        $classBodyDepth = $depth - count($namespaceBraceDepths);
+        if (!$token->is(T_USE) || $classBodyDepth > 0) {
             continue;
         }
 
