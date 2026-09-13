@@ -198,7 +198,15 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 continue;
             }
 
-            foreach (importsFrom($package['dir'], $target['psr4']) as $class => $relativePath) {
+            // THE MAP MUST COME FROM THE SAME TAG AS THE TREE. $target['psr4']
+            // is today's autoload block; if the provider moved its sources
+            // between that release and now, mapping a class through the current
+            // map and looking it up in the OLD tree compares two different
+            // layouts — rejecting a floor that is fine, or approving a path
+            // that was never autoloadable at that tag.
+            $psr4 = psr4AtTag($target['dir'], $floorVersion) ?? $target['psr4'];
+
+            foreach (importsFrom($package['dir'], $psr4) as $class => $relativePath) {
                 if (in_array($relativePath, $tree, true)) {
                     continue;
                 }
@@ -279,6 +287,46 @@ function treeAtTag(string $dir, string $tag): ?array
 }
 
 /**
+ * The PSR-4 map as it stood AT a tag, or null when the tag has no readable
+ * composer.json (in which case the caller keeps today's map rather than
+ * treating every import as unresolvable).
+ *
+ * @return array<string, string>|null namespace prefix => source directory
+ */
+function psr4AtTag(string $dir, string $tag): ?array
+{
+    $command = sprintf(
+        'git -C %s show %s 2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg($tag . ':composer.json'),
+    );
+
+    exec($command, $lines, $code);
+    if ($code !== 0 || $lines === []) {
+        return null;
+    }
+
+    $json = json_decode(implode("\n", $lines), true);
+    if (!is_array($json)) {
+        return null;
+    }
+
+    $map = $json['autoload']['psr-4'] ?? null;
+    if (!is_array($map)) {
+        return null;
+    }
+
+    $psr4 = [];
+    foreach ($map as $prefix => $path) {
+        if (is_string($prefix) && is_string($path)) {
+            $psr4[$prefix] = rtrim($path, '/');
+        }
+    }
+
+    return $psr4 === [] ? null : $psr4;
+}
+
+/**
  * Classes this package imports from another's namespaces, as tag-relative
  * paths.
  *
@@ -302,14 +350,7 @@ function importsFrom(string $packageDir, array $psr4): array
             continue;
         }
 
-        $contents = (string) file_get_contents($file->getPathname());
-        // preg_match_all returns the COUNT of matches, not a boolean.
-        $count = preg_match_all('/^use\s+(?!function\s|const\s)([A-Za-z0-9_\\\\]+)\s*(?:as\s+\w+)?;/m', $contents, $matches);
-        if ($count === false || $count === 0) {
-            continue;
-        }
-
-        foreach ($matches[1] as $class) {
+        foreach (importedClasses((string) file_get_contents($file->getPathname())) as $class) {
             foreach ($psr4 as $prefix => $dir) {
                 if (!str_starts_with($class, $prefix)) {
                     continue;
@@ -322,4 +363,130 @@ function importsFrom(string $packageDir, array $psr4): array
     }
 
     return $found;
+}
+
+/**
+ * Every class name a file imports at namespace level.
+ *
+ * TOKENIZED, not matched. A regex over `use ...;` lines gets three things
+ * wrong, and all three break a gate that is supposed to fail closed:
+ *
+ *  - GROUPED imports — `use Semitexa\Core\Support\{Row, Other};` — match
+ *    nothing, because `{` is not part of a class name. The gate then reports
+ *    success for a floor whose tag has no Row.php, which is the exact runtime
+ *    "class not found" it exists to prevent.
+ *  - COMMA-SEPARATED imports — `use A\B, C\D;` — yield only the first name.
+ *  - The word `use` inside a comment, a string, or a closure's `use (...)`
+ *    clause is matched as though it were an import.
+ *
+ * `use function` and `use const` are skipped, and so are trait `use` statements
+ * inside a class body: only namespace-level imports name a class file.
+ *
+ * @return list<string>
+ */
+function importedClasses(string $contents): array
+{
+    $tokens = PhpToken::tokenize($contents);
+    $classes = [];
+    $depth = 0;
+
+    for ($i = 0, $n = count($tokens); $i < $n; $i++) {
+        $token = $tokens[$i];
+
+        // Trait `use` lives inside a class body; namespace-level `use` does not.
+        if ($token->text === '{') {
+            $depth++;
+            continue;
+        }
+        if ($token->text === '}') {
+            $depth--;
+            continue;
+        }
+        if (!$token->is(T_USE) || $depth > 0) {
+            continue;
+        }
+
+        // Collect the whole statement, so grouped and comma-separated forms
+        // are read as one thing rather than a first name and some leftovers.
+        $statement = '';
+        $j = $i + 1;
+        for (; $j < $n; $j++) {
+            $text = $tokens[$j]->text;
+            if ($text === ';') {
+                break;
+            }
+            if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                continue;
+            }
+            $statement .= $text;
+        }
+        $i = $j;
+
+        // `use ($captured)` on a closure — not an import at all.
+        if ($statement === '' || str_starts_with($statement, '(')) {
+            continue;
+        }
+        // `use function foo;` / `use const BAR;` name no class file.
+        if (str_starts_with($statement, 'function') || str_starts_with($statement, 'const')) {
+            continue;
+        }
+
+        foreach (expandUseStatement($statement) as $class) {
+            $classes[$class] = true;
+        }
+    }
+
+    return array_keys($classes);
+}
+
+/**
+ * Expand one `use` statement body into the class names it imports.
+ *
+ * Handles the plain, aliased, comma-separated and grouped forms:
+ *   A\B\C            A\B\CasD        A\B,C\D        A\B\{C,DasE}
+ *
+ * @return list<string>
+ */
+function expandUseStatement(string $statement): array
+{
+    $open = strpos($statement, '{');
+    if ($open !== false) {
+        $prefix = substr($statement, 0, $open);
+        $inner = rtrim(substr($statement, $open + 1), '}');
+        $classes = [];
+        foreach (explode(',', $inner) as $piece) {
+            $name = stripAlias($piece);
+            if ($name !== '') {
+                $classes[] = ltrim($prefix, '\\') . $name;
+            }
+        }
+
+        return $classes;
+    }
+
+    $classes = [];
+    foreach (explode(',', $statement) as $piece) {
+        $name = stripAlias($piece);
+        if ($name !== '') {
+            $classes[] = ltrim($name, '\\');
+        }
+    }
+
+    return $classes;
+}
+
+/** Drop a trailing `as Alias` — the tokens arrive with whitespace removed. */
+function stripAlias(string $piece): string
+{
+    $position = strrpos($piece, 'as');
+    if ($position !== false && $position > 0) {
+        $tail = substr($piece, $position + 2);
+        // `as` is only an alias keyword when what follows is a bare name and
+        // what precedes it ends a class name — never inside e.g. `Database`.
+        if ($tail !== '' && !str_contains($tail, '\\') && ctype_upper($tail[0])) {
+            $piece = substr($piece, 0, $position);
+        }
+    }
+
+    return trim($piece);
 }

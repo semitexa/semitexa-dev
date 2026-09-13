@@ -85,6 +85,19 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         );
     }
 
+    /** A consumer whose one source file is written verbatim. */
+    private function consumerWithSource(string $floor, string $body): void
+    {
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/src/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4', 'semitexa/core' => $floor],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => 'src/']],
+        ]));
+        file_put_contents($dir . '/src/Application/Reader.php', $body);
+    }
+
     /** @return array{exit: int, output: string} */
     private function gate(): array
     {
@@ -171,5 +184,128 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         $this->consumer('>=2026.09.13.1330 || dev-master', 'Psr\\Log\\LoggerInterface');
 
         self::assertSame(0, $this->gate()['exit']);
+    }
+
+    /**
+     * A GROUPED import is an import. The regex this check used to run matched
+     * nothing here, because `{` is not part of a class name — so the gate
+     * reported success for a floor whose release has no Row.php, which is the
+     * runtime "class not found" it exists to prevent. Fail-open in a
+     * fail-closed gate.
+     */
+    #[Test]
+    public function a_grouped_import_is_read_like_any_other(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\{Other, Row};\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /** So is a comma-separated one, of which the regex saw only the first name. */
+    #[Test]
+    public function a_comma_separated_import_is_read_past_the_first_name(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Other, Semitexa\\Core\\Support\\Row;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /** An alias does not change which file has to exist. */
+    #[Test]
+    public function an_aliased_import_still_names_its_own_file(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Row as CoreRow;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('src/Support/Row.php', $result['output']);
+    }
+
+    /**
+     * And the other direction, which matters just as much: the word `use` in a
+     * comment, a string, a closure capture or a trait import is NOT an import.
+     * A gate that invents imports fails releases that are fine, and the fastest
+     * way to get a gate switched off is to have it cry wolf.
+     */
+    #[Test]
+    public function use_that_is_not_an_import_is_not_treated_as_one(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\Other;\n\n"
+            . "// use Semitexa\\Core\\Support\\Row;\n"
+            . "trait Helper { public function help(): string { return 'x'; } }\n\n"
+            . "final class Reader\n{\n"
+            . "    use Helper;\n\n"
+            . "    public function run(string \$row): callable\n    {\n"
+            . "        return static function () use (\$row): string { return \$row; };\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+    }
+
+    /**
+     * The autoload map is read at the FLOORED TAG, not from today's
+     * composer.json. A provider that moved its sources between the two would
+     * otherwise have the old tree searched with the new layout — rejecting a
+     * floor that is fine.
+     */
+    #[Test]
+    public function the_autoload_map_is_read_at_the_floored_tag(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/lib/Support', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'lib/']],
+        ]));
+        file_put_contents($dir . '/lib/Support/Row.php', "<?php\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        // TODAY the package autoloads from src/ — the tag says lib/.
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
     }
 }

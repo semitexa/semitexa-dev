@@ -205,4 +205,55 @@ final class CapabilityIndexBuildTest extends TestCase
         self::assertSame(['semitexa-installer' => 'docker project'], $with['not_packages']);
         self::assertSame($without['content_hash'], $with['content_hash']);
     }
+
+    /**
+     * And because it is outside content_hash, the freshness gate has to compare
+     * it SEPARATELY — otherwise a derived inventory drifts in silence and
+     * `--check` keeps reporting the index current while this field is wrong.
+     */
+    #[Test]
+    public function drift_in_not_packages_is_noticed_even_though_the_hash_cannot_see_it(): void
+    {
+        $capabilities = self::capabilities();
+        $shipped = CapabilityIndex::build($capabilities, ['semitexa/core'], ['semitexa-installer' => 'docker project']);
+
+        // A directory appears. The capability hash is blind to it, by design.
+        $live = [
+            'semitexa-installer' => 'docker project',
+            'semitexa-companion' => 'browser extension',
+        ];
+
+        self::assertTrue(
+            CapabilityIndex::isInSync($capabilities, $shipped),
+            'the capability hash cannot see this, which is why the separate check exists',
+        );
+        self::assertFalse(CapabilityIndex::nonPackagesAreInSync($live, $shipped));
+    }
+
+    /** A marker file changing type is drift too, not just a directory appearing. */
+    #[Test]
+    public function a_changed_classification_counts_as_drift(): void
+    {
+        $shipped = CapabilityIndex::build(self::capabilities(), ['semitexa/core'], ['semitexa-installer' => 'docker project']);
+
+        self::assertFalse(CapabilityIndex::nonPackagesAreInSync(
+            ['semitexa-installer' => 'browser extension'],
+            $shipped,
+        ));
+        self::assertTrue(CapabilityIndex::nonPackagesAreInSync(
+            ['semitexa-installer' => 'docker project'],
+            $shipped,
+        ));
+    }
+
+    /**
+     * An index built before the field existed has no `not_packages` at all.
+     * That is stale for this purpose — which is what makes the gate notice on
+     * its first run rather than silently accepting the older shape forever.
+     */
+    #[Test]
+    public function an_index_without_the_field_is_stale_rather_than_accepted(): void
+    {
+        self::assertFalse(CapabilityIndex::nonPackagesAreInSync([], ['capabilities' => []]));
+    }
 }

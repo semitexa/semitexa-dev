@@ -249,6 +249,45 @@ final class CapabilityIndex
     }
 
     /**
+     * Whether the shipped `not_packages` map still describes what is on disk.
+     *
+     * Checked SEPARATELY rather than folded into `content_hash`, and the
+     * distinction is deliberate both ways. Inside the hash, a new directory or
+     * a changed marker file would make the index read "stale" to every
+     * consumer, when nothing about the capabilities it advertises has moved.
+     * Outside the hash AND unchecked — which is how this shipped — a derived
+     * inventory drifts silently and the freshness gate reports the index
+     * current while this field is wrong, which is the whole failure mode it
+     * exists to prevent.
+     *
+     * @param array<string, string> $live
+     * @param array<string, mixed>|null $shipped
+     */
+    public static function nonPackagesAreInSync(array $live, ?array $shipped): bool
+    {
+        $notPackages = $shipped['not_packages'] ?? null;
+        if (!is_array($notPackages)) {
+            // Absent, not merely different: an index built before this field
+            // existed. Stale for this purpose, which is what makes the gate
+            // notice the first time it runs.
+            return false;
+        }
+
+        $shippedMap = [];
+        foreach ($notPackages as $name => $what) {
+            if (is_string($name) && is_string($what)) {
+                $shippedMap[$name] = $what;
+            }
+        }
+
+        ksort($shippedMap);
+        $liveMap = $live;
+        ksort($liveMap);
+
+        return $shippedMap === $liveMap;
+    }
+
+    /**
      * @param list<array<string, mixed>> $capabilities
      * @param list<string> $packages
      * @return array{artifact: string, generated_at: string, source_version: string, count: int,
