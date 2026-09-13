@@ -976,4 +976,83 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(1, $result['exit'], $result['output']);
         self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
     }
+
+    /**
+     * A prefix the provider added AFTER the floored tag exists in no tagged
+     * map, so every reference under it was skipped — never compared with what
+     * that tag declares, and the gate exited successfully.
+     *
+     * Discovery asks the wider map which classes belong to the dependency;
+     * verification still happens against the tagged declarations.
+     */
+    #[Test]
+    public function a_prefix_added_after_the_floored_tag_is_still_discovered(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Support', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+        file_put_contents(
+            $dir . '/src/Support/Other.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass Other {}\n",
+        );
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.0749 2>&1");
+
+        // TODAY the provider also maps a second prefix; the floored tag did not.
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => [
+                'Semitexa\\Core\\' => 'src/',
+                'Semitexa\\Contracts\\' => 'contracts/',
+            ]],
+        ]));
+
+        $this->consumer('>=2026.09.13.0749 || dev-master', 'Semitexa\\Contracts\\NewApi');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Contracts\\NewApi', $result['output']);
+    }
+
+    /**
+     * A class used only from the package's own tests still has to exist in the
+     * release the package promises. Promises are read from require-dev; the
+     * roots have to come from autoload-dev to match.
+     */
+    #[Test]
+    public function an_autoload_dev_root_is_scanned_for_a_require_dev_promise(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/tests/Unit', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4'],
+            'require-dev' => ['semitexa/core' => '>=2026.09.13.0749 || dev-master'],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => 'src/']],
+            'autoload-dev' => ['psr-4' => ['Semitexa\\Ssr\\Tests\\' => 'tests/']],
+        ]));
+        mkdir($dir . '/src', 0777, true);
+        file_put_contents(
+            $dir . '/tests/Unit/ReaderTest.php',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Tests\\Unit;\n\n"
+            . "use Semitexa\\Core\\Support\\Row;\n\nfinal class ReaderTest {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
 }

@@ -344,7 +344,19 @@ function verifyAgainstTree(
     $problems = [];
     $declared = declaredClasses($target['dir'], $kind === 'planned' ? null : $version, $psr4);
 
-    foreach (importsFrom($packageDir, $psr4, $consumerRoots) as $class => $candidatePaths) {
+    // DISCOVERY uses today's prefixes as well as the tagged ones. Which classes
+    // belong to this dependency is a question about the namespaces a consumer
+    // can be referencing NOW; a prefix the provider added after the floored tag
+    // exists in no tagged map, so every reference under it would be skipped and
+    // never compared with what that tag declares. Verification still happens
+    // against the tagged declarations — only the "does this belong to them"
+    // question is asked of the wider map.
+    $discoveryPsr4 = $psr4;
+    foreach ($target['psr4'] as $prefix => $dirs) {
+        $discoveryPsr4[$prefix] ??= $dirs;
+    }
+
+    foreach (importsFrom($packageDir, $discoveryPsr4, $consumerRoots) as $class => $candidatePaths) {
         if (isset($declared[$class])) {
             continue;
         }
@@ -612,11 +624,18 @@ function indexPackages(string $packagesDir): array
         // `src` missed production code a package autoloads from anywhere else,
         // and such code could use a sibling class absent from the promised
         // release while the gate reported success.
+        // autoload-dev too, because promises are collected from require-dev as
+        // well: a floor can predate a class the package's own tests use, and
+        // scanning only the production roots would never see it.
+        $devPsr4 = normalizePsr4($json['autoload-dev']['psr-4'] ?? null) ?? [];
+
         $roots = [];
-        foreach ($ownPsr4 as $dirs) {
-            foreach ($dirs as $dir) {
-                if ($dir !== '') {
-                    $roots[] = $dir;
+        foreach ([$ownPsr4, $devPsr4] as $map) {
+            foreach ($map as $dirs) {
+                foreach ($dirs as $dir) {
+                    if ($dir !== '') {
+                        $roots[] = $dir;
+                    }
                 }
             }
         }
