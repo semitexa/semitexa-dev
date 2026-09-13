@@ -65,7 +65,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [31, 473],
         'semitexa-core/src/Request.php' => [31, 443],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
-        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 207],
+        // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
+        // array<...>` on methods that had none. These are DOCBLOCKS, and they
+        // pay for themselves at a 2:1 rate — AsyncResourceSseServer is six thin
+        // delegates whose targets already declared the shape, so each missing
+        // annotation was TWO errors: the annotation itself and the argument
+        // type at the delegation. Six lines, twelve errors, no new methods.
+        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 213],
         'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 762],
         // Newly recorded on 2026-09-11, at 24/709: it crossed the 700-line
         // threshold by nine lines, and every one of them is the guard that
@@ -198,7 +204,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // statement, one local to hold the response that was previously mapped
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 728],
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 730],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
