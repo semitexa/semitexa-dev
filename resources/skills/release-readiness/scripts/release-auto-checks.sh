@@ -404,7 +404,25 @@ run_playwright_smoke
 # 363 -> 357: the last stale baseline entry went, and with it three real errors
 # it had been hiding. `composer phpstan:strict` now reports ZERO unmatched
 # entries — the baseline finally describes only errors that exist.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-357}"
+#
+# 357 -> 353, and this is the last time these two numbers will disagree.
+# Everything above about "measure it HERE, the dev container reports something
+# else" had one cause, found by making the baseline gate below a hard failure:
+# both sides declared `phpstan/phpstan: ^2.1` and had drifted to DIFFERENT
+# locks, 2.1.40 here and 2.2.13 there. A newer analyser infers more, so the
+# same bytes measured differently and four baseline entries that match in the
+# workspace matched nothing in the clone. Both are pinned to 2.1.40 now and the
+# two report the same 353.
+#
+# (Pinned in the clone's own composer.json, which is clone-owned and not
+# synced. PHPSTAN_EXPECTED_ANALYSER below is what stops that drifting back
+# unnoticed — a ratchet a developer cannot reproduce locally is not a ratchet.)
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-353}"
+
+# The analyser this ceiling and this baseline were measured with. Not a
+# preference — a precondition: every number in this gate is meaningless when
+# the clone analyses with a different version than the workspace does.
+PHPSTAN_EXPECTED_ANALYSER="${PHPSTAN_EXPECTED_ANALYSER:-2.1.40}"
 
 phpstan_neutrality_gate() {
     # An override that is empty or not a number would make every comparison
@@ -418,18 +436,44 @@ phpstan_neutrality_gate() {
             ;;
     esac
 
-    info "phpstan: analysing (ceiling ${PHPSTAN_CEILING} above baseline)..."
+    local analyser
+    analyser="$(cd "$RELEASE_ROOT" && docker compose \
+        -f docker-compose.yml -f docker-compose.mysql.yml \
+        -f docker-compose.redis.yml -f docker-compose.ollama.yml \
+        exec -T app vendor/bin/phpstan --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+
+    if [ -z "$analyser" ]; then
+        fail "Could not read the analyser version — cannot judge neutrality."
+        exit 1
+    fi
+
+    if [ "$analyser" != "$PHPSTAN_EXPECTED_ANALYSER" ]; then
+        fail "phpstan ${analyser} here, but the ceiling and baseline were measured with ${PHPSTAN_EXPECTED_ANALYSER}."
+        fail "A newer analyser infers more, so the same code measures differently and baseline entries stop matching."
+        fail "Pin it back (composer require --dev phpstan/phpstan:${PHPSTAN_EXPECTED_ANALYSER} in the clone),"
+        fail "or re-measure both the ceiling and the baseline on the new one and update this script deliberately."
+        exit 1
+    fi
+
+    info "phpstan ${analyser}: analysing (ceiling ${PHPSTAN_CEILING} above baseline)..."
 
     local report
     # Spelled out, like run_playwright_smoke above: there is no COMPOSE variable
     # in this script, and referring to one made every run die on `set -u` before
     # phpstan started. The gate then failed closed and said it could not judge —
     # correct, and the reason it was caught on its first real release.
+    # `-c phpstan-strict.neon`, which is phpstan.neon plus
+    # reportUnmatchedIgnoredErrors. One analysis, two facts: the same real
+    # errors the plain config reports, AND every baseline entry that no longer
+    # matches anything. See the baseline-rot gate below for why the second one
+    # is here.
+    local stderr_file
+    stderr_file="$(mktemp)"
     report="$(cd "$RELEASE_ROOT" && docker compose \
         -f docker-compose.yml -f docker-compose.mysql.yml \
         -f docker-compose.redis.yml -f docker-compose.ollama.yml \
         exec -T app php -d memory_limit=2G \
-        vendor/bin/phpstan analyse --no-progress --error-format=json 2>/dev/null)" || true
+        vendor/bin/phpstan analyse --no-progress -c phpstan-strict.neon --error-format=json 2>"$stderr_file")" || true
 
     # `file_errors` counts only what phpstan could attribute to a file. A
     # configuration mistake, an unreadable path or an internal error lands in
@@ -437,11 +481,29 @@ phpstan_neutrality_gate() {
     # gate report a clean run for an analysis that never analysed anything. Both
     # are read, and a path-less error is named separately because it almost
     # never means "one more violation"; it means the run itself is wrong.
-    local count global_errors
+    # Real errors and stale-baseline reports arrive in the same list, so the
+    # totals cannot be used directly: `file_errors` counts both. Partition on
+    # the message instead, and keep the ceiling comparison about real errors.
+    local count global_errors stale
     count="$(printf '%s' "$report" | php -r \
         '$d = json_decode(stream_get_contents(STDIN), true);
          if (!is_array($d["totals"] ?? null)) { exit; }
-         echo (int) ($d["totals"]["file_errors"] ?? 0) + (int) ($d["totals"]["errors"] ?? 0);' 2>/dev/null)"
+         $real = 0;
+         foreach ($d["files"] ?? [] as $file) {
+             foreach ($file["messages"] as $m) {
+                 if (!str_contains($m["message"], "Ignored error pattern")) { $real++; }
+             }
+         }
+         echo $real + (int) ($d["totals"]["errors"] ?? 0);' 2>/dev/null)"
+    stale="$(printf '%s' "$report" | php -r \
+        '$d = json_decode(stream_get_contents(STDIN), true);
+         $n = 0;
+         foreach ($d["files"] ?? [] as $file) {
+             foreach ($file["messages"] as $m) {
+                 if (str_contains($m["message"], "Ignored error pattern")) { $n++; }
+             }
+         }
+         echo $n;' 2>/dev/null)"
     global_errors="$(printf '%s' "$report" | php -r \
         '$d = json_decode(stream_get_contents(STDIN), true); echo (int) ($d["totals"]["errors"] ?? 0);' 2>/dev/null)"
 
@@ -450,8 +512,18 @@ phpstan_neutrality_gate() {
     # describe a check nothing ran.
     if [ -z "$count" ]; then
         fail "phpstan produced no readable report — cannot judge neutrality."
+        # The usual cause has a name. A baseline entry pointing at a deleted
+        # file makes phpstan refuse to START under the strict config, and it
+        # says so on stderr rather than producing a report.
+        if grep -q 'is neither a directory, nor a file path' "$stderr_file" 2>/dev/null; then
+            fail "A baseline entry names a path that no longer exists:"
+            grep -m3 'is neither a directory' "$stderr_file" | sed 's/^/  /' >&2
+            fail "Fix with: php bin/phpstan/strip-stale-baseline.php phpstan-baseline.neon <out>"
+        fi
+        rm -f "$stderr_file"
         exit 1
     fi
+    rm -f "$stderr_file"
 
     if [ "${global_errors:-0}" -gt 0 ]; then
         fail "phpstan reported ${global_errors} error(s) with no file — the analysis itself failed, not the code."
@@ -460,6 +532,38 @@ phpstan_neutrality_gate() {
              foreach (array_slice($d["errors"] ?? [], 0, 5) as $e) { echo "  - ", is_array($e) ? ($e["message"] ?? "?") : $e, PHP_EOL; }' 2>/dev/null || true
         exit 1
     fi
+
+    # THE BASELINE MUST DESCRIBE ERRORS THAT EXIST.
+    #
+    # PHPSTAN.md has said since it was written that `phpstan:strict` "must run
+    # as a hard gate" in CI. There is no CI here — that was a deliberate cost
+    # decision — so nothing ran it, and the document's own account of "why the
+    # baseline rotted before" happened again: measured 2026-09-13, 147 of 1131
+    # entries described errors that no longer existed, 13% of the file. That is
+    # not tidiness. A `count:` that overshoots lets the next occurrence of the
+    # same error through silently, which is exactly how the previous rot "hid
+    # 10 real errors" — and one was still hiding when this gate was written.
+    #
+    # A release is the one moment the whole tree is analysed anyway, so the
+    # check costs nothing extra here.
+    if [ "${stale:-0}" -gt 0 ]; then
+        fail "phpstan: ${stale} baseline entr(y|ies) no longer match any reported error."
+        fail "The baseline is describing errors that do not exist, and a stale count hides the next one."
+        printf '%s' "$report" | php -r \
+            '$d = json_decode(stream_get_contents(STDIN), true);
+             $shown = 0;
+             foreach ($d["files"] ?? [] as $path => $file) {
+                 foreach ($file["messages"] as $m) {
+                     if (!str_contains($m["message"], "Ignored error pattern")) { continue; }
+                     if ($shown++ >= 5) { echo "  ...\n"; exit; }
+                     echo "  - ", substr($m["message"], 0, 160), "\n";
+                 }
+             }' 2>/dev/null || true
+        fail "Re-align with bin/phpstan/strip-unmatched.php and bin/phpstan/sync-counts.php, then re-run."
+        exit 1
+    fi
+
+    ok "phpstan: baseline is in sync — every entry still matches a real error."
 
     if [ "$count" -gt "$PHPSTAN_CEILING" ]; then
         fail "phpstan: ${count} errors above baseline, ceiling is ${PHPSTAN_CEILING}."
