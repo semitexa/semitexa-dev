@@ -80,9 +80,10 @@ final class PhpstanRunnerAcceptedTest extends TestCase
     {
         $result = $this->runWith([['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE]]);
 
-        self::assertCount(1, $result->diagnostics, 'the rule fired, so it must still be visible');
-        self::assertSame('accepted', $result->diagnostics[0]['severity']);
-        self::assertNotSame('', trim((string) $result->diagnostics[0]['accepted_reason']));
+        self::assertSame([], $result->diagnostics, 'an accepted entry is not a violation of the run');
+        self::assertCount(1, $result->accepted, 'the rule fired, so it must still be visible');
+        self::assertSame('accepted', $result->accepted[0]['severity']);
+        self::assertNotSame('', trim((string) $result->accepted[0]['accepted_reason']));
         self::assertStringContainsString('accepted', $result->rawSignal);
     }
 
@@ -96,11 +97,8 @@ final class PhpstanRunnerAcceptedTest extends TestCase
 
         self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status, 'accepting one occurrence accepts one, not the file');
 
-        $unresolved = array_values(array_filter(
-            $result->diagnostics,
-            static fn(array $d): bool => ($d['severity'] ?? '') !== 'accepted',
-        ));
-        self::assertCount(1, $unresolved);
+        self::assertCount(1, $result->diagnostics, 'the extra occurrence is a plain violation');
+        self::assertCount(1, $result->accepted, 'and the accepted one is still named');
     }
 
     #[Test]
@@ -130,6 +128,7 @@ final class PhpstanRunnerAcceptedTest extends TestCase
 
         self::assertSame(PhpstanRunResult::STATUS_PASS, $result->status);
         self::assertSame([], $result->diagnostics);
+        self::assertSame([], $result->accepted);
         self::assertStringNotContainsString('accepted', $result->rawSignal);
     }
 }

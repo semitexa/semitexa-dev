@@ -129,11 +129,17 @@ final class PhpstanRunner
             $signal .= sprintf(' (%d accepted: %s)', count($accepted), $accepted[0]['path'] ?? '?');
         }
 
+        // Accepted entries are reported BESIDE the diagnostics, never among
+        // them. They travel to the envelope as `violations`, and a consumer
+        // that gates on "violations is empty" would go red on a green run —
+        // the signal line is where a reader learns the rule fired and was
+        // excused.
         return new PhpstanRunResult(
             status: $status,
-            diagnostics: array_merge($unresolved, $accepted),
+            diagnostics: $unresolved,
             rawSignal: $signal,
             exitCode: $result['exit'],
+            accepted: $accepted,
         );
     }
 

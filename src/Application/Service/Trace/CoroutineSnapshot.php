@@ -35,6 +35,8 @@ final class CoroutineSnapshot
     private const THROTTLE_MS = 2000;
     private const KEEP = 40;
     private const FRESH_SECONDS = 60;
+    /** Two clocks, read a moment apart; a few ms of disagreement is not evidence. */
+    private const CLOCK_SLACK_MS = 50;
 
     private static float $lastWriteMs = 0.0;
 
@@ -71,11 +73,21 @@ final class CoroutineSnapshot
                 $elapsed = (float) \Swoole\Coroutine::getElapsed($cid);
                 $row = ['cid' => $cid, 'ms' => round($elapsed, 1)];
                 if (isset($standing[$cid])) {
-                    $row['standing'] = [
-                        'label' => $standing[$cid]['label'],
-                        'reason' => $standing[$cid]['reason'],
-                        'sinceMs' => round((microtime(true) - $standing[$cid]['since']) * 1000, 1),
-                    ];
+                    $declaredMs = (microtime(true) - $standing[$cid]['since']) * 1000;
+                    // A coroutine id is reused. If this one is YOUNGER than the
+                    // declaration attached to it, the declarer is gone and
+                    // Swoole has handed the number to somebody else — and
+                    // believing it would move a genuinely hung coroutine out of
+                    // the hung count, which is the inverse of what this is for.
+                    if ($declaredMs <= $elapsed + self::CLOCK_SLACK_MS) {
+                        $row['standing'] = [
+                            'label' => $standing[$cid]['label'],
+                            'reason' => $standing[$cid]['reason'],
+                            'sinceMs' => round($declaredMs, 1),
+                        ];
+                    } else {
+                        StandingCoroutines::forgetFor($cid);
+                    }
                 }
                 $rows[] = $row;
             }

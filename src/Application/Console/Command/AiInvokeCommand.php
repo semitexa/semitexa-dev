@@ -182,7 +182,14 @@ final class AiInvokeCommand extends BaseCommand
         // Input and result go through the same gate the Observatory uses. This
         // envelope is printed, piped and pasted into chats like any other, and
         // a handler's input is exactly where a token or a password arrives.
+        //
+        // The gate also BOUNDS what it passes — depth, item count, string
+        // length — so what comes out may differ from what went in for reasons
+        // that are not secrecy. Said plainly, because a reader comparing this
+        // against the real thing should not have to guess which.
         $envelope['payload_input'] = ContextRedactor::redact($decoded);
+        $envelope['redacted'] = 'payload_input and resource pass through the Observatory redactor: '
+            . 'values under secret-looking keys are masked, and deep or long ones are bounded';
         $envelope['duration_ms']   = $durationMs;
 
         if ($handlerError !== null) {

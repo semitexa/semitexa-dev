@@ -52,6 +52,9 @@ const KIND_COLOR = {http:'#5b9dff', sse:'#ffb454', scheduler:'#c084fc', job:'#c0
 const kindColor = k => KIND_COLOR[k] || '#9aa4bf';
 const isJob = k => k === 'scheduler' || k === 'queue' || k === 'job';
 const HUNG_MS = 5000;
+/* How long a successful log read stays good. Short enough that a pinned block
+   keeps up with a live tail, long enough that pinning is not a request loop. */
+const LOGS_TTL_MS = 4000;
 
 /* ------------------------------------------------------------ state */
 const S = {
@@ -200,6 +203,7 @@ function ingest(rows, reset, live) {
 // Raised in review of semitexa-dev#78.
 function resetDerived() {
   S.procs.clear();
+  S.logs.clear();
   S.particles.length = 0;
   S.finished.length = 0;
   S.failures.length = 0;
@@ -1151,16 +1155,24 @@ function pctClass(pct, floor) { return Math.min(100, Math.max(floor || 0, Math.r
 // reader scans the picture; a request per node crossed would be a lot of I/O
 // to answer a question nobody asked yet.
 async function loadLogs(block) {
-  if (!block || S.logs.has(block)) return;
+  if (!block) return;
+  // A cached answer is only kept while it is still worth trusting: an error,
+  // a refusal, or a read taken before stage mode was on would otherwise be
+  // frozen for the life of the page, and the panel would keep showing "the log
+  // reader did not answer" long after it started answering.
+  const held = S.logs.get(block);
+  if (held && held.state === 'ok' && (now() - (held.at || 0)) < LOGS_TTL_MS) return;
+  if (held && held.state === 'loading') return;
   S.logs.set(block, {state: 'loading', lines: []});
   try {
     const r = await fetch('/__observatory/logs?block=' + encodeURIComponent(block), {cache: 'no-store', headers: {Accept: 'application/json'}});
     const d = await r.json();
     S.logs.set(block, d.allowed === false
-      ? {state: 'denied', lines: [], reason: d.reason || 'not available here'}
-      : {state: 'ok', lines: Array.isArray(d.lines) ? d.lines : []});
+      ? {state: 'denied', lines: [], at: now()}
+      : {state: 'ok', lines: Array.isArray(d.lines) ? d.lines : [], at: now()});
+    if (d.allowed === false) S.logs.get(block).reason = d.reason || 'not available here';
   } catch (e) {
-    S.logs.set(block, {state: 'error', lines: []});
+    S.logs.set(block, {state: 'error', lines: [], at: now()});
   }
 }
 function logsHtml(block) {

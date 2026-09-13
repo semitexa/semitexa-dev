@@ -101,8 +101,14 @@ final class GenerationExitCodeTest extends TestCase
         self::assertSame(1, GenerationExitCode::forResult($result), 'a generator that emits unparseable code has failed');
     }
 
+    /**
+     * Project-wide lint is not this command's verdict. PostWriteLinter runs
+     * lint:di and lint:handlers over every container-managed class, so one
+     * pre-existing violation anywhere would make every generation exit 1 while
+     * the file it wrote is perfectly good.
+     */
     #[Test]
-    public function failing_post_write_lint_fails_the_command(): void
+    public function failing_project_wide_lint_does_not_fail_the_command(): void
     {
         $result = $this->outcome(
             'success',
@@ -111,7 +117,7 @@ final class GenerationExitCodeTest extends TestCase
             lint: ['status' => 'fail', 'checks' => ['di' => ['status' => 'fail', 'summary' => '1 error']]],
         );
 
-        self::assertSame(1, GenerationExitCode::forResult($result));
+        self::assertSame(0, GenerationExitCode::forResult($result), 'somebody else\'s violation is not this command failing');
     }
 
     #[Test]

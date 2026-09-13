@@ -45,10 +45,10 @@ final class AcceptedViolations
      * appears in a comment — accept the larger number in the gate and a
      * genuinely new violation in that file slips through unnoticed.
      *
-     * @var array<string, array<string, array{diagnostics: int, source_occurrences: int, reason: string}>>
      */
     private const VENDOR_PREFIX = 'vendor/semitexa/';
 
+    /** @var array<string, array<string, array{diagnostics: int, source_occurrences: int, reason: string}>> */
     private const ACCEPTED = [
         'packages/semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => [
             'semitexa.staticContainerAccess' => [

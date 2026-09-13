@@ -290,7 +290,7 @@ final class SafeFileWriter implements FileWriterInterface
      * files were created (keeps the envelope small for non-PHP outputs).
      *
      * @param list<string> $created
-     * @return array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null
+     * @return array{status: string, checked: int, errors: list<array{file: string, message: string}>, reason?: string}|null
      */
     private function verifyCreated(array $created): ?array
     {
@@ -317,6 +317,16 @@ final class SafeFileWriter implements FileWriterInterface
             }
 
             $outcome = $this->processRunner->run([$phpBin, '-l', '-n', $full], $this->basePath);
+
+            // The runner reports its OWN failures through `failure`: a timeout,
+            // a host without POSIX process groups, a subprocess that would not
+            // start. Those say nothing about the generated file, and treating
+            // them as syntax errors blamed a perfectly good one — and failed
+            // the command for it.
+            if (($outcome['failure'] ?? null) !== null) {
+                return ['status' => 'skipped', 'checked' => 0, 'errors' => [], 'reason' => (string) $outcome['failure']];
+            }
+
             if ($outcome['exit'] !== 0) {
                 $message = trim($outcome['output']);
                 $errors[] = [

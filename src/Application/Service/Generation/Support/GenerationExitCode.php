@@ -39,18 +39,20 @@ final class GenerationExitCode
             return Command::FAILURE;
         }
 
-        // Written, but does it hold up? A generator that emits code which does
-        // not parse, or which the DI and handler lints reject, has failed at
-        // the thing it exists to do. `skipped` is not `fail`: a check that
-        // could not run is not evidence of a problem.
+        // Written, but does it parse? A generator that emits code which does
+        // not run has failed at the thing it exists for, and `verify` is a
+        // `php -l` of the files this command just wrote — about them and
+        // nothing else. `skipped` is not `fail`: a check that could not run is
+        // not evidence of a problem.
         if (($result->verify['status'] ?? null) === 'fail') {
             return Command::FAILURE;
         }
 
-        if (($result->lint['status'] ?? null) === 'fail') {
-            return Command::FAILURE;
-        }
-
+        // `lint` is deliberately NOT consulted. PostWriteLinter runs lint:di
+        // and lint:handlers over the WHOLE project, so a single pre-existing
+        // violation anywhere would make every make:* exit 1 while writing the
+        // file correctly — the command reporting somebody else's problem as its
+        // own. The result still carries the lint block for a reader to act on.
         return Command::SUCCESS;
     }
 }
