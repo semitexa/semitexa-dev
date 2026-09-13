@@ -417,7 +417,16 @@ run_playwright_smoke
 # (Pinned in the clone's own composer.json, which is clone-owned and not
 # synced. PHPSTAN_EXPECTED_ANALYSER below is what stops that drifting back
 # unnoticed — a ratchet a developer cannot reproduce locally is not a ratchet.)
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-353}"
+#
+# 353 -> 179 on 2026-09-13, and most of that is a CHANGE OF SCOPE rather than
+# fixes. `src` left phpstan.neon's paths: the 13 modules under src/modules are
+# the workspace's exercise surface, but src/ is in no git repository, so a fix
+# made there lives on one machine while the (versioned) baseline would record
+# the error as gone. The gate now measures the analysed, versioned, releasable
+# tree. 365 baseline entries went with them — strict cannot report an entry
+# whose file is no longer analysed, so leaving them would have been invisible
+# rot of exactly the kind this gate exists to catch.
+PHPSTAN_CEILING="${PHPSTAN_CEILING:-179}"
 
 # The analyser this ceiling and this baseline were measured with. Not a
 # preference — a precondition: every number in this gate is meaningless when

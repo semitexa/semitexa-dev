@@ -26,8 +26,24 @@ parameters:
     level: max
     reportUnmatchedIgnoredErrors: false
 
+    # `src` is NOT here, deliberately, decided 2026-09-13.
+    #
+    # The 13 modules under src/modules are the workspace's exercise surface —
+    # the release clone rsyncs them and 97 E2E specs run against them — but
+    # src/ is not a git repository and belongs to none. Every fix made there
+    # lives on one machine, while the baseline (which IS versioned now) would
+    # record the errors as gone. A ledger that outlives the code it describes
+    # is worse than no ledger.
+    #
+    # So this gate measures what actually ships. 278 errors -> 165 by dropping
+    # them, and the number now means "the analysed, versioned, releasable
+    # tree". THE COST, stated because it is real: the custom Semitexa rules
+    # (DI channel, handler returns, optional-dependency) no longer run on the
+    # demo modules, which are exactly the code that exercises those patterns.
+    # A consumer project's own phpstan.neon — shipped by the installer
+    # scaffold — does analyse its `src`, so the rules still reach application
+    # code where it is versioned.
     paths:
-        - src
         - packages/semitexa-orm/src
         - packages/semitexa-core/src
         - packages/semitexa-ssr/src
@@ -40,7 +56,6 @@ parameters:
         - packages/semitexa-core/src/Composer/SemitexaPlugin.php
         - packages/semitexa-core/src/Console/Command/RegistrySyncPayloadsCommand.php (?)
         - packages/semitexa-core/src/Console/Command/RegistrySyncResourcesCommand.php (?)
-        - src/modules/SsrDemo (?)
 
     # Bootstrap to ensure autoloading works.
     # phpstan-bootstrap.php registers PSR-4 for local modules
