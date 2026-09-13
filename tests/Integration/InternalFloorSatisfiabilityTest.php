@@ -1055,4 +1055,95 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(1, $result['exit'], $result['output']);
         self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
     }
+
+    /**
+     * `"Semitexa\\Ssr\\": ""` is a valid mapping meaning the PACKAGE ROOT.
+     * Dropped as "no directory", the files that actually hold the package's
+     * code were never read, and a class absent from the promised release went
+     * unnoticed.
+     */
+    #[Test]
+    public function a_psr4_mapping_to_the_package_root_is_scanned(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir, 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4', 'semitexa/core' => '>=2026.09.13.0749 || dev-master'],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => '']],
+        ]));
+        file_put_contents(
+            $dir . '/Reader.php',
+            "<?php\n\nnamespace Semitexa\\Ssr;\n\n"
+            . "use Semitexa\\Core\\Support\\Row;\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /**
+     * And the same mapping on the PROVIDER side names a path without a leading
+     * slash. Concatenating an empty directory produced `/Support/Row.php`,
+     * which matches nothing in a git tree and reads like an absolute path.
+     */
+    #[Test]
+    public function a_provider_mapped_to_its_root_names_a_relative_path(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/Support', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => '']],
+        ]));
+        file_put_contents(
+            $dir . '/Support/Other.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nclass Other {}\n",
+        );
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.0749 2>&1");
+
+        $this->consumer('>=2026.09.13.0749 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('expected Support/Row.php', $result['output']);
+    }
+
+    /**
+     * PHP resolves namespace names case-insensitively, so an alias declared as
+     * CORESUPPORT is reached by `coresupport\Row`. An exact-key lookup missed
+     * it, recorded the IMPORT as a class, and failed a valid floor for lacking
+     * Support.php.
+     */
+    #[Test]
+    public function a_namespace_alias_is_matched_regardless_of_case(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support as CORESUPPORT;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): object\n    {\n"
+            . "        return new coresupport\\Row();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringNotContainsString('Support.php', $result['output'], 'the namespace is not a class file');
+    }
 }

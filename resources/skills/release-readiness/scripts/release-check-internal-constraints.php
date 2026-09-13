@@ -633,9 +633,7 @@ function indexPackages(string $packagesDir): array
         foreach ([$ownPsr4, $devPsr4] as $map) {
             foreach ($map as $dirs) {
                 foreach ($dirs as $dir) {
-                    if ($dir !== '') {
-                        $roots[] = $dir;
-                    }
+                    $roots[] = $dir;
                 }
             }
         }
@@ -674,9 +672,15 @@ function normalizePsr4(mixed $map): ?array
             continue;
         }
         foreach ((array) $paths as $path) {
-            if (is_string($path)) {
-                $psr4[$prefix][] = rtrim($path, '/');
+            if (!is_string($path)) {
+                continue;
             }
+            // `"Semitexa\\Ssr\\": ""` is valid and means the PACKAGE ROOT.
+            // Left as an empty string it was dropped as "no directory", so a
+            // package that maps its namespace to its own root was scanned at
+            // `src` instead — or not at all — and the files that actually hold
+            // its code went unread.
+            $psr4[$prefix][] = rtrim($path, '/') === '' ? '.' : rtrim($path, '/');
         }
     }
 
@@ -776,7 +780,7 @@ function importsFrom(string $packageDir, array $psr4, array $scanRoots = ['src']
 
             $relative = str_replace('\\', '/', substr($class, strlen($bestPrefix)));
             foreach ($psr4[$bestPrefix] as $dir) {
-                $found[$class][] = $dir . '/' . $relative . '.php';
+                $found[$class][] = ($dir === '.' ? '' : $dir . '/') . $relative . '.php';
             }
         }
     }
@@ -831,7 +835,7 @@ function usedClasses(string $contents): array
             // Support.php, which does not exist and never did; the class the
             // file actually reaches is the resolved one.
             $segments = explode('\\', $token->text);
-            $head = array_shift($segments);
+            $head = strtolower((string) array_shift($segments));
             if (isset($aliases[$head]) && $segments !== []) {
                 $usedAsPrefix[$aliases[$head]] = true;
                 $classes[$aliases[$head] . '\\' . implode('\\', $segments)] = true;
@@ -1005,7 +1009,12 @@ function importedClasses(string $contents): array
                     $separator = strrpos($name, '\\');
                     $shortName = $separator === false ? $name : substr($name, $separator + 1);
                 }
-                $found[$shortName] = $name;
+                // Lowercased: PHP resolves namespace and class names
+                // case-insensitively, so `use ... as CoreSupport` is reached by
+                // `coresupport\Row`. An exact-key lookup missed that, recorded
+                // the IMPORT as a class instead, and failed a valid floor for
+                // lacking Support.php.
+                $found[strtolower($shortName)] = $name;
             }
             $current = '';
             $alias = '';
