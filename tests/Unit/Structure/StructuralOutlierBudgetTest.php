@@ -144,7 +144,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // and the trail read as a step nobody took. It now builds an empty plan
         // and appends like every other answer, in both output modes. Twenty-two
         // lines, METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 691],
+        //
+        // 691 -> 705, same round: dedupe() was first-wins, so combining
+        // `--files=<renamed destination>` with `--dirty` named one path twice
+        // and the scanner's rename lost to the hand-written modification --
+        // taking `originalPath` with it, which is what ContractMoveResolver
+        // needs to find consumers of the old contract. It now merges the
+        // richer entry in. Eighteen lines, METHOD COUNT UNCHANGED at 19.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 709],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that

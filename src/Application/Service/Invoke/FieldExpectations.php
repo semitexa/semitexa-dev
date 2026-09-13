@@ -49,20 +49,32 @@ final readonly class FieldExpectations
         $parsed = [];
 
         foreach ($raw as $entry) {
-            $entry = trim($entry);
-            if ($entry === '') {
+            // Blankness is CHECKED on a trimmed copy, and the entry itself is
+            // left alone. Trimming it discarded significant whitespace in the
+            // expected value -- `--expect-field='name=Ada '` could never match
+            // a resource value of `"Ada "`, and an expectation of a single
+            // space became an expectation of the empty string. Raised in
+            // review of dev#84.
+            if (trim($entry) === '') {
                 continue;
             }
 
             $at = strpos($entry, '=');
-            if ($at === false || $at === 0) {
+            // The path is tested AFTER trimming, not by the `=` being at
+            // offset 0: now that the entry keeps its padding, `  =x` puts the
+            // `=` at offset 2 while still naming no path at all.
+            $path = $at === false ? '' : trim(substr($entry, 0, $at));
+            if ($at === false || $path === '') {
                 throw new \InvalidArgumentException(
                     sprintf('--expect-field needs path=value, got "%s".', $entry),
                 );
             }
 
             $parsed[] = [
-                'path' => trim(substr($entry, 0, $at)),
+                // The PATH may be padded -- a path segment cannot contain
+                // whitespace -- but everything after the first `=` is the
+                // caller's value, verbatim.
+                'path' => $path,
                 'expected' => substr($entry, $at + 1),
             ];
         }

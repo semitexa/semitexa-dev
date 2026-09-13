@@ -220,6 +220,35 @@ final class VerifyDirtyScanTest extends TestCase
         ], DirtyWorkspaceScanner::parsePorcelainZ($raw));
     }
 
+    /**
+     * `RD` — renamed in the index, then the destination deleted from the
+     * worktree. What the tree LOST is the original file; the new name never
+     * landed. Reporting `new.php` as deleted sent ContractMoveResolver looking
+     * for consumers of a FQCN that never existed, while the one that really
+     * went away kept its stale callers and the run came back green. Raised in
+     * review of dev#84.
+     */
+    #[Test]
+    public function a_rename_whose_destination_was_deleted_reports_the_name_that_is_gone(): void
+    {
+        $raw = "RD new.php\0old.php\0";
+
+        self::assertSame(
+            [['path' => 'old.php', 'status' => ChangedFile::STATUS_DELETED]],
+            DirtyWorkspaceScanner::parsePorcelainZ($raw),
+        );
+    }
+
+    /** An ordinary deletion has no original and is unaffected. */
+    #[Test]
+    public function an_ordinary_deletion_still_names_itself(): void
+    {
+        self::assertSame(
+            [['path' => 'gone.php', 'status' => ChangedFile::STATUS_DELETED]],
+            DirtyWorkspaceScanner::parsePorcelainZ(" D gone.php\0"),
+        );
+    }
+
     #[Test]
     public function a_clean_repository_parses_to_nothing_rather_than_one_empty_entry(): void
     {

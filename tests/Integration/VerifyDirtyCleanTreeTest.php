@@ -314,4 +314,61 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertSame('trace_appended', $envelope['trace'][0]['kind'] ?? null);
         self::assertCount(1, $store->read('clean-json')->events);
     }
+
+    /**
+     * `--files=<renamed destination> --dirty` names one path twice: once by
+     * hand as a plain modification, and once by the scanner as a rename. The
+     * first-wins dedupe dropped the second entry whole, and with it
+     * `originalPath` — so ContractMoveResolver never expanded consumers of the
+     * old contract and the run came back green with stale references in it. A
+     * rename is strictly more than a modification of the same file. Raised in
+     * review of dev#84.
+     */
+    #[Test]
+    public function a_duplicate_path_keeps_the_rename_the_scanner_found(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_MODIFIED],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_RENAMED, 'originalPath' => 'src/B.php'],
+        ]);
+
+        self::assertCount(1, $merged, 'still one entry per path');
+        self::assertSame(ChangedFile::STATUS_RENAMED, $merged[0]['status']);
+        self::assertSame('src/B.php', $merged[0]['originalPath']);
+    }
+
+    /** The other order was already right, and stays right. */
+    #[Test]
+    public function the_richer_entry_wins_from_either_side(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_RENAMED, 'originalPath' => 'src/B.php'],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_MODIFIED],
+        ]);
+
+        self::assertSame('src/B.php', $merged[0]['originalPath'] ?? null);
+    }
+
+    /** And two plain duplicates still collapse to the first, unchanged. */
+    #[Test]
+    public function two_plain_duplicates_collapse_to_one(): void
+    {
+        $merged = $this->deduped([
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_MODIFIED],
+            ['path' => 'src/A.php', 'status' => ChangedFile::STATUS_ADDED],
+        ]);
+
+        self::assertSame([['path' => 'src/A.php', 'status' => ChangedFile::STATUS_MODIFIED]], $merged);
+    }
+
+    /**
+     * @param list<array{path: string, status: string, originalPath?: string}> $entries
+     * @return list<array{path: string, status: string, originalPath?: string}>
+     */
+    private function deduped(array $entries): array
+    {
+        $method = new \ReflectionMethod(AiVerifyCommand::class, 'dedupe');
+
+        return $method->invoke($this->command(), $entries);
+    }
 }

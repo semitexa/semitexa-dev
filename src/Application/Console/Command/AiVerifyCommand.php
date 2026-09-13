@@ -395,9 +395,27 @@ final class AiVerifyCommand extends BaseCommand
         foreach ($entries as $entry) {
             $key = $entry['path'];
             if (isset($seen[$key])) {
+                // First-wins, EXCEPT for what the first one does not know.
+                // `--files=<renamed destination> --dirty` supplies the path
+                // manually as a plain modification and the scanner then finds
+                // the same path as a rename; dropping the second entry whole
+                // discarded `originalPath`, so ContractMoveResolver never
+                // expanded consumers of the old contract and the run came back
+                // green with stale references in it. A rename is strictly more
+                // than a modification of the same file, so it wins. Raised in
+                // review of dev#84.
+                $at = $seen[$key];
+                $original = $entry['originalPath'] ?? '';
+                if ($original !== '' && ($out[$at]['originalPath'] ?? '') === '') {
+                    $out[$at] = [
+                        'path' => $key,
+                        'status' => $entry['status'],
+                        'originalPath' => $original,
+                    ];
+                }
                 continue;
             }
-            $seen[$key] = true;
+            $seen[$key] = count($out);
             $out[] = $entry;
         }
         return $out;

@@ -221,10 +221,24 @@ final readonly class DirtyWorkspaceScanner
                 continue;
             }
 
-            $entry = ['path' => $path, 'status' => self::statusFor($code)];
+            $status = self::statusFor($code);
+
+            // `RD` — renamed in the index, then the destination deleted from
+            // the worktree. What the tree actually lost is the ORIGINAL file:
+            // the new name never landed, and reporting `new.php` as deleted
+            // sends ContractMoveResolver looking for consumers of a FQCN that
+            // never existed while the removed one keeps its stale callers.
+            // So the deletion is reported against the name that is gone.
+            // Raised in review of dev#84.
+            if ($status === ChangedFile::STATUS_DELETED && $original !== '') {
+                $out[] = ['path' => $original, 'status' => $status];
+                continue;
+            }
+
+            $entry = ['path' => $path, 'status' => $status];
             // Only a RENAME carries one: a copy leaves the original where it
             // was, so the old FQCN is not broken and nothing should query it.
-            if ($entry['status'] === ChangedFile::STATUS_RENAMED && $original !== '') {
+            if ($status === ChangedFile::STATUS_RENAMED && $original !== '') {
                 $entry['originalPath'] = $original;
             }
             $out[] = $entry;
