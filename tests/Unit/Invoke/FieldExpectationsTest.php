@@ -145,6 +145,35 @@ final class FieldExpectationsTest extends TestCase
         ), 'nothing in the report may carry it');
     }
 
+    /**
+     * Masking by the LEAF key asked the wrong question: `credentials.value` is
+     * a `value`, which nothing treats as secret, while the redactor looking at
+     * the real structure masks it. The display now reads out of the redacted
+     * resource rather than a synthetic one-key array. Raised in review of
+     * dev#84.
+     */
+    #[Test]
+    public function a_nested_secret_is_masked_by_its_real_path(): void
+    {
+        $resource = ['credentials' => ['password' => 'hunter2', 'user' => 'ada']];
+        $report = $this->check(['credentials.password=hunter2', 'credentials.user=ada'], $resource);
+
+        [$secret, $ordinary] = $report['results'];
+
+        self::assertTrue($secret['ok'], 'the comparison still sees the real value');
+        self::assertNotSame('hunter2', $secret['actual'], 'a nested secret must not surface');
+        self::assertNotSame('hunter2', $secret['expected']);
+        self::assertStringNotContainsString('hunter2', json_encode($report, JSON_THROW_ON_ERROR));
+
+        // The redactor masks the secret-looking CONTAINER whole rather than
+        // descending into it, so the neighbour under it is masked too. That is
+        // its decision, and honouring it is the point — second-guessing which
+        // children are safe is how a secret gets printed.
+        self::assertTrue($ordinary['ok'], 'the comparison still sees the real value');
+        self::assertNotSame('ada', $ordinary['actual']);
+        self::assertSame($secret['actual'], $ordinary['actual'], 'both show the container mask');
+    }
+
     /** An ordinary field is reported as written, not masked into uselessness. */
     #[Test]
     public function an_ordinary_expected_value_is_left_alone(): void

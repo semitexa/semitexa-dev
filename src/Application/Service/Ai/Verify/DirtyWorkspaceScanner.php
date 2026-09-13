@@ -29,7 +29,7 @@ final readonly class DirtyWorkspaceScanner
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     public function changedFiles(): array
     {
@@ -37,14 +37,24 @@ final readonly class DirtyWorkspaceScanner
 
         foreach ($this->repositories() as $prefix => $absolute) {
             foreach ($this->statusOf($absolute) as $entry) {
-                $out[] = [
-                    'path' => $prefix === '' ? $entry['path'] : $prefix . '/' . $entry['path'],
+                $row = [
+                    'path' => self::join($prefix, $entry['path']),
                     'status' => $entry['status'],
                 ];
+                if (isset($entry['originalPath'])) {
+                    $row['originalPath'] = self::join($prefix, $entry['originalPath']);
+                }
+                $out[] = $row;
             }
         }
 
         return $out;
+    }
+
+    /** Repository-relative path to workspace-relative path. */
+    private static function join(string $prefix, string $path): string
+    {
+        return $prefix === '' ? $path : $prefix . '/' . $path;
     }
 
     /**
@@ -130,7 +140,7 @@ final readonly class DirtyWorkspaceScanner
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      * @throws \RuntimeException when git refuses, rather than reporting a clean tree
      */
     private function statusOf(string $repository): array
@@ -140,37 +150,84 @@ final readonly class DirtyWorkspaceScanner
         // git refuses a "dubious ownership" repository outright. Scoped to the
         // one path rather than `*`, and to a read-only status — this asks what
         // changed, it does not run anything out of the repository.
+        // `-z` rather than the line format, for two reasons that both ended in
+        // a wrong path. Without it git QUOTES any name carrying a space, a
+        // quote, a non-ASCII byte or a backslash -- `"src/a b.php"`, and
+        // `\303\251` for an accented letter -- so stripping the outer quotes
+        // left an escaped string that matched no file on disk. And a rename
+        // arrives as `old -> new` on one line, which is indistinguishable from
+        // a file genuinely named with that arrow. In `-z` each path is its own
+        // NUL-terminated record, verbatim, and a rename's ORIGINAL path is the
+        // record immediately after it. Raised in review of dev#84.
         $cmd = sprintf(
-            'git -C %s -c safe.directory=%s status --porcelain=v1 --untracked-files=all 2>&1',
+            'git -C %s -c safe.directory=%s status --porcelain=v1 -z --untracked-files=all 2>&1',
             escapeshellarg($repository),
             escapeshellarg($repository),
         );
 
-        exec($cmd, $lines, $code);
+        // Not exec(): it splits output on newlines and trims each one, which
+        // destroys both the NUL framing and any name ending in a space. One
+        // pipe, stderr folded into it, so there is no second buffer to fill
+        // while this one is being read.
+        $raw = '';
+        $code = 1;
+        $process = proc_open($cmd, [1 => ['pipe', 'w']], $pipes);
+        if (is_resource($process)) {
+            $raw = (string) stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            $code = proc_close($process);
+        }
 
         if ($code !== 0) {
-            throw new \RuntimeException('git status failed in ' . $repository . ': ' . implode(' / ', $lines));
+            throw new \RuntimeException(
+                'git status failed in ' . $repository . ': ' . trim(str_replace("\0", ' / ', $raw)),
+            );
+        }
+
+        return self::parsePorcelainZ($raw);
+    }
+
+    /**
+     * @return list<array{path: string, status: string, originalPath?: string}>
+     */
+    public static function parsePorcelainZ(string $raw): array
+    {
+        // The trailing NUL leaves an empty tail; every other record is real.
+        $records = explode("\0", $raw);
+        if (end($records) === '') {
+            array_pop($records);
         }
 
         $out = [];
-        foreach ($lines as $line) {
-            if (strlen($line) < 4) {
+        for ($i = 0, $n = count($records); $i < $n; $i++) {
+            $record = $records[$i];
+            if (strlen($record) < 4) {
                 continue;
             }
 
-            $path = trim(substr($line, 3));
+            $code = substr($record, 0, 2);
+            $path = substr($record, 3);
+            $letters = str_replace(' ', '', $code);
 
-            // A rename reads `R  old -> new`; the new name is what to verify.
-            if (str_contains($path, ' -> ')) {
-                $path = substr($path, strpos($path, ' -> ') + 4);
+            // A rename or a copy is TWO records: this one, then the path it
+            // came from. The second must be consumed either way, or it is read
+            // as a status line of its own.
+            $original = '';
+            if ($letters !== '??' && (str_contains($letters, 'R') || str_contains($letters, 'C'))) {
+                $original = $records[++$i] ?? '';
             }
 
-            $path = trim($path, '"');
             if ($path === '') {
                 continue;
             }
 
-            $out[] = ['path' => $path, 'status' => self::statusFor(substr($line, 0, 2))];
+            $entry = ['path' => $path, 'status' => self::statusFor($code)];
+            // Only a RENAME carries one: a copy leaves the original where it
+            // was, so the old FQCN is not broken and nothing should query it.
+            if ($entry['status'] === ChangedFile::STATUS_RENAMED && $original !== '') {
+                $entry['originalPath'] = $original;
+            }
+            $out[] = $entry;
         }
 
         return $out;
@@ -183,10 +240,16 @@ final readonly class DirtyWorkspaceScanner
         if ($letters === '??') {
             return ChangedFile::STATUS_ADDED;
         }
+        // Deleted first: `RD` is a file renamed in the index and then removed
+        // from the worktree, and the new path is not there to verify.
         if (str_contains($letters, 'D')) {
             return ChangedFile::STATUS_DELETED;
         }
-        if (str_contains($letters, 'A')) {
+        if (str_contains($letters, 'R')) {
+            return ChangedFile::STATUS_RENAMED;
+        }
+        // A copy's new path has no previous name, so it is simply added.
+        if (str_contains($letters, 'A') || str_contains($letters, 'C')) {
             return ChangedFile::STATUS_ADDED;
         }
 

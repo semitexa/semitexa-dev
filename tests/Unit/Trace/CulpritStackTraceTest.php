@@ -43,8 +43,30 @@ final class CulpritStackTraceTest extends TestCase
             ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 42, 'function' => 'handle', 'class' => 'App\\Modules\\Shop\\Handler'],
         ]);
 
-        self::assertSame('/app/src/modules/Shop/Handler.php', $trace->culprit['file']);
+        // The frame NAMES the handler; the line inside it is the call site of
+        // the frame below — here the pipeline frame at RouteExecutor.php:20.
+        self::assertSame('App\\Modules\\Shop\\Handler', $trace->culprit['class']);
+        self::assertSame('handle', $trace->culprit['function']);
+        self::assertSame('/app/packages/semitexa-core/src/Pipeline/RouteExecutor.php', $trace->culprit['file']);
+        self::assertSame(20, $trace->culprit['line']);
+        self::assertSame('/app/src/modules/Shop/Handler.php:42', $trace->culprit['called_from']);
+    }
+
+    /**
+     * A backtrace frame names the CALLEE in class/function and the CALL SITE in
+     * file/line. Rendering one frame as a single location showed the handler's
+     * name beside the command's own file. Raised in review of dev#84.
+     */
+    #[Test]
+    public function the_innermost_frame_takes_the_throw_site_as_its_line(): void
+    {
+        $trace = $this->withFrames([
+            ['file' => '/app/caller.php', 'line' => 7, 'function' => 'handle', 'class' => 'App\\Modules\\Shop\\Handler'],
+        ]);
+
+        self::assertSame('/app/src/modules/Shop/Handler.php', $trace->culprit['file'], 'the throw site is inside this function');
         self::assertSame(42, $trace->culprit['line']);
+        self::assertSame('/app/caller.php:7', $trace->culprit['called_from']);
     }
 
     /**
@@ -72,7 +94,8 @@ final class CulpritStackTraceTest extends TestCase
             ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 42, 'function' => 'handle', 'class' => 'App\\Modules\\Shop\\Handler'],
         ]);
 
-        self::assertSame('/app/src/modules/Shop/Handler.php', $trace->culprit['file']);
+        self::assertSame('App\\Modules\\Shop\\Handler', $trace->culprit['class']);
+        self::assertSame('/app/vendor/somebody/lib/Runner.php', $trace->culprit['file'], 'the line inside the handler');
     }
 
     #[Test]
@@ -115,6 +138,34 @@ final class CulpritStackTraceTest extends TestCase
         self::assertSame([], $trace->frames);
         self::assertNotNull($trace->culprit);
         self::assertSame('it broke', $trace->message);
+    }
+
+    /**
+     * The end-to-end shape, from a REAL throw rather than a hand-written stack:
+     * a caller and a throw site in different places, which is the case that
+     * showed a handler's name beside the wrong file.
+     */
+    #[Test]
+    public function a_real_throw_pairs_the_name_with_the_line_inside_it(): void
+    {
+        $thrower = new class () {
+            public function boom(): void
+            {
+                throw new \RuntimeException('from inside');
+            }
+        };
+
+        try {
+            $thrower->boom();
+            self::fail('it was supposed to throw');
+        } catch (\RuntimeException $e) {
+            $trace = CulpritStackTrace::of($e);
+        }
+
+        self::assertSame('boom', $trace->culprit['function']);
+        self::assertSame($e->getFile(), $trace->culprit['file'], 'the line inside boom() is where it threw');
+        self::assertSame($e->getLine(), $trace->culprit['line']);
+        self::assertStringContainsString(__FILE__, (string) $trace->culprit['called_from'], 'and the caller is still named');
     }
 
     #[Test]

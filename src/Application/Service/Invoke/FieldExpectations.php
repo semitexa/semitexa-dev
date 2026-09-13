@@ -81,6 +81,13 @@ final readonly class FieldExpectations
      */
     public function check(?array $resource): array
     {
+        // The whole resource through the redactor ONCE, and display values read
+        // out of THAT. Masking by the leaf key alone asked the wrong question:
+        // `credentials.value` is a `value`, which nothing treats as secret,
+        // while the redactor looking at the real structure masks it. Raised in
+        // review of dev#84.
+        $shown = $resource === null ? null : ContextRedactor::redact($resource);
+
         $results = [];
         $failed = 0;
 
@@ -102,20 +109,19 @@ final readonly class FieldExpectations
                 $failed++;
             }
 
-            // The EXPECTED side is masked too. Masking only the actual left the
-            // caller's own `--expect-field=password=hunter2` printed verbatim
-            // in an envelope built to be pasted around — the secret came back
-            // in through the door the mask was guarding. Raised in review of
-            // dev#84.
-            $leaf = self::leafKey($path);
-            $maskedExpectation = self::render(ContextRedactor::redact([$leaf => $expected])[$leaf] ?? $expected);
+            $maskedRendered = $found ? self::maskedDisplay($shown, $path) : null;
+            $isSecret = $found && $maskedRendered !== $rendered;
 
             $entry = [
                 'path' => $path,
-                'expected' => $maskedExpectation,
+                // The caller's own text is masked whenever the path is, or
+                // `--expect-field=password=hunter2` printed the secret verbatim
+                // in an envelope built to be pasted around — back in through
+                // the door the mask was guarding.
+                'expected' => $isSecret ? $maskedRendered : $expected,
                 'ok' => $ok,
             ];
-            if ($maskedExpectation !== $expected) {
+            if ($isSecret) {
                 $entry['expected_redacted'] = true;
             }
 
@@ -123,14 +129,11 @@ final readonly class FieldExpectations
                 $entry['actual'] = null;
                 $entry['reason'] = 'no such path in the resource';
             } elseif (!$comparable) {
-                $entry['actual'] = $rendered;
+                $entry['actual'] = $maskedRendered;
                 $entry['reason'] = 'the value is ' . get_debug_type($actual) . ', which no --expect-field value can equal';
             } else {
-                // The redactor decides by KEY name, so it is asked about the
-                // leaf the value actually sits under.
-                $masked = self::render(ContextRedactor::redact([$leaf => $actual])[$leaf] ?? $actual);
-                $entry['actual'] = $masked;
-                if ($masked !== $rendered) {
+                $entry['actual'] = $maskedRendered;
+                if ($isSecret) {
                     // Said out loud: the comparison used the real value, this
                     // line is only what may be shown.
                     $entry['actual_redacted'] = true;
@@ -144,6 +147,37 @@ final readonly class FieldExpectations
     }
 
     /**
+     * What may be SHOWN for this path.
+     *
+     * Read out of the redacted copy, so the redactor's own rules decide. It
+     * masks a secret-looking CONTAINER whole rather than descending into it —
+     * so `credentials.password` has no path left to find, and neither does
+     * `credentials.user` beside it. That is the redactor's decision and it is
+     * honoured rather than worked around: the nearest surviving ancestor IS the
+     * mask, and showing it is both truthful and safe.
+     *
+     * @param array<string, mixed>|null $shown
+     */
+    private static function maskedDisplay(?array $shown, string $path): ?string
+    {
+        [$found, $value] = self::lookup($shown, $path);
+        if ($found) {
+            return self::render($value);
+        }
+
+        $segments = explode('.', $path);
+        while (count($segments) > 1) {
+            array_pop($segments);
+            [$found, $value] = self::lookup($shown, implode('.', $segments));
+            if ($found && self::isComparable($value)) {
+                return self::render($value);
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Can this value be compared at all?
      *
      * Only scalars and null. Everything else renders as its type, and that
@@ -153,13 +187,6 @@ final readonly class FieldExpectations
     private static function isComparable(mixed $value): bool
     {
         return $value === null || is_scalar($value);
-    }
-
-    private static function leafKey(string $path): string
-    {
-        $segments = explode('.', $path);
-
-        return (string) end($segments);
     }
 
     /**

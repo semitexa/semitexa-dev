@@ -39,7 +39,7 @@ final readonly class CulpritStackTrace
     ];
 
     /**
-     * @param array{file: string, line: int, function: string, class: ?string}|null $culprit
+     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string}|null $culprit
      * @param list<array<string, mixed>> $frames
      * @param list<string> $source
      */
@@ -83,11 +83,31 @@ final readonly class CulpritStackTrace
     ): self {
         $culprit = null;
 
-        foreach ($frames as $frame) {
-            if (!self::isPlumbing($frame)) {
-                $culprit = $frame;
-                break;
+        foreach ($frames as $index => $frame) {
+            if (self::isPlumbing($frame)) {
+                continue;
             }
+
+            // A backtrace frame names the CALLEE in class/function and the CALL
+            // SITE in file/line, so rendering one frame as a single location
+            // showed the handler's name beside AiInvokeCommand.php. The line
+            // INSIDE this function is the call site of the frame below it —
+            // and for the innermost frame, the throw itself. Raised in review
+            // of dev#84.
+            $inside = $index > 0
+                ? ['file' => $frames[$index - 1]['file'], 'line' => $frames[$index - 1]['line']]
+                : ['file' => $throwFile, 'line' => $throwLine];
+
+            $culprit = [
+                'file' => $inside['file'],
+                'line' => $inside['line'],
+                'function' => $frame['function'],
+                'class' => $frame['class'],
+                // Kept because it is a real location too — where this function
+                // was called from — and losing it would hide the caller.
+                'called_from' => $frame['file'] . ':' . $frame['line'],
+            ];
+            break;
         }
 
         // Everything was plumbing — a failure INSIDE the machinery. The throw
@@ -200,7 +220,7 @@ final readonly class CulpritStackTrace
     }
 
     /**
-     * @param array{file: string, line: int, function: string, class: ?string} $culprit
+     * @param array{file: string, line: int, function: string, class: ?string, called_from?: string} $culprit
      * @return list<string>
      */
     private static function sourceFor(array $culprit, ?SourceSliceReader $reader): array

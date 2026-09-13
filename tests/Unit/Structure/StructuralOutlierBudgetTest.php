@@ -126,7 +126,18 @@ final class StructuralOutlierBudgetTest extends TestCase
         // emitting the single-envelope shape there handed such a consumer a
         // record it could not place. Eleven lines for the second shape and the
         // comment. METHOD COUNT UNCHANGED at 25.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 761],
+        //
+        // 25/761 -> 19/669 in review of dev#84, the first entry here to go
+        // DOWN. Two more facts had to reach both output shapes — renames, and
+        // the dirty scan in NDJSON — and the pattern was by then unmistakable:
+        // every one of the growth notes above is a fact added to one shape and
+        // then, separately, to the other, and twice it reached only one and was
+        // caught in review rather than by anyone reading the output. So the
+        // five methods both builders shared moved out to
+        // VerifyReportSerializer, which is pure and has one definition per
+        // fact. The command is left with argument handling, dispatch and the
+        // exit code.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 669],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that

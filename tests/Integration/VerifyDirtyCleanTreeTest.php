@@ -8,6 +8,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
+use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -98,12 +100,103 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--dirty' => true], $command->getDefinition()), $output);
-        $record = (array) json_decode(trim($output->fetch()), true);
+        $records = self::ndjson($output->fetch());
 
         self::assertSame(0, $exit);
-        self::assertSame('verdict', $record['kind'] ?? null, 'NDJSON consumers dispatch on this');
-        self::assertSame('nothing_to_verify', $record['verdict']);
-        self::assertArrayHasKey('dirty_scan', $record, 'the reach travels in both shapes');
+
+        $verdict = self::recordOfKind($records, 'verdict');
+        self::assertNotNull($verdict, 'NDJSON consumers dispatch on this');
+        self::assertSame('nothing_to_verify', $verdict['verdict']);
+        self::assertArrayHasKey('dirty_scan', $verdict, 'the reach travels in both shapes');
+
+        self::assertNotNull(
+            self::recordOfKind($records, 'dirty_scan'),
+            'and in the same record a run WITH changes emits it in',
+        );
+    }
+
+    /**
+     * The case the empty one cannot cover: with changes to verify, the scan's
+     * reach was added to the `--json` envelope ONLY. NDJSON is the default
+     * mode, so the readers who never pass `--json` — every ordinary
+     * `ai:verify --dirty` — were told nothing about the roots it could not ask,
+     * which is the false green the report exists to prevent. Raised in review
+     * of dev#84.
+     *
+     * At the emitter rather than through `run()`: the full path needs the
+     * container to inject the trace appender, and what is in question here is
+     * whether the emitter is given the scan at all.
+     */
+    #[Test]
+    public function a_run_with_changes_emits_the_scan_as_its_own_ndjson_record(): void
+    {
+        $scan = ['scanned' => ['packages/semitexa-probe'], 'unscannable' => ['(project root — not a git repository)']];
+        $plan = new VerificationPlan('standard', 'standard', [new ChangedFile('notes.md', ChangedFile::KIND_NON_PHP)], []);
+
+        $records = self::ndjson($this->emitted($plan, $scan));
+
+        $emitted = self::recordOfKind($records, 'dirty_scan');
+        self::assertNotNull($emitted, 'the reach of the answer must reach the default mode too');
+        self::assertSame($scan['scanned'], $emitted['scanned']);
+        self::assertSame($scan['unscannable'], $emitted['unscannable']);
+
+        self::assertNotNull(self::recordOfKind($records, 'verdict'), 'and the run still ends with its verdict');
+        self::assertSame(
+            'dirty_scan',
+            $records[0]['kind'] ?? null,
+            'before the answer, so it is read rather than scrolled past',
+        );
+    }
+
+    /** Without the flag there is no scan, and no record claiming one. */
+    #[Test]
+    public function a_run_without_the_flag_emits_no_scan_record(): void
+    {
+        $plan = new VerificationPlan('standard', 'standard', [new ChangedFile('notes.md', ChangedFile::KIND_NON_PHP)], []);
+
+        $records = self::ndjson($this->emitted($plan, null));
+
+        self::assertNull(self::recordOfKind($records, 'dirty_scan'));
+        self::assertSame('summary', $records[0]['kind'] ?? null);
+    }
+
+    /**
+     * @param array{scanned: list<string>, unscannable: list<string>}|null $scan
+     */
+    private function emitted(VerificationPlan $plan, ?array $scan): string
+    {
+        $command = new AiVerifyCommand();
+        $command->setName('ai:verify');
+        $output = new BufferedOutput();
+
+        $method = new \ReflectionMethod(AiVerifyCommand::class, 'emitNdjson');
+        $method->invoke($command, $output, $plan, [], 'pass', null, $scan);
+
+        return $output->fetch();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function ndjson(string $raw): array
+    {
+        return array_values(array_map(
+            static fn(string $line): array => (array) json_decode($line, true),
+            array_filter(explode("\n", trim($raw)), static fn(string $l): bool => trim($l) !== ''),
+        ));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return array<string, mixed>|null
+     */
+    private static function recordOfKind(array $records, string $kind): ?array
+    {
+        foreach ($records as $record) {
+            if (($record['kind'] ?? null) === $kind) {
+                return $record;
+            }
+        }
+
+        return null;
     }
 
     /** And --json still gets the single envelope, with its artifact id. */

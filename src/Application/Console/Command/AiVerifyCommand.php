@@ -17,6 +17,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactProbe;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactReport;
 use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
@@ -105,13 +106,22 @@ final class AiVerifyCommand extends BaseCommand
                 // whose records are dispatched by `kind`, so an envelope
                 // without one is a record such a consumer cannot place — and
                 // every ordinary run ends with a `verdict` record.
-                $output->writeln(json_encode($jsonMode ? [
-                    'artifact' => 'semitexa-dev.verify-report/v1',
-                    'generated_at' => date('c'),
-                    'verdict' => 'nothing_to_verify',
-                    'changed_files' => [],
-                    'dirty_scan' => $scan,
-                ] : [
+                if ($jsonMode) {
+                    $output->writeln(json_encode([
+                        'artifact' => 'semitexa-dev.verify-report/v1',
+                        'generated_at' => date('c'),
+                        'verdict' => 'nothing_to_verify',
+                        'changed_files' => [],
+                        'dirty_scan' => $scan,
+                    ], JSON_UNESCAPED_SLASHES));
+
+                    return self::SUCCESS;
+                }
+
+                // The same two records a run WITH changes emits, so a consumer
+                // reads the scan out of one place regardless of the answer.
+                $output->writeln(json_encode(['kind' => 'dirty_scan'] + $scan, JSON_UNESCAPED_SLASHES));
+                $output->writeln(json_encode([
                     'kind' => 'verdict',
                     'verdict' => 'nothing_to_verify',
                     'completed' => true,
@@ -129,13 +139,11 @@ final class AiVerifyCommand extends BaseCommand
         $projectRoot = $this->getProjectRoot();
         $classifier = new ChangedFileClassifier();
         $changed = array_map(
-            static function (array $entry) use ($classifier): ChangedFile {
-                $file = $classifier->classify($entry['path'], $entry['status']);
-                if (isset($entry['originalPath']) && $entry['originalPath'] !== '') {
-                    $file->originalPath = $entry['originalPath'];
-                }
-                return $file;
-            },
+            static fn(array $entry): ChangedFile => $classifier->classify(
+                $entry['path'],
+                $entry['status'],
+                ($entry['originalPath'] ?? '') !== '' ? $entry['originalPath'] : null,
+            ),
             $paths,
         );
         /** @var list<ChangedFile> $changed */
@@ -160,10 +168,12 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
+        $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
             // ask half the tree must not read as "half the tree is clean".
-            $envelope['dirty_scan'] = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+            $dirtyScan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+            $envelope['dirty_scan'] = $dirtyScan;
         }
         if ($jsonMode) {
             $traceOutput = new BufferedOutput();
@@ -174,7 +184,7 @@ final class AiVerifyCommand extends BaseCommand
             );
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
         } else {
-            $this->emitNdjson($output, $plan, $results, $verdict, $impact);
+            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan);
             $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
         }
 
@@ -193,7 +203,8 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         array $envelope,
     ): void {
-        $counts = $this->countByStatus($results);
+        $report = new VerifyReportSerializer();
+        $counts = $report->countByStatus($results);
         $summary = sprintf(
             'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d incomplete=%d',
             $verdict,
@@ -208,7 +219,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function collectPaths(InputInterface $input): array
     {
@@ -288,7 +299,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function gitDiffNameStatus(string $ref): array
     {
@@ -305,7 +316,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function readStdinPaths(): array
     {
@@ -352,8 +363,8 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @param list<array{path: string, status: string}> $entries
-     * @return list<array{path: string, status: string}>
+     * @param list<array{path: string, status: string, originalPath?: string}> $entries
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function dedupe(array $entries): array
     {
@@ -375,6 +386,7 @@ final class AiVerifyCommand extends BaseCommand
      */
     private function verdict(array $results): string
     {
+        $report = new VerifyReportSerializer();
         if ($results === []) {
             return VerificationResult::STATUS_INCOMPLETE;
         }
@@ -391,30 +403,12 @@ final class AiVerifyCommand extends BaseCommand
         if ($hasFail) {
             return VerificationResult::STATUS_FAIL;
         }
-        if (!$this->completed($results)) {
+        if (!$report->completed($results)) {
             return VerificationResult::STATUS_INCOMPLETE;
         }
         return $allSkipped ? VerificationResult::STATUS_SKIPPED : VerificationResult::STATUS_PASS;
     }
 
-    /** @param list<VerificationResult> $results */
-    private function completed(array $results): bool
-    {
-        if ($results === []) {
-            return false;
-        }
-        foreach ($results as $result) {
-            if ($result->required && !$result->completed()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * @param list<VerificationResult> $results
-     * @return array<string, mixed>
-     */
     /**
      * Read-only blast-radius probe. Never throws into the verify flow — a
      * graph problem must degrade to an "unknown" band, not fail verification.
@@ -459,6 +453,7 @@ final class AiVerifyCommand extends BaseCommand
 
     private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
     {
+        $report = new VerifyReportSerializer();
         $violations = $this->collectViolations($results);
         $bands = $this->bandsByPath($impact);
         return [
@@ -477,68 +472,16 @@ final class AiVerifyCommand extends BaseCommand
                 },
                 $plan->changedFiles,
             ),
-            'targets'         => array_map(fn($t) => $this->serializeTarget($t), $plan->targets),
-            'results'         => array_map(fn($r) => $this->serializeResult($r), $results),
+            'targets'         => array_map(fn($t) => $report->serializeTarget($t), $plan->targets),
+            'results'         => array_map(fn($r) => $report->serializeResult($r), $results),
             'violations'      => $violations,
             'verdict'         => $verdict,
-            'completed'       => $this->completed($results),
-            'counts'          => $this->countByStatus($results),
+            'completed'       => $report->completed($results),
+            'counts'          => $report->countByStatus($results),
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
-            'restart'         => $this->restartAdvice($plan->changedFiles),
+            'restart'         => $report->restartAdvice($plan->changedFiles),
         ];
-    }
-
-    /**
-     * Whether a server restart is needed, and for what.
-     *
-     * Verification never needs one. Every check here runs in a fresh CLI
-     * process that rediscovers classes from disk, so a file saved a second ago
-     * is already visible — measured by having a brand-new class fail this
-     * command with no restart in between.
-     *
-     * Saying so matters because the habit is expensive and invisible. A
-     * consumer agent reported a 30-60s verify cycle as its single biggest time
-     * sink, having wrapped every run in `server:restart` + `cache:clear`. On
-     * this machine that is 16s of restart around 4s of actual verification —
-     * four fifths of the cycle spent on a step that changed nothing. Nothing in
-     * the output contradicted the assumption, so it never got questioned.
-     *
-     * A restart IS needed before exercising the RUNNING server, because Swoole
-     * workers hold discovered classes and compiled templates for the life of
-     * the worker. That is a different activity from verifying, and the advice
-     * only appears when the changed files are the kind the running server
-     * caches.
-     *
-     * @param list<ChangedFile> $changedFiles
-     * @return array{needed_for_verification: bool, note: string, before_browsing?: string}
-     */
-    private function restartAdvice(array $changedFiles): array
-    {
-        $advice = [
-            'needed_for_verification' => false,
-            'note' => 'Verification reads files from disk in a fresh process; '
-                . 'no restart was needed and none would have changed this result.',
-        ];
-
-        $affectsRunningServer = false;
-        foreach ($changedFiles as $file) {
-            if (in_array($file->kind, [
-                ChangedFile::KIND_TEMPLATE,
-                ChangedFile::KIND_CLIENT_SCRIPT,
-            ], true) || str_ends_with($file->path, '.php')) {
-                $affectsRunningServer = true;
-                break;
-            }
-        }
-
-        if ($affectsRunningServer) {
-            $advice['before_browsing'] = 'bin/semitexa server:restart — required only before exercising '
-                . 'the running server (browser, curl, E2E): workers cache discovered classes and '
-                . 'compiled templates for their lifetime.';
-        }
-
-        return $advice;
     }
 
     /**
@@ -615,9 +558,29 @@ final class AiVerifyCommand extends BaseCommand
 
     /**
      * @param list<VerificationResult> $results
+     * @param array{scanned: list<string>, unscannable: list<string>}|null $dirtyScan
      */
-    private function emitNdjson(OutputInterface $output, VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): void
-    {
+    private function emitNdjson(
+        OutputInterface $output,
+        VerificationPlan $plan,
+        array $results,
+        string $verdict,
+        ?ImpactReport $impact = null,
+        ?array $dirtyScan = null,
+    ): void {
+        $report = new VerifyReportSerializer();
+        // NDJSON is the DEFAULT mode, and the reach of a `--dirty` scan existed
+        // only in the `--json` envelope -- so a run that could not ask half the
+        // tree said so exclusively to the readers who had not asked for this
+        // mode. A record of its own, dispatchable by `kind` like every other.
+        // Raised in review of dev#84.
+        if ($dirtyScan !== null) {
+            $output->writeln(json_encode(
+                ['kind' => 'dirty_scan'] + $dirtyScan,
+                JSON_UNESCAPED_SLASHES,
+            ));
+        }
+
         $output->writeln(json_encode([
             'kind'            => 'summary',
             'requested_scope' => $plan->scope,
@@ -644,14 +607,14 @@ final class AiVerifyCommand extends BaseCommand
         foreach ($plan->targets as $target) {
             $output->writeln(json_encode([
                 'kind'   => 'target',
-                'target' => $this->serializeTarget($target),
+                'target' => $report->serializeTarget($target),
             ], JSON_UNESCAPED_SLASHES));
         }
 
         foreach ($results as $result) {
             $output->writeln(json_encode([
                 'kind'   => 'result',
-                'result' => $this->serializeResult($result),
+                'result' => $report->serializeResult($result),
             ], JSON_UNESCAPED_SLASHES));
             foreach ($result->diagnostics as $diagnostic) {
                 $output->writeln(json_encode([
@@ -670,75 +633,20 @@ final class AiVerifyCommand extends BaseCommand
         // it. An unstated assumption is not fixed by being wrong somewhere the
         // reader does not look.
         $output->writeln((string) json_encode(
-            ['kind' => 'restart'] + $this->restartAdvice($plan->changedFiles),
+            ['kind' => 'restart'] + $report->restartAdvice($plan->changedFiles),
             JSON_UNESCAPED_SLASHES,
         ));
 
         $verdictLine = [
             'kind'    => 'verdict',
             'verdict' => $verdict,
-            'completed' => $this->completed($results),
-            'counts'  => $this->countByStatus($results),
+            'completed' => $report->completed($results),
+            'counts'  => $report->countByStatus($results),
         ];
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
         $output->writeln(json_encode($verdictLine, JSON_UNESCAPED_SLASHES));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeTarget(VerificationTarget $target): array
-    {
-        return [
-            'id'           => $target->id,
-            'type'         => $target->type,
-            'reason'       => $target->reason,
-            'triggered_by' => $target->triggeredBy,
-            'command_name' => $target->commandName,
-            'file_path'    => $target->filePath,
-            'test_filter'  => $target->testFilter,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeResult(VerificationResult $result): array
-    {
-        $out = [
-            'id'        => $result->target->id,
-            'type'      => $result->target->type,
-            'status'    => $result->status,
-            'exit_code' => $result->exitCode,
-            'signal'    => $result->signal,
-            'required'  => $result->required,
-            'completed' => $result->completed(),
-        ];
-        if ($result->diagnostics !== []) {
-            $out['diagnostics_count'] = count($result->diagnostics);
-        }
-        if ($result->accepted !== []) {
-            // In full, with their reasons. A count and the first path in the
-            // signal line told a reader that something was excused without ever
-            // saying what or why.
-            $out['accepted'] = $result->accepted;
-        }
-        return $out;
-    }
-
-    /**
-     * @param list<VerificationResult> $results
-     * @return array<string, int>
-     */
-    private function countByStatus(array $results): array
-    {
-        $counts = ['pass' => 0, 'fail' => 0, 'skipped' => 0, 'incomplete' => 0];
-        foreach ($results as $r) {
-            $counts[$r->status] = ($counts[$r->status] ?? 0) + 1;
-        }
-        return $counts;
     }
 
     private function emitError(OutputInterface $output, string $message, bool $jsonMode): void
