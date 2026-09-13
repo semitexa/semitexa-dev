@@ -108,7 +108,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // it was allowed — because a verdict of `pass` that quietly ignored a
         // known violation reads exactly like one with nothing to ignore. Six
         // lines, NO NEW METHOD.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 719],
+        //
+        // 25/719 -> 25/731 on 2026-09-13: the `--dirty` flag. The scan itself
+        // is NOT here — it grew this file to 30/882 inline, the ratchet said so,
+        // and it moved to DirtyWorkspaceScanner, which is where a thing that
+        // knows about git repositories belongs anyway. What is left is the
+        // option, two call sites and the comments explaining why the answer
+        // carries its own reach. METHOD COUNT UNCHANGED at 25.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 731],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that

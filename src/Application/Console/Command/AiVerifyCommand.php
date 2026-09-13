@@ -10,6 +10,7 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
@@ -70,6 +71,7 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
+            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask.')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
@@ -90,7 +92,7 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         if ($paths === []) {
-            $this->emitError($output, 'no changed files supplied — pass --files, --git-ref, or --diff-stdin', $jsonMode);
+            $this->emitError($output, 'no changed files supplied — pass --files, --git-ref, --diff-stdin or --dirty', $jsonMode);
             return self::FAILURE;
         }
 
@@ -128,6 +130,11 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
+        if ((bool) $input->getOption('dirty')) {
+            // The reach of the answer, beside the answer. A scan that could not
+            // ask half the tree must not read as "half the tree is clean".
+            $envelope['dirty_scan'] = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+        }
         if ($jsonMode) {
             $traceOutput = new BufferedOutput();
             $this->maybeAppendToTrace($input, $traceOutput, $plan, $results, $verdict, $envelope);
@@ -195,6 +202,11 @@ final class AiVerifyCommand extends BaseCommand
         }
         if ((bool) $input->getOption('diff-stdin')) {
             foreach ($this->readStdinPaths() as $entry) {
+                $sources[] = $entry;
+            }
+        }
+        if ((bool) $input->getOption('dirty')) {
+            foreach ((new DirtyWorkspaceScanner($this->getProjectRoot()))->changedFiles() as $entry) {
                 $sources[] = $entry;
             }
         }
