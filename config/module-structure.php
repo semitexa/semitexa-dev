@@ -1052,6 +1052,9 @@ $packageRoot = new ModuleStructureRule(
         'composer.json',
         'composer.lock',
         '.gitignore',
+        // Distribution metadata: `export-ignore` keeps workspace-only assets
+        // out of the Packagist dist while leaving them versioned in the repo.
+        '.gitattributes',
         '.env.default',
         '.phpunit.result.cache',
         'LICENSE',
