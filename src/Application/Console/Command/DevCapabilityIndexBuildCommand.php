@@ -80,7 +80,11 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
         // classmap would omit the packages least likely to be installed
         // anywhere — which are the only ones it exists to advertise.
         $capabilities = (new FrameworkCapabilityCatalog($this->classDiscovery))->everythingOnDisk($root);
-        $payload = CapabilityIndex::build($capabilities, $packagesOnDisk);
+        $payload = CapabilityIndex::build(
+            $capabilities,
+            $packagesOnDisk,
+            CapabilityIndex::nonPackageDirectoriesOnDisk($root),
+        );
         $path = CapabilityIndex::path($root);
 
         if ($check) {

@@ -86,6 +86,57 @@ final class CapabilityIndex
     }
 
     /**
+     * Directories under `packages/` that are NOT Composer packages, and what
+     * each one is instead.
+     *
+     * `packages/semitexa-*` is the glob that defines the package set, so a
+     * reader — human or agent — reasonably takes everything in it for a
+     * package. Two are not: semitexa-installer is a Docker project that
+     * publishes an image, semitexa-companion is a browser extension. Neither
+     * has a composer.json, neither is ever tagged, neither is on Packagist.
+     *
+     * Recorded in the index because this is the artifact an agent reads to ask
+     * "what is in this ecosystem", and answering with the package list alone
+     * left the gap that every agent then spent time re-deriving. A release
+     * over eleven directories reporting ten packages is not a missing tag.
+     *
+     * CLASSIFIED BY MARKER FILE rather than by name, so a third one describes
+     * itself instead of needing this list edited — and says `unknown` rather
+     * than guessing when it carries no marker anyone here recognises.
+     *
+     * @return array<string, string> directory name => what it is
+     */
+    public static function nonPackageDirectoriesOnDisk(string $projectRoot): array
+    {
+        $markers = [
+            'manifest.json' => 'browser extension',
+            'Dockerfile' => 'docker project (publishes an image, not a Composer package)',
+        ];
+
+        $found = [];
+        foreach ((array) glob($projectRoot . '/packages/semitexa-*', GLOB_ONLYDIR) as $dir) {
+            $dir = (string) $dir;
+            if (is_file($dir . '/composer.json')) {
+                continue;
+            }
+
+            $kind = 'unknown — no composer.json and no marker file this index recognises';
+            foreach ($markers as $marker => $description) {
+                if (is_file($dir . '/' . $marker)) {
+                    $kind = $description;
+                    break;
+                }
+            }
+
+            $found[basename($dir)] = $kind;
+        }
+
+        ksort($found);
+
+        return $found;
+    }
+
+    /**
      * The one file a package must carry to say what it offers.
      *
      * Named here because three places need the same string — the guard that
@@ -204,7 +255,10 @@ final class CapabilityIndex
      *               packages: list<string>, content_hash: string,
      *               capabilities: list<array<string, mixed>>}
      */
-    public static function build(array $capabilities, array $packages): array
+    /**
+     * @param array<string, string> $notPackages directory => what it is
+     */
+    public static function build(array $capabilities, array $packages, array $notPackages = []): array
     {
         return [
             'artifact' => self::ARTIFACT,
@@ -219,6 +273,12 @@ final class CapabilityIndex
             'source_version' => self::sourceVersion(),
             'count' => count($capabilities),
             'packages' => $packages,
+            // Beside the package list, not inside it: these are not packages,
+            // and folding them in would make `packages` mean something else.
+            // Deliberately NOT part of content_hash — that hash answers "have
+            // the capabilities changed", and a new non-package directory has
+            // not changed any capability.
+            'not_packages' => $notPackages,
             'content_hash' => self::hash($capabilities),
             'capabilities' => $capabilities,
         ];

@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
 /**
@@ -149,5 +150,59 @@ final class CapabilityIndexBuildTest extends TestCase
 
         self::assertSame(['mechanism', 'package'], $kinds, 'package-level capabilities are missing from the index');
         self::assertNotSame('', (string) $shipped['generated_at'], 'an undated snapshot cannot be judged stale');
+    }
+
+    /**
+     * The index is what an agent reads to ask "what is in this ecosystem", and
+     * answering with the package list alone left a gap every agent then spent
+     * time re-deriving: `packages/semitexa-*` is the glob that DEFINES the
+     * package set, and two directories inside it are not Composer packages —
+     * semitexa-installer publishes a Docker image, semitexa-companion is a
+     * browser extension. A release over eleven directories reporting ten
+     * packages is not a missing tag.
+     */
+    #[Test]
+    public function the_index_names_the_directories_that_are_not_packages(): void
+    {
+        $found = CapabilityIndex::nonPackageDirectoriesOnDisk(ProjectRoot::get());
+
+        self::assertArrayHasKey('semitexa-installer', $found);
+        self::assertArrayHasKey('semitexa-companion', $found);
+        self::assertStringContainsString('docker', strtolower($found['semitexa-installer']));
+        self::assertStringContainsString('extension', strtolower($found['semitexa-companion']));
+
+        foreach (array_keys($found) as $directory) {
+            self::assertFileDoesNotExist(
+                ProjectRoot::get() . '/packages/' . $directory . '/composer.json',
+                "{$directory} has a composer.json, so it IS a package and must not be listed here",
+            );
+        }
+    }
+
+    /** And a package is never listed among them. */
+    #[Test]
+    public function a_real_package_is_not_listed_as_a_non_package(): void
+    {
+        $found = CapabilityIndex::nonPackageDirectoriesOnDisk(ProjectRoot::get());
+
+        self::assertArrayNotHasKey('semitexa-core', $found);
+        self::assertArrayNotHasKey('semitexa-ssr', $found);
+    }
+
+    /**
+     * Carried in the payload, beside `packages` rather than inside it — and
+     * NOT folded into content_hash, which answers "have the capabilities
+     * changed". A new directory has changed no capability, and a hash that
+     * moved would report the shipped index as stale for no reason.
+     */
+    #[Test]
+    public function the_payload_carries_them_without_disturbing_the_hash(): void
+    {
+        $without = CapabilityIndex::build(self::capabilities(), ['semitexa/core']);
+        $with = CapabilityIndex::build(self::capabilities(), ['semitexa/core'], ['semitexa-installer' => 'docker project']);
+
+        self::assertSame([], $without['not_packages'], 'the default is empty, not absent');
+        self::assertSame(['semitexa-installer' => 'docker project'], $with['not_packages']);
+        self::assertSame($without['content_hash'], $with['content_hash']);
     }
 }
