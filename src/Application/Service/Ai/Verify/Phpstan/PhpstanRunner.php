@@ -178,6 +178,18 @@ final class PhpstanRunner
                 continue;
             }
 
+            // And at the site that was accepted, not merely somewhere in that
+            // file. Remove the blessed call, write a different one elsewhere in
+            // the same class, and the file-and-rule key consumed the allowance
+            // for it — green, with somebody else's reason attached, while the
+            // textual ratchet saw an unchanged count either way. Raised in
+            // review of dev#83.
+            $site = AcceptedViolations::siteFor($path, $rule);
+            if ($site !== null && !$this->isAtSite($path, $diagnostic, $site)) {
+                $unresolved[] = $diagnostic;
+                continue;
+            }
+
             $used[$key] = ($used[$key] ?? 0) + 1;
             $diagnostic['severity'] = 'accepted';
             $diagnostic['accepted_reason'] = AcceptedViolations::reasonFor($path, $rule);
@@ -185,6 +197,29 @@ final class PhpstanRunner
         }
 
         return [$unresolved, $accepted];
+    }
+
+    /**
+     * Is this diagnostic in the method the entry accepted?
+     *
+     * A diagnostic with no usable line cannot be placed, and neither can one in
+     * a file this process cannot read — a consumer install analysing a path
+     * that is not on disk here, say. Both answer NO: an allowance is a
+     * statement about one place, and a violation that cannot be shown to be in
+     * that place is reported rather than absorbed.
+     *
+     * @param array<string, mixed> $diagnostic
+     */
+    private function isAtSite(string $path, array $diagnostic, string $site): bool
+    {
+        $line = (int) ($diagnostic['line'] ?? 0);
+        if ($line <= 0) {
+            return false;
+        }
+
+        $absolute = str_starts_with($path, '/') ? $path : $this->projectRoot . '/' . $path;
+
+        return EnclosingSymbol::at($absolute, $line) === $site;
     }
 
     /** @param list<array<string, mixed>> $diagnostics */

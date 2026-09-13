@@ -1122,12 +1122,21 @@ function tipHtml(hit) {
   if (hit.key === 'db') { const qs = w60.map(f => f.phases && f.phases.q).filter(Boolean), qms = w60.map(f => f.phases && f.phases.qms).filter(Boolean); extra = '<div class="nums"><div><b>' + qps().toFixed(1) + '</b><span>q / s</span></div><div><b>' + (qs.length ? (qs.reduce((a, b) => a + b, 0) / qs.length).toFixed(1) : '–') + '</b><span>q / request</span></div><div><b>' + (qms.length ? fmtMs(qms.reduce((a, b) => a + b, 0) / qms.length) : '–') + '</b><span>db ms / req</span></div></div>'; }
   if (hit.key === 'live') { const open = [...S.procs.values()].filter(p => p.kind === 'sse'); extra = '<ul>' + open.slice(0, 8).map(p => '<li><b>' + esc(p.name) + '</b><span>' + (p.stale ? 'stale' : 'w' + p.worker) + '</span></li>').join('') + (open.length > 8 ? '<li><span>+' + (open.length - 8) + ' more</span></li>' : '') + '</ul>'; }
   if (hit.key === 'refused') {
-    const rs = S.particles.filter(p => p.ring === 'refused');
+    // From the finished rows, not from the particles. A refusal that arrived in
+    // the bootstrap — the panel opened, or reconnected after one — is historic,
+    // and ingest() only materializes historic particles for failed jobs. So the
+    // ring had nothing in it while the same refusal sat visible in the ticker,
+    // and this said nobody had been turned away. Raised in review of dev#83.
+    const rs = w60.filter(f => f.outcome === 'rejected');
+    // The stage a request was refused at is worked out when its particle turns
+    // for the ring, so a historic one has no stage to name — 'gate' rather than
+    // a guess.
+    const stageOf = f => (S.particles.find(p => p.id === f.id && p.ring === 'refused') || {}).refusedAt;
     // An empty ring is ambiguous and must not be read as "nobody was turned
     // away": outcome=rejected is derived from trace events, so with stage mode
     // off a refusal is journalled as a plain ok and never reaches this ring.
     extra = rs.length
-      ? '<ul>' + rs.slice(-8).reverse().map(p => '<li><b>' + esc(p.path || p.name) + '</b><span>' + esc(p.refusedAt || 'gate') + '</span></li>' + (p.reason ? '<li class="why">' + esc(p.reason) + '</li>' : '')).join('') + '</ul>'
+      ? '<ul>' + rs.slice(-8).reverse().map(f => '<li><b>' + esc(f.path || f.route || f.name) + '</b><span>' + esc(stageOf(f) || 'gate') + '</span></li>' + (f.error ? '<li class="why">' + esc(f.error) + '</li>' : '')).join('') + '</ul>'
       : (S.stage
         ? '<p><em>Nothing was turned away in the last 60 s.</em></p>'
         : '<p><em>Nothing here — but <b>stage</b> is off, so a refusal is recorded as a plain <code>ok</code> and never reaches this ring. Switch it on to see refusals at all.</em></p>');

@@ -119,7 +119,13 @@ final class ObservatoryLogReader
             }
 
             $entries = [];
-            while (($line = fgets($handle)) !== false) {
+            // Stop at the end as it was when the window was measured. app.log
+            // is appended to continuously by other workers, so following EOF
+            // means reading whatever arrives for as long as it keeps arriving —
+            // the 512 KB bound is what this reader promises, and a busy app
+            // would have carried it past that indefinitely. Raised in review of
+            // dev#83.
+            while (ftell($handle) < $size && ($line = fgets($handle)) !== false) {
                 $line = trim($line);
                 if ($line === '' || $line[0] !== '{') {
                     continue;

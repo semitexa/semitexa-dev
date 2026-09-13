@@ -15,24 +15,61 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
  * tests is that consulting it did not make the gate blind. An accepted site
  * stops failing the run and starts being REPORTED as accepted; everything
  * around it — one more occurrence than was accepted, a different rule, a
- * different file — still fails exactly as before.
+ * different file, the same rule somewhere ELSE in the accepted file — still
+ * fails exactly as before.
+ *
+ * Against the real repository root and the real accepted file, because an
+ * allowance now names the METHOD it was granted in, and placing a diagnostic
+ * means reading that file. A synthetic root proved only that nothing could be
+ * placed.
  */
 final class PhpstanRunnerAcceptedTest extends TestCase
 {
     private const ACCEPTED_FILE = 'packages/semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php';
     private const ACCEPTED_RULE = 'semitexa.staticContainerAccess';
 
+    private function projectRoot(): string
+    {
+        return dirname(__DIR__, 7);
+    }
+
+    /** A line inside execute(), which is where the entry accepts this rule. */
+    private function lineAtAcceptedSite(): int
+    {
+        $source = (string) file_get_contents($this->projectRoot() . '/' . self::ACCEPTED_FILE);
+        foreach (explode("\n", $source) as $i => $line) {
+            if (str_contains($line, 'ContainerFactory::createRequestScoped()')) {
+                return $i + 1;
+            }
+        }
+
+        self::fail('the accepted call is no longer in that file');
+    }
+
+    /** A line in a different method of the same file. */
+    private function lineAwayFromAcceptedSite(): int
+    {
+        $source = (string) file_get_contents($this->projectRoot() . '/' . self::ACCEPTED_FILE);
+        foreach (explode("\n", $source) as $i => $line) {
+            if (str_contains($line, 'private function targetArgs(')) {
+                return $i + 2;
+            }
+        }
+
+        self::fail('the file no longer has the method this test uses as "somewhere else"');
+    }
+
     /** @param list<array{file: string, rule: string, line?: int}> $violations */
     private function runWith(array $violations): PhpstanRunResult
     {
         $files = [];
         foreach ($violations as $v) {
-            $abs = '/root/' . $v['file'];
+            $abs = $this->projectRoot() . '/' . $v['file'];
             $files[$abs] ??= ['errors' => 0, 'messages' => []];
             $files[$abs]['errors']++;
             $files[$abs]['messages'][] = [
                 'message'    => 'Static ContainerFactory:: access is forbidden in application code.',
-                'line'       => $v['line'] ?? 12,
+                'line'       => $v['line'] ?? $this->lineAtAcceptedSite(),
                 'identifier' => $v['rule'],
             ];
         }
@@ -58,7 +95,7 @@ final class PhpstanRunnerAcceptedTest extends TestCase
         };
 
         return new PhpstanRunner(
-            projectRoot: '/root',
+            projectRoot: $this->projectRoot(),
             processRunner: $process,
             // Any existing file satisfies the binary/config existence checks;
             // this runner never shells out.
@@ -91,14 +128,50 @@ final class PhpstanRunnerAcceptedTest extends TestCase
     public function one_more_than_was_accepted_still_fails(): void
     {
         $result = $this->runWith([
-            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => 10],
-            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => 99],
+            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => $this->lineAtAcceptedSite()],
+            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => $this->lineAtAcceptedSite()],
         ]);
 
         self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status, 'accepting one occurrence accepts one, not the file');
 
         self::assertCount(1, $result->diagnostics, 'the extra occurrence is a plain violation');
         self::assertCount(1, $result->accepted, 'and the accepted one is still named');
+    }
+
+    /**
+     * The hole the site closed: delete the blessed call, write a different one
+     * elsewhere in the same class, and a file-and-rule key consumed the
+     * allowance for it — green, with somebody else's reason attached, while the
+     * textual ratchet saw an unchanged occurrence count either way. Raised in
+     * review of dev#83.
+     */
+    #[Test]
+    public function the_same_rule_in_a_different_method_of_that_file_still_fails(): void
+    {
+        $result = $this->runWith([
+            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => $this->lineAwayFromAcceptedSite()],
+        ]);
+
+        self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status, 'the entry accepts a site, not a file');
+        self::assertCount(1, $result->diagnostics);
+        self::assertSame([], $result->accepted, 'and it must not be excused with the other call reason');
+    }
+
+    /**
+     * A diagnostic that cannot be placed — no line, or a file this process
+     * cannot read, as a consumer install analysing a path that is not on disk
+     * here — is reported rather than absorbed. An allowance is a statement
+     * about one place.
+     */
+    #[Test]
+    public function a_diagnostic_that_cannot_be_placed_is_not_accepted(): void
+    {
+        $result = $this->runWith([
+            ['file' => self::ACCEPTED_FILE, 'rule' => self::ACCEPTED_RULE, 'line' => 0],
+        ]);
+
+        self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status);
+        self::assertSame([], $result->accepted);
     }
 
     #[Test]

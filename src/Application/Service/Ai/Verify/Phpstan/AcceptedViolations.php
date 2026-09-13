@@ -48,10 +48,11 @@ final class AcceptedViolations
      */
     private const VENDOR_PREFIX = 'vendor/semitexa/';
 
-    /** @var array<string, array<string, array{diagnostics: int, source_occurrences: int, reason: string}>> */
+    /** @var array<string, array<string, array{site: string, diagnostics: int, source_occurrences: int, reason: string}>> */
     private const ACCEPTED = [
         'packages/semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => [
             'semitexa.staticContainerAccess' => [
+                'site' => 'execute',
                 'diagnostics' => 1,
                 'source_occurrences' => 1,
                 'reason' => 'Builds a NEW request-scoped container rather than reading the current one. '
@@ -61,6 +62,7 @@ final class AcceptedViolations
         ],
         'packages/semitexa-ledger/src/Application/Service/CommandProcessor.php' => [
             'semitexa.staticContainerAccess' => [
+                'site' => 'handleLocally',
                 'diagnostics' => 1,
                 'source_occurrences' => 1,
                 'reason' => 'Constructed directly rather than by the container, so an injected property is '
@@ -69,6 +71,7 @@ final class AcceptedViolations
         ],
         'packages/semitexa-ledger/src/Application/Service/LedgerReplayer.php' => [
             'semitexa.staticContainerAccess' => [
+                'site' => 'processMessage',
                 'diagnostics' => 1,
                 'source_occurrences' => 1,
                 'reason' => 'Constructed directly rather than by the container, so an injected property is '
@@ -77,6 +80,7 @@ final class AcceptedViolations
         ],
         'packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php' => [
             'semitexa.staticContainerAccess' => [
+                'site' => 'resolveHandler',
                 'diagnostics' => 1,
                 'source_occurrences' => 1,
                 'reason' => 'Constructed directly rather than by the container, so an injected property is '
@@ -88,6 +92,7 @@ final class AcceptedViolations
                 // One real call, plus one mention in a docblock that the
                 // ratchet's textual scan also counts. MEASURED 2026-09-12:
                 // ContainerFactory:: appears on lines 34 (comment) and 110 (code).
+                'site' => 'container',
                 'diagnostics' => 1,
                 'source_occurrences' => 2,
                 'reason' => 'Constructed directly rather than by the container, so an injected property is '
@@ -97,7 +102,7 @@ final class AcceptedViolations
     ];
 
     /**
-     * @return array<string, array<string, array{diagnostics: int, source_occurrences: int, reason: string}>>
+     * @return array<string, array<string, array{site: string, diagnostics: int, source_occurrences: int, reason: string}>>
      */
     public static function all(): array
     {
@@ -115,6 +120,24 @@ final class AcceptedViolations
     public static function reasonFor(string $path, string $rule): ?string
     {
         return self::ACCEPTED[self::canonicalise($path)][$rule]['reason'] ?? null;
+    }
+
+    /**
+     * The method the accepted violation lives in.
+     *
+     * The file and the rule were the whole key, so removing the blessed call
+     * and writing a different one elsewhere in the same class kept the gate
+     * green with somebody else's reason attached — and the textual ratchet saw
+     * an unchanged count either way. The site is what closes that. Raised in
+     * review of dev#83.
+     *
+     * Not the line, which moves whenever anything above it does, and not the
+     * message, which for `staticContainerAccess` names the class and not the
+     * method. See {@see EnclosingSymbol}.
+     */
+    public static function siteFor(string $path, string $rule): ?string
+    {
+        return self::ACCEPTED[self::canonicalise($path)][$rule]['site'] ?? null;
     }
 
     /**
