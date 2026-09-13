@@ -18,7 +18,6 @@
 
 /* ------------------------------------------------------------ vocabulary */
 const STAGES = [
-  {key:'client',    label:'CLIENT',    title:'Client',            desc:'A browser, a crawler, a program. Every particle is one real connection the Swoole server accepted; it comes in from the icon that matches its User-Agent and goes back to it with the response.'},
   {key:'router',    label:'ROUTER',    title:'Route match',       desc:'The path is matched to a Payload class declared with #[AsPayload] / #[AsPublicPayload]. No controllers: the payload IS the route.'},
   {key:'gate',      label:'GATE',      phase:'gate',      title:'Pre-hydration auth gate', desc:'Access model checked BEFORE the body is read. A stranger is refused without the framework ever parsing their input.'},
   {key:'hydrate',   label:'HYDRATE',   phase:'hydrate',   title:'Hydrate + validate', desc:'PayloadHydrator fills the typed payload from query, body and path params; validation rejects here and the request short-circuits.'},
@@ -34,6 +33,10 @@ const IDX = Object.fromEntries(STAGES.map((s, i) => [s.key, i]));
 const PHASE_KEYS = ['gate','hydrate','resolve','auth','listeners','handler','completed','render'];
 const SIDE = {
   db:     {title:'ORM / database', desc:'Queries attributed to the request by the live QueryRecorder — count and total ms per request, each a spark from HANDLER.'},
+  redisCache: {title:'Redis Cache', desc:'The CacheManager service: scoped values, tags and single-flight coordination. Drawn because CACHE_DRIVER=redis; the default is array, per-worker and coroutine-safe, and this framework\u2019s own doctor warns against redis under Swoole. Dashed because it is drawn from configuration: the journal records no span when a value is cached, so this says how the system is wired, not what it did.'},
+  redis:  {title:'Redis', desc:'Here as the store behind the cache, and only that. It used to claim SSE sessions and scope invalidation too \u2014 those live in semitexa/ssr, which this package does not depend on and cannot ask, so the claim went rather than being left unverifiable. Dashed: topology, not measurement.'},
+  nats:   {title:'NATS / JetStream', desc:'The asynchronous queue boundary: events leave the request here and queue workers consume them. Drawn only when it is the resolved transport \u2014 EVENTS_ASYNC defaults to 0, which means in-memory and no boundary at all, and with async on but no NATS installed the transport is the database. Dashed: publish and consume timings are not recorded as spans.'},
+  refused:{title:'Refused', desc:'Requests the pipeline turned away instead of serving — outcome "rejected", written by the request.short_circuit mark with the reason the refusing stage gave. A refusal is not a failure: nothing broke, the system declined. They leave the river where they were stopped rather than flying on to RESPONSE, because a refused request never reached one. Windowed to 60 s, like every other rate here — a gated site refuses constantly, and a ring that only ever grew would stop being readable by lunchtime.'},
   live:   {title:'Live connections', desc:'SSE / KISS sessions held open by the server. They pass the pipeline once, then stay resident here until the client leaves.'},
   cron:   {title:'Cron', desc:'Every #[AsScheduledJob] the project declares, with its expression. A tick here is the scheduler materialising a due run; the rows on the left count down to the next one.'},
   queue:  {title:'Queue', desc:'Messages consumed by queue:work — listeners and handlers that a request chose not to run inline. The impulse from EVENTS is the enqueue; the particle leaving here is the consumer picking it up.'},
@@ -49,16 +52,30 @@ const KIND_COLOR = {http:'#5b9dff', sse:'#ffb454', scheduler:'#c084fc', job:'#c0
 const kindColor = k => KIND_COLOR[k] || '#9aa4bf';
 const isJob = k => k === 'scheduler' || k === 'queue' || k === 'job';
 const HUNG_MS = 5000;
+/* How long a successful log read stays good. Short enough that a pinned block
+   keeps up with a live tail, long enough that pinning is not a request loop. */
+const LOGS_TTL_MS = 4000;
+/* Long enough for a slow journal read, short enough that a pinned block that
+   got nothing can be retried by pinning it again. */
+const LOGS_TIMEOUT_MS = 5000;
 
 /* ------------------------------------------------------------ state */
 const S = {
-  cursor: null, paused: false, speed: 1, stage: false, stageAvailable: true, explain: false,
+  cursor: null, paused: false, speed: 1, stage: false, stageAvailable: true, explain: false, cinematic: false,
   procs: new Map(), finished: [], particles: [], flashes: [], sparks: [], impulses: [],
   lastRowAt: 0, pollFail: 0,
   workers: new Map(), stats: {}, handlers: new Map(), recentPaths: [], demo: null, pinned: null, hover: null,
   clients: {human: 0, bot: 0, api: 0},
   schedules: [], scheduleByClass: new Map(), coroutines: [],
   failures: [], // {name, kind, error, at, attempt}
+  heroId: null,
+  // What THIS project runs, read from the page rather than assumed. The panel
+  // is opened by people who do not yet know how the system is wired, so a box
+  // naming a product is a claim, and every claim here has to be earned.
+  // ObservatoryTopology resolves both: the transport through core's own
+  // QueueConfig, the driver as an explicit opt-in that is absent by default.
+  topology: {queueTransport: 'in-memory', cacheDriver: null},
+  logs: new Map(), // span name -> {state:'loading'|'ok'|'denied'|'error', lines, reason}
   view: {x: 0, y: 0, s: 1}, drag: null, pointers: new Map(), pinch: null,
 };
 const now = () => performance.now();
@@ -189,9 +206,11 @@ function ingest(rows, reset, live) {
 // Raised in review of semitexa-dev#78.
 function resetDerived() {
   S.procs.clear();
+  S.logs.clear();
   S.particles.length = 0;
   S.finished.length = 0;
   S.failures.length = 0;
+  S.heroId = null;
   S.flashes.length = 0;
   S.sparks.length = 0;
   S.impulses.length = 0;
@@ -272,7 +291,8 @@ function qps() { const cut = now() - 10000; let q = 0; for (let i = S.finished.l
 function travelMs(durationMs) { const d = Math.max(0, durationMs || 0); return Math.min(5200, 1500 + Math.log10(1 + d) * 520) / S.speed; }
 function spawnParticle(rec, fin, opt) {
   const p = {id: rec.id, kind: rec.kind, name: rec.name, worker: rec.worker, route: rec.route || rec.name, client: rec.client || 'api', color: kindColor(rec.kind),
-    born: now(), wps: [], trail: [], state: 'moving', fin: null, dead: false, angle: Math.random() * Math.PI * 2, size: rec.kind === 'sse' ? 4.5 : 5, ring: null};
+    method: rec.method || '', path: rec.path || '', agent: rec.agent || '', born: now(), wps: [], trail: [], state: 'moving', fin: null, dead: false,
+    angle: Math.random() * Math.PI * 2, size: rec.kind === 'sse' ? 4.5 : 5, ring: null, lastPosition: null};
   rec.particle = p; S.particles.push(p);
   if (opt.parkOnly) { p.fin = fin; p.state = 'orbit'; p.ring = 'failed'; p.color = '#ff5f6d'; p.error = fin.error; return p; }
   if (isJob(p.kind)) planJob(p, fin);
@@ -286,6 +306,7 @@ const srcKey = p => 'src:' + p.client;
 // index the particle has reached (-1 = still at its source icon).
 function planFull(p, fin, from) {
   p.fin = fin;
+  if (fin.outcome === 'rejected') { planRefused(p, fin, from); return; }
   const ph = fin.phases || {};
   const T = travelMs(fin.durationMs);
   const dwell = {}; let sum = 0;
@@ -332,6 +353,35 @@ function planFull(p, fin, from) {
   p.wps = wps; p.born = now(); p.state = 'moving'; p.total = t + back;
   if (fin.phases && fin.phases.q) p.sparks = Math.min(8, fin.phases.q);
   if (fin.phases && fin.phases.queued) p.queued = fin.phases.queued;
+}
+// A refused request stops where it was refused and turns up into REFUSED.
+//
+// WHERE it stops is read, not assumed. request.short_circuit is not the gate's
+// private mark — a resource or an auth check can raise it too — so the exit is
+// the last stage that recorded a phase, and only a refusal with no phases at
+// all falls back to the gate. Drawing every refusal as a gate refusal would be
+// the same class of lie as drawing a transport nobody runs.
+function planRefused(p, fin, from) {
+  const ph = fin.phases || {};
+  let stop = IDX.gate;
+  for (let i = 0; i < STAGES.length; i++) { const s = STAGES[i]; if (s.phase && typeof ph[s.phase] === 'number') stop = i; }
+  const start = Math.max(0, from);
+  const T = travelMs(fin.durationMs);
+  const hops = Math.max(1, stop - start + (from < 0 ? 1 : 0));
+  const move = T * 0.5 / hops;
+  let t = 0; const wps = [];
+  if (from < 0) { wps.push({pt: srcKey(p), t: 0}, {pt: 'trunk:' + p.client, t: move * 0.45}, {pt: 'trunk_in', t: move * 0.7}); t += move; }
+  for (let i = start; i <= stop; i++) { wps.push({pt: STAGES[i].key, t}); if (i < stop) t += move; }
+  // The turn upwards is deliberately slower than the run in: the moment of
+  // refusal is the only thing worth watching in this particle's whole life.
+  // T comes from travelMs(), which has already divided by S.speed — dividing
+  // again made the turn 4x slower at half speed and 16x at quarter, so a
+  // particle could spend most of its 60s life still on its way to the ring.
+  const turn = Math.max(420 / S.speed, T * 0.5);
+  wps.push({pt: 'refused_in', t: t + turn * 0.6}, {pt: 'refused', t: t + turn});
+  p.wps = wps; p.born = now(); p.state = 'toOrbit'; p.ring = 'refused'; p.color = '#ffb454'; p.total = t + turn;
+  p.reason = (fin.phases && fin.phases.detail) || null;
+  p.refusedAt = STAGES[stop].label.toLowerCase();
 }
 function planUnknown(p) {
   const T = 1100 / S.speed, upto = IDX.handler, move = T / (upto + 1);
@@ -409,15 +459,23 @@ function layout() {
   //    so the one vertical link up to LIVE never meets it;
   //  - the lane comes down the far-left column and enters each source icon
   //    from the left, while the icons' connections leave to the right;
-  //  - the enqueue impulse drops from EVENTS to a bus UNDER the database and
-  //    ABOVE the jobs lane, runs left, and drops into QUEUE;
+  //  - infrastructure sits on a separate rail below the request pipeline;
+  //  - the enqueue impulse enters NATS, then runs left to QUEUE;
   //  - the jobs lane flows left to right below everything else.
   N.live = {x: N.listeners.x, y: y - 160, r: 50, side: 'live', key: 'live'};
+  // REFUSED sits above GATE at the same height as LIVE, and INSIDE the system
+  // boundary: a refusal is something Semitexa did, not something that never
+  // arrived. Its one vertical link runs straight up from GATE, which nothing
+  // else crosses — the return lane passes above the boundary, not through it.
+  N.refused = {x: N.gate.x, y: y - 160, r: 46, side: 'refused', key: 'refused'};
   N.db = {x: N.handler.x, y: y + 104, w: 82, h: 46, side: 'db', key: 'db'};
+  N.redis = {x: N.resource.x, y: y + 104, w: 108, h: 46, side: 'redis', key: 'redis', label: 'REDIS', sub: 'cache store', color: '#ef4444'};
+  N.redisCache = {x: N.auth.x, y: y + 104, w: 116, h: 46, side: 'redisCache', key: 'redisCache', label: 'REDIS CACHE', sub: 'scopes · tags', color: '#f97316'};
+  N.nats = {x: N.events.x, y: y + 104, w: 104, h: 46, side: 'nats', key: 'nats', label: 'NATS', sub: 'JetStream', color: '#22d3ee'};
   // Every route is a Manhattan path: horizontal or vertical, never slanted.
-  //   sources  → trunk at trunkX → CLIENT
+  //   sources  → trunk at trunkX → ROUTER
   //   RESPONSE → right riser → lane above LIVE → left column → icons
-  //   EVENTS   ↓ bus under the DB ← left ↓ into QUEUE from its LEFT
+  //   EVENTS   ↓ NATS ↓ bus ← left ↓ into QUEUE from its LEFT
   //   CRON/QUEUE → job trunk on their RIGHT → jobs row → RUN → DONE
   //   RUN ↓ under DONE and RETRY → up into RETRY or FAILED
   const laneY = y - 252, busY = y + 160, jy = y + 250, underY = jy + 84;
@@ -427,8 +485,9 @@ function layout() {
   N.done  = {x: N.auth.x, y: jy, w: 84, h: 36, side: 'done', key: 'done', label: 'DONE'};
   N.retry = {x: N.handler.x - gap * 0.35, y: jy, r: 46, side: 'retry', key: 'retry'};
   N.failed = {x: N.render.x - gap * 0.3, y: jy, r: 46, side: 'failed', key: 'failed'};
-  for (const k of ['src:human', 'src:bot', 'src:api', 'live', 'db', 'cron', 'queue', 'run', 'done', 'retry', 'failed']) world.pts[k] = {x: N[k].x, y: N[k].y};
-  const colX = 30, trunkX = N.client.x - N.client.w / 2 - 44, riserX = N.response.x + N.response.w / 2 + 40;
+  for (const k of ['src:human', 'src:bot', 'src:api', 'live', 'refused', 'db', 'redis', 'redisCache', 'nats', 'cron', 'queue', 'run', 'done', 'retry', 'failed']) world.pts[k] = {x: N[k].x, y: N[k].y};
+  world.pts.refused_in = {x: N.refused.x, y: N.refused.y + N.refused.r};
+  const colX = 30, trunkX = N.router.x - N.router.w / 2 - 44, riserX = N.response.x + N.response.w / 2 + 40;
   const busX = trunkX + 22, jobTrunkX = N.cron.x + N.cron.w / 2 + 34;
   for (const k of ['human', 'bot', 'api']) {
     world.pts['trunk:' + k] = {x: trunkX, y: N['src:' + k].y};
@@ -481,7 +540,7 @@ function positionOf(p, t) {
   if (p.state === 'orbit' || (p.state === 'toOrbit' && el >= p.wps[p.wps.length - 1].t)) {
     if (p.state === 'toOrbit') { p.state = 'orbit'; if (p.ring === 'failed') p.frozen = p.angle; }
     const L = ringOf(p);
-    const speed = p.ring === 'live' ? 0.6 : p.ring === 'retry' ? 1.1 : 0.05;
+    const speed = p.ring === 'live' ? 0.6 : p.ring === 'retry' ? 1.1 : p.ring === 'refused' ? 0.35 : 0.05;
     const a = p.angle + t / 2600 * speed;
     const rr = L.r * (p.ring === 'failed' ? 0.45 + ((p.angle * 7) % 1) * 0.4 : 0.72);
     return {x: L.x + Math.cos(a) * rr, y: L.y + Math.sin(a) * rr, node: p.ring, ring: true};
@@ -516,8 +575,8 @@ function cssVar(n) { return getComputedStyle(document.documentElement).getProper
 let theme = {};
 function readTheme() { theme = {text: cssVar('--text'), dim: cssVar('--dim'), faint: cssVar('--faint'), line: cssVar('--line-2'), panel: cssVar('--panel-2'), ok: cssVar('--ok'), danger: cssVar('--danger'), warn: cssVar('--warn'), mono: cssVar('--mono'), sans: cssVar('--sans')}; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
-function alongBus(k) { // EVENTS → bus → QUEUE, parameterised by length
-  const pts = [world.pts.events, world.pts.bus_a, world.pts.bus_b, world.pts.bus_c, world.pts.queue_in, world.pts.queue];
+function alongBus(k) { // EVENTS → NATS → bus → QUEUE, parameterised by length
+  const pts = [world.pts.events, ...(hasNats() ? [world.pts.nats] : []), world.pts.bus_a, world.pts.bus_b, world.pts.bus_c, world.pts.queue_in, world.pts.queue];
   const seg = []; let L = 0; for (let i = 0; i < pts.length - 1; i++) { const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y); seg.push(l); L += l; }
   let d = k * L; for (let i = 0; i < seg.length; i++) { if (d <= seg[i] || i === seg.length - 1) { const f = seg[i] ? Math.min(1, d / seg[i]) : 1; return {x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f}; } d -= seg[i]; }
   return pts[pts.length - 1];
@@ -527,26 +586,42 @@ function bez(a, b, k) { // vertical S-curve between two points, parameter k in [
   return {x: m * m * m * a.x + 3 * m * m * k * c1.x + 3 * m * k * k * c2.x + k * k * k * b.x, y: m * m * m * a.y + 3 * m * m * k * c1.y + 3 * m * k * k * c2.y + k * k * k * b.y};
 }
 
+function drawSignalField(ctx, t, B) {
+  ctx.save(); rr(ctx, B.x, B.y, B.w, B.h, 22); ctx.clip();
+  const glow = ctx.createRadialGradient(B.x + B.w * .52, world.y, 20, B.x + B.w * .52, world.y, B.w * .58);
+  glow.addColorStop(0, S.cinematic ? 'rgba(48,144,255,.12)' : 'rgba(91,157,255,.045)'); glow.addColorStop(1, 'rgba(91,157,255,0)');
+  ctx.fillStyle = glow; ctx.fillRect(B.x, B.y, B.w, B.h);
+  const step = 64, drift = (t / 90) % step; ctx.lineWidth = 1;
+  ctx.strokeStyle = S.cinematic ? 'rgba(74,151,255,.075)' : 'rgba(91,157,255,.035)'; ctx.beginPath();
+  for (let x = B.x - step + drift; x < B.x + B.w + step; x += step) { ctx.moveTo(x, B.y); ctx.lineTo(x, B.y + B.h); }
+  for (let y = B.y; y < B.y + B.h; y += step) { ctx.moveTo(B.x, y); ctx.lineTo(B.x + B.w, y); }
+  ctx.stroke();
+  ctx.fillStyle = S.cinematic ? 'rgba(77,174,255,.42)' : 'rgba(91,157,255,.18)';
+  for (let x = B.x + drift; x < B.x + B.w; x += step * 2) for (let y = B.y + step; y < B.y + B.h; y += step * 2) { ctx.beginPath(); ctx.arc(x, y, 1.2, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
 function drawRiver(t) {
   const ctx = world.ctx, W = world.W, H = world.H, y = world.y, N = world.nodes, v = S.view;
   ctx.clearRect(0, 0, W, H);
   const occ = {}, pos = new Map();
   for (const p of S.particles) { const at = positionOf(p, t); pos.set(p, at); if (at.node && !at.ring) occ[at.node] = (occ[at.node] || 0) + 1; }
-  const ringCount = {live: 0, retry: 0, failed: 0};
+  const ringCount = {live: 0, retry: 0, failed: 0, refused: 0};
   for (const p of S.particles) if (p.state === 'orbit' && p.ring) ringCount[p.ring]++;
 
   ctx.save(); ctx.translate(v.x, v.y); ctx.scale(v.s, v.s);
   ctx.font = '600 10px ' + theme.mono;
 
+  const B = world.box;
+  if (S.cinematic) drawSignalField(ctx, t, B);
   // river bed + flowing dashes
-  const xA = N.client.x - 40, xB = N.response.x + 40;
+  const xA = N.router.x - 40, xB = N.response.x + 40;
   ctx.lineCap = 'round'; ctx.lineWidth = 10;
   const g = ctx.createLinearGradient(xA, 0, xB, 0); g.addColorStop(0, 'rgba(91,157,255,.10)'); g.addColorStop(1, 'rgba(91,157,255,.22)');
   ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(xA, y); ctx.lineTo(xB, y); ctx.stroke();
   ctx.save(); ctx.setLineDash([6, 18]); ctx.lineDashOffset = -(t / 30) % 24; ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(91,157,255,.35)';
   ctx.beginPath(); ctx.moveTo(xA, y); ctx.lineTo(xB, y); ctx.stroke(); ctx.restore();
   // the system boundary
-  const B = world.box;
   ctx.save(); ctx.setLineDash([10, 8]); ctx.lineDashOffset = -(t / 80) % 18; ctx.strokeStyle = 'rgba(91,157,255,.35)'; ctx.lineWidth = 1.5; rr(ctx, B.x, B.y, B.w, B.h, 22); ctx.stroke();
   ctx.fillStyle = 'rgba(91,157,255,.035)'; rr(ctx, B.x, B.y, B.w, B.h, 22); ctx.fill(); ctx.restore();
   ctx.font = '700 11px ' + theme.mono; ctx.fillStyle = '#5b9dff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText('SEMITEXA', B.x + 18, B.y + 16);
@@ -560,18 +635,45 @@ function drawRiver(t) {
   for (const k of ['human', 'bot', 'api']) { const c = world.pts['col:' + k], sN = N['src:' + k]; ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(sN.x - sN.r, sN.y); ctx.stroke(); }
   ctx.setLineDash([4, 14]); ctx.lineDashOffset = (t / 30) % 18; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(91,157,255,.35)'; ctx.beginPath(); ctx.moveTo(rz.x, rz.y); ctx.lineTo(lo.x, lo.y); ctx.lineTo(li.x, li.y); ctx.lineTo(li.x, lowest.y); ctx.stroke(); ctx.restore();
   ctx.fillStyle = theme.faint; ctx.font = '500 9.5px ' + theme.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('response → back to the client', (lo.x + li.x) / 2, li.y - 10);
-  // connections: icons → trunk → CLIENT
+  // connections: the three concrete client types merge directly into ROUTER
   const tk = world.pts.trunk_in;
   ctx.save(); ctx.strokeStyle = 'rgba(91,157,255,.22)'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
   for (const k of ['human', 'bot', 'api']) { const sN = N['src:' + k], tp = world.pts['trunk:' + k]; ctx.moveTo(sN.x + sN.r, sN.y); ctx.lineTo(tp.x, tp.y); }
-  ctx.moveTo(tk.x, N['src:human'].y); ctx.lineTo(tk.x, N['src:api'].y); ctx.moveTo(tk.x, y); ctx.lineTo(N.client.x - N.client.w / 2, y); ctx.stroke(); ctx.restore();
-  // side links: straight verticals, and the enqueue bus under the database
+  ctx.moveTo(tk.x, N['src:human'].y); ctx.lineTo(tk.x, N['src:api'].y); ctx.moveTo(tk.x, y); ctx.lineTo(N.router.x - N.router.w / 2, y); ctx.stroke(); ctx.restore();
+  // infrastructure topology: cache is a service over Redis; live state and
+  // invalidation also use Redis; asynchronous events cross NATS.
   vlink(ctx, N.handler.x, y + N.handler.h / 2, N.db.y - N.db.h / 2, 'rgba(245,158,11,.35)');
   vlink(ctx, N.listeners.x, y - N.listeners.h / 2, N.live.y + N.live.r, 'rgba(255,180,84,.30)');
+  // REFUSED gets no static link, deliberately. A line drawn up from one stage
+  // would claim refusals come from THAT stage, and they do not: today the only
+  // request.short_circuit is raised by validation, so every refusal leaves at
+  // HYDRATE, not at the GATE the ring sits above — and a later stage could
+  // raise it tomorrow. RETRY and FAILED already work this way; what connects a
+  // ring to the river is the path each particle actually takes into it.
+  // The LISTENERS -> REDIS link that used to sit here is gone, and its absence
+  // is the point. It claimed SSE sessions and scope invalidation ride Redis,
+  // which lives in semitexa/ssr - a package this one does not depend on and
+  // cannot interrogate. It was also the only crossing in the picture: its
+  // horizontal run at y+70 passed under the CacheManager vertical, in a file
+  // whose layout comment promises nothing crosses anything. Removing the claim
+  // removed the crossing; there was never a version of it that was both true
+  // and untangled.
+  if (hasRedisCache()) {
+    routeLink(ctx, [[N.handler.x, y + N.handler.h / 2], [N.handler.x, y + 58], [N.redisCache.x, y + 58], [N.redisCache.x, N.redisCache.y - N.redisCache.h / 2]], 'rgba(249,115,22,.34)');
+    routeLink(ctx, [[N.redisCache.x - N.redisCache.w / 2, N.redisCache.y], [N.redis.x + N.redis.w / 2, N.redis.y]], 'rgba(239,68,68,.35)');
+  }
+  if (hasNats()) vlink(ctx, N.events.x, y + N.events.h / 2, N.nats.y - N.nats.h / 2, 'rgba(34,211,238,.36)');
   const ba = world.pts.bus_a, bb = world.pts.bus_b, bc = world.pts.bus_c, qi = world.pts.queue_in;
   ctx.save(); ctx.strokeStyle = 'rgba(52,211,153,.22)'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
-  ctx.moveTo(N.events.x, y + N.events.h / 2); ctx.lineTo(ba.x, ba.y); ctx.lineTo(bb.x, bb.y); ctx.lineTo(bc.x, bc.y); ctx.lineTo(qi.x, qi.y); ctx.stroke(); ctx.restore();
-  ctx.fillStyle = theme.faint; ctx.font = '500 9.5px ' + theme.mono; ctx.textAlign = 'center'; ctx.fillText('enqueue', (ba.x + bb.x) / 2, ba.y - 9);
+  ctx.moveTo(N.events.x, hasNats() ? N.nats.y + N.nats.h / 2 : y + N.events.h / 2); ctx.lineTo(ba.x, ba.y); ctx.lineTo(bb.x, bb.y); ctx.lineTo(bc.x, bc.y); ctx.lineTo(qi.x, qi.y); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = theme.faint; ctx.font = '500 9.5px ' + theme.mono; ctx.textAlign = 'center';
+  if (hasRedisCache()) {
+    ctx.fillText('CacheManager', (N.handler.x + N.redisCache.x) / 2, y + 50);
+    // Above the link, not on it: at y-10 this sat on the REDIS frame and on its
+    // own neighbour, and two labels in the same pixels read as neither.
+    ctx.fillText('store \u00b7 tags', (N.redisCache.x + N.redis.x) / 2, N.redis.y - 30);
+  }
+  ctx.fillText(busLabel(), (ba.x + bb.x) / 2, ba.y - 9);
   // jobs: CRON / QUEUE → job trunk → row → RUN → DONE; failures dip under DONE and RETRY
   const jc = world.pts.jt_cron, jq = world.pts.jt_queue, jr = world.pts.jt_row;
   ctx.save(); ctx.strokeStyle = 'rgba(192,132,252,.25)'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
@@ -584,9 +686,11 @@ function drawRiver(t) {
 
   // nodes
   for (const k of ['src:human', 'src:bot', 'src:api']) drawSource(ctx, N[k], occ[k] || 0, t);
-  for (const s of STAGES) drawNode(ctx, N[s.key], occ[s.key] || 0);
+  for (const s of STAGES) drawNode(ctx, N[s.key], occ[s.key] || 0, t);
   drawDb(ctx, N.db);
+  for (const k of infraShown()) drawInfra(ctx, N[k], t);
   drawRing(ctx, N.live, ringCount.live, 'LIVE', ringCount.live + ' sse', '#ffb454', t);
+  drawRing(ctx, N.refused, ringCount.refused, 'REFUSED', ringCount.refused + ' \u00b7 60s', '#ffb454', t);
   drawRing(ctx, N.retry, ringCount.retry, 'RETRY', ringCount.retry + ' waiting', '#ffb454', t);
   drawRing(ctx, N.failed, ringCount.failed, 'FAILED', ringCount.failed + ' jobs', '#ff5f6d', t);
   for (const k of ['cron', 'queue', 'run', 'done']) drawSmall(ctx, N[k], occ[k] || 0, t);
@@ -613,13 +717,31 @@ function drawRiver(t) {
   for (let i = S.particles.length - 1; i >= 0; i--) {
     const p = S.particles[i]; const at = pos.get(p);
     if (p.dead) { S.particles.splice(i, 1); if (p.state !== 'gone') onExit(p); continue; }
-    if (p.state !== 'orbit' && t - p.born > 60000) { S.particles.splice(i, 1); continue; }
+    // Orbiters are state, not motion, so they normally outlive the sweep —
+    // but REFUSED is the one ring fed by ordinary traffic. A site with a login
+    // wall refuses bots all day, and a ring that only ever grew would be
+    // unreadable within the hour, so a refusal ages out like everything else
+    // and the ring's own label scopes itself to 60 s rather than lying.
+    if ((p.state !== 'orbit' || p.ring === 'refused') && t - p.born > 60000) { S.particles.splice(i, 1); continue; }
     if (at.node === 'handler' && p.sparks) { for (let q = 0; q < p.sparks; q++) S.sparks.push({t0: t + q * 90, dur: 520 / S.speed, dx: (Math.random() - .5) * 8}); p.sparks = 0; }
     if (at.node === 'events' && p.queued) { for (let q = 0; q < Math.min(4, p.queued); q++) S.impulses.push({t0: t + q * 120, dur: 1100 / S.speed}); p.queued = 0; }
-    p.trail.push({x: at.x, y: at.y}); if (p.trail.length > 9) p.trail.shift();
+    p.lastPosition = at;
+    p.trail.push({x: at.x, y: at.y}); if (p.trail.length > (S.cinematic ? 28 : 9)) p.trail.shift();
     const alpha = at.alpha === undefined ? 1 : at.alpha;
-    if (p.ring !== 'failed' || p.state !== 'orbit') for (let j = 0; j < p.trail.length - 1; j++) { const q = p.trail[j]; ctx.fillStyle = p.color; ctx.globalAlpha = alpha * (j / p.trail.length) * 0.35; ctx.beginPath(); ctx.arc(q.x, q.y, p.size * (0.3 + j / p.trail.length * 0.6), 0, 7); ctx.fill(); }
-    ctx.globalAlpha = alpha; ctx.shadowColor = p.color; ctx.shadowBlur = 14; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(at.x, at.y, p.size, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    if ((p.ring !== 'failed' || p.state !== 'orbit') && p.trail.length > 1) {
+      // The ribbon is cinema's alone. A stroke with a shadowBlur is the most
+      // expensive thing this loop can do, per particle per frame, and it was
+      // running in the default view too — so a mode sold as opt-in was billing
+      // everybody. The dotted trail below is what the picture always had.
+      if (S.cinematic) {
+        ctx.save(); ctx.strokeStyle = p.color; ctx.globalAlpha = alpha * .42; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.shadowColor = p.color; ctx.shadowBlur = 16; ctx.beginPath(); ctx.moveTo(p.trail[0].x, p.trail[0].y);
+        for (let j = 1; j < p.trail.length; j++) ctx.lineTo(p.trail[j].x, p.trail[j].y); ctx.stroke(); ctx.restore();
+      }
+      for (let j = 0; j < p.trail.length - 1; j++) { const q = p.trail[j]; ctx.fillStyle = p.color; ctx.globalAlpha = alpha * (j / p.trail.length) * (S.cinematic ? .42 : 0.35); ctx.beginPath(); ctx.arc(q.x, q.y, p.size * (0.3 + j / p.trail.length * 0.6), 0, 7); ctx.fill(); }
+    }
+    ctx.globalAlpha = alpha; ctx.shadowColor = p.color; ctx.shadowBlur = S.cinematic ? 25 : 14; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(at.x, at.y, p.size + (S.cinematic ? 1 : 0), 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    if (S.cinematic && p.state !== 'orbit') { ctx.strokeStyle = p.color; ctx.globalAlpha = alpha * .35; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(at.x, at.y, p.size + 6 + Math.sin(t / 180 + p.angle) * 2, 0, 7); ctx.stroke(); }
     if (at.held) { const k = (t % 1000) / 1000; ctx.strokeStyle = p.color; ctx.globalAlpha = alpha * (1 - k); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(at.x, at.y, p.size + k * 14, 0, 7); ctx.stroke(); }
     if (labels && p.state !== 'orbit' && !at.returning) {
       ctx.globalAlpha = alpha * 0.9; ctx.font = '600 10px ' + theme.mono; ctx.fillStyle = theme.text; ctx.textAlign = 'left';
@@ -638,9 +760,11 @@ function onExit(p) {
   S.flashes.push({t0: now(), x: P.x, y: P.y, color});
 }
 function vlink(ctx, x, y1, y2, color) { ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke(); ctx.restore(); }
+function routeLink(ctx, pts, color) { ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke(); ctx.restore(); }
 function isActive(key) { return S.hover === key || (S.pinned && S.pinned.key === key); }
-function drawNode(ctx, n, occ) {
+function drawNode(ctx, n, occ, t) {
   const {x, y, w, h, stage} = n; const hot = Math.min(1, occ / 3), active = isActive(stage.key);
+  if (occ > 0) { const wave = (t / 720) % 1; ctx.strokeStyle = 'rgba(91,157,255,' + (0.42 * (1 - wave)) + ')'; ctx.lineWidth = 2; rr(ctx, x - w / 2 - wave * 13, y - h / 2 - wave * 8, w + wave * 26, h + wave * 16, 12 + wave * 5); ctx.stroke(); }
   if (occ > 0) { ctx.shadowColor = 'rgba(91,157,255,' + (0.35 + hot * 0.5) + ')'; ctx.shadowBlur = 18 + hot * 26; }
   ctx.fillStyle = occ > 0 ? 'rgba(91,157,255,' + (0.18 + hot * 0.25) + ')' : theme.panel; rr(ctx, x - w / 2, y - h / 2, w, h, 10); ctx.fill(); ctx.shadowBlur = 0;
   ctx.strokeStyle = active ? '#5b9dff' : occ > 0 ? 'rgba(91,157,255,.8)' : theme.line; ctx.lineWidth = active ? 2 : 1; rr(ctx, x - w / 2, y - h / 2, w, h, 10); ctx.stroke();
@@ -673,6 +797,22 @@ function drawDb(ctx, n) {
   ctx.beginPath(); ctx.ellipse(x, y - h / 2 + 7, w / 2, 7, 0, 0, 7); ctx.stroke();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '700 10px ' + theme.mono; ctx.fillStyle = theme.text; ctx.fillText('ORM · DB', x, y + 2);
   ctx.font = '500 9.5px ' + theme.mono; ctx.fillStyle = theme.dim; ctx.fillText(q ? q.toFixed(1) + ' q/s' : 'idle', x, y + 14);
+}
+function drawInfra(ctx, n, t) {
+  const {x, y, w, h, color} = n, active = isActive(n.key);
+  if (n.key === 'nats' && S.impulses.length) { const wave = (t / 620) % 1; ctx.strokeStyle = hexA(color, .45 * (1 - wave)); ctx.lineWidth = 2; rr(ctx, x - w / 2 - wave * 12, y - h / 2 - wave * 7, w + wave * 24, h + wave * 14, 12); ctx.stroke(); }
+  ctx.fillStyle = hexA(color, active ? .16 : .07); rr(ctx, x - w / 2, y - h / 2, w, h, 10); ctx.fill();
+  // DASHED, and every other box in the picture is solid. These three are the
+  // only nodes drawn from configuration rather than from measurement: the
+  // journal records no span when a value is cached or an event is published,
+  // so their frames say "this is wired up", not "this is what happened". A
+  // solid frame here would borrow the authority of the boxes that are counting.
+  ctx.save(); ctx.setLineDash([4, 3]); ctx.lineDashOffset = -(t / 220) % 7;
+  ctx.strokeStyle = active ? color : hexA(color, .58); ctx.lineWidth = active ? 2 : 1.2;
+  rr(ctx, x - w / 2, y - h / 2, w, h, 10); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x - w / 2 + 11, y - h / 2 + 10, 2.5, 0, 7); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '700 10px ' + theme.mono; ctx.fillStyle = theme.text; ctx.fillText(n.label, x, y - 6);
+  ctx.font = '500 9px ' + theme.mono; ctx.fillStyle = active ? color : theme.dim; ctx.fillText(n.sub, x, y + 9);
 }
 function drawRing(ctx, n, count, label, sub, color, t) {
   const {x, y, r} = n; const active = isActive(n.key);
@@ -786,17 +926,25 @@ function drawTimeline(t) {
 }
 
 /* ------------------------------------------------------------ DOM panels */
-function hungCoroutines() {
-  const out = [];
+/* A long-lived coroutine is one of three things, not two: a session, a stuck
+   request, or standing work that said what it is waiting for. Only the middle
+   one is a problem, and only it belongs on the tile — six explained coroutines
+   on an idle machine teach an operator to ignore the number, and then it cannot
+   warn about the seventh that is real. */
+function classifyCoroutines() {
+  const hung = [], standing = [];
   for (const w of S.coroutines) for (const c of w.longest || []) {
     if (c.ms < HUNG_MS) continue;
     let owner = null;
     for (const p of S.procs.values()) if (p.worker === w.pid && p.cid === c.cid) { owner = p; break; }
-    if (owner && owner.kind === 'sse') continue; // long by design
-    out.push({pid: w.pid, cid: c.cid, ms: c.ms, frame: c.frame, owner});
+    if (owner && owner.kind === 'sse') continue; // a session: long by design
+    const row = {pid: w.pid, cid: c.cid, ms: c.ms, frame: c.frame, owner, standing: c.standing || null};
+    (row.standing ? standing : hung).push(row);
   }
-  return out.sort((a, b) => b.ms - a.ms);
+  const byMs = (a, b) => b.ms - a.ms;
+  return {hung: hung.sort(byMs), standing: standing.sort(byMs)};
 }
+function hungCoroutines() { return classifyCoroutines().hung; }
 function renderWorkers() {
   const box = $('#wlist'); const ws = [...S.workers.values()].filter(w => now() - w.lastAt < 600000 || w.inflight.size).sort((a, b) => (+a.pid || 0) - (+b.pid || 0));
   const co = new Map(S.coroutines.map(c => [c.pid, c]));
@@ -821,10 +969,13 @@ function renderWorkers() {
     }).join('');
   }
   // coroutines
-  const hung = hungCoroutines(); const cbox = $('#coro');
+  const {hung, standing} = classifyCoroutines(); const cbox = $('#coro');
   const totalCo = S.coroutines.reduce((a, c) => a + (c.num || c.total || 0), 0), totalMax = S.coroutines.reduce((a, c) => a + (c.max || 0), 0), totalPeak = S.coroutines.reduce((a, c) => a + (c.peak || 0), 0);
   cbox.innerHTML = (S.coroutines.length ? '<div class="row"><span class="k">busy now · ' + S.coroutines.length + ' workers reporting</span><b>' + totalCo + (totalMax ? ' <em class="dim">/ ' + fmtCount(totalMax) + '</em>' : '') + '</b></div><div class="row"><span class="k">peak since worker start</span><b>' + totalPeak + '</b></div>' + S.coroutines.map(c => '<div class="row"><span class="k">w' + c.pid + '</span><b>' + (c.num || c.total) + (c.max ? ' <em class="dim">/ ' + fmtCount(c.max) + '</em>' : '') + ' <em class="dim">· peak ' + c.peak + '</em></b></div>').join('') : '<div class="row"><span class="k">coroutines</span><b class="dim">no snapshot yet</b></div>') +
-    (hung.length ? hung.slice(0, 6).map(h => '<div class="hung" title="' + esc(h.frame) + '"><b>w' + h.pid + ' · cid ' + h.cid + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.owner ? h.owner.name : (h.frame || 'no frame')) + (h.owner ? ' · ' + esc(h.frame) : ' · no journal process behind it') + '</small></div>').join('') + (hung.length > 6 ? '<div class="row"><span class="k">…and ' + (hung.length - 6) + ' more</span></div>' : '') : '<div class="row"><span class="k">hung (&gt; ' + HUNG_MS / 1000 + 's, not sse)</span><b class="ok">0</b></div>');
+    (hung.length ? hung.slice(0, 6).map(h => '<div class="hung" title="' + esc(h.frame) + '"><b>w' + h.pid + ' · cid ' + h.cid + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.owner ? h.owner.name : (h.frame || 'no frame')) + (h.owner ? ' · ' + esc(h.frame) : ' · no journal process behind it') + '</small></div>').join('') + (hung.length > 6 ? '<div class="row"><span class="k">…and ' + (hung.length - 6) + ' more</span></div>' : '') : '<div class="row"><span class="k">hung (&gt; ' + HUNG_MS / 1000 + 's, not sse)</span><b class="ok">0</b></div>') +
+    // Listed after the hung count, and never added to it: these are the ones
+    // that told us why they are parked.
+    (standing.length ? standing.slice(0, 6).map(h => '<div class="standing" title="' + esc(h.standing.reason) + '"><b>w' + h.pid + ' · ' + esc(h.standing.label) + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.standing.reason) + '</small></div>').join('') + (standing.length > 6 ? '<div class="row"><span class="k">…and ' + (standing.length - 6) + ' more standing</span></div>' : '') : '');
   const w60 = window60(); const cnt = k => w60.filter(f => f.kind === k).length;
   const liveSse = [...S.procs.values()].filter(p => p.kind === 'sse' && !p.stale).length;
   const stale = [...S.procs.values()].filter(p => p.stale).length;
@@ -847,17 +998,23 @@ function renderTiles() {
   const durs = w60.filter(f => f.kind !== 'sse').map(f => f.durationMs).filter(d => d !== null);
   const inflight = [...S.procs.values()].filter(p => !p.stale && p.kind !== 'sse').length;
   const workers = [...S.workers.values()].filter(w => t - w.lastAt < 60000).length;
-  const p50 = percentile(durs, .5), p95 = percentile(durs, .95), q = qps();
-  const set = (id, v, hot) => { const el = $(id); el.querySelector('b').innerHTML = v; el.classList.toggle('hot', !!hot); };
+  const p50 = percentile(durs, .5), p95 = percentile(durs, .95);
+  const set = (id, v, hot, title) => { const el = $(id); el.querySelector('b').innerHTML = v; el.classList.toggle('hot', !!hot); if (title !== undefined) el.title = title; };
   set('#t-rps', last5.toFixed(1) + '<small>/s</small>');
   set('#t-flight', String(inflight), inflight > 8);
-  set('#t-workers', String(workers));
   set('#t-p50', p50 === null ? '–' : fmtMs(p50).replace(' ', '<small>') + '</small>');
   set('#t-p95', p95 === null ? '–' : fmtMs(p95).replace(' ', '<small>') + '</small>', p95 !== null && p95 > 500);
-  set('#t-q', q.toFixed(1) + '<small>/s</small>');
+  // A share, not a tally: ten failures out of ten is a different system from
+  // ten out of ten thousand, and the tally reads the same either way. An empty
+  // window has no rate at all — nothing failed out of nothing is not 0.0 %, so
+  // it says so rather than reporting health nobody measured. The counts the
+  // old tile showed are still here, in the title.
   const errs = w60.filter(f => f.outcome === 'exception' || f.outcome === 'failed').length;
-  set('#t-err', String(errs), errs > 0);
-  const hung = hungCoroutines().length; set('#t-hung', String(hung), hung > 0);
+  set('#t-err',
+    w60.length === 0 ? '–' : (errs / w60.length * 100).toFixed(1) + '<small>%</small>',
+    errs > 0,
+    w60.length === 0 ? 'nothing finished in the last 60 s' : errs + ' of ' + w60.length + ' processes failed in the last 60 s');
+  const hung = hungCoroutines().length;
   const badge = (id, v, bad) => { const el = $(id); if (!el) return; el.textContent = v; el.hidden = v === '' || v === '0'; el.classList.toggle('bad', !!bad); };
   badge('#tb-workers', String(workers), false); badge('#tb-coro', String(hung), hung > 0); badge('#tb-cron', String(S.schedules.length), false);
   badge('#tb-system', String(S.particles.filter(p => p.state === 'orbit' && p.ring === 'failed').length), true);
@@ -894,12 +1051,58 @@ function addTicker(fin, historic) {
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
+/* ------------------------------------------------------------ live spotlight */
+function spotlightStage(p, at) {
+  if (!at) return 'entering';
+  if (at.returning) return 'response → client';
+  if (at.ring) return String(p.ring || 'resident').toUpperCase();
+  if (typeof at.node === 'string' && at.node.startsWith('src:')) return 'client';
+  if (typeof at.stageIdx === 'number' && STAGES[at.stageIdx]) return STAGES[at.stageIdx].label.toLowerCase();
+  if (typeof at.node === 'string') return at.node.replace(/[_:]/g, ' ');
+  return 'in transit';
+}
+function renderSpotlight(t) {
+  const box = $('#spotlight'); if (!box) return;
+  let hero = S.heroId ? S.particles.find(p => p.id === S.heroId && !p.dead && p.state !== 'orbit') : null;
+  if (!hero) {
+    // OLDEST first, and on purpose. Under a burst it holds one process for its
+    // whole journey instead of flicking between them, and the particle that
+    // stays oldest longest is a request that is not finishing — which is the
+    // one worth watching. Sticky via heroId until it dies, for the same reason.
+    hero = S.particles.filter(p => !p.dead && p.state !== 'orbit').sort((a, b) => a.born - b.born)[0] || null;
+    S.heroId = hero ? hero.id : null;
+  }
+  if (!hero) {
+    box.className = 'spotlight idle'; $('#spot-status').textContent = 'live process'; $('#spot-stage').textContent = 'waiting';
+    $('#spot-title').textContent = 'Waiting for the next process…'; $('#spot-route').textContent = 'Every light is backed by the process journal.';
+    $('#spot-kind').textContent = '—'; $('#spot-worker').textContent = 'worker —'; $('#spot-time').textContent = '—'; $('#spot-ph').innerHTML = '';
+    return;
+  }
+  // hero.lastPosition ONLY. The fallback here used to be positionOf(), which
+  // is not a query: it advances p.state and can set p.dead. A renderer that
+  // moves the simulation it is describing, at a different t from the draw
+  // loop, is a bug waiting for the frame where those two t values disagree.
+  // A particle drawn at least once has lastPosition; one that has not been
+  // drawn yet simply has no stage to report for another 16 ms.
+  const at = hero.lastPosition, fin = hero.fin, ph = fin && fin.phases;
+  box.className = 'spotlight ' + hero.kind; $('#spot-status').textContent = fin ? 'process journey' : 'live process';
+  $('#spot-stage').textContent = spotlightStage(hero, at);
+  $('#spot-title').textContent = hero.path ? ((hero.method || 'GET') + ' ' + hero.path) : hero.name;
+  $('#spot-route').textContent = hero.path && hero.name !== hero.path ? hero.name : (hero.route || 'journal process');
+  $('#spot-kind').textContent = hero.kind; $('#spot-worker').textContent = hero.worker ? 'worker ' + hero.worker : 'worker —';
+  $('#spot-time').textContent = fin ? fmtMs(fin.durationMs) : fmtMs(Math.max(0, t - hero.born));
+  if (!ph) { $('#spot-ph').innerHTML = ''; return; }
+  const parts = PHASE_KEYS.filter(k => typeof ph[k] === 'number').map(k => [k, ph[k]]);
+  const sum = parts.reduce((n, pair) => n + pair[1], 0) || 1;
+  $('#spot-ph').innerHTML = parts.map(pair => '<i class="' + pair[0] + ' w' + pctClass(pair[1] / sum * 100) + '" title="' + pair[0] + ' ' + fmtMs(pair[1]) + '"></i>').join('');
+}
+
 /* ------------------------------------------------------------ tooltip */
 function nodeAt(wx, wy) {
   const N = world.nodes;
   for (const s of STAGES) { const n = N[s.key]; if (Math.abs(wx - n.x) <= n.w / 2 + 4 && Math.abs(wy - n.y) <= n.h / 2 + 4) return {key: s.key, stage: s, n}; }
-  for (const k of ['db', 'cron', 'queue', 'run', 'done']) { const n = N[k]; if (Math.abs(wx - n.x) <= n.w / 2 && Math.abs(wy - n.y) <= n.h / 2) return {key: k, n}; }
-  for (const k of ['live', 'retry', 'failed', 'src:human', 'src:bot', 'src:api']) { const n = N[k]; if (Math.hypot(wx - n.x, wy - n.y) <= n.r) return {key: n.key, n}; }
+  for (const k of ['db', ...infraShown(), 'cron', 'queue', 'run', 'done']) { const n = N[k]; if (Math.abs(wx - n.x) <= n.w / 2 && Math.abs(wy - n.y) <= n.h / 2) return {key: k, n}; }
+  for (const k of ['live', 'refused', 'retry', 'failed', 'src:human', 'src:bot', 'src:api']) { const n = N[k]; if (Math.hypot(wx - n.x, wy - n.y) <= n.r) return {key: n.key, n}; }
   return null;
 }
 function tipHtml(hit) {
@@ -912,12 +1115,36 @@ function tipHtml(hit) {
     if (s.key === 'handler') { const top = [...S.handlers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6); if (top.length) list = '<ul>' + top.map(([n, c]) => '<li><b>' + esc(n) + '</b><span>×' + c + '</span></li>').join('') + '</ul>'; }
     if (s.key === 'listeners' && w60.length) { const ns = w60.map(f => f.phases && f.phases.n).filter(Boolean); if (ns.length) list = '<ul><li><b>listeners per request</b><span>' + (ns.reduce((a, b) => a + b, 0) / ns.length).toFixed(1) + '</span></li></ul>'; }
     if (s.key === 'events') { const qd = w60.reduce((a, f) => a + ((f.phases && f.phases.queued) || 0), 0); list = '<ul><li><b>queued from here · 60s</b><span>' + qd + '</span></li></ul>'; }
-    if (s.key === 'client' || s.key === 'response') { const byKind = {}; for (const f of w60) byKind[f.kind] = (byKind[f.kind] || 0) + 1; list = '<ul>' + Object.entries(byKind).map(([k, c]) => '<li><b>' + k + '</b><span>' + c + ' / 60s</span></li>').join('') + '</ul>'; }
-    return '<h4>' + esc(s.title) + '<code>' + (s.phase ? 'span ' + esc(spanName(s.phase)) : esc(s.label.toLowerCase())) + '</code></h4><p>' + esc(s.desc) + '</p>' + nums + list;
+    if (s.key === 'response') { const byKind = {}; for (const f of w60) byKind[f.kind] = (byKind[f.kind] || 0) + 1; list = '<ul>' + Object.entries(byKind).map(([k, c]) => '<li><b>' + k + '</b><span>' + c + ' / 60s</span></li>').join('') + '</ul>'; }
+    return '<h4>' + esc(s.title) + '<code>' + (s.phase ? 'span ' + esc(spanName(s.phase)) : esc(s.label.toLowerCase())) + '</code></h4><p>' + esc(s.desc) + '</p>' + nums + list + (s.phase && S.pinned && S.pinned.key === s.key ? logsHtml(spanName(s.phase)) : '');
   }
   const side = SIDE[hit.key]; let extra = '';
   if (hit.key === 'db') { const qs = w60.map(f => f.phases && f.phases.q).filter(Boolean), qms = w60.map(f => f.phases && f.phases.qms).filter(Boolean); extra = '<div class="nums"><div><b>' + qps().toFixed(1) + '</b><span>q / s</span></div><div><b>' + (qs.length ? (qs.reduce((a, b) => a + b, 0) / qs.length).toFixed(1) : '–') + '</b><span>q / request</span></div><div><b>' + (qms.length ? fmtMs(qms.reduce((a, b) => a + b, 0) / qms.length) : '–') + '</b><span>db ms / req</span></div></div>'; }
   if (hit.key === 'live') { const open = [...S.procs.values()].filter(p => p.kind === 'sse'); extra = '<ul>' + open.slice(0, 8).map(p => '<li><b>' + esc(p.name) + '</b><span>' + (p.stale ? 'stale' : 'w' + p.worker) + '</span></li>').join('') + (open.length > 8 ? '<li><span>+' + (open.length - 8) + ' more</span></li>' : '') + '</ul>'; }
+  if (hit.key === 'refused') {
+    // From the finished rows, not from the particles. A refusal that arrived in
+    // the bootstrap — the panel opened, or reconnected after one — is historic,
+    // and ingest() only materializes historic particles for failed jobs. So the
+    // ring had nothing in it while the same refusal sat visible in the ticker,
+    // and this said nobody had been turned away. Raised in review of dev#83.
+    const rs = w60.filter(f => f.outcome === 'rejected');
+    // The stage a request was refused at is worked out when its particle turns
+    // for the ring, so a historic one has no stage to name — 'gate' rather than
+    // a guess.
+    const stageOf = f => (S.particles.find(p => p.id === f.id && p.ring === 'refused') || {}).refusedAt;
+    // A refusal records WHO refused in phases.detail — the gate class — and
+    // `error` is only set when something threw. Reading error alone left every
+    // ordinary refusal without a reason here, while the ticker showed it.
+    const reasonOf = f => f.error || (f.phases && f.phases.detail) || '';
+    // An empty ring is ambiguous and must not be read as "nobody was turned
+    // away": outcome=rejected is derived from trace events, so with stage mode
+    // off a refusal is journalled as a plain ok and never reaches this ring.
+    extra = rs.length
+      ? '<ul>' + rs.slice(-8).reverse().map(f => '<li><b>' + esc(f.path || f.route || f.name) + '</b><span>' + esc(stageOf(f) || 'gate') + '</span></li>' + (reasonOf(f) ? '<li class="why">' + esc(reasonOf(f)) + '</li>' : '')).join('') + '</ul>'
+      : (S.stage
+        ? '<p><em>Nothing was turned away in the last 60 s.</em></p>'
+        : '<p><em>Nothing here — but <b>stage</b> is off, so a refusal is recorded as a plain <code>ok</code> and never reaches this ring. Switch it on to see refusals at all.</em></p>');
+  }
   if (hit.key === 'retry') { const ps = S.particles.filter(p => p.state === 'orbit' && p.ring === 'retry'); extra = ps.length ? '<ul>' + ps.slice(0, 8).map(p => '<li><b>' + esc(p.name) + '</b><span>attempt ' + (p.attempt || 1) + ' · ' + esc((p.error || '').slice(0, 60)) + '</span></li>').join('') + '</ul>' : '<p><em>Nothing is waiting.</em></p>'; }
   if (hit.key === 'failed') { const fs = S.failures.slice(-10).reverse(); extra = fs.length ? '<ul>' + fs.map(f => '<li><b>' + esc(f.name) + '</b><span>' + fmtAge((now() - f.at) / 1000) + ' ago</span></li><li class="why">' + esc(f.error) + '</li>').join('') + '</ul>' : '<p><em>No failures in the last 10 minutes.</em></p>'; }
   if (hit.key === 'cron') { extra = S.schedules.length ? '<ul>' + S.schedules.slice(0, 10).map(s => '<li><b>' + esc(s.key) + '</b><span>' + esc(s.cron) + '</span></li>').join('') + '</ul>' : ''; }
@@ -943,6 +1170,54 @@ function showTip(hit, pinned) {
  */
 function pctClass(pct, floor) { return Math.min(100, Math.max(floor || 0, Math.round(pct || 0))); }
 
+// Logs are fetched when a block is PINNED, never on hover. Hovering is how a
+// reader scans the picture; a request per node crossed would be a lot of I/O
+// to answer a question nobody asked yet.
+async function loadLogs(block) {
+  if (!block) return;
+  // A cached answer is only kept while it is still worth trusting: an error,
+  // a refusal, or a read taken before stage mode was on would otherwise be
+  // frozen for the life of the page, and the panel would keep showing "the log
+  // reader did not answer" long after it started answering.
+  const held = S.logs.get(block);
+  if (held && held.state === 'ok' && (now() - (held.at || 0)) < LOGS_TTL_MS) return;
+  if (held && held.state === 'loading') return;
+  S.logs.set(block, {state: 'loading', lines: []});
+  // A fetch that never settles would leave this block 'loading' for the life
+  // of the page, and the guard above then refuses every retry — the one state
+  // from which the panel cannot recover on its own.
+  const abort = new AbortController();
+  const bail = setTimeout(() => abort.abort(), LOGS_TIMEOUT_MS);
+  try {
+    const r = await fetch('/__observatory/logs?block=' + encodeURIComponent(block), {cache: 'no-store', headers: {Accept: 'application/json'}, signal: abort.signal});
+    const d = await r.json();
+    S.logs.set(block, d.allowed === false
+      ? {state: 'denied', lines: [], at: now()}
+      : {state: 'ok', lines: Array.isArray(d.lines) ? d.lines : [], at: now()});
+    if (d.allowed === false) S.logs.get(block).reason = d.reason || 'not available here';
+  } catch (e) {
+    S.logs.set(block, {state: 'error', lines: [], at: now()});
+  } finally {
+    clearTimeout(bail);
+  }
+}
+function logsHtml(block) {
+  if (!block) return '';
+  const got = S.logs.get(block);
+  if (!got || got.state === 'loading') return '<p class="logs"><em>reading the journal…</em></p>';
+  if (got.state === 'denied') return '<p class="logs"><em>' + esc(got.reason) + '</em></p>';
+  if (got.state === 'error') return '<p class="logs"><em>the log reader did not answer.</em></p>';
+  // An empty list is NOT good news and must not read like it: the window is
+  // the tail of the file, so quiet here means quiet recently, and without
+  // stage mode there is no block on a line at all.
+  if (!got.lines.length) {
+    return '<p class="logs"><em>No lines from this block in the recent tail of app.log'
+      + (S.stage ? '.' : ' — and <b>stage</b> is off, so nothing is being attributed to a block at all.') + '</em></p>';
+  }
+  return '<ul class="logs">' + got.lines.slice(-8).reverse().map(l =>
+    '<li class="lv-' + esc(l.level) + '"><b>' + esc(l.message) + '</b><span>' + esc((l.ts || '').slice(11, 19)) + '</span></li>'
+  ).join('') + '</ul>';
+}
 function hideTip() { if (S.pinned) return; $('#tip').classList.remove('show'); S.hover = null; }
 
 /* The pointer over the canvas takes one of three fixed shapes, so it is a
@@ -950,6 +1225,31 @@ function hideTip() { if (S.pinned) return; $('#tip').classList.remove('show'); S
 function setCursor(el, shape) { el.classList.remove('cur-grab', 'cur-grabbing', 'cur-pointer'); el.classList.add('cur-' + shape); }
 
 /* ------------------------------------------------------------ controls */
+function readTopology() {
+  const el = document.querySelector('.obs'); if (!el) return;
+  const t = el.dataset.queueTransport || 'in-memory', c = el.dataset.cacheDriver || '';
+  S.topology = {queueTransport: t, cacheDriver: c || null};
+}
+// A named box appears only where that product is in effect. Redis backs the
+// cache only when the cache asked for it; NATS carries events only when it is
+// the resolved transport. Everything else keeps the transport-agnostic wording
+// the picture used before, which was true under every configuration.
+const infraShown = () => [...(hasRedisCache() ? ['redisCache', 'redis'] : []), ...(hasNats() ? ['nats'] : [])];
+const hasRedisCache = () => S.topology.cacheDriver === 'redis';
+const hasNats = () => S.topology.queueTransport === 'nats';
+// What to call the hand-off when no product is named. 'enqueue' is what the bus
+// said for years and it is true whatever carries it; in-memory earns a stronger
+// word, because there is no boundary at all - the event never leaves the request.
+function busLabel() {
+  const t = S.topology.queueTransport;
+  return t === 'in-memory' ? 'dispatched in-process' : t === 'nats' ? 'async transport' : 'enqueue \u00b7 ' + t;
+}
+function setCinema(on) {
+  S.cinematic = !!on; document.documentElement.classList.toggle('cinematic', S.cinematic);
+  const button = $('#b-cinema'); if (button) button.classList.toggle('on', S.cinematic);
+  readTheme();
+}
+function toggleCinema() { setCinema(!S.cinematic); }
 function setLed(state, why) {
   const d = $('#led'); d.className = 'dot' + (S.paused ? ' paused' : state === 'off' ? ' off' : '');
   const via = T.mode === 'sse' ? 'SSE stream' : T.mode === 'polling' ? 'polling 250 ms (SSE unavailable)' : 'connecting…';
@@ -967,6 +1267,10 @@ async function toggleStage() { if (!S.stageAvailable) return; try { const r = aw
 function paintStage() { const b = $('#b-stage'); b.classList.toggle('on', S.stage); b.disabled = !S.stageAvailable; b.title = S.stageAvailable ? 'Record a phase breakdown for EVERY request (dev only, nothing written to var/trace, lapses after 12 h)' : 'Stage mode needs APP_ENV=dev'; setLed(S.pollFail ? 'off' : 'ok'); }
 function toggleDemo() {
   if (S.demo) { clearTimeout(S.demo); S.demo = null; $('#b-demo').classList.remove('on'); return; }
+  // No setCinema(true) here. Demo load generates traffic; cinema changes how
+  // the picture is lit. Coupling them meant pressing one silently did the
+  // other and turning demo off left the lighting changed, with no way back
+  // that the button admitted to.
   $('#b-demo').classList.add('on');
   const fire = () => { if (!S.demo) return; const paths = S.recentPaths.length ? S.recentPaths : ['/']; const path = paths[Math.floor(Math.random() * paths.length)];
     fetch(path, {cache: 'no-store', credentials: 'same-origin', headers: {'X-Observatory-Demo': '1'}}).catch(() => {}); S.demo = setTimeout(fire, 180 + Math.random() * 520); };
@@ -990,7 +1294,7 @@ function bindView(rc) {
     const w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y); setCursor(rc, hit ? 'pointer' : 'grab'); if (S.pinned) return; if (hit) { S.hover = hit.key; showTip(hit, false); } else hideTip(); });
   const up = e => { S.pointers.delete(e.pointerId); if (S.pointers.size < 2) S.pinch = null;
     if (S.drag) { const wasClick = !S.drag.moved; S.drag = null; setCursor(rc, 'grab'); if (wasClick) { const l = local(e), w = toWorld(l.x, l.y), hit = nodeAt(w.x, w.y);
-      if (S.pinned && (!hit || hit.key === S.pinned.key)) { S.pinned = null; $('#tip').classList.remove('show', 'pinned'); return; } if (hit) { S.pinned = hit; showTip(hit, true); } } } };
+      if (S.pinned && (!hit || hit.key === S.pinned.key)) { S.pinned = null; $('#tip').classList.remove('show', 'pinned'); return; } if (hit) { S.pinned = hit; if (hit.stage && hit.stage.phase) loadLogs(spanName(hit.stage.phase)); showTip(hit, true); } } } };
   rc.addEventListener('pointerup', up); rc.addEventListener('pointercancel', up);
   rc.addEventListener('dblclick', () => fitView());
   rc.addEventListener('mouseleave', hideTip);
@@ -1002,12 +1306,13 @@ function boot() {
   window.__observatory = {S, world};
   world.canvas = $('#river-canvas'); world.ctx = world.canvas.getContext('2d');
   tl.canvas = $('#tl-canvas'); tl.ctx = tl.canvas.getContext('2d');
-  readTheme(); layout(); layoutTl();
+  readTopology();
+  readTheme(); setCinema(new URLSearchParams(location.search).get('cinema') === '1'); layout(); layoutTl();
   new ResizeObserver(() => { layout(); layoutTl(); }).observe($('#river'));
   new ResizeObserver(() => layoutTl()).observe($('#time'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
   bindView(world.canvas);
-  $('#b-stage').addEventListener('click', toggleStage); $('#b-demo').addEventListener('click', toggleDemo); $('#b-pause').addEventListener('click', togglePause);
+  $('#b-stage').addEventListener('click', toggleStage); $('#b-demo').addEventListener('click', toggleDemo); $('#b-cinema').addEventListener('click', toggleCinema); $('#b-pause').addEventListener('click', togglePause);
   $('#b-explain').addEventListener('click', toggleExplain); $('#b-full').addEventListener('click', fullscreen); $('#b-fit').addEventListener('click', fitView);
   $('#z-in').addEventListener('click', () => zoomAt(world.W / 2, world.H / 2, 1.25)); $('#z-out').addEventListener('click', () => zoomAt(world.W / 2, world.H / 2, 1 / 1.25)); $('#z-fit').addEventListener('click', fitView);
   document.querySelectorAll('.pan button').forEach(b => b.addEventListener('click', () => { const d = 120; S.view.x += +b.dataset.x * d; S.view.y += +b.dataset.y * d; clampView(); }));
@@ -1016,7 +1321,7 @@ function boot() {
   document.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
-    else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
+    else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'c') toggleCinema(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
     else if (e.key === '1') setSpeed(1); else if (e.key === '2') setSpeed(0.5); else if (e.key === '3') setSpeed(0.25);
     else if (e.key === '+' || e.key === '=') zoomAt(world.W / 2, world.H / 2, 1.2); else if (e.key === '-') zoomAt(world.W / 2, world.H / 2, 1 / 1.2);
     else if (e.key.startsWith('Arrow')) { e.preventDefault(); const d = 80; S.view.x += e.key === 'ArrowLeft' ? d : e.key === 'ArrowRight' ? -d : 0; S.view.y += e.key === 'ArrowUp' ? d : e.key === 'ArrowDown' ? -d : 0; clampView(); }
@@ -1024,11 +1329,23 @@ function boot() {
   refreshStage(); setInterval(refreshStage, 15000);
   loadSchedules(); setInterval(loadSchedules, 60000);
   schedule(0);
-  let lastPanels = 0;
+  let lastPanels = 0, lastSpotlight = 0;
   const frame = t => {
     if (!document.hidden) {
       drawRiver(t);
-      if (t - lastPanels > 400) { lastPanels = t; renderWorkers(); renderTiles(); drawTimeline(t); if (S.pinned) showTip(S.pinned, true); }
+      if (t - lastSpotlight > 160) { lastSpotlight = t; renderSpotlight(t); }
+      if (t - lastPanels > 400) {
+        lastPanels = t; renderWorkers(); renderTiles(); drawTimeline(t);
+        if (S.pinned) {
+          // Ask again as well as redraw. loadLogs() was called only on the
+          // pin, so its TTL was never consulted a second time and a pinned
+          // block showed the tail as it was at that instant — for as long as
+          // it stayed pinned. The TTL is what limits the traffic; this is what
+          // lets it expire. Raised in review of dev#83.
+          if (S.pinned.stage && S.pinned.stage.phase) loadLogs(spanName(S.pinned.stage.phase));
+          showTip(S.pinned, true);
+        }
+      }
     }
     requestAnimationFrame(frame);
   };

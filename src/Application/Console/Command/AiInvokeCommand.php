@@ -17,13 +17,21 @@ use Semitexa\Core\Session\Session;
 use Semitexa\Core\Session\SessionHandlerInterface;
 use Semitexa\Core\Session\SessionInterface;
 use Semitexa\Core\Support\PayloadSerializer;
+use Semitexa\Dev\Application\Service\Invoke\InvocationContract;
+use Semitexa\Dev\Application\Service\Trace\ContextRedactor;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Dry-run a payload handler without standing up the HTTP layer.
+ * Run a payload handler without standing up the HTTP layer.
+ *
+ * NOT a dry run: `handle()` is called for real, so whatever the handler writes,
+ * sends or charges, it writes, sends and charges. Only the pipeline in FRONT of
+ * it is skipped. `--preview` is the non-executing mode, and execution is
+ * refused outside dev — see {@see InvocationContract} for both, and for the
+ * omissions this command reports next to every result.
  *
  * Resolves the handler (either directly by FQCN or via route path), hydrates
  * a Payload from a JSON string, instantiates an empty Resource, and calls
@@ -41,12 +49,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 #[AsCommand(
     name: 'ai:invoke',
-    description: 'Dry-run a payload handler from CLI — skip HTTP/auth/middleware. Use for fast feedback on changes.',
+    description: 'Run a payload handler from CLI, skipping HTTP/auth/middleware — dev only. Use --preview to resolve the target without executing.',
 )]
 final class AiInvokeCommand extends BaseCommand
 {
     #[InjectAsReadonly]
     protected AttributeDiscovery $attributeDiscovery;
+
+    /** The payload exactly as the caller wrote it, for the follow-up commands. */
+    private ?string $invokedPayloadJson = null;
 
     public function __construct()
     {
@@ -61,7 +72,8 @@ final class AiInvokeCommand extends BaseCommand
             ->addOption('handler', null, InputOption::VALUE_REQUIRED, 'Handler FQCN. Mutually exclusive with --route.')
             ->addOption('payload', null, InputOption::VALUE_REQUIRED, 'JSON string hydrated into the Payload DTO via PayloadSerializer', '{}')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (default for agents)')
-            ->addOption('human', null, InputOption::VALUE_NONE, 'Force human-readable output');
+            ->addOption('human', null, InputOption::VALUE_NONE, 'Force human-readable output')
+            ->addOption('preview', null, InputOption::VALUE_NONE, 'Resolve the target and report what would run, without calling handle(). Works outside dev.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -75,6 +87,7 @@ final class AiInvokeCommand extends BaseCommand
         $routePath    = (string) ($input->getOption('route') ?? '');
         $method       = strtoupper((string) ($input->getOption('method') ?? 'GET'));
         $payloadJson  = (string) ($input->getOption('payload') ?? '{}');
+        $this->invokedPayloadJson = $payloadJson;
 
         if ($handlerClass === '' && $routePath === '') {
             return $this->emitError($output, $envelope, 'either --handler=<FQCN> or --route=<path> is required', 'input');
@@ -93,6 +106,32 @@ final class AiInvokeCommand extends BaseCommand
             [$handlerClass, $payloadClass, $resourceClass] = $this->resolveTarget($handlerClass, $routePath, $method);
         } catch (\Throwable $e) {
             return $this->emitError($output, $envelope, $e->getMessage(), 'resolve');
+        }
+
+        $envelope['target'] = [
+            'handler_class'  => $handlerClass,
+            'payload_class'  => $payloadClass,
+            'resource_class' => $resourceClass,
+            'route_path'     => $routePath !== '' ? $routePath : null,
+            'method'         => $routePath !== '' ? $method : null,
+        ];
+        // Carried whether or not anything runs: a reader of this envelope has
+        // to be able to tell what was skipped without knowing the command.
+        $envelope['omitted'] = InvocationContract::omissions();
+
+        if ((bool) $input->getOption('preview')) {
+            $envelope['verdict'] = 'preview';
+            $envelope['note'] = 'Nothing was executed. Drop --preview to run the handler.';
+            $envelope['payload_input'] = ContextRedactor::redact($decoded);
+
+            return $this->emitEnvelope($input, $output, $envelope, self::SUCCESS);
+        }
+
+        if (!InvocationContract::executionAllowed()) {
+            $envelope['verdict'] = 'refused';
+            $envelope['reason'] = InvocationContract::refusalReason();
+
+            return $this->emitEnvelope($input, $output, $envelope, self::FAILURE);
         }
 
         // Instantiate payload + hydrate
@@ -144,14 +183,17 @@ final class AiInvokeCommand extends BaseCommand
         }
         $durationMs = round((microtime(true) - $start) * 1000, 2);
 
-        $envelope['target'] = [
-            'handler_class'  => $handlerClass,
-            'payload_class'  => $payloadClass,
-            'resource_class' => $resourceClass,
-            'route_path'     => $routePath !== '' ? $routePath : null,
-            'method'         => $routePath !== '' ? $method : null,
-        ];
-        $envelope['payload_input'] = $decoded;
+        // Input and result go through the same gate the Observatory uses. This
+        // envelope is printed, piped and pasted into chats like any other, and
+        // a handler's input is exactly where a token or a password arrives.
+        //
+        // The gate also BOUNDS what it passes — depth, item count, string
+        // length — so what comes out may differ from what went in for reasons
+        // that are not secrecy. Said plainly, because a reader comparing this
+        // against the real thing should not have to guess which.
+        $envelope['payload_input'] = ContextRedactor::redact($decoded);
+        $envelope['redacted'] = 'payload_input and resource pass through the Observatory redactor: '
+            . 'values under secret-looking keys are masked, and deep or long ones are bounded';
         $envelope['duration_ms']   = $durationMs;
 
         if ($handlerError !== null) {
@@ -165,14 +207,35 @@ final class AiInvokeCommand extends BaseCommand
             $envelope['verdict']        = 'ok';
             $envelope['resource_class'] = get_class($result);
             try {
-                $envelope['resource'] = PayloadSerializer::toArray($result);
+                $envelope['resource'] = ContextRedactor::redact(PayloadSerializer::toArray($result));
             } catch (\Throwable $e) {
-                $envelope['resource']             = null;
+                // The handler ran, but the caller has no result to look at.
+                // Reporting success here hands back an empty resource that
+                // reads as "the handler returned nothing".
+                $envelope['verdict']                  = 'resource_unserializable';
+                $envelope['resource']                 = null;
                 $envelope['resource_serialize_error'] = $e->getMessage();
             }
         }
 
         $envelope['next_command'] = $this->buildNextCommands($envelope);
+
+        $failed = $handlerError !== null || $envelope['verdict'] === 'resource_unserializable';
+
+        return $this->emitEnvelope($input, $output, $envelope, $failed ? self::FAILURE : self::SUCCESS);
+    }
+
+    /**
+     * One exit from this command, so every verdict is rendered the same way and
+     * the exit code is decided next to the verdict that produced it.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    private function emitEnvelope(InputInterface $input, OutputInterface $output, array $envelope, int $exitCode): int
+    {
+        // Early returns (preview, refused) reach here without having built
+        // their hints; the execute path has already set them.
+        $envelope['next_command'] ??= $this->buildNextCommands($envelope);
 
         $forceJson  = (bool) $input->getOption('json');
         $forceHuman = (bool) $input->getOption('human');
@@ -184,7 +247,7 @@ final class AiInvokeCommand extends BaseCommand
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
         }
 
-        return $handlerError !== null ? self::FAILURE : self::SUCCESS;
+        return $exitCode;
     }
 
     /**
@@ -320,12 +383,106 @@ final class AiInvokeCommand extends BaseCommand
      * @param array<string, mixed> $envelope
      * @return list<array{cmd: string, args: list<string>, why: string}>
      */
+    /**
+     * How the target was addressed, in the form the next command needs.
+     *
+     * @param array<string, mixed> $target
+     * @return list<string>
+     */
+    private function targetArgs(array $target): array
+    {
+        $route = is_string($target['route_path'] ?? null) ? $target['route_path'] : null;
+        $method = is_string($target['method'] ?? null) ? $target['method'] : null;
+        $handler = is_string($target['handler_class'] ?? null) ? $target['handler_class'] : null;
+
+        if ($route !== null) {
+            $args = ['--route=' . $route];
+            if ($method !== null && $method !== 'GET') {
+                $args[] = '--method=' . $method;
+            }
+
+            return $args;
+        }
+
+        return $handler !== null ? ['--handler=' . $handler] : [];
+    }
+
+    /**
+     * The caller's payload, repeated only when repeating it gives nothing away.
+     *
+     * A suggested command is part of the envelope, and the envelope is printed,
+     * piped and pasted around — so the same gate that masks `payload_input`
+     * decides this. If the redactor would change ANY of it, the argument is
+     * left out entirely and {@see payloadHint()} says why: the caller still has
+     * what they typed, and this output does not become the copy of it that the
+     * masking was there to prevent.
+     *
+     * @return list<string>
+     */
+    private function payloadArg(): array
+    {
+        return $this->payloadIsSafeToRepeat() ? ['--payload=' . $this->invokedPayloadJson] : [];
+    }
+
+    private function payloadHint(): string
+    {
+        return $this->payloadIsSafeToRepeat()
+            ? ''
+            : ' — pass your own --payload again, it is not repeated here because the redactor masks part of it';
+    }
+
+    private function payloadIsSafeToRepeat(): bool
+    {
+        if ($this->invokedPayloadJson === null || $this->invokedPayloadJson === '{}') {
+            return false;
+        }
+
+        $decoded = json_decode($this->invokedPayloadJson, true);
+
+        return is_array($decoded) && ContextRedactor::redact($decoded) === $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $envelope
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
     private function buildNextCommands(array $envelope): array
     {
         $out = [];
         $verdict = $envelope['verdict'] ?? 'ok';
-        $target = $envelope['target'] ?? [];
-        $handler = $target['handler_class'] ?? null;
+        /** @var array<string, mixed> $target */
+        $target = is_array($envelope['target'] ?? null) ? $envelope['target'] : [];
+        $handler = is_string($target['handler_class'] ?? null) ? $target['handler_class'] : null;
+
+        // Every ai:invoke suggestion has to carry its target, or the command it
+        // names fails on the required-target check before it does anything. The
+        // payload is carried from what the caller actually passed, not from the
+        // redacted copy in the envelope — a suggestion that runs a different
+        // input than the one being discussed is worse than none.
+        $targetArgs = $this->targetArgs($target);
+
+        if ($verdict === 'refused') {
+            $out[] = [
+                'cmd' => 'ai:invoke',
+                'args' => [...$targetArgs, ...$this->payloadArg(), '--preview', '--json'],
+                'why' => 'resolve the target and see what would run, without executing it' . $this->payloadHint(),
+            ];
+            return $out;
+        }
+
+        if ($verdict === 'preview') {
+            $out[] = [
+                'cmd' => 'ai:invoke',
+                'args' => [...$targetArgs, ...$this->payloadArg(), '--json'],
+                'why' => 'run it for real (dev only) once the target looks right' . $this->payloadHint(),
+            ];
+            return $out;
+        }
+
+        if ($verdict === 'resource_unserializable') {
+            $out[] = ['cmd' => 'ai:verify', 'args' => ['--json'], 'why' => 'the handler ran but its resource could not be serialized — check the resource DTO'];
+            return $out;
+        }
 
         if ($verdict === 'handler_threw') {
             $out[] = ['cmd' => 'logs:app', 'args' => ['--grep=error', '--lines=100', '--level=ERROR', '--json'], 'why' => 'recent runtime errors'];
@@ -383,11 +540,47 @@ final class AiInvokeCommand extends BaseCommand
             $io->writeln(json_encode($envelope['resource'], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'null');
         }
 
-        if (!empty($envelope['next_command'])) {
+        $next = is_array($envelope['next_command'] ?? null) ? $envelope['next_command'] : [];
+        if ($next !== []) {
             $io->section('Next');
-            foreach ($envelope['next_command'] as $nc) {
-                $io->writeln("  → bin/semitexa {$nc['cmd']} " . implode(' ', $nc['args']) . "   # {$nc['why']}");
+            foreach ($next as $nc) {
+                if (!is_array($nc)) {
+                    continue;
+                }
+
+                $args = [];
+                foreach (is_array($nc['args'] ?? null) ? $nc['args'] : [] as $arg) {
+                    if (is_string($arg)) {
+                        $args[] = self::shellArg($arg);
+                    }
+                }
+
+                $cmd = is_string($nc['cmd'] ?? null) ? $nc['cmd'] : '';
+                $why = is_string($nc['why'] ?? null) ? $nc['why'] : '';
+                $io->writeln("  → bin/semitexa {$cmd} " . implode(' ', $args) . "   # {$why}");
             }
         }
+    }
+
+    /**
+     * One argument, as a shell would have to be given it.
+     *
+     * This line is printed to be copied and run. A payload is JSON, so it
+     * carries quotes and spaces as a matter of course —
+     * `--payload={"title":"a thing"}` pasted raw loses its quotes and splits
+     * into two arguments — and a value carrying `$(...)` or a backtick would be
+     * run by the shell rather than passed to the command. The JSON envelope is
+     * unaffected: it holds the arguments themselves, and a reader that executes
+     * them does not go through a shell. Raised in review of dev#83.
+     */
+    private static function shellArg(string $arg): string
+    {
+        // Left alone when there is nothing a shell would do to it — the common
+        // case, and quoting it would only make the line harder to read.
+        if ($arg !== '' && preg_match('/^[A-Za-z0-9_@%+=:,.\/-]+$/', $arg) === 1) {
+            return $arg;
+        }
+
+        return escapeshellarg($arg);
     }
 }

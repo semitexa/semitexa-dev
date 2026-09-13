@@ -300,8 +300,16 @@ final class AiWorkCommand extends BaseCommand
         $refs = $this->contextRefs($input);
         $refsOpt = $refs === [] ? null : $refs;
 
-        if ($title === null && $recipe === null && $risk === null && $status === null && $nextStep === null && $refsOpt === null) {
-            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref', $jsonMode);
+        // Read here, not only in the note action. --note is declared on the
+        // command and its description promises the trace; update() ignored it,
+        // so closing a task WITH its reasoning changed the status, printed the
+        // task as updated, exited 0 and threw the reasoning away. Eighteen
+        // closures in one session were recorded that way and kept none of it.
+        $note = $this->optionalString($input, 'note');
+
+        if ($title === null && $recipe === null && $risk === null && $status === null
+            && $nextStep === null && $refsOpt === null && $note === null) {
+            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref, --note', $jsonMode);
         }
 
         $updated = $task->with(
@@ -319,18 +327,29 @@ final class AiWorkCommand extends BaseCommand
         $summary = $status !== null
             ? "task '{$id}' status → {$status->value}"
             : "task '{$id}' updated";
-        $this->safeAppend($updated->traceId, $kind, $summary, [
-            'artifact'  => 'semitexa.ai-work.task-update/v1',
-            'task_id'   => $id,
-            'changes'   => array_filter([
-                'title'        => $title,
-                'recipe'       => $recipe,
-                'risk'         => $risk,
-                'status'       => $status?->value,
-                'next_step'    => $nextStep,
-                'context_refs' => $refsOpt,
-            ], static fn($v) => $v !== null),
-        ]);
+        $changes = array_filter([
+            'title'        => $title,
+            'recipe'       => $recipe,
+            'risk'         => $risk,
+            'status'       => $status?->value,
+            'next_step'    => $nextStep,
+            'context_refs' => $refsOpt,
+        ], static fn($v) => $v !== null);
+
+        if ($changes !== []) {
+            $this->safeAppend($updated->traceId, $kind, $summary, [
+                'artifact'  => 'semitexa.ai-work.task-update/v1',
+                'task_id'   => $id,
+                'changes'   => $changes,
+            ]);
+        }
+
+        // Its own event, and the same shape the note action writes: a reader of
+        // the trace should not have to know which command spelling produced a
+        // note, and the two must not drift into two shapes.
+        if ($note !== null) {
+            $this->appendNote($updated->traceId, $id, $note);
+        }
 
         return $this->emitTask($output, $updated, 'task_updated', $jsonMode);
     }
@@ -358,18 +377,37 @@ final class AiWorkCommand extends BaseCommand
             $this->taskStore->save($task);
         }
 
-        $summary = $note !== null
-            ? "note on task '{$id}': " . $this->truncate($note, 80)
-            : "task '{$id}' next step updated";
-        $payload = array_filter([
-            'artifact'  => 'semitexa.ai-work.task-note/v1',
-            'task_id'   => $id,
-            'note'      => $note,
-            'next_step' => $nextStep,
-        ], static fn($v) => $v !== null);
-        $this->safeAppend($task->traceId, TraceEventKind::NOTE, $summary, $payload);
+        if ($note !== null) {
+            $this->appendNote($task->traceId, $id, $note, $nextStep);
+        } else {
+            $this->safeAppend($task->traceId, TraceEventKind::NOTE, "task '{$id}' next step updated", array_filter([
+                'artifact'  => 'semitexa.ai-work.task-note/v1',
+                'task_id'   => $id,
+                'next_step' => $nextStep,
+            ], static fn($v) => $v !== null));
+        }
 
         return $this->emitTask($output, $task, 'task_noted', $jsonMode);
+    }
+
+    /**
+     * One place that writes a note to a trace, so `ai:work note` and
+     * `ai:work update --note` cannot end up writing two different shapes of the
+     * same thing.
+     */
+    private function appendNote(string $traceId, string $id, string $note, ?string $nextStep = null): void
+    {
+        $this->safeAppend(
+            $traceId,
+            TraceEventKind::NOTE,
+            "note on task '{$id}': " . $this->truncate($note, 80),
+            array_filter([
+                'artifact'  => 'semitexa.ai-work.task-note/v1',
+                'task_id'   => $id,
+                'note'      => $note,
+                'next_step' => $nextStep,
+            ], static fn($v) => $v !== null),
+        );
     }
 
     private function resume(InputInterface $input, OutputInterface $output, bool $jsonMode): int

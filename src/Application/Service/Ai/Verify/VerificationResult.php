@@ -28,6 +28,14 @@ final readonly class VerificationResult
         public string $signal,
         public array $diagnostics = [],
         public bool $required = true,
+        /**
+         * Rule hits this project has already decided about. Beside the
+         * diagnostics, never among them: they must reach a reader with their
+         * reason, and must not count as violations of a run that passed.
+         *
+         * @var list<array<string, mixed>>
+         */
+        public array $accepted = [],
     ) {}
 
     public function completed(): bool

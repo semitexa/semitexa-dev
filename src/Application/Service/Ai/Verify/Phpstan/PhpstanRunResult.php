@@ -21,11 +21,13 @@ final readonly class PhpstanRunResult
 
     /**
      * @param list<array<string, mixed>> $diagnostics
+     * @param list<array<string, mixed>> $accepted violations the project has already decided about; NOT failures
      */
     public function __construct(
         public string $status,
         public array $diagnostics,
         public string $rawSignal,
         public int $exitCode = 0,
+        public array $accepted = [],
     ) {}
 }

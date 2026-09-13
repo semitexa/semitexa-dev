@@ -68,11 +68,18 @@ final class TraceBuffer
      * all. A shared depth counter has the same problem in reverse -- it records
      * interleaved coroutines as one stack.
      *
+     * Within ONE coroutine the same thing holds for the name: a span can open
+     * inside a span of its own name — a nested dispatch re-enters `request`, a
+     * handler renders a template that renders a template — and a map keyed by
+     * name loses the outer one's start time to the inner one, then unsets both
+     * on the first close. So it is a stack, and the same defect the paragraph
+     * above describes has no second level to hide on.
+     *
      * @var array<int, int> coroutine id => current depth
      */
     public array $depths = [];
 
-    /** @var array<int, array<string, float>> coroutine id => span name => start time in nanoseconds */
+    /** @var array<int, list<array{name: string, started: float}>> coroutine id => open spans, outermost first */
     public array $open = [];
 
     public bool $failed = false;
@@ -175,18 +182,59 @@ final class TraceBuffer
 
     public function enter(int $cid, string $name, float $startedAtNs): void
     {
-        $this->open[$cid][$name] = $startedAtNs;
+        $this->open[$cid][] = ['name' => $name, 'started' => $startedAtNs];
         $this->depths[$cid] = $this->depth($cid) + 1;
     }
 
-    /** @return float|null start time in nanoseconds, or null if this coroutine never opened the span */
+    /**
+     * The span this coroutine is innermost inside, or null if it is inside none.
+     *
+     * The top of the stack: the most recently opened span that has not closed,
+     * which is the block whatever is running now belongs to.
+     */
+    public function innermostOpen(int $cid): ?string
+    {
+        $stack = $this->open[$cid] ?? [];
+
+        return $stack === [] ? null : $stack[array_key_last($stack)]['name'];
+    }
+
+    /**
+     * Close the INNERMOST span of this name, and say when it opened.
+     *
+     * Innermost rather than any, because with a span open inside one of its own
+     * name the pairing is last-in-first-out — closing the outer one first would
+     * report the outer duration for the inner span and leave the outer one open
+     * for good, so the block every later log line is attributed to would be a
+     * span that had already finished.
+     *
+     * @return float|null start time in nanoseconds, or null if this coroutine has no such span open
+     */
     public function leave(int $cid, string $name): ?float
     {
-        $started = $this->open[$cid][$name] ?? null;
-        unset($this->open[$cid][$name]);
-        $this->depths[$cid] = max(0, $this->depth($cid) - 1);
+        $stack = $this->open[$cid] ?? [];
 
-        return $started;
+        for ($i = count($stack) - 1; $i >= 0; $i--) {
+            if ($stack[$i]['name'] !== $name) {
+                continue;
+            }
+
+            $started = $stack[$i]['started'];
+            array_splice($stack, $i, 1);
+            if ($stack === []) {
+                unset($this->open[$cid]);
+            } else {
+                $this->open[$cid] = $stack;
+            }
+            $this->depths[$cid] = max(0, $this->depth($cid) - 1);
+
+            return $started;
+        }
+
+        // Nothing was popped, so nothing is one level shallower: an end without
+        // a begin used to decrement anyway, and every span after it in that
+        // coroutine was reported one level too shallow.
+        return null;
     }
 
     public function sinceStartMs(): float

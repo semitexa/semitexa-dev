@@ -104,25 +104,122 @@ final class PhpstanRunner
             return $this->error('phpstan analysis incomplete or exit/result mismatch (exit ' . $result['exit'] . ')', $result['exit'], $diagnostics);
         }
 
-        $status = $diagnostics === []
+        // Split AFTER the exit/diagnostic cross-check above: that check is
+        // about whether PHPStan itself behaved, and must see what it actually
+        // reported.
+        [$unresolved, $accepted] = $this->partitionAccepted($diagnostics);
+
+        $status = $unresolved === []
             ? PhpstanRunResult::STATUS_PASS
             : PhpstanRunResult::STATUS_FAIL;
 
-        $signal = $diagnostics === []
+        $signal = $unresolved === []
             ? 'phpstan_di → 0 violations'
             : sprintf(
                 'phpstan_di → %d violation(s); first: %s %s',
-                count($diagnostics),
-                $diagnostics[0]['identifier'] ?? 'phpstan.error',
-                $diagnostics[0]['path'] ?? '?',
+                count($unresolved),
+                $unresolved[0]['identifier'] ?? 'phpstan.error',
+                $unresolved[0]['path'] ?? '?',
             );
 
+        if ($accepted !== []) {
+            // Named, never hidden. The point of the registry is that a reader
+            // learns both that the rule fired and that somebody already decided
+            // about it — the opposite of a baseline.
+            $signal .= sprintf(' (%d accepted: %s)', count($accepted), $accepted[0]['path'] ?? '?');
+        }
+
+        // Accepted entries are reported BESIDE the diagnostics, never among
+        // them. They travel to the envelope as `violations`, and a consumer
+        // that gates on "violations is empty" would go red on a green run —
+        // the signal line is where a reader learns the rule fired and was
+        // excused.
         return new PhpstanRunResult(
             status: $status,
-            diagnostics: $diagnostics,
+            diagnostics: $unresolved,
             rawSignal: $signal,
             exitCode: $result['exit'],
+            accepted: $accepted,
         );
+    }
+
+    /**
+     * Separate the violations this project has already decided about from the
+     * ones it has not.
+     *
+     * An accepted diagnostic keeps everything it had and gains the decision:
+     * severity drops to `accepted` and the reason travels with it, so the
+     * envelope can say "the rule fired here, and here is why that is allowed"
+     * instead of either failing or going quiet.
+     *
+     * The allowance is counted. Accepting one occurrence in a file does not
+     * accept a second that shows up later — the extra ones stay unresolved.
+     *
+     * @param list<array<string, mixed>> $diagnostics
+     * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>} [unresolved, accepted]
+     */
+    private function partitionAccepted(array $diagnostics): array
+    {
+        $unresolved = [];
+        $accepted = [];
+        $used = [];
+
+        foreach ($diagnostics as $diagnostic) {
+            $path = (string) ($diagnostic['path'] ?? '');
+            $rule = (string) ($diagnostic['identifier'] ?? '');
+            // Canonical, because allowanceFor() is: keyed by the raw spelling,
+            // the workspace and vendor paths for ONE file each consume the
+            // allowance separately and two diagnostics slip through as one.
+            $key = AcceptedViolations::canonicalise($path) . "\0" . $rule;
+            $allowance = AcceptedViolations::allowanceFor($path, $rule);
+
+            if ($allowance === 0 || ($used[$key] ?? 0) >= $allowance) {
+                $unresolved[] = $diagnostic;
+                continue;
+            }
+
+            // And at the site that was accepted, not merely somewhere in that
+            // file. Remove the blessed call, write a different one elsewhere in
+            // the same class, and the file-and-rule key consumed the allowance
+            // for it — green, with somebody else's reason attached, while the
+            // textual ratchet saw an unchanged count either way. Raised in
+            // review of dev#83.
+            $site = AcceptedViolations::siteFor($path, $rule);
+            if ($site !== null && !$this->isAtSite($path, $diagnostic, $site)) {
+                $unresolved[] = $diagnostic;
+                continue;
+            }
+
+            $used[$key] = ($used[$key] ?? 0) + 1;
+            $diagnostic['severity'] = 'accepted';
+            $diagnostic['accepted_reason'] = AcceptedViolations::reasonFor($path, $rule);
+            $accepted[] = $diagnostic;
+        }
+
+        return [$unresolved, $accepted];
+    }
+
+    /**
+     * Is this diagnostic in the method the entry accepted?
+     *
+     * A diagnostic with no usable line cannot be placed, and neither can one in
+     * a file this process cannot read — a consumer install analysing a path
+     * that is not on disk here, say. Both answer NO: an allowance is a
+     * statement about one place, and a violation that cannot be shown to be in
+     * that place is reported rather than absorbed.
+     *
+     * @param array<string, mixed> $diagnostic
+     */
+    private function isAtSite(string $path, array $diagnostic, string $site): bool
+    {
+        $line = (int) ($diagnostic['line'] ?? 0);
+        if ($line <= 0) {
+            return false;
+        }
+
+        $absolute = str_starts_with($path, '/') ? $path : $this->projectRoot . '/' . $path;
+
+        return EnclosingSymbol::at($absolute, $line) === $site;
     }
 
     /** @param list<array<string, mixed>> $diagnostics */

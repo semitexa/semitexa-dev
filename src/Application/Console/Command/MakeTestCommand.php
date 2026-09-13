@@ -6,6 +6,8 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\TestPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
@@ -105,22 +107,20 @@ final class MakeTestCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln((new JsonResultFormatter())->format($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($input->getOption('llm-hints')) {
             $output->writeln($this->llmHints($result));
-            return self::SUCCESS;
+            return GenerationExitCode::forResult($result);
         }
 
         if ($result->created) {
             $io->success('Created: ' . implode(', ', $result->created));
         }
-        if ($result->conflicts) {
-            $io->warning('Conflicts: ' . implode(', ', $result->conflicts));
-        }
+        GenerationOutcomeRenderer::renderProblems($io, $result);
 
-        return self::SUCCESS;
+        return GenerationExitCode::forResult($result);
     }
 
     private function llmHints(GenerationResult $result): string

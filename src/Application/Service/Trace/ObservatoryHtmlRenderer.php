@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Trace;
 
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 
 /**
  * The live panel at `/__observatory`: the architecture as a moving picture.
@@ -41,9 +42,19 @@ use Semitexa\Core\Attribute\AsService;
 #[AsService]
 final class ObservatoryHtmlRenderer
 {
+    #[InjectAsReadonly]
+    protected ObservatoryTopology $topology;
+
     public function render(): string
     {
         $notice = $this->missingAssetNotice();
+        // Facts about THIS project that the picture must not guess, handed
+        // over as plain attributes. Not a JSON data block and not an inline
+        // script: the panel carries no inline anything, for the reason the
+        // class docblock gives, and an attribute needs no argument about
+        // which CSP directive covers it.
+        $queueTransport = htmlspecialchars($this->topology->queueTransport(), ENT_QUOTES);
+        $cacheDriver = htmlspecialchars($this->topology->cacheDriver() ?? '', ENT_QUOTES);
 
         return <<<HTML
 <!DOCTYPE html>
@@ -57,22 +68,31 @@ final class ObservatoryHtmlRenderer
 </head>
 <body>
 {$notice}
-<div class="obs">
+<div class="obs" data-queue-transport="{$queueTransport}" data-cache-driver="{$cacheDriver}">
   <header class="head panel">
     <div class="brand"><span class="dot" id="led"></span><h1>Semitexa <span>Observatory</span></h1><span class="tr" id="transport" title="transport">…</span></div>
+    <!--
+      Five tiles, and each is the only place its number appears.
+
+      Three were dropped rather than rephrased, because they did not resemble
+      another surface — they WERE it. renderTiles() printed the live worker
+      count into this header and into the Workers tab badge from one variable,
+      the hung-coroutine count into here and the Coroutines badge from another,
+      and the query rate into here and the ORM · DB node from one call to
+      qps(). A reader looking for workers is already in the sidebar; a reader
+      looking at queries is already looking at the database.
+    -->
     <div class="tiles">
       <div class="tile" id="t-rps"><b>–</b><span>requests</span></div>
       <div class="tile" id="t-flight"><b>–</b><span>in flight</span></div>
-      <div class="tile" id="t-workers"><b>–</b><span>workers</span></div>
       <div class="tile" id="t-p50"><b>–</b><span>p50 · 60s</span></div>
       <div class="tile" id="t-p95"><b>–</b><span>p95 · 60s</span></div>
-      <div class="tile" id="t-q"><b>–</b><span>queries</span></div>
-      <div class="tile" id="t-err"><b>–</b><span>failed · 60s</span></div>
-      <div class="tile" id="t-hung"><b>–</b><span>hung coroutines</span></div>
+      <div class="tile" id="t-err"><b>–</b><span>errors · 60s</span></div>
     </div>
     <div class="controls">
       <button class="btn stage" id="b-stage" type="button"><i class="led"></i>stage <kbd>S</kbd></button>
       <button class="btn demo" id="b-demo" type="button"><i class="led"></i>demo load <kbd>D</kbd></button>
+      <button class="btn cinema" id="b-cinema" type="button" title="presentation lighting and amplified process trails">cinema <kbd>C</kbd></button>
       <span class="seg" id="speed" title="slow motion"><button type="button" class="on" data-v="1">1×</button><button type="button" data-v="0.5">½×</button><button type="button" data-v="0.25">¼×</button></span>
       <button class="btn" id="b-fit" type="button" title="fit the whole picture">fit <kbd>0</kbd></button>
       <button class="btn" id="b-explain" type="button">explain <kbd>E</kbd></button>
@@ -111,6 +131,13 @@ final class ObservatoryHtmlRenderer
 
   <section class="river panel" id="river">
     <canvas id="river-canvas"></canvas>
+    <div class="spotlight idle" id="spotlight">
+      <div class="spot-head"><span class="spot-beacon"><i></i><span id="spot-status">live process</span></span><span id="spot-stage">waiting</span></div>
+      <strong id="spot-title">Waiting for the next process…</strong>
+      <span class="spot-route" id="spot-route">Every light is backed by the process journal.</span>
+      <div class="spot-meta"><span id="spot-kind">—</span><span id="spot-worker">worker —</span><span id="spot-time">—</span></div>
+      <div class="spot-ph ph" id="spot-ph"></div>
+    </div>
     <div class="legend"><span><i class="k-http"></i>http</span><span><i class="k-sse"></i>sse</span><span><i class="k-scheduler"></i>scheduler</span><span><i class="k-queue"></i>queue</span><span><i class="k-replay"></i>replay</span></div>
     <div class="zoomctl">
       <button type="button" id="z-in" title="zoom in (+)">+</button>

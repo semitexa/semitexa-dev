@@ -189,4 +189,77 @@ class AiWorkCommandTest extends TestCase
         }
         rmdir($dir);
     }
+
+    /**
+     * A note passed to `update` has to reach the trace.
+     *
+     * It did not. `--note` is declared on the COMMAND and read only by the
+     * `note` action, so `ai:work update --status=done --note=...` changed the
+     * status, printed the task as updated, exited 0 — and threw the note away.
+     * Eighteen task closures in one session recorded their reasoning that way
+     * and kept none of it.
+     *
+     * The exit code is not what this asserts, deliberately: the exit code was
+     * always 0, which is exactly why nobody noticed. It asserts the trace.
+     */
+    public function test_update_records_the_note_it_was_given(): void
+    {
+        $now = '2026-09-13T00:00:00+00:00';
+        $tasks = new TaskStore();
+        $epics = $this->newEpicStore($tasks);
+        $traces = new TraceStore();
+        $epics->save(new Epic('ep-n', 'T', 'G', EpicStatus::NEW, $now, $now));
+
+        $command = $this->buildWiredCommand($tasks, $epics, $traces, $this->newResumeService($tasks, $traces));
+
+        (new CommandTester($command))->execute([
+            'action' => 'start', '--id' => 'tk-n', '--epic' => 'ep-n', '--title' => 'do it', '--json' => true,
+        ]);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            'action'   => 'update',
+            '--id'     => 'tk-n',
+            '--status' => 'done',
+            '--note'   => 'why this was closed and what was measured',
+            '--json'   => true,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+
+        $recorded = json_encode($traces->read('tk-n'), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString(
+            'why this was closed and what was measured',
+            (string) $recorded,
+            'the note was accepted and dropped — the reasoning for closing a task is not optional decoration',
+        );
+    }
+
+    /**
+     * And the note alone is enough. Requiring another field to accompany it
+     * turned "record why" into "record why AND change something", which is not
+     * what a closing note is.
+     */
+    public function test_update_accepts_a_note_on_its_own(): void
+    {
+        $now = '2026-09-13T00:00:00+00:00';
+        $tasks = new TaskStore();
+        $epics = $this->newEpicStore($tasks);
+        $traces = new TraceStore();
+        $epics->save(new Epic('ep-o', 'T', 'G', EpicStatus::NEW, $now, $now));
+
+        $command = $this->buildWiredCommand($tasks, $epics, $traces, $this->newResumeService($tasks, $traces));
+        (new CommandTester($command))->execute([
+            'action' => 'start', '--id' => 'tk-o', '--epic' => 'ep-o', '--title' => 'do it', '--json' => true,
+        ]);
+
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'update', '--id' => 'tk-o', '--note' => 'just the reasoning', '--json' => true]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $this->assertStringContainsString(
+            'just the reasoning',
+            (string) json_encode($traces->read('tk-o'), JSON_UNESCAPED_UNICODE),
+        );
+    }
 }
