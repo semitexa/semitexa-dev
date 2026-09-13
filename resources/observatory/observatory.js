@@ -916,17 +916,25 @@ function drawTimeline(t) {
 }
 
 /* ------------------------------------------------------------ DOM panels */
-function hungCoroutines() {
-  const out = [];
+/* A long-lived coroutine is one of three things, not two: a session, a stuck
+   request, or standing work that said what it is waiting for. Only the middle
+   one is a problem, and only it belongs on the tile — six explained coroutines
+   on an idle machine teach an operator to ignore the number, and then it cannot
+   warn about the seventh that is real. */
+function classifyCoroutines() {
+  const hung = [], standing = [];
   for (const w of S.coroutines) for (const c of w.longest || []) {
     if (c.ms < HUNG_MS) continue;
     let owner = null;
     for (const p of S.procs.values()) if (p.worker === w.pid && p.cid === c.cid) { owner = p; break; }
-    if (owner && owner.kind === 'sse') continue; // long by design
-    out.push({pid: w.pid, cid: c.cid, ms: c.ms, frame: c.frame, owner});
+    if (owner && owner.kind === 'sse') continue; // a session: long by design
+    const row = {pid: w.pid, cid: c.cid, ms: c.ms, frame: c.frame, owner, standing: c.standing || null};
+    (row.standing ? standing : hung).push(row);
   }
-  return out.sort((a, b) => b.ms - a.ms);
+  const byMs = (a, b) => b.ms - a.ms;
+  return {hung: hung.sort(byMs), standing: standing.sort(byMs)};
 }
+function hungCoroutines() { return classifyCoroutines().hung; }
 function renderWorkers() {
   const box = $('#wlist'); const ws = [...S.workers.values()].filter(w => now() - w.lastAt < 600000 || w.inflight.size).sort((a, b) => (+a.pid || 0) - (+b.pid || 0));
   const co = new Map(S.coroutines.map(c => [c.pid, c]));
@@ -951,10 +959,13 @@ function renderWorkers() {
     }).join('');
   }
   // coroutines
-  const hung = hungCoroutines(); const cbox = $('#coro');
+  const {hung, standing} = classifyCoroutines(); const cbox = $('#coro');
   const totalCo = S.coroutines.reduce((a, c) => a + (c.num || c.total || 0), 0), totalMax = S.coroutines.reduce((a, c) => a + (c.max || 0), 0), totalPeak = S.coroutines.reduce((a, c) => a + (c.peak || 0), 0);
   cbox.innerHTML = (S.coroutines.length ? '<div class="row"><span class="k">busy now · ' + S.coroutines.length + ' workers reporting</span><b>' + totalCo + (totalMax ? ' <em class="dim">/ ' + fmtCount(totalMax) + '</em>' : '') + '</b></div><div class="row"><span class="k">peak since worker start</span><b>' + totalPeak + '</b></div>' + S.coroutines.map(c => '<div class="row"><span class="k">w' + c.pid + '</span><b>' + (c.num || c.total) + (c.max ? ' <em class="dim">/ ' + fmtCount(c.max) + '</em>' : '') + ' <em class="dim">· peak ' + c.peak + '</em></b></div>').join('') : '<div class="row"><span class="k">coroutines</span><b class="dim">no snapshot yet</b></div>') +
-    (hung.length ? hung.slice(0, 6).map(h => '<div class="hung" title="' + esc(h.frame) + '"><b>w' + h.pid + ' · cid ' + h.cid + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.owner ? h.owner.name : (h.frame || 'no frame')) + (h.owner ? ' · ' + esc(h.frame) : ' · no journal process behind it') + '</small></div>').join('') + (hung.length > 6 ? '<div class="row"><span class="k">…and ' + (hung.length - 6) + ' more</span></div>' : '') : '<div class="row"><span class="k">hung (&gt; ' + HUNG_MS / 1000 + 's, not sse)</span><b class="ok">0</b></div>');
+    (hung.length ? hung.slice(0, 6).map(h => '<div class="hung" title="' + esc(h.frame) + '"><b>w' + h.pid + ' · cid ' + h.cid + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.owner ? h.owner.name : (h.frame || 'no frame')) + (h.owner ? ' · ' + esc(h.frame) : ' · no journal process behind it') + '</small></div>').join('') + (hung.length > 6 ? '<div class="row"><span class="k">…and ' + (hung.length - 6) + ' more</span></div>' : '') : '<div class="row"><span class="k">hung (&gt; ' + HUNG_MS / 1000 + 's, not sse)</span><b class="ok">0</b></div>') +
+    // Listed after the hung count, and never added to it: these are the ones
+    // that told us why they are parked.
+    (standing.length ? standing.slice(0, 6).map(h => '<div class="standing" title="' + esc(h.standing.reason) + '"><b>w' + h.pid + ' · ' + esc(h.standing.label) + '</b><span>' + fmtMs(h.ms) + '</span><small>' + esc(h.standing.reason) + '</small></div>').join('') + (standing.length > 6 ? '<div class="row"><span class="k">…and ' + (standing.length - 6) + ' more standing</span></div>' : '') : '');
   const w60 = window60(); const cnt = k => w60.filter(f => f.kind === k).length;
   const liveSse = [...S.procs.values()].filter(p => p.kind === 'sse' && !p.stale).length;
   const stale = [...S.procs.values()].filter(p => p.stale).length;

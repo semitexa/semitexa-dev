@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Trace;
 
+use Semitexa\Core\Support\StandingCoroutines;
+
 /**
  * What the coroutines of THIS worker are doing right now, written to a small
  * per-worker file so the live panel can show every worker's coroutines side
@@ -21,6 +23,12 @@ namespace Semitexa\Dev\Application\Service\Trace;
  * — a long coroutine with a live `sse` process behind it is a session, one
  * with an `http` process behind it is a stuck request, one with nothing
  * behind it is a leak.
+ *
+ * That last rule was only usually true. A framework coroutine born at worker
+ * start — a pub/sub receiver, a lease heartbeat — has no process behind it
+ * either, and read as a leak. Such a coroutine now declares itself through
+ * {@see StandingCoroutines}, and its label, reason and parked-at travel in the
+ * row, so the panel has a third state to show instead of miscounting it.
  */
 final class CoroutineSnapshot
 {
@@ -53,10 +61,23 @@ final class CoroutineSnapshot
                     $cids[] = (int) $cid;
                 }
             }
+            // Passing the live ids prunes declarations left behind by
+            // coroutines that were cancelled rather than returning — this is
+            // the only place that knows which ones still exist.
+            $standing = StandingCoroutines::all($cids);
+
             $rows = [];
             foreach ($cids as $cid) {
                 $elapsed = (float) \Swoole\Coroutine::getElapsed($cid);
-                $rows[] = ['cid' => $cid, 'ms' => round($elapsed, 1)];
+                $row = ['cid' => $cid, 'ms' => round($elapsed, 1)];
+                if (isset($standing[$cid])) {
+                    $row['standing'] = [
+                        'label' => $standing[$cid]['label'],
+                        'reason' => $standing[$cid]['reason'],
+                        'sinceMs' => round((microtime(true) - $standing[$cid]['since']) * 1000, 1),
+                    ];
+                }
+                $rows[] = $row;
             }
             usort($rows, static fn (array $a, array $b): int => $b['ms'] <=> $a['ms']);
             $rows = array_slice($rows, 0, self::KEEP);

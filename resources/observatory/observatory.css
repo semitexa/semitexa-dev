@@ -129,6 +129,13 @@ html.cinematic .panel{background:color-mix(in srgb,var(--panel) 79%,transparent)
   background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 40%,transparent);font:11px/1.4 var(--mono)}
 .hung b{color:var(--danger);font-weight:700} .hung span{color:var(--danger);font-weight:600;text-align:right}
 .hung small{grid-column:1/-1;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Standing work: parked on purpose and said so. Reads as information, not as
+   an alarm — the whole point is that it stops looking like the six leaks it
+   was being counted as. */
+.standing{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:6px 8px;margin:4px 0;border-radius:8px;
+  background:color-mix(in srgb,var(--ok) 8%,transparent);border:1px solid color-mix(in srgb,var(--ok) 28%,transparent);font:11px/1.4 var(--mono)}
+.standing b{color:var(--ok);font-weight:700} .standing span{color:var(--dim);font-weight:600;text-align:right}
+.standing small{grid-column:1/-1;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cr{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:center;padding:5px 4px;border-radius:7px;font:11px/1.35 var(--mono);transition:background .6s}
 .cr .dot{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
 .cr.fire{background:color-mix(in srgb,#c084fc 16%,transparent);transition:none} .cr.fire .dot{background:#c084fc;box-shadow:0 0 8px #c084fc}
