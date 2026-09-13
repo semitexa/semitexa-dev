@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
@@ -149,5 +150,33 @@ class ChangedFileClassifierTest extends TestCase
     {
         $changed = (new ChangedFileClassifier())->classify('src/anything.php', ChangedFile::STATUS_DELETED);
         $this->assertSame(ChangedFile::STATUS_DELETED, $changed->status);
+    }
+
+    /**
+     * The old name is a CONSTRUCTOR argument. ChangedFile is a readonly class,
+     * so the caller that classified a file and then assigned
+     * `$file->originalPath` hit a fatal `Cannot modify readonly property` —
+     * which is to say `ai:verify --git-ref=<ref>` died outright on any diff
+     * containing a rename, silently in the sense that only a rename triggered
+     * it. Found while wiring renames through `--dirty` in review of dev#84.
+     */
+    #[Test]
+    public function a_rename_carries_the_name_it_had_without_a_later_assignment(): void
+    {
+        $file = (new ChangedFileClassifier())->classify(
+            'src/modules/Shop/Application/Service/Pricing.php',
+            ChangedFile::STATUS_RENAMED,
+            'src/modules/Shop/Application/Service/Prices.php',
+        );
+
+        self::assertSame(ChangedFile::STATUS_RENAMED, $file->status);
+        self::assertSame('src/modules/Shop/Application/Service/Prices.php', $file->originalPath);
+        self::assertSame(ChangedFile::KIND_SERVICE, $file->kind, 'the kind still comes from the new path');
+    }
+
+    #[Test]
+    public function an_ordinary_change_has_no_previous_name(): void
+    {
+        self::assertNull((new ChangedFileClassifier())->classify('src/a.php')->originalPath);
     }
 }

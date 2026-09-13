@@ -34,8 +34,16 @@ final class StructuralOutlierBudgetTest extends TestCase
         // over-cap attempt no longer pays for a full graphql document execution
         // before being answered 429. The union type, the resolution line and the
         // comment saying why it sits below the caps are the whole increase.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2087],
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1126],
+        // +1/+2/+3 lines on 2026-09-13, adopting Semitexa\Core\Support\Row:
+        // reading a loosely-typed row (a Swoole\Table row, a backtrace frame, a
+        // DB row) went from `(string) ($row['col'] ?? '')` at the call site to
+        // one narrowing that can be read and tested. That was the largest
+        // phpstan cluster in the project — 83 "Cannot cast mixed to X" — and it
+        // also removed a fatal: casting an ARRAY value that way raises "Array
+        // to string conversion" rather than yielding the default, so a
+        // malformed row took the worker down. NO NEW METHODS in any of the three.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2088],
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1128],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -57,8 +65,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [31, 473],
         'semitexa-core/src/Request.php' => [31, 443],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
-        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 207],
-        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 759],
+        // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
+        // array<...>` on methods that had none. These are DOCBLOCKS, and they
+        // pay for themselves at a 2:1 rate — AsyncResourceSseServer is six thin
+        // delegates whose targets already declared the shape, so each missing
+        // annotation was TWO errors: the annotation itself and the argument
+        // type at the delegation. Six lines, twelve errors, no new methods.
+        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 213],
+        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 762],
         // Newly recorded on 2026-09-11, at 24/709: it crossed the 700-line
         // threshold by nine lines, and every one of them is the guard that
         // stops a partial write from RESURRECTING a deleted row. Table::set()
@@ -108,7 +122,68 @@ final class StructuralOutlierBudgetTest extends TestCase
         // it was allowed — because a verdict of `pass` that quietly ignored a
         // known violation reads exactly like one with nothing to ignore. Six
         // lines, NO NEW METHOD.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [25, 719],
+        //
+        // 25/719 -> 25/731 on 2026-09-13: the `--dirty` flag. The scan itself
+        // is NOT here — it grew this file to 30/882 inline, the ratchet said so,
+        // and it moved to DirtyWorkspaceScanner, which is where a thing that
+        // knows about git repositories belongs anyway. What is left is the
+        // option, two call sites and the comments explaining why the answer
+        // carries its own reach. METHOD COUNT UNCHANGED at 25.
+        // 25/731 -> 25/750 on 2026-09-13, in self-review of the same flag: a
+        // clean tree now gets its own verdict instead of the generic "pass
+        // --files, --git-ref, --diff-stdin or --dirty" error, which told the
+        // caller to do the thing they had just done and exited 1 on every
+        // clean checkout. Nineteen lines, most of them the comment saying why
+        // it is neither a pass nor a failure. METHOD COUNT UNCHANGED at 25.
+        // 750 -> 761 in review of dev#84: the empty --dirty answer now honours
+        // the output mode. Default mode is NDJSON dispatched by `kind`, and
+        // emitting the single-envelope shape there handed such a consumer a
+        // record it could not place. Eleven lines for the second shape and the
+        // comment. METHOD COUNT UNCHANGED at 25.
+        //
+        // 25/761 -> 19/669 in review of dev#84, the first entry here to go
+        // DOWN. Two more facts had to reach both output shapes — renames, and
+        // the dirty scan in NDJSON — and the pattern was by then unmistakable:
+        // every one of the growth notes above is a fact added to one shape and
+        // then, separately, to the other, and twice it reached only one and was
+        // caught in review rather than by anyone reading the output. So the
+        // five methods both builders shared moved out to
+        // VerifyReportSerializer, which is pure and has one definition per
+        // fact. The command is left with argument handling, dispatch and the
+        // exit code.
+        //
+        // 669 -> 691 in the same review round: the clean `--dirty` answer
+        // returned BEFORE maybeAppendToTrace(), so a workflow running
+        // `ai:verify --dirty --trace=<id>` recorded nothing for the run at all
+        // and the trail read as a step nobody took. It now builds an empty plan
+        // and appends like every other answer, in both output modes. Twenty-two
+        // lines, METHOD COUNT UNCHANGED at 19.
+        //
+        // 691 -> 705, same round: dedupe() was first-wins, so combining
+        // `--files=<renamed destination>` with `--dirty` named one path twice
+        // and the scanner's rename lost to the hand-written modification --
+        // taking `originalPath` with it, which is what ContractMoveResolver
+        // needs to find consumers of the old contract. It now merges the
+        // richer entry in. Eighteen lines, METHOD COUNT UNCHANGED at 19.
+        // 709 -> 740 in review of dev#84, three reviewer-found correctness
+        // fixes and their reasons. The clean `--dirty` answer now carries
+        // `completed`, `counts` and `restart` off VerifyReportSerializer — it
+        // was the one answer missing them, so a consumer reading the stable v1
+        // schema had to special-case it. And dedupe() learned that a deletion
+        // never wins over a record of a live file: `D path` then `?? path` is
+        // a file staged for deletion and written again, and keeping only the
+        // deletion made the planner skip a file sitting right there.
+        // METHOD COUNT UNCHANGED at 19.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 740],
+        // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
+        // review of dev#84 and the ratchet said so. The addition is a refusal:
+        // `--preview` with `--expect-field` resolved the target, returned
+        // SUCCESS and evaluated no expectation, so a caller relying on the
+        // documented failure exit for an assertion got a green run that
+        // verified nothing. Recorded rather than extracted because the class is
+        // one command with one flow; if it grows again, the envelope-building
+        // half is the seam — the same one VerifyReportSerializer was cut along.
+        'semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => [18, 713],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
@@ -147,7 +222,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // statement, one local to hold the response that was previously mapped
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 728],
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 730],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

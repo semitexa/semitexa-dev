@@ -17,8 +17,11 @@ use Semitexa\Core\Session\Session;
 use Semitexa\Core\Session\SessionHandlerInterface;
 use Semitexa\Core\Session\SessionInterface;
 use Semitexa\Core\Support\PayloadSerializer;
+use Semitexa\Dev\Application\Service\Invoke\FieldExpectations;
 use Semitexa\Dev\Application\Service\Invoke\InvocationContract;
 use Semitexa\Dev\Application\Service\Trace\ContextRedactor;
+use Semitexa\Dev\Application\Service\Trace\CulpritStackTrace;
+use Semitexa\Dev\Application\Service\Trace\SourceSliceReader;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -56,6 +59,14 @@ final class AiInvokeCommand extends BaseCommand
     #[InjectAsReadonly]
     protected AttributeDiscovery $attributeDiscovery;
 
+    /**
+     * Injected rather than newed: it carries an injected graph reader of its
+     * own, and a bare `new` would leave that property uninitialised — working
+     * by accident through the reader's own try/catch.
+     */
+    #[InjectAsReadonly]
+    protected SourceSliceReader $sourceSlices;
+
     /** The payload exactly as the caller wrote it, for the follow-up commands. */
     private ?string $invokedPayloadJson = null;
 
@@ -73,6 +84,7 @@ final class AiInvokeCommand extends BaseCommand
             ->addOption('payload', null, InputOption::VALUE_REQUIRED, 'JSON string hydrated into the Payload DTO via PayloadSerializer', '{}')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (default for agents)')
             ->addOption('human', null, InputOption::VALUE_NONE, 'Force human-readable output')
+            ->addOption('expect-field', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Assert path=value against the returned resource (dot path, repeatable). Compared as text; the run fails if any expectation does not hold.')
             ->addOption('preview', null, InputOption::VALUE_NONE, 'Resolve the target and report what would run, without calling handle(). Works outside dev.');
     }
 
@@ -95,6 +107,31 @@ final class AiInvokeCommand extends BaseCommand
         if ($handlerClass !== '' && $routePath !== '') {
             return $this->emitError($output, $envelope, '--handler and --route are mutually exclusive', 'input');
         }
+
+        try {
+            $expectations = FieldExpectations::fromOptions(array_map(strval(...), (array) $input->getOption('expect-field')));
+        } catch (\InvalidArgumentException $e) {
+            return $this->emitError($output, $envelope, $e->getMessage(), 'input');
+        }
+
+        // REFUSED, not quietly ignored. `--preview` resolves the target and
+        // returns SUCCESS without calling handle(), so there is no resource for
+        // an expectation to be checked against — and a caller relying on the
+        // documented failure exit for an assertion got a green run that
+        // verified nothing. The two options ask for opposite things: one says
+        // do not execute, the other says tell me about the result. Raised in
+        // review of dev#84.
+        if (!$expectations->isEmpty() && (bool) $input->getOption('preview')) {
+            return $this->emitError(
+                $output,
+                $envelope,
+                '--expect-field cannot be combined with --preview: nothing is executed, so there is no '
+                . 'resource to assert against. Drop --preview to check the expectations, or drop '
+                . '--expect-field to preview the target.',
+                'input',
+            );
+        }
+        $rawResource = null;
 
         $decoded = json_decode($payloadJson, true);
         if (!is_array($decoded)) {
@@ -173,12 +210,18 @@ final class AiInvokeCommand extends BaseCommand
             }
             $result = $handler->handle($payload, $resource);
         } catch (\Throwable $e) {
+            // Culprit first. Six lines of getTraceAsString() are usually the
+            // framework getting TO the caller's code rather than the code that
+            // broke, so the frame that matters sat below the cut.
+            $culprit = CulpritStackTrace::of($e, $this->sourceSlices);
             $handlerError = [
                 'class'   => get_class($e),
                 'message' => $e->getMessage(),
                 'file'    => $e->getFile(),
                 'line'    => $e->getLine(),
-                'trace'   => array_slice(explode("\n", $e->getTraceAsString()), 0, 6),
+                'culprit' => $culprit->culprit,
+                'source'  => $culprit->source,
+                'trace'   => $culprit->frames,
             ];
         }
         $durationMs = round((microtime(true) - $start) * 1000, 2);
@@ -207,7 +250,11 @@ final class AiInvokeCommand extends BaseCommand
             $envelope['verdict']        = 'ok';
             $envelope['resource_class'] = get_class($result);
             try {
-                $envelope['resource'] = ContextRedactor::redact(PayloadSerializer::toArray($result));
+                // Kept raw for the expectations below and redacted for the
+                // envelope: asserting a field under a secret-looking key must
+                // compare the real value, not the mask it is printed as.
+                $rawResource = PayloadSerializer::toArray($result);
+                $envelope['resource'] = ContextRedactor::redact($rawResource);
             } catch (\Throwable $e) {
                 // The handler ran, but the caller has no result to look at.
                 // Reporting success here hands back an empty resource that
@@ -218,9 +265,24 @@ final class AiInvokeCommand extends BaseCommand
             }
         }
 
+        $expectationsFailed = false;
+        if (!$expectations->isEmpty()) {
+            $report = $expectations->check($rawResource ?? null);
+            $envelope['expectations'] = $report;
+            $expectationsFailed = $report['failed'] > 0;
+
+            // The compact answer this flag exists for: one word a caller can
+            // read without decoding the resource.
+            if ($expectationsFailed && $envelope['verdict'] === 'ok') {
+                $envelope['verdict'] = 'expectation_failed';
+            }
+        }
+
         $envelope['next_command'] = $this->buildNextCommands($envelope);
 
-        $failed = $handlerError !== null || $envelope['verdict'] === 'resource_unserializable';
+        $failed = $handlerError !== null
+            || $envelope['verdict'] === 'resource_unserializable'
+            || $expectationsFailed;
 
         return $this->emitEnvelope($input, $output, $envelope, $failed ? self::FAILURE : self::SUCCESS);
     }
@@ -529,15 +591,79 @@ final class AiInvokeCommand extends BaseCommand
             $io->section('Handler error');
             $err = $envelope['handler_error'];
             $io->text(($err['class'] ?? 'Error') . ': ' . ($err['message'] ?? ''));
-            if (isset($err['file'], $err['line'])) {
-                $io->text("  at {$err['file']}:{$err['line']}");
+
+            // The culprit, then the throw site, then the shape of the call.
+            $culprit = is_array($err['culprit'] ?? null) ? $err['culprit'] : null;
+            if ($culprit !== null) {
+                $where = is_string($culprit['class'] ?? null)
+                    ? $culprit['class'] . '::' . (string) ($culprit['function'] ?? '?')
+                    : (string) ($culprit['function'] ?? '?');
+                $io->text("  culprit: {$where}");
+                $io->text("           {$culprit['file']}:{$culprit['line']}");
+                // The other half of the pairing: the location above is the
+                // line INSIDE that function, so without this the caller is
+                // named nowhere in the human output.
+                if (is_string($culprit['called_from'] ?? null)) {
+                    $io->text("           called from {$culprit['called_from']}");
+                }
             }
-            foreach (($err['trace'] ?? []) as $line) {
-                $io->text('  ' . $line);
+            if (isset($err['file'], $err['line'])) {
+                $io->text("  thrown at {$err['file']}:{$err['line']}");
+            }
+
+            foreach (is_array($err['source'] ?? null) ? $err['source'] : [] as $line) {
+                $io->text('    ' . rtrim((string) $line));
+            }
+
+            foreach (is_array($err['trace'] ?? null) ? $err['trace'] : [] as $frame) {
+                if (!is_array($frame)) {
+                    $io->text('  ' . (string) $frame);
+                    continue;
+                }
+                if (isset($frame['collapsed'])) {
+                    $io->text('  … ' . (string) ($frame['label'] ?? 'collapsed'));
+                    continue;
+                }
+                $name = is_string($frame['class'] ?? null)
+                    ? $frame['class'] . '::' . (string) ($frame['function'] ?? '?')
+                    : (string) ($frame['function'] ?? '?');
+                $io->text("  {$name}  ({$frame['file']}:{$frame['line']})");
             }
         } elseif (isset($envelope['resource'])) {
             $io->section('Resource (' . ($envelope['resource_class'] ?? '?') . ')');
             $io->writeln(json_encode($envelope['resource'], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'null');
+        }
+
+        $expectations = is_array($envelope['expectations'] ?? null) ? $envelope['expectations'] : null;
+        if ($expectations !== null) {
+            // Compact on purpose: somebody who passed --expect-field asked a
+            // yes/no question, and the resource dump is not the answer.
+            $io->section(sprintf(
+                'Expectations — %d of %d held',
+                (int) $expectations['checked'] - (int) $expectations['failed'],
+                (int) $expectations['checked'],
+            ));
+
+            foreach (is_array($expectations['results'] ?? null) ? $expectations['results'] : [] as $result) {
+                if (!is_array($result)) {
+                    continue;
+                }
+
+                $path = is_string($result['path'] ?? null) ? $result['path'] : '?';
+                $expected = is_string($result['expected'] ?? null) ? $result['expected'] : '';
+                $actual = is_string($result['actual'] ?? null) ? $result['actual'] : '(absent)';
+
+                if (($result['ok'] ?? false) === true) {
+                    $io->writeln("  <info>ok</info>   {$path} = {$expected}");
+                    continue;
+                }
+
+                $note = is_string($result['reason'] ?? null) ? ' — ' . $result['reason'] : '';
+                $io->writeln("  <error>fail</error> {$path}: expected {$expected}, got {$actual}{$note}");
+                if (($result['actual_redacted'] ?? false) === true) {
+                    $io->writeln('       (shown masked; the comparison used the real value)');
+                }
+            }
         }
 
         $next = is_array($envelope['next_command'] ?? null) ? $envelope['next_command'] : [];

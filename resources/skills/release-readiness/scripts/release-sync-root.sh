@@ -104,7 +104,10 @@ sync_scaffold_docs
 # about phpstan-bootstrap.php true: it says the file lives at the root "so the
 # release-readiness sync step can copy it into the rls clone", and until now no
 # step did.
-for _phpstan_file in phpstan.neon phpstan-baseline.neon phpstan-bootstrap.php; do
+# phpstan-strict.neon joined the list when the gate started reading it: it is
+# what turns reportUnmatchedIgnoredErrors on, and without it in the clone the
+# gate cannot run at all.
+for _phpstan_file in phpstan.neon phpstan-strict.neon phpstan-baseline.neon phpstan-bootstrap.php; do
     if [ -f "$DEV_ROOT/$_phpstan_file" ]; then
         sync_file "$_phpstan_file"
     else

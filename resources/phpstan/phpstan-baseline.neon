@@ -1,0 +1,3620 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Strict comparison using \=\=\= between 0 and 0 will always evaluate to true\.$#'
+			identifier: identical.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/CacheClearCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LayoutGenerateCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LayoutGenerateCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintDiCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintDiCommand.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/LintDiCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintHandlersCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintHandlersCommand.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintHandlersCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintResourcesCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintResourcesCommand.php
+
+		-
+			message: '#^Parameter \#2 \$subject of function preg_match expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/LintResponsesCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintScopingCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintScopingCommand.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintScopingCommand.php
+
+		-
+			message: '#^Comparison operation "\>" between int\<1, max\> and 0 is always true\.$#'
+			identifier: greater.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintTemplatesCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintTemplatesCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/LintTemplatesCommand.php
+
+		-
+			message: '#^Parameter \#1 \$transportName of method Semitexa\\Core\\Queue\\QueueWorker\:\:run\(\) expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/QueueWorkCommand.php
+
+		-
+			message: '#^Parameter \#2 \$queueName of method Semitexa\\Core\\Queue\\QueueWorker\:\:run\(\) expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/QueueWorkCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RegistrySyncContractsCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RegistrySyncContractsCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RoutesListCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesListCommand.php
+
+		-
+			message: '#^Parameter \#1 \$className of method Semitexa\\Core\\Application\\Console\\Command\\RoutesListCommand\:\:detectModule\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesListCommand.php
+
+		-
+			message: '#^Parameter \#1 \$messages of method Symfony\\Component\\Console\\Output\\OutputInterface\:\:writeln\(\) expects iterable\|string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesListCommand.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesListCommand.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$value\.$#'
+			identifier: property.notFound
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''class'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''execution'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''file'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''format'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''handle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''maxRetries'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''module'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''priority'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''queue'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''renderer'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot access offset ''transport'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RoutesShowCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_keys expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_values expects array\<T\>, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$elements of method Symfony\\Component\\Console\\Style\\SymfonyStyle\:\:listing\(\) expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$message of method Symfony\\Component\\Console\\Style\\SymfonyStyle\:\:title\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$messages of method Symfony\\Component\\Console\\Output\\OutputInterface\:\:writeln\(\) expects iterable\|string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#1 \$value of function count expects array\|Countable, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Part \$h\[''maxRetries''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Part \$h\[''queue''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Part \$h\[''transport''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
+
+		-
+			message: '#^Binary operation "\." between ''Testing Handler\: '' and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:get\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:has\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Parameter \#1 \$object of function get_class expects object, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Parameter \#2 \$handler of method Semitexa\\Core\\Application\\Console\\Command\\TestHandlerCommand\:\:inspectHandler\(\) expects object, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Parameter \#3 \$handlerClass of method Semitexa\\Core\\Application\\Console\\Command\\TestHandlerCommand\:\:inspectHandler\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Auth\\GuestAuthContext\:\:get\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: packages/semitexa-core/src/Auth/GuestAuthContext.php
+
+		-
+			message: '#^Binary operation "\." between mixed and ''/'' results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Binary operation "\." between non\-falsy\-string and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$filename of function file_get_contents expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$filename of function file_put_contents expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$filename of function is_file expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$path of function dirname expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strtolower expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Part \$destination \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Part \$layout\[''handle''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Part \$layout\[''id''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 4
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Part \$layout\[''module''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Part \$layout\[''source''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/CodeGen/LayoutGenerator.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Config\\RegistryConfig\:\:getRegistryConfig\(\) should return array\<string, mixed\> but returns array\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Config/RegistryConfig.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Config\\RegistryConfig\:\:getSemitexaExtra\(\) should return array\<string, mixed\> but returns array\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Config/RegistryConfig.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Config\\RegistryConfig\:\:useManifest\(\) should return bool but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Config/RegistryConfig.php
+
+		-
+			message: '#^Static property Semitexa\\Core\\Config\\RegistryConfig\:\:\$extra \(array\<string, mixed\>\|null\) does not accept array\<mixed\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-core/src/Config/RegistryConfig.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Console/Application.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Container\\RequestScopedContainer\:\:\$requestScopedCache type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Container/RequestScopedContainer.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Container/SemitexaContainer.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Container/ServiceContractRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Contract\\LayoutRenderableInterface\:\:getRenderContext\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Contract/LayoutRenderableInterface.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Contract\\LayoutRenderableInterface\:\:setRenderContext\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Contract/LayoutRenderableInterface.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Cookie\\CookieJar\:\:getSetCookieLines\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Cookie/CookieJar.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Cookie\\CookieJarInterface\:\:getSetCookieLines\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Cookie/CookieJarInterface.php
+
+		-
+			message: '#^Binary operation "\." between mixed and "\\000" results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Discovery\\AttributeDiscovery\:\:selectRequestByOverrideChain\(\) has parameter \$candidates with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Discovery\\AttributeDiscovery\:\:selectRequestByOverrideChain\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 7
+			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Discovery\\ClassDiscovery\:\:\$allowedNamespacePrefixes type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Discovery/ClassDiscovery.php
+
+		-
+			message: '#^Parameter \$renderProfile of class Semitexa\\Core\\Discovery\\DiscoveredRoute constructor expects list\<Semitexa\\Core\\Resource\\RenderProfile\>\|Semitexa\\Core\\Resource\\RenderProfile\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Discovery/DiscoveredRoute.php
+
+		-
+			message: '#^Parameter \$responsesByProfile of class Semitexa\\Core\\Discovery\\DiscoveredRoute constructor expects array\<string, class\-string\>\|null, array\<mixed, mixed\>\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Discovery/DiscoveredRoute.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 12
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Environment\:\:getEnvValue\(\) should return string\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Environment\:\:loadEnv\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Environment\:\:parseEnvFile\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$appEnv of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$appHost of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$appName of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$corsAllowHeaders of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$corsAllowMethods of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$corsAllowOrigin of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$swooleHost of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Parameter \$swooleLogFile of class Semitexa\\Core\\Environment constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Part \$value \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-core/src/Environment.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Swoole\\\\Event'' and ''defer'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Event\\EventDispatcher\:\:enqueueListener\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Event\\EventDispatcher\:\:runListenerDefer\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Event\\EventDispatcher\:\:runListenerSync\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Offset ''execution'' on array\{class\: string, event\: string, execution\: string, transport\: mixed, queue\: mixed, priority\: int\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Container\\SemitexaContainer\:\:resolve\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:get\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:has\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$name of static method Semitexa\\Core\\Queue\\QueueTransportRegistry\:\:create\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$queueName of method Semitexa\\Core\\Queue\\QueueTransportInterface\:\:publish\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$requestClass of static method Semitexa\\Core\\Queue\\QueueConfig\:\:defaultQueueName\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Parameter \$listenerClass of class Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcher.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Event\\EventDispatcherInterface\:\:create\(\) has parameter \$payload with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Event/EventDispatcherInterface.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Event/EventListenerRegistry.php
+
+		-
+			message: '#^Parameter \#1 \$string of function lcfirst expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Exception/DomainException.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strtolower expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Exception/DomainException.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<string\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Http/ContentNegotiator.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Http\\ContentType\:\:__construct\(\) has parameter \$params with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Http/ContentType.php
+
+		-
+			message: '#^Comparison operation "\<" between 500\|501\|502\|503\|504 and 600 is always true\.$#'
+			identifier: smaller.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Http/HttpStatus.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Http/PayloadHydrator.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: packages/semitexa-core/src/Http/UploadedFile.php
+
+		-
+			message: '#^Parameter \#1 \$className of method Semitexa\\Core\\Lifecycle\\LifecycleComponentRegistry\:\:instantiateLifecycleComponent\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Lifecycle/LifecycleComponentRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Locale\\DefaultLocaleContext\:\:get\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: packages/semitexa-core/src/Locale/DefaultLocaleContext.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Swoole\\\\Event'' and ''defer'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Log/AsyncJsonLogger.php
+
+		-
+			message: '#^Function is_subclass_of\(\) is a runtime reflection concept that might not work in PHPStan because it uses fully static reflection engine\. Use objects retrieved from ReflectionProvider instead\.$#'
+			identifier: phpstanApi.runtimeReflection
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/ConfigOnClassTypeRule.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/EventListenerMissingExecutionRule.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/ExecutionScopedWithoutAttributeRule.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$factoryKey\.$#'
+			identifier: property.notFound
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/FactoryClosedWorldRule.php
+
+		-
+			message: '#^Access to an undefined property object\:\:\$of\.$#'
+			identifier: property.notFound
+			count: 2
+			path: packages/semitexa-core/src/PHPStan/Rules/FactoryClosedWorldRule.php
+
+		-
+			message: '#^Parameter \#1 \$string of function ltrim expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/PHPStan/Rules/FactoryClosedWorldRule.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/FactoryContractRule.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/TraitInjectionRule.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type PHPStan\\Reflection\\ClassReflection\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/semitexa-core/src/PHPStan/Rules/TraitInjectionRule.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Pipeline\\ExceptionMapper\:\:arrayToXml\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Pipeline\\ExceptionMapper\:\:arrayToXmlRecursive\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Pipeline\\ExceptionMapper\:\:negotiateErrorFormat\(\) has parameter \$produces with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Pipeline\\ExceptionMapper\:\:renderErrorHtml\(\) has parameter \$body with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Offset ''function'' on array\{function\: string, line\?\: int, file\?\: string, class\?\: class\-string, type\?\: ''\-\>''\|''\:\:'', args\?\: list\<mixed\>, object\?\: object\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Parameter \#1 \$produces of static method Semitexa\\Core\\Http\\ContentNegotiator\:\:negotiateResponseFormat\(\) expects list\<string\>\|null, array\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Parameter \#1 \$string of function htmlspecialchars expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/ExceptionMapper.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Pipeline\\HandlerReflectionCache\:\:invoke\(\) should return object but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/HandlerReflectionCache.php
+
+		-
+			message: '#^Call to an undefined method object\:\:handle\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
+
+		-
+			message: '#^Call to function is_object\(\) with object will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
+
+		-
+			message: '#^Parameter \#1 \$class of function class_exists expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
+
+		-
+			message: '#^Parameter \#1 \$instance of method Semitexa\\Core\\Pipeline\\PipelineExecutor\:\:invokeListener\(\) expects object, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
+
+		-
+			message: '#^Parameter \#3 \$responseDto of static method Semitexa\\Core\\Queue\\QueueDispatcher\:\:enqueue\(\) expects object, object\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/PipelineListenerRegistry.php
+
+		-
+			message: '#^Dead catch \- Semitexa\\Core\\Exception\\DomainException is never thrown in the try block\.$#'
+			identifier: catch.neverThrown
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/RouteExecutor.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between class\-string and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Pipeline/RouteExecutor.php
+
+		-
+			message: '#^Cannot access offset ''eventClass'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Cannot access offset ''eventPayload'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Cannot access offset ''listenerClass'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Cannot access offset ''queuedAt'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage\:\:__construct\(\) has parameter \$eventPayload with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage\:\:jsonSerialize\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Parameter \$eventClass of class Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Parameter \$eventPayload of class Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage constructor expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Parameter \$listenerClass of class Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Parameter \$queuedAt of class Semitexa\\Core\\Queue\\Message\\QueuedEventListenerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
+
+		-
+			message: '#^Cannot access offset ''attempts'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''handler'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''handlerClass'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''maxRetries'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''queuedAt'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''requestClass'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''requestPayload'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''responseClass'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''responsePayload'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''retryDelay'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access offset ''sessionId'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage\:\:__construct\(\) has parameter \$requestPayload with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage\:\:__construct\(\) has parameter \$responsePayload with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage\:\:jsonSerialize\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$attempts of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$handlerClass of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$maxRetries of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$queuedAt of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$requestClass of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$requestPayload of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$responseClass of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$responsePayload of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$retryDelay of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Parameter \$sessionId of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
+
+		-
+			message: '#^Cannot access an offset on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Cannot access offset ''inspector_segments'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Queue\\QueueDispatcher\:\:enqueue\(\) has parameter \$handlerMeta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$name of static method Semitexa\\Core\\Queue\\QueueTransportRegistry\:\:create\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$queueName of method Semitexa\\Core\\Queue\\QueueTransportInterface\:\:publish\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$requestClass of static method Semitexa\\Core\\Queue\\QueueConfig\:\:defaultQueueName\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \$handlerClass of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \$maxRetries of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Parameter \$retryDelay of class Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
+
+		-
+			message: '#^Binary operation "\+" between mixed and 1 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueWorker.php
+
+		-
+			message: '#^Cannot access offset string on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-core/src/Queue/QueueWorker.php
+
+		-
+			message: '#^Parameter \#1 \$json of function json_decode expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueWorker.php
+
+		-
+			message: '#^Parameter \#1 \$queueName of method Semitexa\\Core\\Queue\\QueueTransportInterface\:\:consume\(\) expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueWorker.php
+
+		-
+			message: '#^Parameter \#2 \$payload of method Semitexa\\Core\\Queue\\QueueTransportInterface\:\:publish\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Queue/QueueWorker.php
+
+		-
+			message: '#^While loop condition is always true\.$#'
+			identifier: while.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Queue/Transport/InMemoryTransport.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Registry\\RegistryContractResolverGenerator\:\:uniqueParamName\(\) has parameter \$used with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Registry/RegistryContractResolverGenerator.php
+
+		-
+			message: '#^Offset ''active'' on array\{implementations\: list\<array\{module\: string, class\: string\}\>, active\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Registry/RegistryContractResolverGenerator.php
+
+		-
+			message: '#^Offset ''implementations'' on array\{implementations\: list\<array\{module\: string, class\: string\}\>, active\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: packages/semitexa-core/src/Registry/RegistryContractResolverGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 8
+			path: packages/semitexa-core/src/Registry/RegistryContractResolverGenerator.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-core/src/Registry/RegistryContractResolverGenerator.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Http\\UploadedFile and Semitexa\\Core\\Http\\UploadedFile will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 2
+			path: packages/semitexa-core/src/Request.php
+
+		-
+			message: '#^Offset 0 on non\-empty\-list\<Semitexa\\Core\\Http\\UploadedFile\> on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Request.php
+
+		-
+			message: '#^Call to function method_exists\(\) with Swoole\\Http\\Request and ''rawContent'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Cannot access offset ''request_method'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strtoupper expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$arrays of function array_merge expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Parameter \$uri of class Semitexa\\Core\\Request constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-string and '''' will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/RequestFactory.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between class\-string and '''' will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-core/src/Resource/CrossProfileDispatcher.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<T\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/semitexa-core/src/Resource/Filter/CollectionFilterRequest.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between non\-empty\-list\<non\-empty\-string\> and array\{\} will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-core/src/Resource/Filter/CollectionFilterRequest.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 2
+			path: packages/semitexa-core/src/Resource/GraphqlResourceRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataRegistry\:\:get\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/GraphqlSelectionToIncludeSet.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataRegistry\:\:get\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/HandlerProvidedIncludeValidator.php
+
+		-
+			message: '#^Instanceof between Stringable and Stringable will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Resource/IriBuilder.php
+
+		-
+			message: '#^Result of \|\| is always true\.$#'
+			identifier: booleanOr.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Resource/IriBuilder.php
+
+		-
+			message: '#^Call to function is_array\(\) with array\<string, mixed\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 2
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Resource\\JsonLdResourceRenderer\:\:renderRefMany\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Resource\\JsonLdResourceRenderer\:\:renderUnion\(\) should return array\<int\<0, max\>\|string, mixed\>\|null but returns array\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Offset ''@id'' on \*NEVER\* on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Offset ''@type'' on \*NEVER\* on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of method Semitexa\\Core\\Resource\\IncludeSet\:\:nested\(\) expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 5
+			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 2
+			path: packages/semitexa-core/src/Resource/JsonResourceRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of method Semitexa\\Core\\Resource\\IncludeSet\:\:nested\(\) expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 5
+			path: packages/semitexa-core/src/Resource/JsonResourceRenderer.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Resource\\Lifecycle\\WarmResourceMetadataListener\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-core/src/Resource/Lifecycle/WarmResourceMetadataListener.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 3
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataCacheFile.php
+
+		-
+			message: '#^Parameter \#1 \$callback of function array_map expects \(callable\(mixed\)\: mixed\)\|null, ''strval'' given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataCacheFile.php
+
+		-
+			message: '#^Parameter \#1 \$entry of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataCacheFile\:\:hydrateObject\(\) expects array\<string, mixed\>, array\<mixed, mixed\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataCacheFile.php
+
+		-
+			message: '#^Parameter \$unionTargets of class Semitexa\\Core\\Resource\\Metadata\\ResourceFieldMetadata constructor expects list\<class\-string\>\|null, list\<string\>\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataCacheFile.php
+
+		-
+			message: '#^Parameter \#1 \$resourceClass of static method Semitexa\\Core\\Resource\\Exception\\MalformedResourceObjectException\:\:attributeTypeMismatch\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$resourceClass of static method Semitexa\\Core\\Resource\\Exception\\MalformedResourceObjectException\:\:conflictingAttributes\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$resourceClass of static method Semitexa\\Core\\Resource\\Exception\\MalformedResourceObjectException\:\:unionMissingTargets\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataSourceFingerprint\:\:fingerprintEntry\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataSourceFingerprint.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataValidator\:\:collectRelationTargets\(\) should return array\<class\-string, true\> but returns array\<string, true\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataValidator.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataRegistry\:\:has\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Resource/Metadata/ResourceMetadataValidator.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<T\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/semitexa-core/src/Resource/Pagination/CollectionPageRequest.php
+
+		-
+			message: '#^Call to function array_is_list\(\) with list\<Semitexa\\Core\\Resource\\ResourceObjectInterface\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResolvedResourceGraph.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResolvedResourceGraph.php
+
+		-
+			message: '#^Call to function array_is_list\(\) with list\<Semitexa\\Core\\Resource\\ResourceObjectInterface\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Cannot access constant class on mixed\.$#'
+			identifier: classConstant.nonObject
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Semitexa\\Core\\Resource\\Metadata\\ResourceMetadataRegistry\:\:get\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Parameter \#2 \$value of method Semitexa\\Core\\Resource\\Memo\\ResolverMemoStore\:\:set\(\) expects list\<Semitexa\\Core\\Resource\\ResourceObjectInterface\>\|Semitexa\\Core\\Resource\\ResourceObjectInterface\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Parameter \$actualClass of class Semitexa\\Core\\Resource\\Exception\\InvalidResourceResolverException constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Resource/ResourceExpansionPipeline.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<T\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/semitexa-core/src/Resource/Sort/CollectionSortRequest.php
+
+		-
+			message: '#^Parameter \#1 \$array \(non\-empty\-list\<T\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/semitexa-core/src/Resource/Sort/CollectionSortRequest.php
+
+		-
+			message: '#^Cannot access offset ''origin'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Server/CorsHandler.php
+
+		-
+			message: '#^Cannot access offset ''request_method'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Server/CorsHandler.php
+
+		-
+			message: '#^Parameter \#1 \$origin of method Semitexa\\Core\\Server\\CorsHandler\:\:isAllowedOrigin\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Server/CorsHandler.php
+
+		-
+			message: '#^Parameter \#1 \$origin of method Semitexa\\Core\\Server\\CorsHandler\:\:resolveAllowOrigin\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Server/CorsHandler.php
+
+		-
+			message: '#^Cannot access offset ''request_uri'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Server/HealthCheckHandler.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Core\\Container\\SemitexaContainer and Semitexa\\Core\\Container\\SemitexaContainer will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: packages/semitexa-core/src/Server/Lifecycle/ServerLifecycleInvoker.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Server/Lifecycle/ServerLifecycleInvoker.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Server/Lifecycle/ServerLifecycleRegistry.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>value" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/semitexa-core/src/Server/Lifecycle/ServerLifecycleRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Server\\ServerConfigurator\:\:getServerOptions\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Server/ServerConfigurator.php
+
+		-
+			message: '#^Cannot access offset ''__semitexa_swoole_ctx'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
+
+		-
+			message: '#^Comparison operation "\<" between int\<80400, 80599\> and 80400 is always false\.$#'
+			identifier: smaller.alwaysFalse
+			count: 1
+			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
+
+		-
+			message: '#^Parameter \#2 \$paths of method Composer\\Autoload\\ClassLoader\:\:addPsr4\(\) expects list\<string\>\|string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Session\\RedisSessionHandler\:\:read\(\) should return array\<string, mixed\> but returns array\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Session/RedisSessionHandler.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Parameter \#2 \$data of method Semitexa\\Core\\Session\\SessionHandlerInterface\:\:write\(\) expects array\<string, mixed\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Session\\Session\:\:\$data type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Session\\Session\:\:\$flash \(array\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Session\\Session\:\:\$flash type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Session\\Session\:\:\$flashNext type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Session/Session.php
+
+		-
+			message: '#^Cannot access offset ''data'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Session/SwooleTableSessionHandler.php
+
+		-
+			message: '#^Cannot access offset ''expires_at'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-core/src/Session/SwooleTableSessionHandler.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: packages/semitexa-core/src/Session/SwooleTableSessionHandler.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Session\\SwooleTableSessionHandler\:\:read\(\) should return array\<string, mixed\> but returns array\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Session/SwooleTableSessionHandler.php
+
+		-
+			message: '#^Parameter \#1 \$json of function json_decode expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-core/src/Session/SwooleTableSessionHandler.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-core/src/Support/CodeExporter.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Tenant\\DefaultTenantContext\:\:getLayer\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: packages/semitexa-core/src/Tenant/DefaultTenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Core\\Tenant\\DefaultTenantContext\:\:getLayer\(\) should return Semitexa\\Core\\Tenant\\Layer\\TenantLayerValueInterface\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-core/src/Tenant/DefaultTenantContext.php
+
+		-
+			message: '#^Property Semitexa\\Core\\Tenant\\DefaultTenantContext\:\:\$layers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-core/src/Tenant/DefaultTenantContext.php
+
+		-
+			message: '#^Trait Semitexa\\Core\\Validation\\Trait\\ComparisonValidationTrait is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-core/src/Validation/Trait/ComparisonValidationTrait.php
+
+		-
+			message: '#^Trait Semitexa\\Core\\Validation\\Trait\\TypeValidationTrait is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-core/src/Validation/Trait/TypeValidationTrait.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Adapter\\ConnectionPool\:\:getAvailable\(\) should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Adapter/ConnectionPool.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Adapter\\ConnectionPool\:\:pop\(\) should return PDO but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Adapter/ConnectionPool.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
+
+		-
+			message: '#^Parameter \$rows of class Semitexa\\Orm\\Adapter\\QueryResult constructor expects array\<int, array\<string, mixed\>\>, array given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
+
+		-
+			message: '#^Part \$raw \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Adapter\\SingleConnectionPool\:\:ensureAlive\(\) should return PDO but returns mixed\.$#'
+			identifier: return.type
+			count: 2
+			path: packages/semitexa-orm/src/Adapter/SingleConnectionPool.php
+
+		-
+			message: '#^Property Semitexa\\Orm\\Adapter\\SingleConnectionPool\:\:\$connection \(PDO\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-orm/src/Adapter/SingleConnectionPool.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmDiffCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmDiffCommand.php
+
+		-
+			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmDiffCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmSeedCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmSeedCommand.php
+
+		-
+			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmStatusCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmSyncCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmSyncCommand.php
+
+		-
+			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Console/Command/OrmSyncCommand.php
+
+		-
+			message: '#^Cannot cast mixed to float\.$#'
+			identifier: cast.double
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 6
+			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Persistence\\AggregateWriteEngine\:\:iterableValue\(\) return type has no value type specified in iterable type iterable\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php
+
+		-
+			message: '#^Parameter \#1 \$object of method Semitexa\\Orm\\Application\\Service\\Persistence\\AggregateWriteEngine\:\:propertyValue\(\) expects object, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Schema\\SchemaCollector\:\:getAllProperties\(\) has parameter \$ref with generic class ReflectionClass but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Offset ''foreignKey'' on array\{type\: ''many_to_many'', target\: string, foreignKey\: string, pivotTable\?\: string, relatedKey\?\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Offset ''onDelete'' on array\{type\: string, target\: string, foreignKey\: string, pivotTable\?\: string, relatedKey\?\: string\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Offset ''onUpdate'' on array\{type\: string, target\: string, foreignKey\: string, pivotTable\?\: string, relatedKey\?\: string\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Offset ''type'' on array\{type\: string, target\: string, foreignKey\: string, pivotTable\?\: string, relatedKey\?\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 3
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Parameter \$onDelete of class Semitexa\\Orm\\Domain\\Model\\ForeignKeyDefinition constructor expects Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction, Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:Restrict\|Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:SetNull\|string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Parameter \$onDelete of class Semitexa\\Orm\\Domain\\Model\\ForeignKeyDefinition constructor expects Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction, Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:Restrict\|string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Parameter \$onUpdate of class Semitexa\\Orm\\Domain\\Model\\ForeignKeyDefinition constructor expects Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction, Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:Restrict\|Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:SetNull\|string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Parameter \$onUpdate of class Semitexa\\Orm\\Domain\\Model\\ForeignKeyDefinition constructor expects Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction, Semitexa\\Orm\\Domain\\Enum\\ForeignKeyAction\:\:Restrict\|string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<ReflectionAttribute\<Semitexa\\Orm\\Attribute\\Column\>\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between array\{\} and array\{\} will always evaluate to true\.$#'
+			identifier: identical.alwaysTrue
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaCollector.php
+
+		-
+			message: '#^Binary operation "\." between mixed and ''\.'' results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Binary operation "\." between non\-falsy\-string and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot access offset ''onDelete'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot access offset ''onUpdate'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot access offset ''referencedColumn'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot access offset ''referencedTable'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot access offset ''table'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 4
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Schema\\SchemaComparator\:\:compareForeignKeys\(\) has parameter \$dbFks with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Schema\\SchemaComparator\:\:normalizeType\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Schema\\SchemaComparator\:\:readDatabaseSchema\(\) should return array\<string, Semitexa\\Orm\\Domain\\Model\\DbTableState\> but returns array\<Semitexa\\Orm\\Domain\\Model\\DbTableState\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Schema\\SchemaComparator\:\:readDbForeignKeys\(\) should return array\<string, array\{table\: string, column\: string, referencedTable\: string, referencedColumn\: string, onDelete\: string, onUpdate\: string\}\> but returns array\<array\{table\: mixed, column\: mixed, referencedTable\: mixed, referencedColumn\: mixed, onDelete\: mixed, onUpdate\: mixed\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#1 \$haystack of function str_contains expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#1 \$name of class Semitexa\\Orm\\Domain\\Model\\DbTableState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strtoupper expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#1 \$table of method Semitexa\\Orm\\Domain\\Model\\SchemaDiff\:\:addDropForeignKey\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#2 \$tableComment of class Semitexa\\Orm\\Domain\\Model\\DbTableState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 3
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$columnType of class Semitexa\\Orm\\Domain\\Model\\DbColumnState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$columns of class Semitexa\\Orm\\Domain\\Model\\DbIndexState constructor expects array\<string\>, list\<mixed\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$comment of class Semitexa\\Orm\\Domain\\Model\\DbColumnState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$dataType of class Semitexa\\Orm\\Domain\\Model\\DbColumnState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$defaultValue of class Semitexa\\Orm\\Domain\\Model\\DbColumnState constructor expects string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$name of class Semitexa\\Orm\\Domain\\Model\\DbColumnState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Parameter \$name of class Semitexa\\Orm\\Domain\\Model\\DbIndexState constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Possibly invalid array key type mixed\.$#'
+			identifier: offsetAccess.invalidOffset
+			count: 8
+			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
+
+		-
+			message: '#^Access to property \$description on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Access to property \$isDestructive on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Access to property \$sql on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Access to property \$tableName on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Access to property \$type on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Binary operation "\." between ''\-\- '' and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Binary operation "\." between mixed and '';'' results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Cannot access property \$value on mixed\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Parameter \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) has invalid type Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
+			identifier: class.notFound
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/SeedRunner.php
+
+		-
+			message: '#^Parameter \#1 \$resources of method Semitexa\\Orm\\Application\\Service\\Sync\\SmartUpsert\:\:upsert\(\) expects array\<object\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/SeedRunner.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
+
+		-
+			message: '#^Parameter \#1 \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) expects array\<Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\>, list\<Semitexa\\Orm\\Domain\\Model\\DdlOperation\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
+
+		-
+			message: '#^Parameter \#1 \$resourceClass of static method Semitexa\\Orm\\Domain\\Model\\ResourceMetadata\:\:for\(\) expects class\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Transaction\\SingleConnectionAdapter\:\:lastInsertId\(\) should return string but returns string\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Transaction/SingleConnectionAdapter.php
+
+		-
+			message: '#^Parameter \$lastInsertId of class Semitexa\\Orm\\Adapter\\QueryResult constructor expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Transaction/SingleConnectionAdapter.php
+
+		-
+			message: '#^Parameter \$rows of class Semitexa\\Orm\\Adapter\\QueryResult constructor expects array\<int, array\<string, mixed\>\>, array given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-orm/src/Application/Service/Transaction/SingleConnectionAdapter.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Application\\Service\\Uuid7\:\:toBytes\(\) should return string but returns string\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Application/Service/Uuid7.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Attribute\\Index\:\:__construct\(\) has parameter \$columns with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-orm/src/Attribute/Index.php
+
+		-
+			message: '#^Property Semitexa\\Orm\\Attribute\\Index\:\:\$columns type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-orm/src/Attribute/Index.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Discovery\\RepositoryDiscovery\:\:discoverRepositoryClasses\(\) should return list\<class\-string\> but returns list\<string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Discovery/RepositoryDiscovery.php
+
+		-
+			message: '#^Parameter \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) has invalid type Semitexa\\Orm\\Domain\\Contract\\TableDefinition\.$#'
+			identifier: class.notFound
+			count: 1
+			path: packages/semitexa-orm/src/Domain/Contract/SchemaComparatorInterface.php
+
+		-
+			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Domain/Model/ResourceMetadata.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\OrmManager\:\:resolveDbHost\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/OrmManager.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\OrmManager\:\:resolveDbPort\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/OrmManager.php
+
+		-
+			message: '#^Parameter \#2 \$string of function explode expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/OrmManager.php
+
+		-
+			message: '#^Cannot access offset ''connector'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Cannot use array destructuring on mixed\.$#'
+			identifier: offsetAccess.nonArray
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Query\\DeleteQuery\:\:buildWhereCondition\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Parameter \#1 \$where of method Semitexa\\Orm\\Query\\DeleteQuery\:\:buildWhereCondition\(\) expects array\<string, mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 3
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Property Semitexa\\Orm\\Query\\DeleteQuery\:\:\$wheres \(array\<string, mixed\>\) does not accept array\<int\|string, mixed\>\.$#'
+			identifier: assign.propertyType
+			count: 9
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and 0 will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-orm/src/Query/DeleteQuery.php
+
+		-
+			message: '#^Cannot access offset ''connector'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Cannot use array destructuring on mixed\.$#'
+			identifier: offsetAccess.nonArray
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Query\\UpdateQuery\:\:buildWhereCondition\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Parameter \#1 \$where of method Semitexa\\Orm\\Query\\UpdateQuery\:\:buildWhereCondition\(\) expects array\<string, mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 3
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Property Semitexa\\Orm\\Query\\UpdateQuery\:\:\$wheres \(array\<string, mixed\>\) does not accept array\<int\|string, mixed\>\.$#'
+			identifier: assign.propertyType
+			count: 9
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and 0 will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-orm/src/Query/UpdateQuery.php
+
+		-
+			message: '#^Method Semitexa\\Orm\\Query\\WhereCapableInterface\:\:whereIn\(\) has parameter \$values with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-orm/src/Query/WhereCapableInterface.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\FilterableTrait is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/FilterableTrait.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\HasTimestamps is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/HasTimestamps.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\HasUuid is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/HasUuid.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\HasUuidV7 is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/HasUuidV7.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\Seedable is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/Seedable.php
+
+		-
+			message: '#^Trait Semitexa\\Orm\\Trait\\SoftDeletes is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: packages/semitexa-orm/src/Trait/SoftDeletes.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between Swoole\\Http\\Server and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Handler/PayloadHandler/SseKissHandler.php
+
+		-
+			message: '#^Cannot access offset ''__ssr_asset_collector'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetCollectorStore.php
+
+		-
+			message: '#^Cannot call method reset\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetCollectorStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetCollectorStore\:\:get\(\) should return Semitexa\\Ssr\\Application\\Service\\Asset\\AssetCollector but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetCollectorStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry\:\:__construct\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$arrays of function array_merge expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$attributes of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$dependencies of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects array\<string\>, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$module of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$path of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$position of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$priority of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$scope of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Parameter \$type of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetManager\:\:getVersion\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetManager.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Asset\\AssetManager\:\:\$moduleVersions type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetManager.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetRenderer\:\:buildAttributes\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetRenderer.php
+
+		-
+			message: '#^Offset string on non\-empty\-array\<string, int\> on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetResolver.php
+
+		-
+			message: '#^Cannot access offset ''query_string'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/StaticAssetHandler.php
+
+		-
+			message: '#^Cannot access offset ''request_uri'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/StaticAssetHandler.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between lowercase\-string&non\-falsy\-string and '''' will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Asset/StaticAssetHandler.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Async\\AsyncResourceSseServer\:\:deliver\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Async\\SseAsyncResultDelivery\:\:deliverRaw\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Async/SseAsyncResultDelivery.php
+
+		-
+			message: '#^Cannot access offset string on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Component\\ComponentSlotRenderer\:\:render\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Component\\ComponentSlotRenderer\:\:render\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$name of method Twig\\Environment\:\:render\(\) expects string\|Twig\\TemplateWrapper, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$arrays of function array_merge expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Component/ComponentSlotRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DataProviderRegistry\:\:register\(\) has parameter \$handles with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DataProviderRegistry.php
+
+		-
+			message: '#^Parameter \#1 \$handles of static method Semitexa\\Ssr\\Application\\Service\\DataProviderRegistry\:\:normalizeHandles\(\) expects list\<string\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DataProviderRegistry.php
+
+		-
+			message: '#^Cannot access property \$slotId on mixed\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Cannot use array destructuring on mixed\.$#'
+			identifier: offsetAccess.nonArray
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:buildPayload\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:renderDeferredBlocksSync\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:renderDeferredBlocksSync\(\) has parameter \$slotNames with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:renderSlotHtml\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:resolveSlotData\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:resolveSlotData\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:resolveSlotSafely\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:resolveSlotSafely\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:runLiveLoop\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:streamDeferredBlocks\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Parameter \#1 \$slot of method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:buildPayload\(\) expects Semitexa\\Ssr\\Domain\\Model\\DeferredSlotDefinition, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Parameter \#2 \$data of method Semitexa\\Ssr\\Application\\Service\\DeferredBlockOrchestrator\:\:buildPayload\(\) expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Parameter \#2 \$slotId of static method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:markDelivered\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between Swoole\\Coroutine\\Channel and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Extension\\TwigExtensionRegistry\:\:getFunctions\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Extension/TwigExtensionRegistry.php
+
+		-
+			message: '#^Cannot access offset ''_ssr_full'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Cannot access offset ''handle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Cannot access offset ''template'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Cannot access offset ''user\-agent'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse\:\:renderTemplate\(\) has parameter \$extraContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse\:\:sanitizeDeferredContext\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse\:\:sanitizeDeferredContext\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Parameter \#1 \$handle of static method Semitexa\\Ssr\\Application\\Service\\Layout\\LayoutSlotRegistry\:\:getDeferredSlots\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Parameter \#1 \$handle of static method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:setPageHandle\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Parameter \#1 \$haystack of function stripos expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Parameter \#1 \$string of function htmlspecialchars expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Parameter \#2 \$pageHandle of static method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:store\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse\:\:\$attributeCache type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse\:\:\$declaredTemplate \(string\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
+
+		-
+			message: '#^Cannot access offset ''cacheTtl'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''clientModules'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''context'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''deferred'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''handle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''mode'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''priority'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''refreshInterval'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''skeletonTemplate'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''slot'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot access offset ''template'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:getClientModules\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:getRenderContext\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:getStaticContext\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:withClientModules\(\) has parameter \$clientModules with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:withRenderContext\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$attributeCache type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$cacheTtl \(int\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$clientModules \(array\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$clientModules type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$declaredTemplate \(string\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$deferred \(bool\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$mode \(string\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$priority \(int\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$refreshInterval \(int\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$renderContext type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$skeletonTemplate \(string\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$slotHandle \(string\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$slotName \(string\|null\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$staticContext \(array\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse\:\:\$staticContext type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlSlotResponse.php
+
+		-
+			message: '#^Cannot call method trans\(\) on Semitexa\\Locale\\Application\\Service\\I18n\\TranslationService\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/I18n/Translator.php
+
+		-
+			message: '#^Cannot call method transChoice\(\) on Semitexa\\Locale\\Application\\Service\\I18n\\TranslationService\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/I18n/Translator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\I18n\\Translator\:\:getService\(\) should return Semitexa\\Locale\\Application\\Service\\I18n\\TranslationService but returns Semitexa\\Locale\\Application\\Service\\I18n\\TranslationService\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/I18n/Translator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\I18n\\Translator\:\:trans\(\) has parameter \$params with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/I18n/Translator.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\I18n\\Translator\:\:transChoice\(\) has parameter \$params with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/I18n/Translator.php
+
+		-
+			message: '#^Call to function is_int\(\) with \*NEVER\* will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Call to function is_int\(\) with int will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Cannot call method set\(\) on Swoole\\Table\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 3
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:store\(\) has parameter \$pageContext with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:store\(\) has parameter \$slotIds with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:unsupportedMarker\(\) should return object but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Parameter \#1 \$context of static method Semitexa\\Ssr\\Application\\Service\\Isomorphic\\DeferredRequestRegistry\:\:sanitizeContext\(\) expects array\<string, mixed\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Parameter \#1 \$key of method Swoole\\Table\:\:del\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php
+
+		-
+			message: '#^Cannot access offset ''_ssr_full'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Cannot access offset ''user\-agent'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Layout\\LayoutRenderer\:\:renderHandle\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$haystack of function stripos expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$name of method Twig\\Environment\:\:render\(\) expects string\|Twig\\TemplateWrapper, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$string of function htmlspecialchars expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/LayoutRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Layout\\SlotAssetCollector\:\:collectModuleRefs\(\) has parameter \$modules with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotAssetCollector.php
+
+		-
+			message: '#^Parameter \#1 \$ref of static method Semitexa\\Ssr\\Application\\Service\\Layout\\SlotAssetCollector\:\:convertModuleRef\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotAssetCollector.php
+
+		-
+			message: '#^Instanceof between Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse and Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlSlotResponse will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Layout\\SlotHandlerPipeline\:\:resolveHandler\(\) return type with generic interface Semitexa\\Ssr\\Domain\\Contract\\TypedSlotHandlerInterface does not specify its types\: TSlot, TResult$#'
+			identifier: missingType.generics
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php
+
+		-
+			message: '#^Static ContainerFactory\:\: access is forbidden in application code \(Semitexa\\Ssr\\Application\\Service\\Layout\\SlotHandlerPipeline\)\. Use \#\[InjectAsReadonly\], \#\[InjectAsMutable\], \#\[InjectAsFactory\] property injection instead\.$#'
+			identifier: semitexa.staticContainerAccess
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Layout\\SlotRenderer\:\:renderEntry\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Layout\\SlotRenderer\:\:renderEntry\(\) has parameter \$entry with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotRenderer.php
+
+		-
+			message: '#^Offset ''clientModules'' on array\{resourceClass\: string, template\: string, context\: array, priority\: int, clientModules\: array\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotRenderer.php
+
+		-
+			message: '#^Offset ''template'' on array\{resourceClass\: string, template\: string, context\: array, priority\: int, clientModules\: array\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Layout/SlotRenderer.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Page/PageDocumentProjector.php
+
+		-
+			message: '#^Offset ''deferred'' on array\{deferred\: bool\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Page/PageDocumentProjector.php
+
+		-
+			message: '#^Offset ''deferred'' on array\{iri\: string, deferred\: bool\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Page/PageDocumentProjector.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 4
+			path: packages/semitexa-ssr/src/Application/Service/Seo/AiSitemapJsonRenderer.php
+
+		-
+			message: '#^Offset 1 on array\{list\<string\>, list\<non\-empty\-string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/AiSitemapJsonRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/AiSitemapJsonRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:generateForResource\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:getCurrentContext\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:getPageParts\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$context of static method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:getDeclaredAlternates\(\) expects array\<string, mixed\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$resource of static method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:generateForResource\(\) expects object, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Parameter \#2 \$handle of static method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:generateForResource\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
+
+		-
+			message: '#^Binary operation "\." between mixed and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 2
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Cannot access offset ''__seo_meta'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Cannot access offset ''__seo_title'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Cannot access offset ''__seo_title_prefix'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Cannot access offset ''__seo_title_suffix'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:all\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:getMeta\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:getMeta\(\) should return array but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:getTitle\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:setMeta\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Parameter \#1 \$string of function htmlspecialchars expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Application\\Service\\Seo\\SeoMeta\:\:\$staticMeta type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Seo/SeoMeta.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Semitexa\\\\Ssr\\\\Application\\\\Service\\\\Isomorphic\\\\DeferredRequestRegistry'' and ''setTable'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/semitexa-ssr/src/Application/Service/Server/Lifecycle/InitializeDeferredRequestRegistryListener.php
+
+		-
+			message: '#^Parameter \$templateAssetsPath of class Semitexa\\Ssr\\Configuration\\IsomorphicConfig constructor expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-ssr/src/Configuration/IsomorphicConfig.php
+
+		-
+			message: '#^Cannot access offset ''__ssr_iso_deferred_slots'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Cannot access offset ''__ssr_iso_page_handle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Cannot access offset ''__ssr_iso_session_id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:getDeferredSlots\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:getDeferredSlots\(\) should return array but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:getPageHandle\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:getSessionId\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:setDeferredSlots\(\) has parameter \$slots with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:\$staticDeferredSlots type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/IsomorphicContextStore.php
+
+		-
+			message: '#^Cannot access offset ''__ssr_page_render_context'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: packages/semitexa-ssr/src/Context/PageRenderContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\PageRenderContextStore\:\:get\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/PageRenderContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\PageRenderContextStore\:\:get\(\) should return array but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-ssr/src/Context/PageRenderContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Context\\PageRenderContextStore\:\:set\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/PageRenderContextStore.php
+
+		-
+			message: '#^Property Semitexa\\Ssr\\Context\\PageRenderContextStore\:\:\$staticContext type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Context/PageRenderContextStore.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredBlockPayload\:\:__construct\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Domain/Model/DeferredBlockPayload.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredBlockPayload\:\:__construct\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Domain/Model/DeferredBlockPayload.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredBlockPayload\:\:toArray\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Domain/Model/DeferredBlockPayload.php
+
+		-
+			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredSlotDefinition\:\:__construct\(\) has parameter \$clientModules with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-ssr/src/Domain/Model/DeferredSlotDefinition.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Tenancy\\Application\\Console\\Command\\TenantListCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantListCommand.php
+
+		-
+			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Tenancy\\Application\\Console\\Command\\TenantRunCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
+			identifier: semitexa.injectionViaConstructor
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantRunCommand.php
+
+		-
+			message: '#^Parameter \#1 \$id of method Semitexa\\Tenancy\\Domain\\Contract\\TenantRepositoryInterface\:\:findActive\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantRunCommand.php
+
+		-
+			message: '#^Parameter \#1 \$tenantId of static method Semitexa\\Tenancy\\Context\\TenantContext\:\:fromResolution\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantRunCommand.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantRunCommand.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Console/Command/TenantRunCommand.php
+
+		-
+			message: '#^Cannot access offset ''config'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Cannot access offset ''name'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Cannot access offset ''status'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\ConfigTenantRepository\:\:__construct\(\) has parameter \$config with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Parameter \#1 \$value of method Semitexa\\Tenancy\\Application\\Service\\ConfigTenantRepository\:\:parseCompact\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Parameter \#1 \$value of static method Semitexa\\Tenancy\\Domain\\Enum\\TenantStatus\:\:normalize\(\) expects Semitexa\\Tenancy\\Domain\\Enum\\TenantStatus\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Parameter \$config of class Semitexa\\Tenancy\\Domain\\Model\\Tenant constructor expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Parameter \$name of class Semitexa\\Tenancy\\Domain\\Model\\Tenant constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Property Semitexa\\Tenancy\\Application\\Service\\ConfigTenantRepository\:\:\$tenants \(array\<string, Semitexa\\Tenancy\\Domain\\Model\\Tenant\>\) does not accept array\<Semitexa\\Tenancy\\Domain\\Model\\Tenant\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/ConfigTenantRepository.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$layers of class Semitexa\\Tenancy\\Context\\TenantContext constructor expects Semitexa\\Core\\Tenant\\Layer\\TenantLayerValueInterface, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/Resolver/MultilayerTenantResolver.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\Resolver\\Strategy\\PathStrategy\:\:__construct\(\) has parameter \$prefixes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/Resolver/Strategy/PathStrategy.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\Resolver\\Strategy\\PathStrategy\:\:allowOnly\(\) has parameter \$prefixes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/Resolver/Strategy/PathStrategy.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\Resolver\\Strategy\\PathStrategy\:\:excludeOnly\(\) has parameter \$excludedPrefixes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/Resolver/Strategy/PathStrategy.php
+
+		-
+			message: '#^Parameter \$excludedPrefixes of class Semitexa\\Tenancy\\Application\\Service\\Resolver\\Strategy\\PathStrategy constructor expects array\<string\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/Resolver/Strategy/PathStrategy.php
+
+		-
+			message: '#^Call to an undefined method object\:\:layers\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/TenancyBootstrapper.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\TenancyLayersProvider\:\:getLocalePrefixes\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/TenancyLayersProvider.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Application\\Service\\TenancyLayersProvider\:\:layers\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Application/Service/TenancyLayersProvider.php
+
+		-
+			message: '#^Cannot call method rawValue\(\) on Semitexa\\Core\\Tenant\\Layer\\TenantLayerValueInterface\|null\.$#'
+			identifier: method.nonObject
+			count: 4
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Context\\TenantContext\:\:forSerialization\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Context\\TenantContext\:\:fromQueuePayload\(\) has parameter \$payload with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Context\\TenantContext\:\:getLayer\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Context\\TenantContext\:\:getLayer\(\) should return Semitexa\\Core\\Tenant\\Layer\\TenantLayerValueInterface\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Parameter \#1 \$code of static method Semitexa\\Core\\Tenant\\Layer\\LocaleValue\:\:fromCode\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Parameter \#1 \$id of class Semitexa\\Core\\Tenant\\Layer\\OrganizationValue constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Parameter \#1 \$value of static method Semitexa\\Core\\Tenant\\Layer\\EnvironmentValue\:\:fromValue\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Property Semitexa\\Tenancy\\Context\\TenantContext\:\:\$layers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Property Semitexa\\Tenancy\\Context\\TenantContext\:\:\$strategy \(string\) does not accept mixed\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: packages/semitexa-tenancy/src/Context/TenantContext.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Domain\\Model\\Tenant\:\:__construct\(\) has parameter \$config with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Domain/Model/Tenant.php
+
+		-
+			message: '#^Method Semitexa\\Tenancy\\Domain\\Model\\Tenant\:\:create\(\) has parameter \$config with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: packages/semitexa-tenancy/src/Domain/Model/Tenant.php
+

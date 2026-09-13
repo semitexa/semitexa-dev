@@ -1,0 +1,69 @@
+includes:
+    - phpstan-baseline.neon
+
+rules:
+    - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
+    - Semitexa\Core\PHPStan\Rules\ConfigOnClassTypeRule
+    - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
+    - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
+    - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
+    - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
+    - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
+    - Semitexa\Core\PHPStan\Rules\ExecutionScopedWithoutAttributeRule
+    - Semitexa\Core\PHPStan\Rules\DirectResponseConstructionRule
+    - Semitexa\Core\PHPStan\Rules\HandlerReturnsResponseRule
+    - Semitexa\Core\PHPStan\Rules\ExplicitOptionalDependencyRule
+    - Semitexa\Core\PHPStan\Rules\EventListenerMissingExecutionRule
+    - Semitexa\Core\PHPStan\Rules\DiscoveryCallSiteRule
+    - Semitexa\Core\PHPStan\Rules\FactoryStringKeyRule
+    - Semitexa\Core\PHPStan\Rules\FactoryContractRule
+    - Semitexa\Core\PHPStan\Rules\FactoryClosedWorldRule
+    - Semitexa\Core\PHPStan\Rules\TraitInjectionRule
+    - Semitexa\Core\PHPStan\Rules\ModuleContractOwnershipRule
+    - Semitexa\Core\PHPStan\Rules\DisallowErrorLogRule
+
+parameters:
+    level: max
+    reportUnmatchedIgnoredErrors: false
+
+    # `src` is NOT here, deliberately, decided 2026-09-13.
+    #
+    # The 13 modules under src/modules are the workspace's exercise surface —
+    # the release clone rsyncs them and 97 E2E specs run against them — but
+    # src/ is not a git repository and belongs to none. Every fix made there
+    # lives on one machine, while the baseline (which IS versioned now) would
+    # record the errors as gone. A ledger that outlives the code it describes
+    # is worse than no ledger.
+    #
+    # So this gate measures what actually ships. 278 errors -> 165 by dropping
+    # them, and the number now means "the analysed, versioned, releasable
+    # tree". THE COST, stated because it is real: the custom Semitexa rules
+    # (DI channel, handler returns, optional-dependency) no longer run on the
+    # demo modules, which are exactly the code that exercises those patterns.
+    # A consumer project's own phpstan.neon — shipped by the installer
+    # scaffold — does analyse its `src`, so the rules still reach application
+    # code where it is versioned.
+    paths:
+        - packages/semitexa-orm/src
+        - packages/semitexa-core/src
+        - packages/semitexa-ssr/src
+        - packages/semitexa-tenancy/src
+
+    excludePaths:
+        - vendor
+        - var
+        # Requires composer/composer which is only available on host
+        - packages/semitexa-core/src/Composer/SemitexaPlugin.php
+        - packages/semitexa-core/src/Console/Command/RegistrySyncPayloadsCommand.php (?)
+        - packages/semitexa-core/src/Console/Command/RegistrySyncResourcesCommand.php (?)
+
+    # Bootstrap to ensure autoloading works.
+    # phpstan-bootstrap.php registers PSR-4 for local modules
+    # (src/modules/<Name>/src), since runtime registration via the
+    # LocalModuleAutoloadPhase build phase never runs under PHPStan.
+    # Lives at project root (not under packages/) so the release-readiness
+    # sync step can copy it into the rls clone before any release-clone
+    # path-repo'd semitexa-core has caught up to a develop->master merge.
+    bootstrapFiles:
+        - vendor/autoload.php
+        - phpstan-bootstrap.php

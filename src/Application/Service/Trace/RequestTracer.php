@@ -125,6 +125,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 // Stage mode records everything; only a marked request (or an
                 // SSE connection, which cannot carry a marker) earns a file.
                 $opened->persist = $this->wantsFile($context);
+                $opened->exportable = $this->wantsExport($context);
                 TraceContext::begin($opened);
                 $this->orm()->enableQueryLog();
                 // Live attachment: each query lands on the timeline of whichever
@@ -171,6 +172,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
             // review of semitexa-dev#78.
             if (!$buffer->persist && $this->wantsFile($context)) {
                 $buffer->persist = true;
+            }
+            if (!$buffer->exportable && $this->wantsExport($context)) {
+                $buffer->exportable = true;
             }
 
             if ($name === $buffer->rootSpan) {
@@ -356,8 +360,46 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
     }
 
     /**
+     * Whether this root may ALSO go to an OTLP collector.
+     *
+     * A marker means a developer asked for this trace, and that is the only
+     * thing a collector should be handed by default. An SSE connection earns a
+     * FILE without asking — it cannot carry a marker, and the panel needs the
+     * session — but exporting it too made enabling the exporter a very
+     * different decision from the one it looks like: every disconnect became a
+     * synchronous POST inside the request, and a collector that answers slowly
+     * held the worker for the full timeout (2s) each time. MEASURED 2026-09-12
+     * on loopback: 248us median for 16 spans, 903us for 256, 412us when
+     * nothing is listening, +1.0015s against a collector sleeping one second.
+     *
+     * Opt in with SEMITEXA_OTEL_EXPORT_SSE=1 if SSE sessions are what you came
+     * to the collector for. Deferring the POST into a coroutine is the other
+     * way out and is deliberately not taken — see OtlpTraceExporter, which
+     * says why cancellation at worker exit makes that a different problem.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function wantsExport(array $context): bool
+    {
+        $marker = $context['marker'] ?? null;
+        if (is_string($marker) && $marker !== '' && $marker !== '0') {
+            return true;
+        }
+
+        if (($context['sse'] ?? false) !== true) {
+            return false;
+        }
+
+        $optIn = Environment::getEnvValue('SEMITEXA_OTEL_EXPORT_SSE');
+
+        return is_string($optIn) && in_array(strtolower(trim($optIn)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
      * Whether this root asked for a trace FILE: an explicit marker, or an SSE
-     * connection (which cannot carry one — see shouldRecord()).
+     * connection (which cannot carry one — see shouldRecord()). Deliberately
+     * wider than {@see self::wantsExport()}: a file is local and cheap, a POST
+     * to somebody's collector is neither.
      *
      * @param array<string, mixed> $context
      */
@@ -504,7 +546,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // developer the trace they were waiting for — and only when it IS on
         // disk, so the collector never holds a trace the developer cannot open
         // beside it. Silent unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
-        if ($written && OtlpTraceExporter::isConfigured()) {
+        if ($written && $buffer->exportable && OtlpTraceExporter::isConfigured()) {
             OtlpTraceExporter::export([
                 'totalMs' => $buffer->sinceStartMs(),
                 'rootCid' => $buffer->rootCid,

@@ -1,0 +1,307 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Tests\Unit\Invoke;
+
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Invoke\FieldExpectations;
+
+/**
+ * `--expect-field` turns ai:invoke into a question with a yes/no answer.
+ *
+ * Without it, asserting "the total came back as 3" meant serialising the
+ * envelope, decoding it and indexing in — three places to go quietly wrong.
+ */
+final class FieldExpectationsTest extends TestCase
+{
+    /** @param list<string> $raw */
+    private function check(array $raw, ?array $resource): array
+    {
+        return FieldExpectations::fromOptions($raw)->check($resource);
+    }
+
+    #[Test]
+    public function a_matching_field_holds(): void
+    {
+        $report = $this->check(['total=3'], ['total' => 3]);
+
+        self::assertSame(1, $report['checked']);
+        self::assertSame(0, $report['failed']);
+        self::assertTrue($report['results'][0]['ok']);
+    }
+
+    /**
+     * A shell flag carries no types, so the comparison is textual and the rule
+     * is one sentence: the value is rendered as the flag would have to spell
+     * it. Inventing a type syntax would be a worse trade than saying this.
+     */
+    #[Test]
+    public function the_comparison_is_textual_and_covers_the_scalars(): void
+    {
+        self::assertSame(0, $this->check(['n=3'], ['n' => 3])['failed'], 'int');
+        self::assertSame(0, $this->check(['n=3'], ['n' => '3'])['failed'], 'string');
+        self::assertSame(0, $this->check(['f=1.5'], ['f' => 1.5])['failed'], 'float');
+        self::assertSame(0, $this->check(['b=true'], ['b' => true])['failed'], 'bool');
+        self::assertSame(0, $this->check(['b=false'], ['b' => false])['failed'], 'false is not absence');
+        self::assertSame(0, $this->check(['z=null'], ['z' => null])['failed'], 'null is a value');
+    }
+
+    #[Test]
+    public function a_wrong_value_reports_both_sides(): void
+    {
+        $result = $this->check(['name=Ada'], ['name' => 'Grace'])['results'][0];
+
+        self::assertFalse($result['ok']);
+        self::assertSame('Ada', $result['expected']);
+        self::assertSame('Grace', $result['actual']);
+    }
+
+    /** A path that is not there is a failure with a reason, not a silent false. */
+    #[Test]
+    public function an_absent_path_says_so(): void
+    {
+        $result = $this->check(['nope=1'], ['total' => 3])['results'][0];
+
+        self::assertFalse($result['ok']);
+        self::assertNull($result['actual']);
+        self::assertStringContainsString('no such path', $result['reason']);
+    }
+
+    #[Test]
+    public function a_dot_path_walks_into_nested_data(): void
+    {
+        $resource = ['meta' => ['pagination' => ['total' => 42]]];
+
+        self::assertSame(0, $this->check(['meta.pagination.total=42'], $resource)['failed']);
+        self::assertSame(1, $this->check(['meta.pagination.total=41'], $resource)['failed']);
+        self::assertSame(1, $this->check(['meta.missing.total=42'], $resource)['failed']);
+    }
+
+    /**
+     * A non-scalar renders as its type in angle brackets — something no flag
+     * value equals by accident, so a caller asserting against a list gets a
+     * mismatch that explains itself rather than a lucky pass.
+     */
+    #[Test]
+    public function a_non_scalar_never_matches_and_names_its_type(): void
+    {
+        $result = $this->check(['items=3'], ['items' => [1, 2, 3]])['results'][0];
+
+        self::assertFalse($result['ok']);
+        self::assertSame('<array>', $result['actual']);
+    }
+
+    /**
+     * The comparison uses the REAL value — otherwise every assertion under a
+     * secret-looking key would be compared against a mask and always fail —
+     * while the report shows the masked form, because this envelope is printed
+     * and pasted like any other.
+     */
+    #[Test]
+    public function a_secret_is_compared_truly_and_reported_masked(): void
+    {
+        $report = $this->check(['password=hunter2'], ['password' => 'hunter2']);
+        $result = $report['results'][0];
+
+        self::assertTrue($result['ok'], 'the comparison must see the real value');
+        self::assertNotSame('hunter2', $result['actual'], 'and the report must not carry it');
+        self::assertTrue($result['actual_redacted']);
+    }
+
+    /**
+     * `<array>` was meant to be unspellable, and a caller can spell it — so an
+     * assertion against a list passed. Scalar-ness is part of the verdict now,
+     * not a property of the label. Raised in review of dev#84.
+     */
+    #[Test]
+    public function spelling_the_type_label_does_not_make_it_match(): void
+    {
+        foreach ([['items' => [1, 2]], ['items' => new \stdClass()]] as $resource) {
+            $result = $this->check(['items=<' . get_debug_type($resource['items']) . '>'], $resource)['results'][0];
+
+            self::assertFalse($result['ok'], 'a type description is not a value');
+            self::assertStringContainsString('no --expect-field value can equal', $result['reason']);
+        }
+    }
+
+    /**
+     * Masking only the actual left the caller's own expected text printing the
+     * secret verbatim — back in through the door the mask was guarding.
+     */
+    #[Test]
+    public function the_expected_side_is_masked_too(): void
+    {
+        $result = $this->check(['password=hunter2'], ['password' => 'hunter2'])['results'][0];
+
+        self::assertTrue($result['ok'], 'the comparison still sees the real values');
+        self::assertNotSame('hunter2', $result['expected']);
+        self::assertNotSame('hunter2', $result['actual']);
+        self::assertTrue($result['expected_redacted']);
+        self::assertSame([], array_filter(
+            [$result['expected'], $result['actual']],
+            static fn (string $v): bool => str_contains($v, 'hunter2'),
+        ), 'nothing in the report may carry it');
+    }
+
+    /**
+     * Masking by the LEAF key asked the wrong question: `credentials.value` is
+     * a `value`, which nothing treats as secret, while the redactor looking at
+     * the real structure masks it. The display now reads out of the redacted
+     * resource rather than a synthetic one-key array. Raised in review of
+     * dev#84.
+     */
+    #[Test]
+    public function a_nested_secret_is_masked_by_its_real_path(): void
+    {
+        $resource = ['credentials' => ['password' => 'hunter2', 'user' => 'ada']];
+        $report = $this->check(['credentials.password=hunter2', 'credentials.user=ada'], $resource);
+
+        [$secret, $ordinary] = $report['results'];
+
+        self::assertTrue($secret['ok'], 'the comparison still sees the real value');
+        self::assertNotSame('hunter2', $secret['actual'], 'a nested secret must not surface');
+        self::assertNotSame('hunter2', $secret['expected']);
+        self::assertStringNotContainsString('hunter2', json_encode($report, JSON_THROW_ON_ERROR));
+
+        // The redactor masks the secret-looking CONTAINER whole rather than
+        // descending into it, so the neighbour under it is masked too. That is
+        // its decision, and honouring it is the point — second-guessing which
+        // children are safe is how a secret gets printed.
+        self::assertTrue($ordinary['ok'], 'the comparison still sees the real value');
+        self::assertNotSame('ada', $ordinary['actual']);
+        self::assertSame($secret['actual'], $ordinary['actual'], 'both show the container mask');
+    }
+
+    /** An ordinary field is reported as written, not masked into uselessness. */
+    #[Test]
+    public function an_ordinary_expected_value_is_left_alone(): void
+    {
+        $result = $this->check(['title=Ada'], ['title' => 'Ada'])['results'][0];
+
+        self::assertSame('Ada', $result['expected']);
+        self::assertArrayNotHasKey('expected_redacted', $result);
+    }
+
+    #[Test]
+    public function a_resource_that_never_arrived_fails_every_expectation(): void
+    {
+        $report = $this->check(['a=1', 'b=2'], null);
+
+        self::assertSame(2, $report['failed']);
+    }
+
+    #[Test]
+    public function an_entry_without_a_value_is_refused_rather_than_guessed(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/path=value/');
+
+        FieldExpectations::fromOptions(['justapath']);
+    }
+
+    #[Test]
+    public function an_empty_value_is_a_legitimate_expectation(): void
+    {
+        self::assertSame(0, $this->check(['note='], ['note' => ''])['failed']);
+        self::assertSame(1, $this->check(['note='], ['note' => 'x'])['failed']);
+    }
+
+    /**
+     * The leak that survived the first redaction fix: sensitivity was decided
+     * from the ACTUAL value, so a path that was not found had none to inspect,
+     * `$isSecret` came out false, and the caller's own
+     * `--expect-field=password=hunter2` went into the envelope verbatim. The
+     * envelope is built to be pasted around. Raised in review of dev#84.
+     */
+    #[Test]
+    public function a_secret_expectation_is_masked_even_when_the_field_is_absent(): void
+    {
+        $out = FieldExpectations::fromOptions(['password=hunter2'])->check(['user' => 'ada']);
+
+        self::assertFalse($out['results'][0]['ok']);
+        self::assertSame('no such path in the resource', $out['results'][0]['reason']);
+        self::assertNotSame('hunter2', $out['results'][0]['expected']);
+        self::assertTrue($out['results'][0]['expected_redacted']);
+        self::assertStringNotContainsString('hunter2', json_encode($out, JSON_THROW_ON_ERROR));
+    }
+
+    /** Including when the handler returned no resource at all. */
+    #[Test]
+    public function a_secret_expectation_is_masked_when_there_is_no_resource(): void
+    {
+        $out = FieldExpectations::fromOptions(['credentials.apiKey=sk-live-9'])->check(null);
+
+        self::assertStringNotContainsString('sk-live-9', json_encode($out, JSON_THROW_ON_ERROR));
+    }
+
+    /** An ordinary missing field still says what was expected. */
+    #[Test]
+    public function an_ordinary_expectation_is_still_readable_when_absent(): void
+    {
+        $out = FieldExpectations::fromOptions(['status=active'])->check(['user' => 'ada']);
+
+        self::assertSame('active', $out['results'][0]['expected']);
+        self::assertArrayNotHasKey('expected_redacted', $out['results'][0]);
+    }
+
+    /**
+     * ContextRedactor does TWO jobs at once: it masks secrets and it bounds
+     * output (past 200 characters, and for deep or large structures). Treating
+     * "the redacted copy differs" as the secret signal conflated them, and the
+     * cost was not cosmetic: the caller's EXPECTED value was replaced with the
+     * bounded ACTUAL one, so a failed assertion could print the same text on
+     * both sides and hide what was really compared. Raised twice in review of
+     * dev#84, by both reviewers.
+     */
+    #[Test]
+    public function a_long_ordinary_value_is_not_a_secret(): void
+    {
+        $shared = str_repeat('a', 250);
+        $out = FieldExpectations::fromOptions(['note=' . $shared . 'EXPECTED'])
+            ->check(['note' => $shared . 'ACTUAL']);
+
+        $row = $out['results'][0];
+        self::assertFalse($row['ok'], 'the two differ past the bound');
+        self::assertArrayNotHasKey('expected_redacted', $row, 'a long string is not a secret');
+        self::assertStringContainsString('EXPECTED', $row['expected'], 'the caller must still see what they asked for');
+        self::assertNotSame($row['expected'], $row['actual'], 'a failure must never show both sides as equal');
+    }
+
+    /** Bounded is not secret, but it is not whole either — and says so. */
+    #[Test]
+    public function a_bounded_value_is_marked_as_bounded(): void
+    {
+        $out = FieldExpectations::fromOptions(['note=short'])
+            ->check(['note' => str_repeat('b', 400)]);
+
+        self::assertTrue($out['results'][0]['actual_bounded']);
+        self::assertArrayNotHasKey('actual_redacted', $out['results'][0]);
+    }
+
+    /** A short ordinary value carries neither marker. */
+    #[Test]
+    public function an_ordinary_value_carries_no_marker(): void
+    {
+        $out = FieldExpectations::fromOptions(['note=hi'])->check(['note' => 'hi']);
+
+        self::assertTrue($out['results'][0]['ok']);
+        self::assertArrayNotHasKey('actual_bounded', $out['results'][0]);
+        self::assertArrayNotHasKey('actual_redacted', $out['results'][0]);
+    }
+
+    /**
+     * `--expect-field="$EXPECT"` with an empty variable used to drop the
+     * assertion silently, and the command then exited 0 having checked
+     * nothing — from an option whose entire job is a yes/no guarantee.
+     */
+    #[Test]
+    public function a_blank_entry_is_refused_rather_than_dropped(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('empty value');
+
+        FieldExpectations::fromOptions(['status=ok', '   ']);
+    }
+}

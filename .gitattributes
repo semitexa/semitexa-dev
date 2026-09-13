@@ -1,0 +1,8 @@
+# The workspace's own PHPStan configuration is versioned here because the
+# Semitexa project root is not a git repository (see resources/phpstan-sync.sh).
+# It is not part of what this package DISTRIBUTES: its `paths:` name
+# packages/semitexa-*, and the baseline is a 300K record of this repository's
+# debt, keyed by files no consumer has. Consumers get their own config from the
+# installer scaffold instead.
+/resources/phpstan export-ignore
+/resources/phpstan-sync.sh export-ignore

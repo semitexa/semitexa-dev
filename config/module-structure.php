@@ -1052,12 +1052,20 @@ $packageRoot = new ModuleStructureRule(
         'composer.json',
         'composer.lock',
         '.gitignore',
+        // Distribution metadata: `export-ignore` keeps workspace-only assets
+        // out of the Packagist dist while leaving them versioned in the repo.
+        '.gitattributes',
         '.env.default',
         '.phpunit.result.cache',
         'LICENSE',
         'Dockerfile',
         'phpstan.neon',
         'phpstan-baseline.neon',
+        // semitexa/ultimate is the project SKELETON, so its root carries the
+        // analysis config a new project starts with — the strict variant and
+        // the module-autoload shim phpstan.neon names in bootstrapFiles.
+        'phpstan-strict.neon',
+        'phpstan-bootstrap.php',
         'theme.json',
         'server.php',
     ],

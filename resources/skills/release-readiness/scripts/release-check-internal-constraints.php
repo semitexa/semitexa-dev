@@ -53,7 +53,9 @@ foreach ($composerFiles as $composerPath) {
                 'section' => $section,
                 'dependency' => $dependency,
                 'constraint' => $constraint,
-                'reason' => 'internal Semitexa dependency is not compatible with UTC date-based releases',
+                'reason' => 'internal Semitexa dependency is not compatible with UTC date-based releases; '
+                    . 'use "*", an exact "2026.09.13.0749", or a floor ">=2026.09.13.0749" naming the release '
+                    . 'that first shipped the API this package calls',
             ];
         }
     }
@@ -81,11 +83,35 @@ foreach ($violations as $violation) {
 
 exit(1);
 
+/**
+ * Three forms, and each says something different.
+ *
+ *   *                     this package works with any release of that one
+ *   2026.09.13.0749       exactly this release (what ultimate's pins are)
+ *   >=2026.09.13.0749     a FLOOR: the release where the API it calls appeared
+ *
+ * The floor exists because `*` cannot express a minimum, and a consumer who
+ * installs one package directly -- `composer require semitexa/ledger` beside a
+ * core that is pinned older -- got a resolution that composer was happy with
+ * and a worker that died on `Class Semitexa\Core\Support\StandingCoroutines
+ * not found`. A floor turns that into a resolution error, which is a sentence
+ * rather than a crash.
+ *
+ * WHEN TO WRITE ONE: you added a call into another Semitexa package's NEW API.
+ * Put the release that first shipped that API. Nothing rewrites it afterwards
+ * and nothing should: it is a fact about the code, not about the current
+ * release, and bumping it every release would make it mean `*` again.
+ *
+ * WHEN NOT TO: everything else. A floor on an API that has been there for
+ * months only stops consumers from mixing versions that would have worked.
+ */
 function isCompatibleInternalConstraint(string $constraint): bool
 {
     if ($constraint === '*') {
         return true;
     }
 
-    return preg_match('/^\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-(?:alpha|beta|rc\d+|p\d+))?$/i', $constraint) === 1;
+    $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-(?:alpha|beta|rc\d+|p\d+))?';
+
+    return preg_match('/^(?:>=\s*)?' . $version . '$/i', $constraint) === 1;
 }

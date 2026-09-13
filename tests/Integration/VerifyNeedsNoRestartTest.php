@@ -10,6 +10,7 @@ use ReflectionMethod;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
@@ -33,13 +34,7 @@ final class VerifyNeedsNoRestartTest extends TestCase
      */
     private static function advice(array $files): array
     {
-        $m = new ReflectionMethod(AiVerifyCommand::class, 'restartAdvice');
-        $m->setAccessible(true);
-
-        /** @var array<string, mixed> $result */
-        $result = $m->invoke(new AiVerifyCommand(), $files);
-
-        return $result;
+        return (new VerifyReportSerializer())->restartAdvice($files);
     }
 
     #[Test]

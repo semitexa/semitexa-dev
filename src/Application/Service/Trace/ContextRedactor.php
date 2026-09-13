@@ -105,7 +105,13 @@ final class ContextRedactor
         };
     }
 
-    private static function isSensitiveKey(string $key): bool
+    /**
+     * Public because it is the one definition of "this name holds a secret",
+     * and a second copy of the needle list somewhere else is a copy that drifts
+     * out of step with this one silently. `--expect-field` asks it about a path
+     * segment when there is no value to inspect.
+     */
+    public static function isSensitiveKey(string $key): bool
     {
         $normalized = str_replace(['-', '_'], '', strtolower($key));
         foreach (self::NEEDLES as $needle) {

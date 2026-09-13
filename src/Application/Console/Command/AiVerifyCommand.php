@@ -10,12 +10,14 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactProbe;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactReport;
 use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
@@ -70,6 +72,7 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
+            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask.')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
@@ -90,20 +93,96 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         if ($paths === []) {
-            $this->emitError($output, 'no changed files supplied — pass --files, --git-ref, or --diff-stdin', $jsonMode);
+            // `--dirty` finding nothing is an ANSWER, not a misuse: the tree is
+            // clean. Telling that caller to "pass --dirty" is advice they just
+            // took, and failing the run would make `ai:verify --dirty` red on
+            // every clean checkout. It is not a pass either — nothing was
+            // verified — so it gets a verdict of its own, with the scan's reach
+            // attached so the reader can see what was asked.
+            if ((bool) $input->getOption('dirty')) {
+                $scan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+
+                // In the SAME shape the mode promises. Default mode is NDJSON
+                // whose records are dispatched by `kind`, so an envelope
+                // without one is a record such a consumer cannot place — and
+                // every ordinary run ends with a `verdict` record.
+                // An empty plan, so this answer reaches `--trace` the way every
+                // other one does. Returning before maybeAppendToTrace() left a
+                // traced workflow with no `verify_result` and no trace status
+                // for the run at all — a gap in an audit trail reads as a step
+                // that was never taken. Raised in review of dev#84.
+                //
+                // AND the report keeps its CONTRACT. This branch used to write
+                // its own envelope, so a clean run was the one answer missing
+                // `completed`, `counts` and `restart` — a consumer reading the
+                // stable v1 schema had to special-case it, or fail on the
+                // absent keys. The fields come off VerifyReportSerializer, the
+                // same source the other two paths use, so there is one
+                // definition of what an empty result looks like. Raised in
+                // review of dev#84 by both reviewers.
+                $emptyPlan = new VerificationPlan($scope, $scope, [], []);
+                $report = new VerifyReportSerializer();
+                $envelope = [
+                    'artifact' => 'semitexa-dev.verify-report/v1',
+                    'generated_at' => date('c'),
+                    'verdict' => 'nothing_to_verify',
+                    'completed' => $report->completed([]),
+                    'counts' => $report->countByStatus([]),
+                    'changed_files' => [],
+                    'dirty_scan' => $scan,
+                    'restart' => $report->restartAdvice([]),
+                ];
+
+                if ($jsonMode) {
+                    $traceOutput = new BufferedOutput();
+                    $this->maybeAppendToTrace($input, $traceOutput, $emptyPlan, [], 'nothing_to_verify', $envelope);
+                    $envelope['trace'] = array_map(
+                        static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+                        array_values(array_filter(explode("\n", trim($traceOutput->fetch())))),
+                    );
+                    $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+
+                    return self::SUCCESS;
+                }
+
+                // The same two records a run WITH changes emits, so a consumer
+                // reads the scan out of one place regardless of the answer.
+                $output->writeln(json_encode(['kind' => 'dirty_scan'] + $scan, JSON_UNESCAPED_SLASHES));
+                $output->writeln((string) json_encode(
+                    ['kind' => 'restart'] + $report->restartAdvice([]),
+                    JSON_UNESCAPED_SLASHES,
+                ));
+                $output->writeln(json_encode([
+                    'kind' => 'verdict',
+                    'verdict' => 'nothing_to_verify',
+                    // FALSE, and deliberately so. Nothing ran, and `completed`
+                    // is what a consumer reads to decide whether the required
+                    // checks happened — saying true here offered an empty run
+                    // as verification evidence, and contradicted
+                    // VerifyReportSerializer::completed([]) besides. Raised in
+                    // review of dev#84.
+                    'completed' => $report->completed([]),
+                    'counts' => $report->countByStatus([]),
+                    'dirty_scan' => $scan,
+                ], JSON_UNESCAPED_SLASHES));
+
+                $this->maybeAppendToTrace($input, $output, $emptyPlan, [], 'nothing_to_verify', $envelope);
+
+                return self::SUCCESS;
+            }
+
+            $this->emitError($output, 'no changed files supplied — pass --files, --git-ref, --diff-stdin or --dirty', $jsonMode);
             return self::FAILURE;
         }
 
         $projectRoot = $this->getProjectRoot();
         $classifier = new ChangedFileClassifier();
         $changed = array_map(
-            static function (array $entry) use ($classifier): ChangedFile {
-                $file = $classifier->classify($entry['path'], $entry['status']);
-                if (isset($entry['originalPath']) && $entry['originalPath'] !== '') {
-                    $file->originalPath = $entry['originalPath'];
-                }
-                return $file;
-            },
+            static fn(array $entry): ChangedFile => $classifier->classify(
+                $entry['path'],
+                $entry['status'],
+                ($entry['originalPath'] ?? '') !== '' ? $entry['originalPath'] : null,
+            ),
             $paths,
         );
         /** @var list<ChangedFile> $changed */
@@ -128,6 +207,13 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
+        $dirtyScan = null;
+        if ((bool) $input->getOption('dirty')) {
+            // The reach of the answer, beside the answer. A scan that could not
+            // ask half the tree must not read as "half the tree is clean".
+            $dirtyScan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
+            $envelope['dirty_scan'] = $dirtyScan;
+        }
         if ($jsonMode) {
             $traceOutput = new BufferedOutput();
             $this->maybeAppendToTrace($input, $traceOutput, $plan, $results, $verdict, $envelope);
@@ -137,7 +223,7 @@ final class AiVerifyCommand extends BaseCommand
             );
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
         } else {
-            $this->emitNdjson($output, $plan, $results, $verdict, $impact);
+            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan);
             $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
         }
 
@@ -156,7 +242,8 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         array $envelope,
     ): void {
-        $counts = $this->countByStatus($results);
+        $report = new VerifyReportSerializer();
+        $counts = $report->countByStatus($results);
         $summary = sprintf(
             'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d incomplete=%d',
             $verdict,
@@ -171,7 +258,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function collectPaths(InputInterface $input): array
     {
@@ -195,6 +282,11 @@ final class AiVerifyCommand extends BaseCommand
         }
         if ((bool) $input->getOption('diff-stdin')) {
             foreach ($this->readStdinPaths() as $entry) {
+                $sources[] = $entry;
+            }
+        }
+        if ((bool) $input->getOption('dirty')) {
+            foreach ((new DirtyWorkspaceScanner($this->getProjectRoot()))->changedFiles() as $entry) {
                 $sources[] = $entry;
             }
         }
@@ -246,7 +338,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function gitDiffNameStatus(string $ref): array
     {
@@ -263,7 +355,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @return list<array{path: string, status: string}>
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function readStdinPaths(): array
     {
@@ -310,8 +402,8 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /**
-     * @param list<array{path: string, status: string}> $entries
-     * @return list<array{path: string, status: string}>
+     * @param list<array{path: string, status: string, originalPath?: string}> $entries
+     * @return list<array{path: string, status: string, originalPath?: string}>
      */
     private function dedupe(array $entries): array
     {
@@ -320,9 +412,41 @@ final class AiVerifyCommand extends BaseCommand
         foreach ($entries as $entry) {
             $key = $entry['path'];
             if (isset($seen[$key])) {
+                // First-wins, EXCEPT where the first entry knows less. Two
+                // ways that happens, and both produced a false green.
+                //
+                // A RENAME arriving second: `--files=<renamed destination>
+                // --dirty` supplies the path by hand as a plain modification
+                // and the scanner then finds the same path as a rename.
+                // Dropping the second entry discarded `originalPath`, so
+                // ContractMoveResolver never expanded consumers of the old
+                // contract.
+                //
+                // A RECREATED file arriving second: staged for deletion and
+                // then written again at the same path, git reports `D path`
+                // followed by `?? path`. Keeping only the deletion made the
+                // planner skip a file that is sitting right there, so a syntax
+                // error in its new contents verified clean. If ANY source says
+                // the path exists, it exists — a deletion never wins over a
+                // record of a live file. Both raised in review of dev#84.
+                $at = $seen[$key];
+                $original = $entry['originalPath'] ?? '';
+                $existingOriginal = $out[$at]['originalPath'] ?? '';
+                $learnsOrigin = $original !== '' && $existingOriginal === '';
+                $wasDeleted = $out[$at]['status'] === ChangedFile::STATUS_DELETED;
+                $isAlive = $entry['status'] !== ChangedFile::STATUS_DELETED;
+
+                if ($learnsOrigin || ($wasDeleted && $isAlive)) {
+                    $merged = ['path' => $key, 'status' => $entry['status']];
+                    $keptOriginal = $original !== '' ? $original : $existingOriginal;
+                    if ($keptOriginal !== '') {
+                        $merged['originalPath'] = $keptOriginal;
+                    }
+                    $out[$at] = $merged;
+                }
                 continue;
             }
-            $seen[$key] = true;
+            $seen[$key] = count($out);
             $out[] = $entry;
         }
         return $out;
@@ -333,6 +457,7 @@ final class AiVerifyCommand extends BaseCommand
      */
     private function verdict(array $results): string
     {
+        $report = new VerifyReportSerializer();
         if ($results === []) {
             return VerificationResult::STATUS_INCOMPLETE;
         }
@@ -349,30 +474,12 @@ final class AiVerifyCommand extends BaseCommand
         if ($hasFail) {
             return VerificationResult::STATUS_FAIL;
         }
-        if (!$this->completed($results)) {
+        if (!$report->completed($results)) {
             return VerificationResult::STATUS_INCOMPLETE;
         }
         return $allSkipped ? VerificationResult::STATUS_SKIPPED : VerificationResult::STATUS_PASS;
     }
 
-    /** @param list<VerificationResult> $results */
-    private function completed(array $results): bool
-    {
-        if ($results === []) {
-            return false;
-        }
-        foreach ($results as $result) {
-            if ($result->required && !$result->completed()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * @param list<VerificationResult> $results
-     * @return array<string, mixed>
-     */
     /**
      * Read-only blast-radius probe. Never throws into the verify flow — a
      * graph problem must degrade to an "unknown" band, not fail verification.
@@ -417,6 +524,7 @@ final class AiVerifyCommand extends BaseCommand
 
     private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
     {
+        $report = new VerifyReportSerializer();
         $violations = $this->collectViolations($results);
         $bands = $this->bandsByPath($impact);
         return [
@@ -435,68 +543,16 @@ final class AiVerifyCommand extends BaseCommand
                 },
                 $plan->changedFiles,
             ),
-            'targets'         => array_map(fn($t) => $this->serializeTarget($t), $plan->targets),
-            'results'         => array_map(fn($r) => $this->serializeResult($r), $results),
+            'targets'         => array_map(fn($t) => $report->serializeTarget($t), $plan->targets),
+            'results'         => array_map(fn($r) => $report->serializeResult($r), $results),
             'violations'      => $violations,
             'verdict'         => $verdict,
-            'completed'       => $this->completed($results),
-            'counts'          => $this->countByStatus($results),
+            'completed'       => $report->completed($results),
+            'counts'          => $report->countByStatus($results),
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
-            'restart'         => $this->restartAdvice($plan->changedFiles),
+            'restart'         => $report->restartAdvice($plan->changedFiles),
         ];
-    }
-
-    /**
-     * Whether a server restart is needed, and for what.
-     *
-     * Verification never needs one. Every check here runs in a fresh CLI
-     * process that rediscovers classes from disk, so a file saved a second ago
-     * is already visible — measured by having a brand-new class fail this
-     * command with no restart in between.
-     *
-     * Saying so matters because the habit is expensive and invisible. A
-     * consumer agent reported a 30-60s verify cycle as its single biggest time
-     * sink, having wrapped every run in `server:restart` + `cache:clear`. On
-     * this machine that is 16s of restart around 4s of actual verification —
-     * four fifths of the cycle spent on a step that changed nothing. Nothing in
-     * the output contradicted the assumption, so it never got questioned.
-     *
-     * A restart IS needed before exercising the RUNNING server, because Swoole
-     * workers hold discovered classes and compiled templates for the life of
-     * the worker. That is a different activity from verifying, and the advice
-     * only appears when the changed files are the kind the running server
-     * caches.
-     *
-     * @param list<ChangedFile> $changedFiles
-     * @return array{needed_for_verification: bool, note: string, before_browsing?: string}
-     */
-    private function restartAdvice(array $changedFiles): array
-    {
-        $advice = [
-            'needed_for_verification' => false,
-            'note' => 'Verification reads files from disk in a fresh process; '
-                . 'no restart was needed and none would have changed this result.',
-        ];
-
-        $affectsRunningServer = false;
-        foreach ($changedFiles as $file) {
-            if (in_array($file->kind, [
-                ChangedFile::KIND_TEMPLATE,
-                ChangedFile::KIND_CLIENT_SCRIPT,
-            ], true) || str_ends_with($file->path, '.php')) {
-                $affectsRunningServer = true;
-                break;
-            }
-        }
-
-        if ($affectsRunningServer) {
-            $advice['before_browsing'] = 'bin/semitexa server:restart — required only before exercising '
-                . 'the running server (browser, curl, E2E): workers cache discovered classes and '
-                . 'compiled templates for their lifetime.';
-        }
-
-        return $advice;
     }
 
     /**
@@ -573,9 +629,29 @@ final class AiVerifyCommand extends BaseCommand
 
     /**
      * @param list<VerificationResult> $results
+     * @param array{scanned: list<string>, unscannable: list<string>}|null $dirtyScan
      */
-    private function emitNdjson(OutputInterface $output, VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): void
-    {
+    private function emitNdjson(
+        OutputInterface $output,
+        VerificationPlan $plan,
+        array $results,
+        string $verdict,
+        ?ImpactReport $impact = null,
+        ?array $dirtyScan = null,
+    ): void {
+        $report = new VerifyReportSerializer();
+        // NDJSON is the DEFAULT mode, and the reach of a `--dirty` scan existed
+        // only in the `--json` envelope -- so a run that could not ask half the
+        // tree said so exclusively to the readers who had not asked for this
+        // mode. A record of its own, dispatchable by `kind` like every other.
+        // Raised in review of dev#84.
+        if ($dirtyScan !== null) {
+            $output->writeln(json_encode(
+                ['kind' => 'dirty_scan'] + $dirtyScan,
+                JSON_UNESCAPED_SLASHES,
+            ));
+        }
+
         $output->writeln(json_encode([
             'kind'            => 'summary',
             'requested_scope' => $plan->scope,
@@ -602,14 +678,14 @@ final class AiVerifyCommand extends BaseCommand
         foreach ($plan->targets as $target) {
             $output->writeln(json_encode([
                 'kind'   => 'target',
-                'target' => $this->serializeTarget($target),
+                'target' => $report->serializeTarget($target),
             ], JSON_UNESCAPED_SLASHES));
         }
 
         foreach ($results as $result) {
             $output->writeln(json_encode([
                 'kind'   => 'result',
-                'result' => $this->serializeResult($result),
+                'result' => $report->serializeResult($result),
             ], JSON_UNESCAPED_SLASHES));
             foreach ($result->diagnostics as $diagnostic) {
                 $output->writeln(json_encode([
@@ -628,75 +704,20 @@ final class AiVerifyCommand extends BaseCommand
         // it. An unstated assumption is not fixed by being wrong somewhere the
         // reader does not look.
         $output->writeln((string) json_encode(
-            ['kind' => 'restart'] + $this->restartAdvice($plan->changedFiles),
+            ['kind' => 'restart'] + $report->restartAdvice($plan->changedFiles),
             JSON_UNESCAPED_SLASHES,
         ));
 
         $verdictLine = [
             'kind'    => 'verdict',
             'verdict' => $verdict,
-            'completed' => $this->completed($results),
-            'counts'  => $this->countByStatus($results),
+            'completed' => $report->completed($results),
+            'counts'  => $report->countByStatus($results),
         ];
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
         $output->writeln(json_encode($verdictLine, JSON_UNESCAPED_SLASHES));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeTarget(VerificationTarget $target): array
-    {
-        return [
-            'id'           => $target->id,
-            'type'         => $target->type,
-            'reason'       => $target->reason,
-            'triggered_by' => $target->triggeredBy,
-            'command_name' => $target->commandName,
-            'file_path'    => $target->filePath,
-            'test_filter'  => $target->testFilter,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeResult(VerificationResult $result): array
-    {
-        $out = [
-            'id'        => $result->target->id,
-            'type'      => $result->target->type,
-            'status'    => $result->status,
-            'exit_code' => $result->exitCode,
-            'signal'    => $result->signal,
-            'required'  => $result->required,
-            'completed' => $result->completed(),
-        ];
-        if ($result->diagnostics !== []) {
-            $out['diagnostics_count'] = count($result->diagnostics);
-        }
-        if ($result->accepted !== []) {
-            // In full, with their reasons. A count and the first path in the
-            // signal line told a reader that something was excused without ever
-            // saying what or why.
-            $out['accepted'] = $result->accepted;
-        }
-        return $out;
-    }
-
-    /**
-     * @param list<VerificationResult> $results
-     * @return array<string, int>
-     */
-    private function countByStatus(array $results): array
-    {
-        $counts = ['pass' => 0, 'fail' => 0, 'skipped' => 0, 'incomplete' => 0];
-        foreach ($results as $r) {
-            $counts[$r->status] = ($counts[$r->status] ?? 0) + 1;
-        }
-        return $counts;
     }
 
     private function emitError(OutputInterface $output, string $message, bool $jsonMode): void

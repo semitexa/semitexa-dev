@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Console\Command\AiVerifyCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
 
 final class VerificationVerdictTest extends TestCase
 {
@@ -21,7 +22,7 @@ final class VerificationVerdictTest extends TestCase
         $optionalSkip = new VerificationResult($target, 'skipped', 0, 'not applicable', required: false);
         $unknown = new VerificationResult($target, 'unrecognized', 0, 'not evidence');
         $verdict = new \ReflectionMethod(AiVerifyCommand::class, 'verdict');
-        $completed = new \ReflectionMethod(AiVerifyCommand::class, 'completed');
+        $report = new VerifyReportSerializer();
         $command = new AiVerifyCommand();
         foreach ([
             [[], 'incomplete', false],
@@ -35,15 +36,16 @@ final class VerificationVerdictTest extends TestCase
             [[$fail], 'fail', true],
         ] as [$results, $expectedVerdict, $expectedCompleted]) {
             self::assertSame($expectedVerdict, $verdict->invoke($command, $results));
-            self::assertSame($expectedCompleted, $completed->invoke($command, $results));
+            self::assertSame($expectedCompleted, $report->completed($results));
         }
     }
 
     public function testResultSerializationNamesOptionalityAndCompletion(): void
     {
         $target = new VerificationTarget('syntax', 'syntax:a', 'test', []);
-        $method = new \ReflectionMethod(AiVerifyCommand::class, 'serializeResult');
-        $row = $method->invoke(new AiVerifyCommand(), new VerificationResult($target, 'skipped', 0, 'not applicable', required: false));
+        $row = (new VerifyReportSerializer())->serializeResult(
+            new VerificationResult($target, 'skipped', 0, 'not applicable', required: false),
+        );
         self::assertFalse($row['required']);
         self::assertFalse($row['completed']);
         self::assertSame('not applicable', $row['signal']);

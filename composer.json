@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": "*",
+        "semitexa/core": ">=2026.09.13.0749",
         "semitexa/orm": "*",
         "semitexa/project-graph": "*"
     },

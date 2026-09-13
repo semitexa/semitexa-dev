@@ -55,10 +55,20 @@ final class ChangedFileClassifier
         '/Mocks/',
     ];
 
-    public function classify(string $path, string $status = ChangedFile::STATUS_MODIFIED): ChangedFile
-    {
+    /**
+     * `$originalPath` belongs to the constructor, not to a later assignment:
+     * ChangedFile is a readonly class, so `$file->originalPath = ...` on the
+     * returned object is a fatal `Cannot modify readonly property`. Every
+     * rename reaching `--git-ref` took that path. Found while wiring renames
+     * through `--dirty` in review of dev#84.
+     */
+    public function classify(
+        string $path,
+        string $status = ChangedFile::STATUS_MODIFIED,
+        ?string $originalPath = null,
+    ): ChangedFile {
         $kind = $this->resolveKind($path);
-        return new ChangedFile($path, $kind, $status);
+        return new ChangedFile($path, $kind, $status, $originalPath);
     }
 
     private function resolveKind(string $path): string
