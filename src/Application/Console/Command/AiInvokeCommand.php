@@ -20,6 +20,8 @@ use Semitexa\Core\Support\PayloadSerializer;
 use Semitexa\Dev\Application\Service\Invoke\FieldExpectations;
 use Semitexa\Dev\Application\Service\Invoke\InvocationContract;
 use Semitexa\Dev\Application\Service\Trace\ContextRedactor;
+use Semitexa\Dev\Application\Service\Trace\CulpritStackTrace;
+use Semitexa\Dev\Application\Service\Trace\SourceSliceReader;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -56,6 +58,14 @@ final class AiInvokeCommand extends BaseCommand
 {
     #[InjectAsReadonly]
     protected AttributeDiscovery $attributeDiscovery;
+
+    /**
+     * Injected rather than newed: it carries an injected graph reader of its
+     * own, and a bare `new` would leave that property uninitialised — working
+     * by accident through the reader's own try/catch.
+     */
+    #[InjectAsReadonly]
+    protected SourceSliceReader $sourceSlices;
 
     /** The payload exactly as the caller wrote it, for the follow-up commands. */
     private ?string $invokedPayloadJson = null;
@@ -182,12 +192,18 @@ final class AiInvokeCommand extends BaseCommand
             }
             $result = $handler->handle($payload, $resource);
         } catch (\Throwable $e) {
+            // Culprit first. Six lines of getTraceAsString() are usually the
+            // framework getting TO the caller's code rather than the code that
+            // broke, so the frame that matters sat below the cut.
+            $culprit = CulpritStackTrace::of($e, $this->sourceSlices);
             $handlerError = [
                 'class'   => get_class($e),
                 'message' => $e->getMessage(),
                 'file'    => $e->getFile(),
                 'line'    => $e->getLine(),
-                'trace'   => array_slice(explode("\n", $e->getTraceAsString()), 0, 6),
+                'culprit' => $culprit->culprit,
+                'source'  => $culprit->source,
+                'trace'   => $culprit->frames,
             ];
         }
         $durationMs = round((microtime(true) - $start) * 1000, 2);
@@ -557,11 +573,37 @@ final class AiInvokeCommand extends BaseCommand
             $io->section('Handler error');
             $err = $envelope['handler_error'];
             $io->text(($err['class'] ?? 'Error') . ': ' . ($err['message'] ?? ''));
-            if (isset($err['file'], $err['line'])) {
-                $io->text("  at {$err['file']}:{$err['line']}");
+
+            // The culprit, then the throw site, then the shape of the call.
+            $culprit = is_array($err['culprit'] ?? null) ? $err['culprit'] : null;
+            if ($culprit !== null) {
+                $where = is_string($culprit['class'] ?? null)
+                    ? $culprit['class'] . '::' . (string) ($culprit['function'] ?? '?')
+                    : (string) ($culprit['function'] ?? '?');
+                $io->text("  culprit: {$where}");
+                $io->text("           {$culprit['file']}:{$culprit['line']}");
             }
-            foreach (($err['trace'] ?? []) as $line) {
-                $io->text('  ' . $line);
+            if (isset($err['file'], $err['line'])) {
+                $io->text("  thrown at {$err['file']}:{$err['line']}");
+            }
+
+            foreach (is_array($err['source'] ?? null) ? $err['source'] : [] as $line) {
+                $io->text('    ' . rtrim((string) $line));
+            }
+
+            foreach (is_array($err['trace'] ?? null) ? $err['trace'] : [] as $frame) {
+                if (!is_array($frame)) {
+                    $io->text('  ' . (string) $frame);
+                    continue;
+                }
+                if (isset($frame['collapsed'])) {
+                    $io->text('  … ' . (string) ($frame['label'] ?? 'collapsed'));
+                    continue;
+                }
+                $name = is_string($frame['class'] ?? null)
+                    ? $frame['class'] . '::' . (string) ($frame['function'] ?? '?')
+                    : (string) ($frame['function'] ?? '?');
+                $io->text("  {$name}  ({$frame['file']}:{$frame['line']})");
             }
         } elseif (isset($envelope['resource'])) {
             $io->section('Resource (' . ($envelope['resource_class'] ?? '?') . ')');
