@@ -275,9 +275,13 @@ final class CapabilityIndex
 
         $shippedMap = [];
         foreach ($notPackages as $name => $what) {
-            if (is_string($name) && is_string($what)) {
-                $shippedMap[$name] = $what;
+            // A malformed entry is not filtered out and compared around: the
+            // shipped artifact is then wrong in a way `--check` would call
+            // current, which is the drift this method exists to catch.
+            if (!is_string($name) || !is_string($what)) {
+                return false;
             }
+            $shippedMap[$name] = $what;
         }
 
         ksort($shippedMap);

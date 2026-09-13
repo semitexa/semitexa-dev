@@ -179,54 +179,30 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
     $problems = [];
 
     foreach ($packages as $name => $package) {
-        foreach ($package['floors'] as $dependency => $floorVersion) {
+        // A FLOOR and an EXACT PIN are both promises about a specific release,
+        // so both are verified the same way. An exact pin used to be recorded
+        // as neither floor nor wildcard and was therefore never inspected at
+        // all — a package pinned to a release predating a class it imports
+        // passed the gate and failed at the first request.
+        foreach ($package['promises'] as $dependency => $promise) {
             $target = $packages[$dependency] ?? null;
             if ($target === null) {
                 // Not in this workspace; nothing local to verify against.
                 continue;
             }
 
-            $tree = treeAtTag($target['dir'], $floorVersion);
-            if ($tree === null) {
-                $problems[] = sprintf(
-                    '%s floors %s at %s, but that tag is not in %s — fetch tags, or the floor names a release that does not exist',
-                    $name,
-                    $dependency,
-                    $floorVersion,
-                    basename($target['dir']),
-                );
-                continue;
-            }
-
-            // THE MAP MUST COME FROM THE SAME TAG AS THE TREE. $target['psr4']
-            // is today's autoload block; if the provider moved its sources
-            // between that release and now, mapping a class through the current
-            // map and looking it up in the OLD tree compares two different
-            // layouts — rejecting a floor that is fine, or approving a path
-            // that was never autoloadable at that tag.
-            $psr4 = psr4AtTag($target['dir'], $floorVersion) ?? $target['psr4'];
-
-            foreach (importsFrom($package['dir'], $psr4) as $class => $relativePath) {
-                if (in_array($relativePath, $tree, true)) {
-                    continue;
-                }
-                if (classDeclaredAtTag($target['dir'], $floorVersion, $class, $psr4)) {
-                    continue;
-                }
-
-                $problems[] = sprintf(
-                    '%s imports %s but floors %s at %s, where %s does not exist',
-                    $name,
-                    $class,
-                    $dependency,
-                    $floorVersion,
-                    $relativePath,
-                );
-            }
+            $problems = array_merge($problems, verifyAgainstTag(
+                $name,
+                $package['dir'],
+                $dependency,
+                $target,
+                $promise['version'],
+                $promise['kind'],
+            ));
         }
 
-        // `*` IS THE ONE FORM THAT PROMISES NOTHING, which is why the check
-        // above skips it — and exactly why it needs one of its own.
+        // `*` IS THE ONE FORM THAT PROMISES NOTHING, which is why the checks
+        // above skip it — and exactly why it needs one of its own.
         //
         // A package that calls a sibling's BRAND-NEW class while requiring it
         // at `*` resolves against every released version, including the ones
@@ -251,33 +227,103 @@ function checkFloorsAreSatisfiable(string $packagesDir): array
                 continue;
             }
 
-            $tree = treeAtTag($target['dir'], $latest);
-            if ($tree === null) {
-                continue;
-            }
+            $problems = array_merge($problems, verifyAgainstTag(
+                $name,
+                $package['dir'],
+                $dependency,
+                $target,
+                $latest,
+                'wildcard',
+            ));
+        }
+    }
 
-            $psr4 = psr4AtTag($target['dir'], $latest) ?? $target['psr4'];
+    return $problems;
+}
 
-            foreach (importsFrom($package['dir'], $psr4) as $class => $relativePath) {
-                if (in_array($relativePath, $tree, true)) {
-                    continue;
-                }
-                if (classDeclaredAtTag($target['dir'], $latest, $class, $psr4)) {
-                    continue;
-                }
+/**
+ * Check every class one package uses from another against one tag of it.
+ *
+ * @param array{dir: string, psr4: array<string, list<string>>} $target
+ * @param 'floor'|'pin'|'wildcard' $kind
+ * @return list<string>
+ */
+function verifyAgainstTag(
+    string $name,
+    string $packageDir,
+    string $dependency,
+    array $target,
+    string $version,
+    string $kind,
+): array {
+    $problems = [];
 
-                $problems[] = sprintf(
-                    '%s imports %s but requires %s at "*", and NO released %s contains %s '
-                    . '(newest is %s) — floor it at the release that ships the class',
-                    $name,
-                    $class,
-                    $dependency,
-                    $dependency,
-                    $relativePath,
-                    $latest,
-                );
+    $tree = treeAtTag($target['dir'], $version);
+    if ($tree === null) {
+        if ($kind === 'wildcard') {
+            return [];
+        }
+
+        return [sprintf(
+            '%s %s %s at %s, but that tag is not in %s — fetch tags, or it names a release that does not exist',
+            $name,
+            $kind === 'pin' ? 'pins' : 'floors',
+            $dependency,
+            $version,
+            basename($target['dir']),
+        )];
+    }
+
+    // THE MAP MUST COME FROM THE SAME TAG AS THE TREE. Today's autoload block
+    // describes today's layout; if the provider moved its sources since that
+    // release, mapping a class through the current map and looking it up in the
+    // OLD tree compares two different layouts.
+    //
+    // And when the tagged map cannot be read, the gate FAILS rather than
+    // falling back to the current one — falling back is the same mixing of
+    // revisions in a quieter form. Something the gate cannot see is not
+    // something it approves.
+    $psr4 = psr4AtTag($target['dir'], $version);
+    if ($psr4 === null) {
+        return [sprintf(
+            '%s names %s at %s, but that tag has no readable autoload.psr-4 map — '
+            . 'nothing can be verified against it',
+            $name,
+            $dependency,
+            $version,
+        )];
+    }
+
+    foreach (importsFrom($packageDir, $psr4) as $class => $candidatePaths) {
+        foreach ($candidatePaths as $candidate) {
+            if (in_array($candidate, $tree, true)) {
+                continue 2;
             }
         }
+        if (classDeclaredAtTag($target['dir'], $version, $class, $psr4)) {
+            continue;
+        }
+
+        $problems[] = $kind === 'wildcard'
+            ? sprintf(
+                '%s uses %s but requires %s at "*", and NO released %s contains %s '
+                . '(newest is %s) — floor it at the release that ships the class',
+                $name,
+                $class,
+                $dependency,
+                $dependency,
+                $candidatePaths[0] ?? '(unmapped)',
+                $version,
+            )
+            : sprintf(
+                '%s uses %s but %s %s at %s, where %s does not exist',
+                $name,
+                $class,
+                $kind === 'pin' ? 'pins' : 'floors',
+                $dependency,
+                $version,
+                $candidatePaths[0] ?? '(unmapped)',
+            );
     }
 
     return $problems;
@@ -310,8 +356,10 @@ function classDeclaredAtTag(string $dir, string $tag, string $fqcn, array $psr4)
     }
 
     $paths = [];
-    foreach ($psr4 as $sourceDir) {
-        $paths[] = escapeshellarg($sourceDir);
+    foreach ($psr4 as $dirs) {
+        foreach ($dirs as $sourceDir) {
+            $paths[] = escapeshellarg($sourceDir);
+        }
     }
 
     $command = sprintf(
@@ -372,23 +420,21 @@ function indexPackages(string $packagesDir): array
             continue;
         }
 
-        $psr4 = [];
-        foreach ($json['autoload']['psr-4'] ?? [] as $prefix => $dir) {
-            if (is_string($prefix) && is_string($dir)) {
-                $psr4[$prefix] = rtrim($dir, '/');
-            }
-        }
-
-        $floors = [];
+        $promises = [];
         $wildcards = [];
         foreach ($json['require'] ?? [] as $dependency => $constraint) {
             if (!is_string($dependency) || !is_string($constraint) || !str_starts_with($dependency, 'semitexa/')) {
                 continue;
             }
+
+            $version = '\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?';
+
             // The `|| dev-master` escape is not part of the promise being
             // checked; the floor is.
-            if (preg_match('/^>=\s*(\d{4}\.\d{2}\.\d{2}\.\d{4}(?:-[a-z0-9]+)?)/i', $constraint, $m) === 1) {
-                $floors[$dependency] = $m[1];
+            if (preg_match('/^>=\s*(' . $version . ')/i', $constraint, $m) === 1) {
+                $promises[$dependency] = ['version' => $m[1], 'kind' => 'floor'];
+            } elseif (preg_match('/^(' . $version . ')$/i', trim($constraint), $m) === 1) {
+                $promises[$dependency] = ['version' => $m[1], 'kind' => 'pin'];
             } elseif (trim($constraint) === '*') {
                 $wildcards[] = $dependency;
             }
@@ -396,13 +442,44 @@ function indexPackages(string $packagesDir): array
 
         $packages[$json['name']] = [
             'dir' => dirname($composerPath),
-            'psr4' => $psr4,
-            'floors' => $floors,
+            'psr4' => normalizePsr4($json['autoload']['psr-4'] ?? null) ?? [],
+            'promises' => $promises,
             'wildcards' => $wildcards,
         ];
     }
 
     return $packages;
+}
+
+/**
+ * A PSR-4 block as prefix => LIST of source directories.
+ *
+ * Composer lets one prefix map to several directories. Keeping only
+ * string-valued entries silently dropped such a prefix, and every class under
+ * it then went unmapped and unchecked — a fail-open in a gate that exists to
+ * fail closed.
+ *
+ * @return array<string, list<string>>|null null when there is no usable map
+ */
+function normalizePsr4(mixed $map): ?array
+{
+    if (!is_array($map)) {
+        return null;
+    }
+
+    $psr4 = [];
+    foreach ($map as $prefix => $paths) {
+        if (!is_string($prefix)) {
+            continue;
+        }
+        foreach ((array) $paths as $path) {
+            if (is_string($path)) {
+                $psr4[$prefix][] = rtrim($path, '/');
+            }
+        }
+    }
+
+    return $psr4 === [] ? null : $psr4;
 }
 
 /**
@@ -448,19 +525,7 @@ function psr4AtTag(string $dir, string $tag): ?array
         return null;
     }
 
-    $map = $json['autoload']['psr-4'] ?? null;
-    if (!is_array($map)) {
-        return null;
-    }
-
-    $psr4 = [];
-    foreach ($map as $prefix => $path) {
-        if (is_string($prefix) && is_string($path)) {
-            $psr4[$prefix] = rtrim($path, '/');
-        }
-    }
-
-    return $psr4 === [] ? null : $psr4;
+    return normalizePsr4($json['autoload']['psr-4'] ?? null);
 }
 
 /**
@@ -470,8 +535,8 @@ function psr4AtTag(string $dir, string $tag): ?array
  * `use function` and `use const` are skipped: they are not class files, and a
  * floor that guarantees a class says nothing about them either way.
  *
- * @param array<string, string> $psr4 namespace prefix => source directory
- * @return array<string, string> FQCN => path inside the target package
+ * @param array<string, list<string>> $psr4 namespace prefix => source directories
+ * @return array<string, list<string>> FQCN => candidate paths in the target package
  */
 function importsFrom(string $packageDir, array $psr4): array
 {
@@ -487,19 +552,59 @@ function importsFrom(string $packageDir, array $psr4): array
             continue;
         }
 
-        foreach (importedClasses((string) file_get_contents($file->getPathname())) as $class) {
-            foreach ($psr4 as $prefix => $dir) {
+        foreach (usedClasses((string) file_get_contents($file->getPathname())) as $class) {
+            foreach ($psr4 as $prefix => $dirs) {
                 if (!str_starts_with($class, $prefix)) {
                     continue;
                 }
                 $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
-                $found[$class] = $dir . '/' . $relative . '.php';
+                foreach ($dirs as $dir) {
+                    $found[$class][] = $dir . '/' . $relative . '.php';
+                }
                 break;
             }
         }
     }
 
     return $found;
+}
+
+/**
+ * Every class of another package this file names — imported OR written out.
+ *
+ * An import is not the only way to reach a sibling's class.
+ * `new \Semitexa\Core\Support\Row()` names it just as surely, and this
+ * workspace has 140 distinct cross-package references written that way. A scan
+ * that only entered on `use` was blind to every one of them, so a class added
+ * after the floored release could be called from a fully-qualified reference
+ * and the gate would still report success.
+ *
+ * @return list<string>
+ */
+function usedClasses(string $contents): array
+{
+    $classes = [];
+
+    foreach (importedClasses($contents) as $class) {
+        $classes[$class] = true;
+    }
+
+    foreach (PhpToken::tokenize($contents) as $token) {
+        // T_NAME_FULLY_QUALIFIED is `\Foo\Bar` wherever it appears — a `new`,
+        // a static call, a type, an attribute, a catch. Relative names are not
+        // collected: they resolve through the file's own imports, which the
+        // import scan already has.
+        if (!$token->is(T_NAME_FULLY_QUALIFIED)) {
+            continue;
+        }
+
+        $name = ltrim($token->text, '\\');
+        if ($name !== '' && str_contains($name, '\\')) {
+            $classes[$name] = true;
+        }
+    }
+
+    return array_keys($classes);
 }
 
 /**
@@ -574,6 +679,7 @@ function importedClasses(string $contents): array
         $prefix = '';
         $current = '';
         $skippingAlias = false;
+        $skippingItem = false;
         $isClassImport = null;
         $found = [];
 
@@ -610,8 +716,19 @@ function importedClasses(string $contents): array
                 $skippingAlias = true;
                 continue;
             }
+            if ($piece->is([T_FUNCTION, T_CONST])) {
+                // `use Foo\{Bar, function helper};` — the kind may also appear
+                // per ITEM inside a group, not only before the whole statement.
+                $skippingItem = true;
+                continue;
+            }
             if ($text === ',') {
                 $skippingAlias = false;
+                if ($skippingItem) {
+                    $skippingItem = false;
+                    $current = '';
+                    continue;
+                }
                 $flush();
                 continue;
             }
@@ -622,11 +739,16 @@ function importedClasses(string $contents): array
             }
             if ($text === '}') {
                 $skippingAlias = false;
-                $flush();
+                if ($skippingItem) {
+                    $skippingItem = false;
+                    $current = '';
+                } else {
+                    $flush();
+                }
                 $prefix = '';
                 continue;
             }
-            if ($skippingAlias) {
+            if ($skippingAlias || $skippingItem) {
                 continue;
             }
 
@@ -639,6 +761,9 @@ function importedClasses(string $contents): array
             continue;
         }
 
+        if ($skippingItem) {
+            $current = '';
+        }
         $flush();
 
         foreach ($found as $class) {

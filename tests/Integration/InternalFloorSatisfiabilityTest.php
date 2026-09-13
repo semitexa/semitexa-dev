@@ -431,4 +431,126 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertStringNotContainsString('Metadata/H.php', $result['output']);
     }
+
+    /**
+     * A FULLY QUALIFIED reference names a class as surely as an import does.
+     *
+     * `new \Semitexa\Core\Support\Row()` needs no `use`, and this workspace
+     * writes 140 distinct cross-package references that way. A scan that only
+     * entered on `use` was blind to all of them, so a class added after the
+     * floored release could be called and the gate still report success.
+     */
+    #[Test]
+    public function a_fully_qualified_reference_counts_as_using_the_class(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.0749 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "final class Reader\n{\n"
+            . "    public function run(): object\n    {\n"
+            . "        return new \\Semitexa\\Core\\Support\\Row();\n"
+            . "    }\n}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('Semitexa\\Core\\Support\\Row', $result['output']);
+    }
+
+    /**
+     * An EXACT PIN is a promise about a specific release too, and was checked
+     * by nothing: recorded as neither floor nor wildcard, so a package pinned
+     * to a release predating a class it uses passed the gate.
+     */
+    #[Test]
+    public function an_exact_pin_is_verified_like_a_floor(): void
+    {
+        $this->provider('2026.09.13.0749', ['Support/Other.php']);
+        $this->consumer('2026.09.13.0749', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('pins semitexa/core', $result['output']);
+    }
+
+    /**
+     * Composer lets one prefix map to several directories. Keeping only
+     * string-valued entries dropped such a prefix entirely, and every class
+     * under it went unmapped and unchecked.
+     */
+    #[Test]
+    public function an_array_valued_psr4_prefix_is_still_mapped(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/lib/Support', 0777, true);
+        mkdir($dir . '/src/Support', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => ['src/', 'lib/']]],
+        ]));
+        // Present in the SECOND directory only — the candidate list must reach it.
+        file_put_contents($dir . '/lib/Support/Row.php', "<?php\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        self::assertSame(0, $this->gate()['exit'], 'a second mapped directory is still a mapped directory');
+    }
+
+    /**
+     * And when the tagged autoload block cannot be read at all, the gate fails
+     * rather than falling back to today's map — falling back is the same mixing
+     * of revisions in a quieter form.
+     */
+    #[Test]
+    public function an_unreadable_tagged_autoload_map_fails_closed(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Support', 0777, true);
+        // No autoload block at the tag at all.
+        file_put_contents($dir . '/composer.json', (string) json_encode(['name' => 'semitexa/core']));
+        file_put_contents($dir . '/src/Support/Row.php', "<?php\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.1330 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Support\\Row');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('no readable autoload.psr-4 map', $result['output']);
+    }
+
+    /** A function imported inside a GROUP is not a class file. */
+    #[Test]
+    public function a_grouped_function_import_is_not_taken_for_a_class(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Row.php']);
+        $this->consumerWithSource(
+            '>=2026.09.13.1330 || dev-master',
+            "<?php\n\nnamespace Semitexa\\Ssr\\Application;\n\n"
+            . "use Semitexa\\Core\\Support\\{Row, function helper};\n\nfinal class Reader {}\n",
+        );
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringNotContainsString('helper', $result['output']);
+    }
 }
