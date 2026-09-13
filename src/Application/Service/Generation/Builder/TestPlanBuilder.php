@@ -93,11 +93,18 @@ final class TestPlanBuilder
         $className = $handlerClass . 'Test';
         $namespace = "App\\Tests\\Modules\\{$module}\\Unit";
 
+        // The payload and the response are imported even though only the
+        // commented TODO names them. That comment is the first thing anyone
+        // does with this file, and uncommenting it used to produce two
+        // undefined classes — a scaffold whose one instruction does not work is
+        // worse than one that says nothing.
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
             'use Semitexa\\Core\\Contract\\TypedHandlerInterface;',
             "use Semitexa\\Modules\\{$module}\\Application\\Handler\\PayloadHandler\\{$handlerClass};",
+            "use Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClass};",
+            "use Semitexa\\Modules\\{$module}\\Application\\Resource\\Response\\{$resourceClass};",
         ];
         sort($imports);
 
