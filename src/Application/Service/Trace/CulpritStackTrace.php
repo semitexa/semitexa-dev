@@ -94,8 +94,17 @@ final readonly class CulpritStackTrace
             // INSIDE this function is the call site of the frame below it —
             // and for the innermost frame, the throw itself. Raised in review
             // of dev#84.
-            $inside = $index > 0
-                ? ['file' => $frames[$index - 1]['file'], 'line' => $frames[$index - 1]['line']]
+            // A frame invoked BY AN INTERNAL FUNCTION carries no location at
+            // all — a closure handed to array_map, a comparator inside usort,
+            // a destructor. `normalise()` fills those with `''` and `0`, and
+            // taking the line from one produced a culprit at `:0`, a location
+            // that exists nowhere and that the source reader cannot open. So
+            // an unusable location is not used: the throw site stands in,
+            // which is a real place the failure genuinely passed through.
+            // Raised in review of dev#84.
+            $inner = $index > 0 ? $frames[$index - 1] : null;
+            $inside = $inner !== null && self::hasLocation($inner)
+                ? ['file' => $inner['file'], 'line' => $inner['line']]
                 : ['file' => $throwFile, 'line' => $throwLine];
 
             $culprit = [
@@ -104,8 +113,11 @@ final readonly class CulpritStackTrace
                 'function' => $frame['function'],
                 'class' => $frame['class'],
                 // Kept because it is a real location too — where this function
-                // was called from — and losing it would hide the caller.
-                'called_from' => $frame['file'] . ':' . $frame['line'],
+                // was called from — and losing it would hide the caller. Null
+                // rather than `:0` when this frame has none: an absent caller
+                // is a fact, and a fabricated one sends a reader to a file
+                // that has no such line.
+                'called_from' => self::hasLocation($frame) ? $frame['file'] . ':' . $frame['line'] : null,
             ];
             break;
         }
@@ -127,6 +139,16 @@ final readonly class CulpritStackTrace
             self::collapse($frames),
             self::sourceFor($culprit, $reader),
         );
+    }
+
+    /**
+     * Does this frame name a place a reader can open?
+     *
+     * @param array{file: string, line: int, function: string, class: ?string} $frame
+     */
+    private static function hasLocation(array $frame): bool
+    {
+        return $frame['file'] !== '' && $frame['line'] > 0;
     }
 
     /**

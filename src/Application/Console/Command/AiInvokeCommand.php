@@ -582,6 +582,12 @@ final class AiInvokeCommand extends BaseCommand
                     : (string) ($culprit['function'] ?? '?');
                 $io->text("  culprit: {$where}");
                 $io->text("           {$culprit['file']}:{$culprit['line']}");
+                // The other half of the pairing: the location above is the
+                // line INSIDE that function, so without this the caller is
+                // named nowhere in the human output.
+                if (is_string($culprit['called_from'] ?? null)) {
+                    $io->text("           called from {$culprit['called_from']}");
+                }
             }
             if (isset($err['file'], $err['line'])) {
                 $io->text("  thrown at {$err['file']}:{$err['line']}");

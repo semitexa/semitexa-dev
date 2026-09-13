@@ -178,4 +178,60 @@ final class CulpritStackTraceTest extends TestCase
         self::assertSame(['class', 'message', 'culprit', 'frames', 'source'], array_keys($array));
         self::assertSame([], $array['source'], 'no reader was given, so no source was read');
     }
+
+    /**
+     * A closure invoked by an INTERNAL function — `array_map`, `usort`, a
+     * destructor — gets a backtrace frame with no file and no line at all.
+     * `normalise()` fills those with `''` and `0`, and reading a location out
+     * of one produced a culprit at `:0`: a place that exists nowhere, which
+     * the source reader cannot open and a reader cannot visit. Raised in
+     * review of dev#84.
+     */
+    #[Test]
+    public function a_frame_with_no_location_does_not_produce_a_line_zero_culprit(): void
+    {
+        $trace = $this->withFrames([
+            ['file' => '', 'line' => 0, 'function' => '{closure}', 'class' => null],
+            ['file' => '/app/src/modules/Shop/Handler.php', 'line' => 12, 'function' => 'array_map', 'class' => null],
+        ]);
+
+        self::assertSame('{closure}', $trace->culprit['function'], 'the closure is still what failed');
+        self::assertSame('/app/src/modules/Shop/Handler.php', $trace->culprit['file'], 'the throw site stands in');
+        self::assertSame(42, $trace->culprit['line']);
+        self::assertNull($trace->culprit['called_from'], 'an absent caller is a fact, not `:0`');
+    }
+
+    /** And when the frame INSIDE the culprit has no location either. */
+    #[Test]
+    public function an_inner_frame_with_no_location_falls_back_to_the_throw_site(): void
+    {
+        $trace = $this->withFrames([
+            ['file' => '', 'line' => 0, 'function' => '{closure}', 'class' => 'Symfony\\Component\\Console\\Application'],
+            ['file' => '/app/caller.php', 'line' => 7, 'function' => 'handle', 'class' => 'App\\Modules\\Shop\\Handler'],
+        ]);
+
+        self::assertSame('handle', $trace->culprit['function']);
+        self::assertSame('/app/src/modules/Shop/Handler.php', $trace->culprit['file']);
+        self::assertSame(42, $trace->culprit['line']);
+        self::assertSame('/app/caller.php:7', $trace->culprit['called_from'], 'this frame does have one');
+    }
+
+    /**
+     * End-to-end from a REAL throw inside a closure handed to array_map, which
+     * is where PHP actually emits the locationless frame.
+     */
+    #[Test]
+    public function a_real_throw_inside_an_internal_callback_names_a_real_place(): void
+    {
+        try {
+            array_map(static fn(int $n): int => throw new \RuntimeException('from a callback'), [1]);
+            self::fail('it was supposed to throw');
+        } catch (\RuntimeException $e) {
+            $trace = CulpritStackTrace::of($e);
+        }
+
+        self::assertSame($e->getFile(), $trace->culprit['file']);
+        self::assertSame($e->getLine(), $trace->culprit['line']);
+        self::assertGreaterThan(0, $trace->culprit['line'], 'never :0');
+    }
 }
