@@ -14,6 +14,7 @@ use Semitexa\Core\Queue\QueueConfig;
 use Semitexa\Core\Request;
 use Semitexa\Core\Queue\QueueTransportFactoryInterface;
 use Semitexa\Core\Queue\QueueTransportInterface;
+use Semitexa\Core\Lifecycle\SandboxGuard;
 use Semitexa\Core\Queue\QueueTransportRegistry;
 use Semitexa\Core\Session\Session;
 use Semitexa\Core\Session\SessionHandlerInterface;
@@ -43,10 +44,20 @@ use Semitexa\Orm\OrmManager;
  *
  * ## The honest boundary
  *
- * SYNC event listeners run in-process, exactly as ai:invoke runs them — a
- * listener that calls an external service directly (mail, LLM) is NOT stubbed
- * yet. Their spans land in the replay trace, so what ran is at least visible.
- * Port-level stubbing is recorded follow-up work, not silently claimed.
+ * SYNC event listeners run in-process, exactly as ai:invoke runs them. What
+ * they reach for on the way out is governed by {@see SandboxGuard}: this runner
+ * raises the flag, and a port honours it without either side naming the other —
+ * so dev does not have to know every outbound port, and a port does not have to
+ * know about replay.
+ *
+ * COVERED TODAY: mail. `MailTransportRegistry::get()` returns the null
+ * transport while the flag is up, and records the attempt, so the envelope's
+ * `withheld_outbound` says a listener tried to send rather than hiding it.
+ *
+ * NOT COVERED YET, and named rather than glossed: outbound webhooks, and the
+ * LLM providers — the first has a transport contract and is a small follow-up,
+ * the second reaches for curl directly with no port to honour anything. Their
+ * spans land in the replay trace, so what ran is at least visible.
  */
 #[AsService]
 final class ReplayRunner
@@ -95,14 +106,36 @@ final class ReplayRunner
 
         $queueCaptor = $this->stubQueueTransports();
 
+        // The flag every outbound port consults on its way out. This runner
+        // does NOT reach into mail, webhooks or the LLM providers to swap their
+        // transports: that would put semitexa/dev in the position of knowing
+        // every port in the ecosystem, and it could only ask whether each
+        // package is installed with a runtime class check — the shape
+        // `semitexa.explicitOptionalDependency` forbids. The flag lives in
+        // core, which everything already requires, and a port honours it
+        // without either side naming the other.
+        SandboxGuard::enter('ai:trace replay — re-running a recorded process for inspection');
+
         try {
-            return $this->runSandboxed($traceFile, $envelope, $input, $mutations, $handlerClass, $payloadClass, $resourceClass, $queueCaptor);
+            $result = $this->runSandboxed($traceFile, $envelope, $input, $mutations, $handlerClass, $payloadClass, $resourceClass, $queueCaptor);
+
+            // Reported, never swallowed: a replay whose listener tried to email
+            // a customer should say so. Absent when nothing was withheld, so an
+            // ordinary replay's envelope is unchanged.
+            $withheld = SandboxGuard::withheldCalls();
+            if ($withheld !== []) {
+                $result['withheld_outbound'] = $withheld;
+            }
+
+            return $result;
         } finally {
-            // The registry is process-global; leaving it stubbed would send
-            // every LATER publish in this process to the captor instead of a
-            // real broker. reset() restores lazy initialization, so the next
-            // create() rebuilds the real factories.
+            // Both registries are process-global; leaving either armed would
+            // change the behaviour of everything LATER in this process —
+            // publishes going to the captor instead of a broker, and mail
+            // silently dropped. reset() restores lazy initialization, so the
+            // next create() rebuilds the real factories.
             QueueTransportRegistry::reset();
+            SandboxGuard::leave();
         }
     }
 
