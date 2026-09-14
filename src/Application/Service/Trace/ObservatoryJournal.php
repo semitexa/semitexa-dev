@@ -51,6 +51,17 @@ final class ObservatoryJournal
     /** The day whose sweep already ran in this process, so retention costs one glob per day. */
     private static ?string $sweptDay = null;
 
+    /**
+     * @worker-scoped The open append handle. Infrastructure, not request state:
+     * it is the same file for every request this worker serves, so it is one of
+     * the cases where a static is the right shape rather than a coroutine leak.
+     * @var resource|null
+     */
+    private static $stream = null;
+
+    /** @worker-scoped The path {@see $stream} points at. */
+    private static string $streamPath = '';
+
     /** @param array<string, mixed> $record */
     public static function write(array $record): void
     {
@@ -61,21 +72,75 @@ final class ObservatoryJournal
             }
 
             $dir = self::dir();
-            if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            $day = date('Ymd');
+            $stream = self::stream($dir . '/journal-' . $day . '.ndjson');
+            if ($stream === null) {
                 return;
             }
 
-            $day = date('Ymd');
-            @file_put_contents(
-                $dir . '/journal-' . $day . '.ndjson',
-                $line . "\n",
-                FILE_APPEND | LOCK_EX,
-            );
+            // flock keeps one line atomic across workers — the same guarantee
+            // FILE_APPEND|LOCK_EX gave. What is gone is opening and closing the
+            // file for EVERY line, which was the whole cost: on the bind-mounted
+            // var/observatory, file_put_contents measured 8.94us against 2.30us
+            // for this, and a root span writes two lines.
+            //
+            // fflush is not optional: file_put_contents wrote through, and the
+            // panel reads the journal live. A buffered line is a line the live
+            // view does not have yet.
+            if (@flock($stream, LOCK_EX)) {
+                @fwrite($stream, $line . "\n");
+                @fflush($stream);
+                @flock($stream, LOCK_UN);
+            } else {
+                @fwrite($stream, $line . "\n");
+                @fflush($stream);
+            }
 
             self::sweepOld($dir, $day);
         } catch (\Throwable) {
             // Observing must never fault the observed.
         }
+    }
+
+    /**
+     * The append handle for one journal file, kept open for the worker.
+     *
+     * KEYED ON THE FULL PATH, not on the day. The day is the reason it rolls
+     * over in production, but a test that puts a fresh SEMITEXA_OBSERVATORY_DIR
+     * in the environment between cases changes the path without changing the
+     * day — and a handle keyed on the day alone would keep writing into the
+     * previous test's file. That is the static-state trap this class would
+     * otherwise have walked into.
+     *
+     * @return resource|null null when the directory or file cannot be opened,
+     *         which is not an error: observing must never fault the observed.
+     */
+    private static function stream(string $path)
+    {
+        if (self::$stream !== null && self::$streamPath === $path) {
+            return self::$stream;
+        }
+
+        if (self::$stream !== null) {
+            @fclose(self::$stream);
+            self::$stream = null;
+            self::$streamPath = '';
+        }
+
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return null;
+        }
+
+        $handle = @fopen($path, 'ab');
+        if ($handle === false) {
+            return null;
+        }
+
+        self::$stream = $handle;
+        self::$streamPath = $path;
+
+        return $handle;
     }
 
     /**
