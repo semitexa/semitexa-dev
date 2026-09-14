@@ -218,9 +218,10 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             }
 
             if ($token[0] === T_ATTRIBUTE) {
-                $next = self::previousIsName($tokens, $i);
-                if ($next !== null && self::resolves($next, 'AsPrompt', $aliases)) {
-                    return true;
+                foreach (self::attributeNames($tokens, $i) as $name) {
+                    if (self::resolves($name, 'AsPrompt', $aliases)) {
+                        return true;
+                    }
                 }
                 continue;
             }
@@ -250,22 +251,61 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * The name token that follows an attribute opener.
+     * Every attribute name in one `#[...]` group.
+     *
+     * PHP allows several in a group — `#[Other, AsPrompt(id: 'x')]` — so reading
+     * only the first token missed the declaration and reported a real prompt
+     * class for the body it is supposed to have. Argument lists are skipped by
+     * depth, since a name inside `Other(AsPrompt::class)` is an argument, not an
+     * applied attribute.
      *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @return list<string>
      */
-    private static function previousIsName(array $tokens, int $index): ?string
+    private static function attributeNames(array $tokens, int $index): array
     {
-        for ($i = $index + 1; $i < \count($tokens); $i++) {
+        $names = [];
+        $depth = 0;
+        $expectName = true;
+        $count = \count($tokens);
+
+        for ($i = $index + 1; $i < $count; $i++) {
             $token = $tokens[$i];
-            if (\is_array($token) && $token[0] === T_WHITESPACE) {
+
+            if (!\is_array($token)) {
+                $literal = self::text($token);
+                if ($literal === '(' || $literal === '[') {
+                    $depth++;
+                    continue;
+                }
+                if ($literal === ')') {
+                    $depth--;
+                    continue;
+                }
+                if ($literal === ']') {
+                    if ($depth === 0) {
+                        break;
+                    }
+                    $depth--;
+                    continue;
+                }
+                if ($literal === ',' && $depth === 0) {
+                    $expectName = true;
+                }
                 continue;
             }
 
-            return \is_array($token) ? $token[1] : null;
+            if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            if ($depth === 0 && $expectName) {
+                $names[] = $token[1];
+                $expectName = false;
+            }
         }
 
-        return null;
+        return $names;
     }
 
     /**

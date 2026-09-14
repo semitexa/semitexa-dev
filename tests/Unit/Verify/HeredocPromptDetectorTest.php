@@ -272,6 +272,43 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function every_attribute_in_a_group_is_inspected(): void
+    {
+        // Reported on the PR: PHP allows several attributes in one `#[...]`, and
+        // reading only the first name missed the declaration — reporting a real
+        // prompt class for the body it is supposed to have.
+        foreach ([
+            "#[Other, AsPrompt(id: 'x')]",
+            "#[AsPrompt(id: 'x'), Other]",
+        ] as $attributes) {
+            self::assertSame([], self::detect([
+                $attributes,
+                'final class P {',
+                '    private const B = <<<PROMPT',
+                'body',
+                'PROMPT;',
+                '}',
+            ], self::PROMPT_CLASS), $attributes);
+        }
+    }
+
+    #[Test]
+    public function a_name_used_as_an_attribute_argument_exempts_nothing(): void
+    {
+        // The other side of reading a group: `#[Other(AsPrompt::class)]` mentions
+        // the symbol as an ARGUMENT, and no attribute of that kind is applied.
+        // Exempting there would hand anyone a way to silence the rule.
+        self::assertCount(1, self::detect([
+            '#[Other(AsPrompt::class)]',
+            'final class S {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
     public function an_unrelated_alias_exempts_nothing(): void
     {
         // The alias map must map to the SYMBOL, not merely record a name that
