@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledDeferredDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledLiveTransportDetector;
+use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HeredocPromptDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\InlineEventHandlerDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismDetectorInterface;
 
@@ -143,6 +144,7 @@ final class MechanismDetectorSetTest extends TestCase
             new HandRolledDeferredDetector(),
             new HandRolledLiveTransportDetector(),
             new InlineEventHandlerDetector(),
+            new HeredocPromptDetector(),
         ];
 
         foreach ($detectors as $detector) {

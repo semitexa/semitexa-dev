@@ -37,7 +37,11 @@ final class VerificationPlanner
         ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
         ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
-        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
+        // lint:mechanisms joined the service row when the prompt.catalog detector
+        // landed: every measured case of a prompt compiled into PHP was a service
+        // holding it in a heredoc const. A detector that no kind schedules never
+        // runs and reads exactly like a passing check.
+        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
         // lint:deferred-twig belongs here because a deferred slot template is rendered
         // TWICE - by Twig on the server and by semitexa-twig.js on the client - and the

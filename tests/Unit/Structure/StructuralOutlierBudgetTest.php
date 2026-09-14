@@ -215,7 +215,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-update/src/Application/Service/Composer/ComposerUpdateRunner.php' => [20, 751],
         'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 742],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 827],
+        // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
+        // when the prompt.catalog detector landed, and the four lines are the
+        // comment saying why — a detector no kind schedules never runs and reads
+        // exactly like a passing check, which is the mistake this map has made
+        // before. The row edit itself costs nothing. NO NEW METHOD: still 19.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 831],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

@@ -99,12 +99,12 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'application service' => [
                 'Application/Service/Thing/ThingCatalog.php',
                 ChangedFile::KIND_SERVICE,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'domain service' => [
                 'Domain/Service/ThingPolicy.php',
                 ChangedFile::KIND_SERVICE,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'contract' => [
                 // A contract change auto-expands the scope to broad, so it
