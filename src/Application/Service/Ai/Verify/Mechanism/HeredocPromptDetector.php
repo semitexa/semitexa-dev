@@ -14,12 +14,20 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  * measured in a consumer 2026-09-14, six services in one project kept their
  * prompts this way while the same project used the catalog correctly elsewhere.
  *
- * Precision comes from requiring TWO things on one line: a heredoc or nowdoc
- * opener, and the word "prompt" in either the assignment target or the heredoc
- * label. A heredoc alone says nothing — the same syntax carries SQL, HTML,
- * fixtures and CLI help — and a one-line string is explicitly what the
- * capability says to leave alone ("one short fixed instruction used in exactly
- * one place"), so the multi-line form is the signal, not a proxy for it.
+ * Everything here is decided from PHP TOKENS, never from raw source text. That
+ * is not tidiness: every false positive this rule has had came from reading text
+ * PHP does not execute. A comment ending `// return <<<PROMPT` was reported as
+ * compiled prompt text; an example inside another heredoc was reported as a
+ * second prompt; a docblock mentioning `#[AsPrompt]` exempted a whole service
+ * and hid a real finding in it. Tokens answer all three by construction: a
+ * comment is a comment, heredoc content is content, and an attribute is only an
+ * attribute where PHP attaches one.
+ *
+ * Precision then comes from requiring the word "prompt" in the assignment target
+ * or the heredoc label. A heredoc alone says nothing — the same syntax carries
+ * SQL, HTML, fixtures and help text — and a one-line string is explicitly what
+ * the capability says to leave alone ("one short fixed instruction used in
+ * exactly one place"), so the multi-line form is the signal, not a proxy for it.
  *
  * Measured when written: 0 occurrences in this repository's `src/modules`, so
  * like the inline-handler rule it ships silent here and exists for the consumer
@@ -27,29 +35,6 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  */
 final class HeredocPromptDetector implements MechanismDetectorInterface
 {
-    /**
-     * A heredoc/nowdoc opener with an assignment target, e.g.
-     * `const SYSTEM_PROMPT = <<<TXT`, `$prompt = <<<'EOT'`, `system: <<<PROMPT`.
-     *
-     * Compound forms count: `$systemPrompt .= <<<TXT` appends prompt text and
-     * carries the same target signal as the simple assignment. Without them the
-     * BARE branch took over, saw only a generic label, and the target was lost.
-     */
-    private const ASSIGNED = '/(?:const\s+|\$|->|::|[\'"]|\b)([A-Za-z_][A-Za-z0-9_]*)[\'"]?\s*(?:\.=|\?\?=|=>|=|:)\s*<<<([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\2\s*$/';
-
-    /**
-     * A heredoc/nowdoc opener with NO assignment target — `return <<<PROMPT`,
-     * `$this->llm->complete(<<<PROMPT`, `[<<<PROMPT`.
-     *
-     * Its own branch because these are the two commonest ways a service inlines
-     * a prompt and the assignment form cannot see either. The first version of
-     * this rule promised in its docblock to match on the label alone and then
-     * required an assignment anyway: it read as a passing check over exactly the
-     * code it was written to find, which is the failure the planner comment
-     * beside KIND_SERVICE warns about.
-     */
-    private const BARE = '/(?:^|[\s(\[,=.]|=>)<<<([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$/';
-
     /**
      * Heredoc labels that name a language rather than an intent.
      *
@@ -59,6 +44,9 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * whatever it is assigned to.
      */
     private const LANGUAGE_LABELS = ['SQL', 'HTML', 'XML', 'JSON', 'CSS', 'JS', 'JAVASCRIPT', 'YAML', 'YML', 'CSV'];
+
+    /** Assignment operators that still carry the target's intent — `.=` appends a prompt. */
+    private const ASSIGNMENTS = ['=', '.=', '??=', '=>', ':'];
 
     /** @return non-empty-list<string> */
     public function extensions(): array
@@ -72,35 +60,30 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     public function detect(string $file, array $lines): array
     {
-        if (self::isCatalogDefinition($lines) || self::isTestFile($file)) {
+        if (self::isTestFile($file)) {
             return [];
         }
 
-        $commentAt = self::commentColumns($lines);
+        $lineOffset = 0;
+        $tokens = self::tokenize($lines, $lineOffset);
+        if ($tokens === []) {
+            // Nothing parseable to judge. Reporting from raw text here is how
+            // every false positive this rule has had was born.
+            return [];
+        }
+
+        if (self::declaresACatalogPrompt($tokens)) {
+            return [];
+        }
+
         $findings = [];
-
-        foreach ($lines as $index => $line) {
-            $trimmed = rtrim($line);
-
-            // A heredoc opener written INSIDE a comment is documentation, not
-            // compiled prompt text — `// example: $prompt = <<<TXT` is somebody
-            // explaining the mistake, and failing verification over it is the
-            // rule punishing the person writing it down. Position matters, not
-            // just the line: code with a trailing comment is still code.
-            $opener = strpos($trimmed, '<<<');
-            if ($opener !== false && isset($commentAt[$index]) && $commentAt[$index] <= $opener) {
+        foreach ($tokens as $i => $token) {
+            if (!\is_array($token) || $token[0] !== T_START_HEREDOC) {
                 continue;
             }
 
-            if (preg_match(self::ASSIGNED, $trimmed, $m) === 1) {
-                $target = $m[1];
-                $label = $m[3];
-            } elseif (preg_match(self::BARE, $trimmed, $m) === 1) {
-                $target = '';
-                $label = $m[2];
-            } else {
-                continue;
-            }
+            $label = self::labelOf($token[1]);
+            $target = self::targetBefore($tokens, $i);
 
             $labelSaysPrompt = stripos($label, 'prompt') !== false;
             $targetSaysPrompt = $target !== '' && stripos($target, 'prompt') !== false;
@@ -117,14 +100,15 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
+            $line = $token[2] + $lineOffset;
             $findings[] = new MechanismFinding(
                 file: $file,
-                line: $index + 1,
+                line: $line,
                 capabilityId: 'prompt.catalog',
                 evidence: sprintf(
                     '%s heredoc at line %d — prompt text compiled into PHP, so it is absent from prompt:list and cannot be overridden without a deploy',
                     $target !== '' ? $target : '<<<' . $label,
-                    $index + 1,
+                    $line,
                 ),
             );
         }
@@ -133,44 +117,132 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * A file that DECLARES a catalog prompt is the mechanism, not a duplicate of
-     * it — including one still on the legacy `PromptDefinitionInterface::system()`
-     * path, where a heredoc body is the supported migration shape. Firing there
-     * would point at the correct solution and call it the mistake.
-     *
-     * Matched against the JOINED source, not line by line: a declaration wrapped
-     * as `class Foo implements` / `PromptDefinitionInterface` is the same
-     * declaration, and a per-line test read it as a service hand-rolling the
-     * mechanism it actually implements. The character class admits only an
-     * identifier list, so the match cannot wander into a class body.
-     *
-     * The attribute must be APPLIED and the interface IMPLEMENTED — not merely
-     * named. A substring test exempted a whole file on a `use` import, a docblock
-     * {@see}, or a variable called $formattedAsPrompt.
-     *
      * @param list<string> $lines
+     * @return list<array{0: int, 1: string, 2: int}|string>
      */
-    private static function isCatalogDefinition(array $lines): bool
+    private static function tokenize(array $lines, int &$lineOffset): array
     {
         $source = implode("\n", $lines);
-
-        // Short name, fully qualified (`#[\Semitexa\Prompt\Attribute\AsPrompt]`)
-        // or imported under an alias — all three are the same declaration, and a
-        // literal short-name test reported a real prompt class as a hand-rolled
-        // copy of the mechanism it implements.
-        $attributeNames = ['AsPrompt', ...self::aliasesOf($source, 'AsPrompt')];
-        foreach ($attributeNames as $name) {
-            $pattern = '/#\[\s*\\\\?(?:[A-Za-z_][A-Za-z0-9_]*\\\\)*' . preg_quote($name, '/') . '\s*[(\]]/';
-            if (preg_match($pattern, $source) === 1) {
-                return true;
-            }
+        $lineOffset = 0;
+        if (!str_contains($source, '<?php')) {
+            // The lint feeds whole files, but the seam takes a line list, so a
+            // fragment has to be made tokenizable. The opener costs one line.
+            $source = "<?php\n" . $source;
+            $lineOffset = -1;
         }
 
-        $interfaceNames = ['PromptDefinitionInterface', ...self::aliasesOf($source, 'PromptDefinitionInterface')];
-        foreach ($interfaceNames as $name) {
-            $pattern = '/\bimplements\s[\sA-Za-z0-9_\\\\,]*\b' . preg_quote($name, '/') . '\b/';
-            if (preg_match($pattern, $source) === 1) {
-                return true;
+        try {
+            /** @var list<array{0: int, 1: string, 2: int}|string> $tokens */
+            $tokens = @token_get_all($source);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $tokens;
+    }
+
+    /** `<<<TXT`, `<<<'TXT'` and `<<<"TXT"` all name TXT. */
+    private static function labelOf(string $startHeredoc): string
+    {
+        return preg_match('/<<<\s*[\'"]?([A-Za-z_][A-Za-z0-9_]*)/', $startHeredoc, $m) === 1 ? $m[1] : '';
+    }
+
+    /**
+     * The name a heredoc is being assigned to, or '' for a bare opener such as
+     * `return <<<PROMPT` or `$llm->complete(<<<PROMPT`.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function targetBefore(array $tokens, int $index): string
+    {
+        $operator = self::previousMeaningful($tokens, $index);
+        if ($operator === null || !\in_array(self::text($tokens[$operator]), self::ASSIGNMENTS, true)) {
+            return '';
+        }
+
+        $name = self::previousMeaningful($tokens, $operator);
+        if ($name === null) {
+            return '';
+        }
+
+        $text = self::text($tokens[$name]);
+
+        return trim($text, "'\"$");
+    }
+
+    /**
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function previousMeaningful(array $tokens, int $index): ?int
+    {
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $token = $tokens[$i];
+            if (\is_array($token) && \in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            return $i;
+        }
+
+        return null;
+    }
+
+    /** @param array{0: int, 1: string, 2: int}|string $token */
+    private static function text(array|string $token): string
+    {
+        return \is_array($token) ? $token[1] : $token;
+    }
+
+    /**
+     * Does this file DECLARE a catalog prompt? Then it is the mechanism, not a
+     * duplicate of it — including one still on the legacy
+     * `PromptDefinitionInterface::system()` path, where a heredoc body is the
+     * supported migration shape. Firing there would point at the correct
+     * solution and call it the mistake.
+     *
+     * Read from tokens: an `#[AsPrompt]` written in a docblock to document a
+     * migration is prose, and exempting a whole service for it silently hid the
+     * real findings that service had. `T_ATTRIBUTE` is emitted only where PHP
+     * attaches an attribute. Qualified names, aliased imports and declarations
+     * wrapped across lines all fall out of this for free.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function declaresACatalogPrompt(array $tokens): bool
+    {
+        $aliases = self::aliasMap($tokens);
+
+        foreach ($tokens as $i => $token) {
+            if (!\is_array($token)) {
+                continue;
+            }
+
+            if ($token[0] === T_ATTRIBUTE) {
+                $next = self::previousIsName($tokens, $i);
+                if ($next !== null && self::resolves($next, 'AsPrompt', $aliases)) {
+                    return true;
+                }
+                continue;
+            }
+
+            if ($token[0] !== T_IMPLEMENTS) {
+                continue;
+            }
+
+            for ($j = $i + 1; $j < \count($tokens); $j++) {
+                $candidate = $tokens[$j];
+                if (!\is_array($candidate)) {
+                    if (self::text($candidate) === '{') {
+                        break;
+                    }
+                    continue;
+                }
+                if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                if (self::resolves($candidate[1], 'PromptDefinitionInterface', $aliases)) {
+                    return true;
+                }
             }
         }
 
@@ -178,91 +250,94 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * Local aliases a `use ... as X;` statement gives a symbol.
+     * The name token that follows an attribute opener.
      *
-     * @return list<string>
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
      */
-    private static function aliasesOf(string $source, string $symbol): array
+    private static function previousIsName(array $tokens, int $index): ?string
     {
-        $pattern = '/\buse\s+[A-Za-z0-9_\\\\]*\b' . preg_quote($symbol, '/') . '\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/';
-        if (preg_match_all($pattern, $source, $matches) < 1) {
-            return [];
+        for ($i = $index + 1; $i < \count($tokens); $i++) {
+            $token = $tokens[$i];
+            if (\is_array($token) && $token[0] === T_WHITESPACE) {
+                continue;
+            }
+
+            return \is_array($token) ? $token[1] : null;
         }
 
-        /** @var list<string> $aliases */
-        $aliases = array_values(array_unique($matches[1]));
+        return null;
+    }
+
+    /**
+     * Does $name refer to $symbol — as the short name, a qualified one, or a
+     * local alias?
+     *
+     * @param array<string, string> $aliases alias => the symbol it was given to
+     */
+    private static function resolves(string $name, string $symbol, array $aliases): bool
+    {
+        $short = substr(strrchr($name, '\\') ?: $name, strrchr($name, '\\') !== false ? 1 : 0);
+
+        return $short === $symbol || ($aliases[$name] ?? null) === $symbol;
+    }
+
+    /**
+     * Local aliases introduced by `use Some\Symbol as Alias;`.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @return array<string, string>
+     */
+    private static function aliasMap(array $tokens): array
+    {
+        $aliases = [];
+        $count = \count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!\is_array($token) || $token[0] !== T_USE) {
+                continue;
+            }
+
+            $imported = null;
+            for ($j = $i + 1; $j < $count; $j++) {
+                $candidate = $tokens[$j];
+                if (\is_array($candidate) && $candidate[0] === T_WHITESPACE) {
+                    continue;
+                }
+                if (!\is_array($candidate)) {
+                    if (self::text($candidate) === ';') {
+                        break;
+                    }
+                    continue;
+                }
+                if ($candidate[0] === T_AS) {
+                    continue;
+                }
+                if ($imported === null) {
+                    $imported = $candidate[1];
+                    continue;
+                }
+
+                $short = strrchr($imported, '\\');
+                $aliases[$candidate[1]] = $short === false ? $imported : substr($short, 1);
+                break;
+            }
+        }
 
         return $aliases;
     }
 
     /**
-     * Where a comment begins on each line, by line index — the offset a match
-     * must sit before to count as code.
-     *
-     * Tokenized rather than pattern-matched: `//` inside a string literal does
-     * not start a comment, and a `/* *\/` block spans lines. A source that will
-     * not tokenize (a fragment, a parse error) yields no spans, so the rule
-     * behaves exactly as it did before rather than silently going quiet.
-     *
-     * @param list<string> $lines
-     * @return array<int, int>
-     */
-    private static function commentColumns(array $lines): array
-    {
-        $source = implode("\n", $lines);
-        if (!str_contains($source, '<?php')) {
-            $source = "<?php\n" . $source;
-            $lineOffset = -1;
-        } else {
-            $lineOffset = 0;
-        }
-
-        try {
-            $tokens = @token_get_all($source);
-        } catch (\Throwable) {
-            return [];
-        }
-
-        $sourceLines = explode("\n", $source);
-        $columns = [];
-        foreach ($tokens as $token) {
-            if (!\is_array($token) || !\in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
-                continue;
-            }
-
-            $text = $token[1];
-            $startLine = $token[2];
-            $column = 0;
-            if (isset($sourceLines[$startLine - 1])) {
-                $found = strpos($sourceLines[$startLine - 1], strtok($text, "\n") ?: $text);
-                $column = $found === false ? 0 : $found;
-            }
-
-            $lineCount = substr_count($text, "\n");
-            for ($i = 0; $i <= $lineCount; $i++) {
-                $index = $startLine + $i + $lineOffset - 1;
-                // A multi-line comment covers its later lines entirely.
-                $at = $i === 0 ? $column : 0;
-                if (!isset($columns[$index]) || $at < $columns[$index]) {
-                    $columns[$index] = $at;
-                }
-            }
-        }
-
-        return $columns;
-    }
-
-    /**
      * Prompt-shaped text in a test is a fixture: it is not sent anywhere, and
      * moving it to the catalog would only make the test depend on discovery.
+     *
+     * Anchored on a path SEGMENT: `--path=tests` reports names like
+     * `tests/Fixtures/PromptFixture.php`, which contain no `/tests/` and need not
+     * end in Test.php, so a substring test missed exactly the files it is for.
+     * `contests/` must still not match, hence the boundary.
      */
     private static function isTestFile(string $file): bool
     {
-        // Anchored on a path SEGMENT, not a substring with slashes on both sides:
-        // `--path=tests` makes the lint report names like
-        // `tests/Fixtures/PromptFixture.php`, which contain no `/tests/` and need
-        // not end in Test.php, so the exemption missed exactly the files it is
-        // for. `contests/` must still not match, hence the segment boundary.
         return preg_match('#(^|/)tests/#', $file) === 1 || str_ends_with($file, 'Test.php');
     }
 }
