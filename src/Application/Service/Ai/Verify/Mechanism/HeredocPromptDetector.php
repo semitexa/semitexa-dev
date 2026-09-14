@@ -49,6 +49,24 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     private const ATTRIBUTE_FQCN = 'Semitexa\\Prompt\\Attribute\\AsPrompt';
     private const INTERFACE_FQCN = 'Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface';
 
+    /**
+     * Names that mark a file as talking to a model.
+     *
+     * The word "prompt" means two things in English, and only one of them is
+     * this capability's: `CONFIRMATION_PROMPT = <<<TXT` holding a CLI question
+     * is not a model prompt, and failing verification over it recommends a
+     * catalog the code has no use for. Asking for actual proof — that the text
+     * reaches an LLM call — needs dataflow this rule does not do, so the
+     * corroboration is at file level: does anything here face a model at all?
+     *
+     * Deliberately framework-anchored rather than a vocabulary of generic verbs
+     * like `chat` or `complete`, which would drift straight back into guessing.
+     * A consumer wiring a model through none of these names loses the finding;
+     * that is the quieter error, and it is the same trade this rule makes
+     * everywhere else.
+     */
+    private const MODEL_FACING = ['llm', 'promptrenderer', 'promptrepository', 'asaiskill', 'aipersona', 'ollama', 'openai', 'anthropic', 'gemini'];
+
     /** Assignment operators that still carry the target's intent — `.=` appends a prompt. */
     private const ASSIGNMENTS = ['=', '.=', '??=', '=>', ':'];
 
@@ -77,6 +95,10 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         }
 
         if (self::declaresACatalogPrompt($tokens)) {
+            return [];
+        }
+
+        if (!self::facesAModel($tokens)) {
             return [];
         }
 
@@ -121,8 +143,38 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
+     * Does anything in this file face a model?
+     *
+     * Read from code tokens only — names, strings and variables — so a comment
+     * mentioning an LLM does not qualify a file whose code never talks to one.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function facesAModel(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if (!\is_array($token)) {
+                continue;
+            }
+
+            if (\in_array($token[0], [T_COMMENT, T_DOC_COMMENT, T_INLINE_HTML], true)) {
+                continue;
+            }
+
+            $text = strtolower($token[1]);
+            foreach (self::MODEL_FACING as $needle) {
+                if (str_contains($text, $needle)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param list<string> $lines
-     * @return list<array{0: int, 1: string, 2: int}|string>
+     * @return list<array{0: int, 1: string, 2: int}>|list<array{0: int, 1: string, 2: int}|string>
      */
     private static function tokenize(array $lines, int &$lineOffset): array
     {

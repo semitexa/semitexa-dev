@@ -32,12 +32,28 @@ final class HeredocPromptDetectorTest extends TestCase
         return (new HeredocPromptDetector())->detect($file, $lines);
     }
 
+    /**
+     * The same, in a file that talks to a model.
+     *
+     * Appended rather than prepended so line numbers stay stable, and required
+     * because the rule now asks for that corroboration before calling any
+     * heredoc a model prompt — the word means two things in English, and a CLI
+     * confirmation message is the other one.
+     *
+     * @param list<string> $lines
+     * @return list<\Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismFinding>
+     */
+    private static function detectInLlmService(array $lines, string $file = self::SERVICE): array
+    {
+        return self::detect([...$lines, '$answer = $this->llm->complete($body);'], $file);
+    }
+
     #[Test]
     public function a_prompt_constant_holding_a_heredoc_is_reported(): void
     {
         // The measured shape: six services in one consumer kept their prompts
         // exactly like this while the same project used the catalog elsewhere.
-        $findings = self::detect([
+        $findings = self::detectInLlmService([
             'final class GroupHarvester',
             '{',
             '    private const SYSTEM_PROMPT = <<<TXT',
@@ -58,12 +74,12 @@ final class HeredocPromptDetectorTest extends TestCase
         // The two commonest ways a service inlines a prompt, and the two an
         // assignment-only matcher could not see while its docblock claimed the
         // label alone was enough.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'function a(): string { return <<<PROMPT',
             'Write a post.',
             'PROMPT; }',
         ]));
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             '$answer = $this->llm->complete(<<<PROMPT',
             'Write a post.',
             'PROMPT);',
@@ -76,8 +92,8 @@ final class HeredocPromptDetectorTest extends TestCase
         // Reported on the PR: `.=` is how prompt text gets appended, and an
         // assignment branch that accepted only `=` lost the target to the bare
         // form, which then saw a generic label and stayed silent.
-        self::assertCount(1, self::detect(['$systemPrompt .= <<<TXT', 'more', 'TXT;']));
-        self::assertCount(1, self::detect(['$prompt ??= <<<TXT', 'more', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(['$systemPrompt .= <<<TXT', 'more', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(['$prompt ??= <<<TXT', 'more', 'TXT;']));
     }
 
     #[Test]
@@ -86,9 +102,9 @@ final class HeredocPromptDetectorTest extends TestCase
         // Reported on the PR: `$systemPrompts[] = <<<TXT` ends in `]`, so the
         // token before the operator is a bracket and the prompt-bearing name
         // sits before the subscript. With a generic label nothing was reported.
-        self::assertCount(1, self::detect(['$systemPrompts[] = <<<TXT', 'body', 'TXT;']));
-        self::assertCount(1, self::detect(["\$prompts['system'] = <<<TXT", 'body', 'TXT;']));
-        self::assertCount(1, self::detect(["\$this->prompts['system'] = <<<TXT", 'body', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(['$systemPrompts[] = <<<TXT', 'body', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(["\$prompts['system'] = <<<TXT", 'body', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(["\$this->prompts['system'] = <<<TXT", 'body', 'TXT;']));
 
         // And the silence case it must not cost: an indexed target that is not
         // a prompt stays quiet.
@@ -101,7 +117,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // Reported on the PR: `$systemPrompt = $prefix . <<<TXT` puts a `.`
         // immediately before the opener, and requiring adjacency missed the
         // prompt whenever the label was generic.
-        self::assertCount(1, self::detect(['$systemPrompt = $prefix . <<<TXT', 'body', 'TXT;']));
+        self::assertCount(1, self::detectInLlmService(['$systemPrompt = $prefix . <<<TXT', 'body', 'TXT;']));
         self::assertSame([], self::detect(['$sqlText = $prefix . <<<SQL', 'SELECT 1', 'SQL;']));
     }
 
@@ -151,7 +167,7 @@ final class HeredocPromptDetectorTest extends TestCase
         ], self::PROMPT_CLASS));
 
         // Case-insensitivity must not become a way to exempt the wrong symbol.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'use Vendor\\Ui\\AsPrompt as CatalogPrompt;',
             '#[catalogprompt]',
             'final class S {',
@@ -169,7 +185,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // `use Vendor\Ui\AsPrompt as CatalogPrompt;` is a DIFFERENT attribute,
         // and exempting the file for it would hide every real prompt heredoc in
         // that service. Imports carry the namespace precisely for this.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'use Vendor\\Ui\\AsPrompt as CatalogPrompt;',
             '#[CatalogPrompt]',
             'final class S {',
@@ -179,7 +195,7 @@ final class HeredocPromptDetectorTest extends TestCase
             '}',
         ]));
 
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'use Vendor\\Ui\\AsPrompt;',
             '#[AsPrompt]',
             'final class S {',
@@ -189,7 +205,7 @@ final class HeredocPromptDetectorTest extends TestCase
             '}',
         ]));
 
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'use Vendor\\Ui\\PromptDefinitionInterface as Def;',
             'final class S implements Def',
             '{',
@@ -216,15 +232,15 @@ final class HeredocPromptDetectorTest extends TestCase
     {
         // `const SYSTEM = <<<PROMPT` says it in the label. Requiring the word in
         // both places would miss half of them.
-        self::assertCount(1, self::detect(['const SYSTEM = <<<PROMPT', 'body', 'PROMPT;']));
-        self::assertCount(1, self::detect(['$text = <<<PROMPT', 'body', 'PROMPT;']));
+        self::assertCount(1, self::detectInLlmService(['const SYSTEM = <<<PROMPT', 'body', 'PROMPT;']));
+        self::assertCount(1, self::detectInLlmService(['$text = <<<PROMPT', 'body', 'PROMPT;']));
     }
 
     #[Test]
     public function named_arguments_and_array_values_are_matched_too(): void
     {
-        self::assertCount(1, self::detect(['$x = f(system: <<<PROMPT', 'body', 'PROMPT);']));
-        self::assertCount(1, self::detect(["\$a = ['system' => <<<PROMPT", 'body', 'PROMPT];']));
+        self::assertCount(1, self::detectInLlmService(['$x = f(system: <<<PROMPT', 'body', 'PROMPT);']));
+        self::assertCount(1, self::detectInLlmService(["\$a = ['system' => <<<PROMPT", 'body', 'PROMPT];']));
     }
 
     #[Test]
@@ -244,7 +260,61 @@ final class HeredocPromptDetectorTest extends TestCase
         // believed over the target here — but only in this direction: a label
         // that says PROMPT is believed whatever it is assigned to.
         self::assertSame([], self::detect(['$sqlPrompt = <<<SQL', 'SELECT 1', 'SQL;']));
-        self::assertCount(1, self::detect(['$sqlPrompt = <<<PROMPT', 'body', 'PROMPT;']));
+        self::assertCount(1, self::detectInLlmService(['$sqlPrompt = <<<PROMPT', 'body', 'PROMPT;']));
+    }
+
+    #[Test]
+    public function a_user_facing_prompt_is_not_a_model_prompt(): void
+    {
+        // Reported on the PR: "prompt" means two things in English and only one
+        // of them is this capability's. A CLI confirmation message failed
+        // verification with a recommendation the code had no use for.
+        //
+        // Proving the text reaches a model needs dataflow this rule does not do,
+        // so the corroboration is at file level: does anything here face a model
+        // at all? A file that does not gets no findings, whichever way the word
+        // appears.
+        self::assertSame([], self::detect([
+            'final class Confirm {',
+            '    private const CONFIRMATION_PROMPT = <<<TXT',
+            'Are you sure?',
+            'TXT;',
+            '}',
+        ]));
+
+        self::assertSame([], self::detect([
+            'final class Confirm {',
+            '    private const MESSAGE = <<<PROMPT',
+            'Are you sure?',
+            'PROMPT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
+    public function the_corroboration_comes_from_code_not_from_a_comment(): void
+    {
+        // Otherwise a passing mention of an LLM in prose would qualify a file
+        // whose code never talks to one — the same mistake as exempting a file
+        // for an attribute named only in a docblock, in the other direction.
+        self::assertSame([], self::detect([
+            '// we may send this to an llm one day',
+            'final class S {',
+            '    private const CONFIRMATION_PROMPT = <<<TXT',
+            'Are you sure?',
+            'TXT;',
+            '}',
+        ]));
+
+        // An import is code, and is enough.
+        self::assertCount(1, self::detect([
+            'use Semitexa\\Llm\\Domain\\Contract\\LlmClientInterface;',
+            'final class S {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+        ]));
     }
 
     #[Test]
@@ -294,7 +364,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // mentioning #[AsPrompt] silently exempted an entire service, hiding the
         // real findings in it. T_ATTRIBUTE is emitted only where PHP attaches
         // an attribute, so prose cannot do that any more.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             "/** Migrate this to #[AsPrompt(id: 'social.topic')] one day. */",
             'private const SYSTEM_PROMPT = <<<TXT',
             'You summarise a chat room.',
@@ -429,7 +499,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // The other side of reading a group: `#[Other(AsPrompt::class)]` mentions
         // the symbol as an ARGUMENT, and no attribute of that kind is applied.
         // Exempting there would hand anyone a way to silence the rule.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             '#[Other(AsPrompt::class)]',
             'final class S {',
             '    private const SYSTEM_PROMPT = <<<TXT',
@@ -445,7 +515,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // The alias map must map to the SYMBOL, not merely record a name that
         // looks like one — otherwise the exemption becomes a way to silence the
         // rule by importing something else.
-        self::assertCount(1, self::detect([
+        self::assertCount(1, self::detectInLlmService([
             'use Foo\\{Bar as AsPrompt2};',
             'private const SYSTEM_PROMPT = <<<TXT',
             'body',
@@ -482,9 +552,7 @@ final class HeredocPromptDetectorTest extends TestCase
         );
 
         // A segment boundary, not a substring: `contests/` is not a test tree.
-        self::assertCount(
-            1,
-            self::detect(['const SYSTEM_PROMPT = <<<TXT', 'body', 'TXT;'], 'contests/Thing.php'),
+        self::assertCount(1, self::detectInLlmService(['const SYSTEM_PROMPT = <<<TXT', 'body', 'TXT;'], 'contests/Thing.php'),
         );
     }
 
