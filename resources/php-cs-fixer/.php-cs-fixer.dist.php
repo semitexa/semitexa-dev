@@ -26,9 +26,11 @@ $finder = PhpCsFixer\Finder::create()
     ->exclude(['vendor', 'var', 'node_modules'])
     // Fixtures state their own shape on purpose — several exist precisely to
     // be malformed.
-    // `(.*/)?` and not `.*/`: the latter requires an intermediate directory,
-    // so a direct tests/Fixtures tree was never excluded at all.
-    ->notPath('#/tests/(.*/)?Fixtures/#')
+    // `(?:.*/)?` and not `.*/`: the latter requires an intermediate directory,
+    // so a direct tests/Fixtures tree was never excluded at all — and there are
+    // six of them. `(?:^|/)` because Finder matches the path RELATIVE to the
+    // search root, so a leading slash is not guaranteed.
+    ->notPath('#(?:^|/)tests/(?:.*/)?Fixtures/#')
     ->ignoreDotFiles(true)
     ->ignoreVCS(true);
 

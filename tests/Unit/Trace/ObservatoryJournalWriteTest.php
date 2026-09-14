@@ -196,6 +196,11 @@ final class ObservatoryJournalWriteTest extends TestCase
     {
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-before']);
         rename($this->journalPath(), $this->journalPath() . '.1');
+        // A REPLACEMENT AT THE ORIGINAL PATH, which is what rotation actually
+        // leaves behind. Without it stat() simply fails and any check would
+        // reopen; with it the path exists and only the inode differs, so this
+        // is the case that separates identity from existence.
+        touch($this->journalPath());
         (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
 
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
