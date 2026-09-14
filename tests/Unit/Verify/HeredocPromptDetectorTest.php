@@ -42,6 +42,39 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_prompt_inlined_without_an_assignment_is_reported(): void
+    {
+        // The two commonest ways a service inlines a prompt, and the two the
+        // first version of this rule could not see while its docblock claimed
+        // the label alone was enough. It read as a passing check over exactly
+        // the code it exists to find.
+        self::assertCount(1, self::detect(['        return <<<PROMPT']));
+        self::assertCount(1, self::detect(['        $this->llm->complete(<<<PROMPT']));
+    }
+
+    #[Test]
+    public function a_language_labelled_heredoc_is_not_a_prompt_even_under_a_prompt_ish_name(): void
+    {
+        // `$sqlPrompt = <<<SQL` is a name collision, not a prompt. The label is
+        // believed over the target here — but only in this direction: a label
+        // that says PROMPT is believed whatever it is assigned to.
+        self::assertSame([], self::detect(['        $sqlPrompt = <<<SQL']));
+        self::assertCount(1, self::detect(['        $sqlPrompt = <<<PROMPT']));
+    }
+
+    #[Test]
+    public function only_an_applied_attribute_exempts_a_file_not_a_passing_mention(): void
+    {
+        // A substring test exempted a whole file on a `use` import or a docblock
+        // {@see}, so a service that merely named the mechanism became
+        // permanently invisible to the rule that looks for its absence.
+        self::assertCount(1, self::detect([
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+        ]));
+    }
+
+    #[Test]
     public function the_intent_is_taken_from_the_label_when_it_is_not_in_the_name(): void
     {
         // `const SYSTEM = <<<PROMPT` says it in the label. Requiring the word in
