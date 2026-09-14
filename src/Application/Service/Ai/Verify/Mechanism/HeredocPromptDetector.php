@@ -159,8 +159,8 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private static function targetBefore(array $tokens, int $index): string
     {
-        $operator = self::previousMeaningful($tokens, $index);
-        if ($operator === null || !\in_array(self::text($tokens[$operator]), self::ASSIGNMENTS, true)) {
+        $operator = self::assignmentBefore($tokens, $index);
+        if ($operator === null) {
             return '';
         }
 
@@ -183,6 +183,46 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         $text = self::text($tokens[$name]);
 
         return trim($text, "'\"$");
+    }
+
+    /**
+     * The assignment operator this heredoc is being written through, if any.
+     *
+     * Scans back to the start of the statement rather than looking at the single
+     * token before the opener, because a heredoc is often part of a larger
+     * expression: `$systemPrompt = $prefix . <<<TXT` puts a `.` immediately
+     * before it, and requiring adjacency silently missed the prompt whenever the
+     * label was generic. A statement boundary stops the walk, so a bare
+     * `return <<<PROMPT` still reports no target rather than borrowing one from
+     * the line above.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function assignmentBefore(array $tokens, int $index): ?int
+    {
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $token = $tokens[$i];
+
+            if (\is_array($token)) {
+                if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                if (\in_array($token[1], self::ASSIGNMENTS, true)) {
+                    return $i;
+                }
+                continue;
+            }
+
+            $text = self::text($token);
+            if (\in_array($text, self::ASSIGNMENTS, true)) {
+                return $i;
+            }
+            if ($text === ';' || $text === '{' || $text === '}') {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -364,29 +404,34 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * missed finding; erring the other way reports a genuine prompt class for
      * the body it is supposed to have, which is the louder mistake.
      *
-     * @param array<string, string> $imports local name => fully-qualified symbol
+     * @param array<string, string> $imports lower-cased local name => fully-qualified symbol
      */
     private static function resolves(string $name, string $fqcn, array $imports): bool
     {
+        // PHP resolves class, interface and alias names case-insensitively, so
+        // `#[catalogprompt]` is the same declaration as `#[CatalogPrompt]` and an
+        // exact-case comparison reported the catalog's own implementation as a
+        // hand-rolled copy of itself.
         $name = ltrim($name, '\\');
+        $key = strtolower($name);
 
-        if (isset($imports[$name])) {
-            return $imports[$name] === $fqcn;
+        if (isset($imports[$key])) {
+            return strcasecmp($imports[$key], $fqcn) === 0;
         }
 
         if (str_contains($name, '\\')) {
             // Fully qualified as written, or qualified through an imported
             // prefix (`use Semitexa\Prompt; ... #[Prompt\Attribute\AsPrompt]`).
             $segments = explode('\\', $name);
-            $first = array_shift($segments);
+            $first = strtolower((string) array_shift($segments));
             $resolved = isset($imports[$first])
                 ? $imports[$first] . '\\' . implode('\\', $segments)
                 : $name;
 
-            return $resolved === $fqcn;
+            return strcasecmp($resolved, $fqcn) === 0;
         }
 
-        return $name === self::shortNameOf($fqcn);
+        return strcasecmp($name, self::shortNameOf($fqcn)) === 0;
     }
 
     private static function shortNameOf(string $fqcn): string
@@ -411,7 +456,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * makes the short name mean something other than the catalog attribute, and
      * only the full namespace can tell the two apart.
      *
-     * @return array<string, string> local name => fully-qualified symbol
+     * @return array<string, string> lower-cased local name => fully-qualified symbol
      */
     private static function aliasMap(array $tokens): array
     {
@@ -434,7 +479,8 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 if ($symbol === null) {
                     return;
                 }
-                $aliases[$local ?? self::shortNameOf($symbol)] = $symbol;
+                // Keyed lower-case: PHP matches these names case-insensitively.
+                $aliases[strtolower($local ?? self::shortNameOf($symbol))] = $symbol;
             };
 
             for ($j = $i + 1; $j < $count; $j++) {

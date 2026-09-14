@@ -96,6 +96,73 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_heredoc_inside_a_larger_expression_keeps_its_target(): void
+    {
+        // Reported on the PR: `$systemPrompt = $prefix . <<<TXT` puts a `.`
+        // immediately before the opener, and requiring adjacency missed the
+        // prompt whenever the label was generic.
+        self::assertCount(1, self::detect(['$systemPrompt = $prefix . <<<TXT', 'body', 'TXT;']));
+        self::assertSame([], self::detect(['$sqlText = $prefix . <<<SQL', 'SELECT 1', 'SQL;']));
+    }
+
+    #[Test]
+    public function a_target_is_never_borrowed_across_a_statement_boundary(): void
+    {
+        // The cost the scan must not incur: a bare opener in the NEXT statement
+        // would otherwise pick up the previous statement's target.
+        self::assertSame([], self::detect([
+            '$systemPrompt = 1;',
+            'f(<<<TXT',
+            'body',
+            'TXT);',
+        ]));
+        self::assertSame([], self::detect([
+            'function f() { return <<<TXT',
+            'body',
+            'TXT; }',
+        ]));
+    }
+
+    #[Test]
+    public function catalog_symbols_are_matched_the_way_php_resolves_them(): void
+    {
+        // Reported on the PR: PHP resolves class, interface and alias names
+        // case-insensitively, so `#[catalogprompt]` is the same declaration and
+        // an exact-case test reported the catalog's own implementation as a
+        // hand-rolled copy of itself.
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt as CatalogPrompt;',
+            "#[catalogprompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+        ], self::PROMPT_CLASS));
+
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface;',
+            'final class P implements promptdefinitioninterface',
+            '{',
+            '    public function system(): string { return <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '}',
+        ], self::PROMPT_CLASS));
+
+        // Case-insensitivity must not become a way to exempt the wrong symbol.
+        self::assertCount(1, self::detect([
+            'use Vendor\\Ui\\AsPrompt as CatalogPrompt;',
+            '#[catalogprompt]',
+            'final class S {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
     public function an_unrelated_symbol_with_the_same_short_name_exempts_nothing(): void
     {
         // Reported on the PR: a short name is not an identity.
