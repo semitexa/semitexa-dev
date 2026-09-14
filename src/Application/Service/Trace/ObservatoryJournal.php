@@ -87,13 +87,16 @@ final class ObservatoryJournal
             // fflush is not optional: file_put_contents wrote through, and the
             // panel reads the journal live. A buffered line is a line the live
             // view does not have yet.
+            // ONE write inside the lock, exactly as file_put_contents did.
+            // Buffering is switched off when the handle opens, so there is no
+            // fflush to hold the lock across: a coroutine switching between
+            // fwrite and fflush would leave every other coroutine in the worker
+            // blocked on flock for the length of that gap.
             if (@flock($stream, LOCK_EX)) {
                 @fwrite($stream, $line . "\n");
-                @fflush($stream);
                 @flock($stream, LOCK_UN);
             } else {
                 @fwrite($stream, $line . "\n");
-                @fflush($stream);
             }
 
             self::sweepOld($dir, $day);
@@ -136,6 +139,12 @@ final class ObservatoryJournal
         if ($handle === false) {
             return null;
         }
+
+        // Unbuffered: the panel reads the journal LIVE, so a line sitting in a
+        // PHP stream buffer is a line the live view does not have. This is what
+        // file_put_contents gave for free, and it is also what lets the write
+        // above be a single call inside the lock.
+        @stream_set_write_buffer($handle, 0);
 
         self::$stream = $handle;
         self::$streamPath = $path;
