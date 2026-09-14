@@ -282,10 +282,17 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * Local aliases introduced by `use Some\Symbol as Alias;`.
+     * Local aliases introduced by `use`, including grouped and multi-entry forms.
+     *
+     * One statement can introduce several names —
+     * `use A\B\{AsPrompt as CatalogPrompt, Other};` and
+     * `use A\B as X, C\D as Y;` — so this walks each statement to its `;`
+     * instead of stopping at the first alias it finds. A grouped import that
+     * aliased the attribute previously yielded no alias at all, and the class
+     * using it was reported for hand-rolling the mechanism it implements.
      *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
-     * @return array<string, string>
+     * @return array<string, string> alias => the short symbol it was given to
      */
     private static function aliasMap(array $tokens): array
     {
@@ -298,29 +305,48 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
-            $imported = null;
+            // One entry at a time: the last name seen is what an `as` renames,
+            // and a comma or a brace ends the entry without ending the statement.
+            $lastName = null;
+            $expectAlias = false;
+
             for ($j = $i + 1; $j < $count; $j++) {
                 $candidate = $tokens[$j];
-                if (\is_array($candidate) && $candidate[0] === T_WHITESPACE) {
-                    continue;
-                }
+
                 if (!\is_array($candidate)) {
-                    if (self::text($candidate) === ';') {
+                    $literal = self::text($candidate);
+                    if ($literal === ';') {
+                        $i = $j;
                         break;
+                    }
+                    if ($literal === ',' || $literal === '{' || $literal === '}') {
+                        $lastName = null;
+                        $expectAlias = false;
                     }
                     continue;
                 }
-                if ($candidate[0] === T_AS) {
-                    continue;
-                }
-                if ($imported === null) {
-                    $imported = $candidate[1];
+
+                if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_NS_SEPARATOR], true)) {
                     continue;
                 }
 
-                $short = strrchr($imported, '\\');
-                $aliases[$candidate[1]] = $short === false ? $imported : substr($short, 1);
-                break;
+                if ($candidate[0] === T_AS) {
+                    $expectAlias = true;
+                    continue;
+                }
+
+                if ($expectAlias && $lastName !== null) {
+                    $short = strrchr($lastName, '\\');
+                    $aliases[$candidate[1]] = $short === false ? $lastName : substr($short, 1);
+                    $lastName = null;
+                    $expectAlias = false;
+                    continue;
+                }
+
+                // A grouped import's prefix and its entries arrive as separate
+                // name tokens; the entry is the one an `as` can rename, so the
+                // most recent name wins.
+                $lastName = $candidate[1];
             }
         }
 

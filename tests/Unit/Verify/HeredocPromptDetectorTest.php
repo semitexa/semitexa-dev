@@ -224,6 +224,68 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_grouped_or_comma_separated_import_carries_its_aliases(): void
+    {
+        // Reported on the PR: one `use` statement can introduce several names,
+        // and stopping at the first alias found no alias at all for a grouped
+        // import — so a class using it was reported for hand-rolling the
+        // mechanism it implements.
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Attribute\\{AsPrompt as CatalogPrompt};',
+            "#[CatalogPrompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+        ], self::PROMPT_CLASS));
+
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Attribute\\{Other, AsPrompt as CatalogPrompt};',
+            "#[CatalogPrompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+        ], self::PROMPT_CLASS));
+
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Domain\\Contract\\{PromptDefinitionInterface as Def};',
+            'final class P implements Def',
+            '{',
+            '    public function system(): string { return <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '}',
+        ], self::PROMPT_CLASS));
+
+        self::assertSame([], self::detect([
+            'use Foo\\Bar as Baz, Semitexa\\Prompt\\Attribute\\AsPrompt as CatalogPrompt;',
+            "#[CatalogPrompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+        ], self::PROMPT_CLASS));
+    }
+
+    #[Test]
+    public function an_unrelated_alias_exempts_nothing(): void
+    {
+        // The alias map must map to the SYMBOL, not merely record a name that
+        // looks like one — otherwise the exemption becomes a way to silence the
+        // rule by importing something else.
+        self::assertCount(1, self::detect([
+            'use Foo\\{Bar as AsPrompt2};',
+            'private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+        ]));
+    }
+
+    #[Test]
     public function a_declaration_wrapped_across_lines_still_exempts_the_file(): void
     {
         // `class Foo implements` with the interface on the next line is the same
