@@ -209,4 +209,34 @@ final class ObservatoryJournalWriteTest extends TestCase
         self::assertStringContainsString('p-after', (string) file_get_contents($this->journalPath()));
         self::assertStringNotContainsString('p-after', (string) file_get_contents($this->journalPath() . '.1'));
     }
+
+    /**
+     * EXTERNAL rotation, which is the only kind that tests the stat cache.
+     *
+     * A rename performed inside this process invalidates PHP's own stat cache
+     * as a side effect, so the test above passes even without clearstatcache()
+     * — for a reason that does not hold in production, where logrotate or an
+     * operator moves the file and this process never hears about it.
+     */
+    #[Test]
+    public function an_externally_rotated_journal_is_still_noticed(): void
+    {
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-before']);
+
+        // Warm PHP's stat cache for this path, as a live worker would have.
+        stat($this->journalPath());
+
+        $path = escapeshellarg($this->journalPath());
+        exec('mv ' . $path . ' ' . escapeshellarg($this->journalPath() . '.1') . ' && touch ' . $path);
+        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
+
+        clearstatcache(true, $this->journalPath());
+        self::assertStringContainsString(
+            'p-after',
+            (string) file_get_contents($this->journalPath()),
+            'the write followed the rotation into the archive',
+        );
+    }
 }

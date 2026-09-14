@@ -138,6 +138,14 @@ final class ObservatoryJournal
             return false;
         }
 
+        // CLEARED FIRST. PHP caches stat() per path, and a worker lives for
+        // hours: once this path has been stat()ed successfully, an EXTERNAL
+        // rotation — logrotate, an operator — leaves the cache returning the
+        // old inode, the identity check says "same file", and every later
+        // record goes to the archive until the worker restarts. A rename from
+        // inside this process invalidates the cache by itself, which is exactly
+        // why it cannot be trusted to prove this.
+        clearstatcache(true, $path);
         $onDisk = @stat($path);
         if (!is_array($onDisk)) {
             return false;
