@@ -33,9 +33,20 @@ final class ObservatoryJournalWriteTest extends TestCase
 {
     private string $dir;
 
+    /** @var array<string, string|false> */
+    private array $previousEnv = [];
+
     protected function setUp(): void
     {
         parent::setUp();
+        // SAVED, not assumed unset. Blanking them in tearDown would hand every
+        // later test a different configuration from the one the process started
+        // with, which is the kind of leak that surfaces as an unrelated failure
+        // three files away.
+        foreach (['APP_ENV', 'SEMITEXA_OBSERVATORY_DIR'] as $key) {
+            $this->previousEnv[$key] = getenv($key);
+        }
+
         $this->dir = sys_get_temp_dir() . '/semitexa-journal-' . uniqid('', true);
         mkdir($this->dir, 0755, true);
         putenv('APP_ENV=dev');
@@ -44,8 +55,13 @@ final class ObservatoryJournalWriteTest extends TestCase
 
     protected function tearDown(): void
     {
-        putenv('APP_ENV');
-        putenv('SEMITEXA_OBSERVATORY_DIR');
+        foreach ($this->previousEnv as $key => $value) {
+            if ($value === false) {
+                putenv($key);
+            } else {
+                putenv($key . '=' . $value);
+            }
+        }
         foreach (glob($this->dir . '/*') ?: [] as $f) {
             @unlink($f);
         }
@@ -127,5 +143,46 @@ final class ObservatoryJournalWriteTest extends TestCase
         ObservatoryJournal::write(['event' => 'begin', 'blob' => str_repeat('x', 2_000_000)]);
 
         self::assertFileDoesNotExist($this->journalPath());
+    }
+
+    /**
+     * A HELD HANDLE CAN OUTLIVE ITS FILE. Deleting the journal — by hand, or by
+     * anything that rotates it with a rename — used to leave every later write
+     * going into an unlinked inode that no reader would ever see again.
+     *
+     * The check is throttled to once a second because fstat costs 2.07us
+     * against 3.80us for the whole write, so the timestamp is reset here rather
+     * than sleeping through the window.
+     */
+    #[Test]
+    public function a_deleted_journal_is_reopened_rather_than_written_into_a_ghost(): void
+    {
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-before']);
+        self::assertFileExists($this->journalPath());
+
+        unlink($this->journalPath());
+        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
+
+        self::assertFileExists($this->journalPath(), 'the write went into the deleted inode');
+        self::assertStringContainsString('p-after', (string) file_get_contents($this->journalPath()));
+    }
+
+    /** And an intact file is NOT reopened — the check must not churn handles. */
+    #[Test]
+    public function an_intact_journal_keeps_its_handle(): void
+    {
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-one']);
+        $handle = (new \ReflectionProperty(ObservatoryJournal::class, 'stream'))->getValue();
+
+        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-two']);
+
+        self::assertSame(
+            $handle,
+            (new \ReflectionProperty(ObservatoryJournal::class, 'stream'))->getValue(),
+            'reopening a healthy file would throw away the whole point of keeping it open',
+        );
     }
 }

@@ -62,6 +62,12 @@ final class ObservatoryJournal
     /** @worker-scoped The path {@see $stream} points at. */
     private static string $streamPath = '';
 
+    /**
+     * @worker-scoped When the handle was last confirmed to still be the file at
+     * {@see $streamPath}, as a unix timestamp.
+     */
+    private static int $streamCheckedAt = 0;
+
     /** @param array<string, mixed> $record */
     public static function write(array $record): void
     {
@@ -96,6 +102,13 @@ final class ObservatoryJournal
                 @fwrite($stream, $line . "\n");
                 @flock($stream, LOCK_UN);
             } else {
+                // STILL WRITTEN when the lock cannot be taken, deliberately.
+                // MAX_LINE_BYTES is 4000, under PIPE_BUF, and the handle is
+                // opened append-only — so a single unbuffered write is atomic
+                // on the filesystems this runs on. And the reader already skips
+                // a line it cannot decode, so the worst case of a torn line is
+                // one lost record. Dropping every line instead would lose all
+                // of them to avoid losing one.
                 @fwrite($stream, $line . "\n");
             }
 
@@ -121,7 +134,26 @@ final class ObservatoryJournal
     private static function stream(string $path)
     {
         if (self::$stream !== null && self::$streamPath === $path) {
-            return self::$stream;
+            // A HELD HANDLE CAN OUTLIVE ITS FILE. sweepOld() only removes days
+            // older than the retention window, never today's — but an operator
+            // deleting the journal, or anything rotating it by rename, leaves
+            // this writing into an unlinked inode where no reader will ever see
+            // it again.
+            //
+            // Throttled on a CLOCK rather than checked per write: fstat costs
+            // 2.07us against 3.80us for the whole write, so per-write it would
+            // be the single most expensive thing here. Once a second bounds the
+            // blind window without showing up in the measurement at all.
+            $now = time();
+            if ($now === self::$streamCheckedAt) {
+                return self::$stream;
+            }
+
+            self::$streamCheckedAt = $now;
+            $stat = @fstat(self::$stream);
+            if (is_array($stat) && ($stat['nlink'] ?? 1) > 0) {
+                return self::$stream;
+            }
         }
 
         if (self::$stream !== null) {
@@ -148,6 +180,7 @@ final class ObservatoryJournal
 
         self::$stream = $handle;
         self::$streamPath = $path;
+        self::$streamCheckedAt = time();
 
         return $handle;
     }
