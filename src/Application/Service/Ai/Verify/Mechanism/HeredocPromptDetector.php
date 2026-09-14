@@ -30,8 +30,12 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     /**
      * A heredoc/nowdoc opener with an assignment target, e.g.
      * `const SYSTEM_PROMPT = <<<TXT`, `$prompt = <<<'EOT'`, `system: <<<PROMPT`.
+     *
+     * Compound forms count: `$systemPrompt .= <<<TXT` appends prompt text and
+     * carries the same target signal as the simple assignment. Without them the
+     * BARE branch took over, saw only a generic label, and the target was lost.
      */
-    private const ASSIGNED = '/(?:const\s+|\$|->|::|[\'"]|\b)([A-Za-z_][A-Za-z0-9_]*)[\'"]?\s*(?:=>|=|:)\s*<<<([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\2\s*$/';
+    private const ASSIGNED = '/(?:const\s+|\$|->|::|[\'"]|\b)([A-Za-z_][A-Za-z0-9_]*)[\'"]?\s*(?:\.=|\?\?=|=>|=|:)\s*<<<([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\2\s*$/';
 
     /**
      * A heredoc/nowdoc opener with NO assignment target — `return <<<PROMPT`,
@@ -150,8 +154,45 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     {
         $source = implode("\n", $lines);
 
-        return preg_match('/#\[\s*AsPrompt\s*[(\]]/', $source) === 1
-            || preg_match('/\bimplements\s[\sA-Za-z0-9_\\\\,]*\bPromptDefinitionInterface\b/', $source) === 1;
+        // Short name, fully qualified (`#[\Semitexa\Prompt\Attribute\AsPrompt]`)
+        // or imported under an alias — all three are the same declaration, and a
+        // literal short-name test reported a real prompt class as a hand-rolled
+        // copy of the mechanism it implements.
+        $attributeNames = ['AsPrompt', ...self::aliasesOf($source, 'AsPrompt')];
+        foreach ($attributeNames as $name) {
+            $pattern = '/#\[\s*\\\\?(?:[A-Za-z_][A-Za-z0-9_]*\\\\)*' . preg_quote($name, '/') . '\s*[(\]]/';
+            if (preg_match($pattern, $source) === 1) {
+                return true;
+            }
+        }
+
+        $interfaceNames = ['PromptDefinitionInterface', ...self::aliasesOf($source, 'PromptDefinitionInterface')];
+        foreach ($interfaceNames as $name) {
+            $pattern = '/\bimplements\s[\sA-Za-z0-9_\\\\,]*\b' . preg_quote($name, '/') . '\b/';
+            if (preg_match($pattern, $source) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Local aliases a `use ... as X;` statement gives a symbol.
+     *
+     * @return list<string>
+     */
+    private static function aliasesOf(string $source, string $symbol): array
+    {
+        $pattern = '/\buse\s+[A-Za-z0-9_\\\\]*\b' . preg_quote($symbol, '/') . '\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/';
+        if (preg_match_all($pattern, $source, $matches) < 1) {
+            return [];
+        }
+
+        /** @var list<string> $aliases */
+        $aliases = array_values(array_unique($matches[1]));
+
+        return $aliases;
     }
 
     /**
@@ -217,6 +258,11 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private static function isTestFile(string $file): bool
     {
-        return str_contains($file, '/tests/') || str_ends_with($file, 'Test.php');
+        // Anchored on a path SEGMENT, not a substring with slashes on both sides:
+        // `--path=tests` makes the lint report names like
+        // `tests/Fixtures/PromptFixture.php`, which contain no `/tests/` and need
+        // not end in Test.php, so the exemption missed exactly the files it is
+        // for. `contests/` must still not match, hence the segment boundary.
+        return preg_match('#(^|/)tests/#', $file) === 1 || str_ends_with($file, 'Test.php');
     }
 }

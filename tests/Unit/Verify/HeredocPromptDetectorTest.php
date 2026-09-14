@@ -185,6 +185,57 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_compound_assignment_keeps_its_target(): void
+    {
+        // Reported on the PR: `.=` is how prompt text gets appended, and the
+        // assignment branch did not accept it — the bare branch then took over,
+        // saw a generic label, and the prompt-bearing target was lost.
+        self::assertCount(1, self::detect(['        $systemPrompt .= <<<TXT']));
+        self::assertCount(1, self::detect(['        $prompt ??= <<<TXT']));
+    }
+
+    #[Test]
+    public function a_qualified_or_aliased_declaration_still_exempts_the_file(): void
+    {
+        // Reported on the PR: the same declaration written in full, or imported
+        // under an alias, is still the mechanism. A literal short-name test
+        // reported a real prompt class as a hand-rolled copy of itself.
+        self::assertSame([], self::detect([
+            '#[\\Semitexa\\Prompt\\Attribute\\AsPrompt(id: \'x\')]',
+            '    private const P = <<<PROMPT',
+        ]));
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt as CatalogPrompt;',
+            '#[CatalogPrompt(id: \'x\')]',
+            '    private const P = <<<PROMPT',
+        ]));
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface as Def;',
+            'final class P implements Def',
+            '{',
+            '    public function system(): string { return <<<PROMPT',
+        ]));
+    }
+
+    #[Test]
+    public function a_tests_directory_is_exempt_even_as_the_scan_root(): void
+    {
+        // Reported on the PR: `--path=tests` yields names like
+        // `tests/Fixtures/PromptFixture.php` — no surrounding slashes, no Test
+        // suffix — so the exemption missed exactly the files it exists for.
+        self::assertSame(
+            [],
+            self::detect(['    private const SYSTEM_PROMPT = <<<TXT'], 'tests/Fixtures/PromptFixture.php'),
+        );
+
+        // A segment boundary, not a substring: `contests/` is not a test tree.
+        self::assertCount(
+            1,
+            self::detect(['    private const SYSTEM_PROMPT = <<<TXT'], 'contests/Thing.php'),
+        );
+    }
+
+    #[Test]
     public function it_reads_php_and_says_so(): void
     {
         // A detector declaring the wrong extension never runs and looks exactly
