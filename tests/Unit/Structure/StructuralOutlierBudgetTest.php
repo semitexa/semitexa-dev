@@ -220,7 +220,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // comment saying why — a detector no kind schedules never runs and reads
         // exactly like a passing check, which is the mistake this map has made
         // before. The row edit itself costs nothing. NO NEW METHOD: still 19.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 831],
+        // 831 -> 843 the same day, from review: that row also scheduled the lint
+        // for package paths it cannot scan, which is the SAME mistake from the
+        // other side — a target that runs, examines nothing in the diff, and
+        // passes. The guard is inlined in the loop rather than extracted, which
+        // is why the method count is unchanged; a predicate this small reads
+        // better where it acts than as a twentieth method on this class.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 843],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

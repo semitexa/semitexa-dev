@@ -552,6 +552,18 @@ final class VerificationPlanner
     ): void {
         $lints = self::KIND_LINT_MAP[$file->kind] ?? [];
         foreach ($lints as $lint) {
+            // lint:mechanisms scans APPLICATION code only — LintMechanismsCommand's
+            // APPLICATION_ROOTS is ['src/modules'] — because framework packages
+            // IMPLEMENT the mechanisms it reports, so the same pattern there is the
+            // implementation rather than a duplicate of it. It takes no path from
+            // the executor, so scheduling it for a change under packages/ produced
+            // a target that ran, examined nothing in the diff, and passed: exactly
+            // the "gate that reads like a clean result" this row was added to
+            // guard against. Broad scope still runs it, under its own blanket
+            // reason, which never claimed per-file relevance.
+            if ($lint === 'lint:mechanisms' && !str_contains($file->path, 'src/modules/')) {
+                continue;
+            }
             if (!isset($lintsByCommand[$lint])) {
                 $lintsByCommand[$lint] = [
                     'triggeredBy' => [],
