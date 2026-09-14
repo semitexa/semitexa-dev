@@ -305,9 +305,13 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * before it, and requiring adjacency missed the prompt whenever the label
      * was generic.
      *
-     * Two boundaries keep that reach honest. A statement boundary stops the walk
-     * entirely, so a bare `return <<<PROMPT` reports no target instead of
-     * borrowing one from the line above. And a comma at the CURRENT depth means
+     * Two boundaries keep that reach honest. A `;` stops the walk entirely, so a
+     * bare `return <<<PROMPT` reports no target instead of borrowing one from
+     * the line above. An unmatched `{` is ascended through rather than treated
+     * as a stop, because braces are not always statement blocks: a match arm —
+     * `$systemPrompt = match ($kind) { 'a' => <<<TXT` — put one between the
+     * heredoc and the assignment that owns it, and stopping there read the arm
+     * key as the target and missed the prompt. And a comma at the CURRENT depth means
      * this heredoc is a later sibling — `['systemPrompt' => 'brief', <<<TXT` —
      * whose neighbours' assignments are not its own; the walk then skips to the
      * enclosing level rather than adopting the previous item's name. Ascending
@@ -341,7 +345,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
-            if ($text === '[' || $text === '(') {
+            if ($text === '[' || $text === '(' || $text === '{') {
                 if ($depth === 0) {
                     // Ascended out of the construct holding this heredoc; the
                     // enclosing level may still own it.
@@ -355,10 +359,6 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             if ($text === ',' && $depth === 0) {
                 $sibling = true;
                 continue;
-            }
-
-            if ($depth === 0 && ($text === ';' || $text === '{')) {
-                return null;
             }
 
             if (!$sibling && $depth === 0 && \in_array($text, self::ASSIGNMENTS, true)) {

@@ -364,6 +364,59 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function an_expression_brace_is_traversed_not_treated_as_a_boundary(): void
+    {
+        // Reported on the PR: a match arm puts a `{` between the heredoc and the
+        // assignment that owns it, and treating every brace as a statement
+        // boundary read the arm key as the target and missed the prompt.
+        self::assertCount(1, self::detectInLlmService([
+            '$systemPrompt = match ($kind) {',
+            "    'a' => <<<TXT",
+            'You summarise a chat room.',
+            'TXT,',
+            '};',
+        ]));
+
+        self::assertSame([], self::detectInLlmService([
+            '$rows = match ($kind) {',
+            "    'a' => <<<SQL",
+            'SELECT 1',
+            'SQL,',
+            '};',
+        ]));
+    }
+
+    #[Test]
+    public function a_namespace_relative_qualified_name_is_not_the_root_symbol(): void
+    {
+        // Reported on the PR: inside `namespace App;` the name
+        // `Semitexa\Prompt\Attribute\AsPrompt` without a leading slash resolves
+        // to `App\Semitexa\...`, so reading it as the catalog attribute let an
+        // unrelated project-local one exempt the class.
+        self::assertCount(1, self::detectInLlmService([
+            'namespace App;',
+            '#[Semitexa\\Prompt\\Attribute\\AsPrompt]',
+            'final class GroupHarvester {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+        ]));
+
+        // With the leading slash it IS the root symbol, and still exempts.
+        self::assertSame([], self::detect([
+            'namespace App;',
+            "#[\\Semitexa\\Prompt\\Attribute\\AsPrompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+    }
+
+    #[Test]
     public function a_project_local_symbol_of_the_same_name_exempts_nothing(): void
     {
         // Reported on the PR: an unimported `#[AsPrompt]` in a namespaced file

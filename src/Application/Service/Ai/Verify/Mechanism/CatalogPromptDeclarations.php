@@ -256,21 +256,36 @@ final class CatalogPromptDeclarations
         // `#[catalogprompt]` is the same declaration as `#[CatalogPrompt]` and an
         // exact-case comparison reported the catalog's own implementation as a
         // hand-rolled copy of itself.
+        // A LEADING backslash means fully qualified; without one the name is
+        // relative to the current namespace, and stripping it first lost that
+        // distinction — so `#[Semitexa\Prompt\Attribute\AsPrompt]` inside
+        // `namespace App;` was read as the catalog attribute when PHP resolves
+        // it to `App\Semitexa\Prompt\Attribute\AsPrompt`.
+        $fullyQualified = str_starts_with($name, '\\');
         $name = ltrim($name, '\\');
         $key = strtolower($name);
 
-        if (isset($imports[$key])) {
+        if (!$fullyQualified && isset($imports[$key])) {
             return strcasecmp($imports[$key], $fqcn) === 0;
+        }
+
+        if ($fullyQualified) {
+            return strcasecmp($name, $fqcn) === 0;
         }
 
         if (str_contains($name, '\\')) {
             // Fully qualified as written, or qualified through an imported
             // prefix (`use Semitexa\Prompt; ... #[Prompt\Attribute\AsPrompt]`).
+            // Qualified but relative: the first segment may be an imported
+            // prefix (`use Semitexa\Prompt; ... #[Prompt\Attribute\AsPrompt]`),
+            // otherwise the whole thing hangs off the current namespace.
             $segments = explode('\\', $name);
             $first = strtolower((string) array_shift($segments));
-            $resolved = isset($imports[$first])
-                ? $imports[$first] . '\\' . implode('\\', $segments)
-                : $name;
+            if (isset($imports[$first])) {
+                $resolved = $imports[$first] . '\\' . implode('\\', $segments);
+            } else {
+                $resolved = $namespace === '' ? $name : $namespace . '\\' . $name;
+            }
 
             return strcasecmp($resolved, $fqcn) === 0;
         }
