@@ -230,7 +230,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // since a handler can inline a heredoc straight into an LLM call and a
         // diff holding only a handler would otherwise pass standard
         // verification. Four lines of comment, no new method.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 847],
+        // 847 -> 850: the listener row joined the handler and service rows for
+        // the same reason — a listener can call an LLM with an inline heredoc,
+        // and the execution shape decides, not the directory. Three lines of
+        // comment, no new method.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 850],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

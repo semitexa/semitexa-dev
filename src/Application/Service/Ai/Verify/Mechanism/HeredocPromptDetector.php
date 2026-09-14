@@ -183,7 +183,14 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     {
         $lower = strtolower($identifier);
         /** @var list<string> $segments */
-        $segments = preg_split('/(?<=[a-z0-9])(?=[A-Z])|[^A-Za-z0-9]+/', $identifier) ?: [];
+        // Splits camelCase AND the acronym-to-word boundary, so `LLMClient`
+        // yields `llm` + `client` rather than one `llmclient` segment that the
+        // short marker could never match — which discarded the file before its
+        // prompt was ever inspected.
+        $segments = preg_split(
+            '/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|[^A-Za-z0-9]+/',
+            $identifier,
+        ) ?: [];
         $segments = array_map(strtolower(...), $segments);
 
         foreach (self::MODEL_FACING as $marker) {

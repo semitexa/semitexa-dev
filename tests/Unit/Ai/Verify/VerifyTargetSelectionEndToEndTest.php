@@ -77,7 +77,10 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'domain listener' => [
                 'Application/Handler/DomainListener/ThingChangedListener.php',
                 ChangedFile::KIND_LISTENER,
-                ['lint:di', 'lint:scoping'],
+                // A listener can call an LLM with an inline heredoc exactly as a
+                // handler or a service can; the execution shape is what decides,
+                // not the directory.
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'server lifecycle listener' => [
                 // Ordering-sensitive: this fragment must stay ABOVE the generic
@@ -87,7 +90,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 // ever have shown it.
                 'Application/Service/Server/Lifecycle/WireThingListener.php',
                 ChangedFile::KIND_LISTENER,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'payload' => [
                 'Application/Payload/Request/GetThingPayload.php',

@@ -477,6 +477,18 @@ final class HeredocPromptDetectorTest extends TestCase
             '}',
         ]));
 
+        // Acronym casing is a name segment too: `LLMClient` splits to llm +
+        // client, not one unmatchable `llmclient`, or the file was discarded
+        // before its prompt was ever inspected.
+        foreach (['App\\LLMClient', 'App\\LLMClientInterface', 'App\\LlmClient'] as $import) {
+            self::assertCount(1, self::detect([
+                'use ' . $import . ';',
+                'private const SYSTEM_PROMPT = <<<TXT',
+                'You summarise a chat room.',
+                'TXT;',
+            ]), $import);
+        }
+
         // The marker still counts where it is genuinely a name segment.
         self::assertCount(1, self::detect([
             '$llm = null;',

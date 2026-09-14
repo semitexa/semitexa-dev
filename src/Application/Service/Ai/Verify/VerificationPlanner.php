@@ -38,7 +38,10 @@ final class VerificationPlanner
         // holding only a handler would otherwise pass standard verification
         // until some unrelated service change happened to schedule the lint.
         ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms'],
-        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
+        // A domain listener can call an LLM with an inline heredoc exactly as a
+        // handler or a service can, so lint:mechanisms rides this row too — the
+        // execution shape is what matters, not which directory it sits in.
+        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
         // lint:mechanisms joined the service row when the prompt.catalog detector
