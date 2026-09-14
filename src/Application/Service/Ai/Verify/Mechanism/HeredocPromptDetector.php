@@ -72,10 +72,21 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             return [];
         }
 
+        $commentAt = self::commentColumns($lines);
         $findings = [];
 
         foreach ($lines as $index => $line) {
             $trimmed = rtrim($line);
+
+            // A heredoc opener written INSIDE a comment is documentation, not
+            // compiled prompt text — `// example: $prompt = <<<TXT` is somebody
+            // explaining the mistake, and failing verification over it is the
+            // rule punishing the person writing it down. Position matters, not
+            // just the line: code with a trailing comment is still code.
+            $opener = strpos($trimmed, '<<<');
+            if ($opener !== false && isset($commentAt[$index]) && $commentAt[$index] <= $opener) {
+                continue;
+            }
 
             if (preg_match(self::ASSIGNED, $trimmed, $m) === 1) {
                 $target = $m[1];
@@ -123,25 +134,81 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * path, where a heredoc body is the supported migration shape. Firing there
      * would point at the correct solution and call it the mistake.
      *
+     * Matched against the JOINED source, not line by line: a declaration wrapped
+     * as `class Foo implements` / `PromptDefinitionInterface` is the same
+     * declaration, and a per-line test read it as a service hand-rolling the
+     * mechanism it actually implements. The character class admits only an
+     * identifier list, so the match cannot wander into a class body.
+     *
+     * The attribute must be APPLIED and the interface IMPLEMENTED — not merely
+     * named. A substring test exempted a whole file on a `use` import, a docblock
+     * {@see}, or a variable called $formattedAsPrompt.
+     *
      * @param list<string> $lines
      */
     private static function isCatalogDefinition(array $lines): bool
     {
-        foreach ($lines as $line) {
-            // The attribute APPLIED and the interface IMPLEMENTED — not merely
-            // named. A substring test exempted a whole file on a `use` import, a
-            // docblock {@see}, or a variable called $formattedAsPrompt, so a
-            // service that mentioned the mechanism in a comment became
-            // permanently invisible to the rule that looks for its absence.
-            if (preg_match('/#\[\s*AsPrompt\s*[(\]]/', $line) === 1) {
-                return true;
+        $source = implode("\n", $lines);
+
+        return preg_match('/#\[\s*AsPrompt\s*[(\]]/', $source) === 1
+            || preg_match('/\bimplements\s[\sA-Za-z0-9_\\\\,]*\bPromptDefinitionInterface\b/', $source) === 1;
+    }
+
+    /**
+     * Where a comment begins on each line, by line index — the offset a match
+     * must sit before to count as code.
+     *
+     * Tokenized rather than pattern-matched: `//` inside a string literal does
+     * not start a comment, and a `/* *\/` block spans lines. A source that will
+     * not tokenize (a fragment, a parse error) yields no spans, so the rule
+     * behaves exactly as it did before rather than silently going quiet.
+     *
+     * @param list<string> $lines
+     * @return array<int, int>
+     */
+    private static function commentColumns(array $lines): array
+    {
+        $source = implode("\n", $lines);
+        if (!str_contains($source, '<?php')) {
+            $source = "<?php\n" . $source;
+            $lineOffset = -1;
+        } else {
+            $lineOffset = 0;
+        }
+
+        try {
+            $tokens = @token_get_all($source);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $sourceLines = explode("\n", $source);
+        $columns = [];
+        foreach ($tokens as $token) {
+            if (!\is_array($token) || !\in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
             }
-            if (preg_match('/\bimplements\b[^{]*\bPromptDefinitionInterface\b/', $line) === 1) {
-                return true;
+
+            $text = $token[1];
+            $startLine = $token[2];
+            $column = 0;
+            if (isset($sourceLines[$startLine - 1])) {
+                $found = strpos($sourceLines[$startLine - 1], strtok($text, "\n") ?: $text);
+                $column = $found === false ? 0 : $found;
+            }
+
+            $lineCount = substr_count($text, "\n");
+            for ($i = 0; $i <= $lineCount; $i++) {
+                $index = $startLine + $i + $lineOffset - 1;
+                // A multi-line comment covers its later lines entirely.
+                $at = $i === 0 ? $column : 0;
+                if (!isset($columns[$index]) || $at < $columns[$index]) {
+                    $columns[$index] = $at;
+                }
             }
         }
 
-        return false;
+        return $columns;
     }
 
     /**

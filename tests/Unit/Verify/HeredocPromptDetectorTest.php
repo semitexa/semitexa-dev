@@ -135,6 +135,42 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_heredoc_opener_inside_a_comment_is_documentation_not_code(): void
+    {
+        // Reported on the PR: a service whose comment ends with an example —
+        // `// example: $prompt = <<<TXT` — failed verification over text that
+        // compiles to nothing. The rule was punishing the person writing the
+        // mistake down. Position is tokenized, so code with a trailing comment
+        // is still code.
+        self::assertSame([], self::detect(['        // example: $prompt = <<<TXT']));
+        self::assertSame([], self::detect(['        // return <<<PROMPT']));
+        self::assertSame([], self::detect([
+            '    /**',
+            '     * Usage: $prompt = <<<TXT',
+            '     */',
+        ]));
+        self::assertSame([], self::detect([
+            '    /*',
+            '     $prompt = <<<TXT',
+            '     */',
+        ]));
+    }
+
+    #[Test]
+    public function a_declaration_wrapped_across_lines_still_exempts_the_file(): void
+    {
+        // Reported on the PR: `class Foo implements` with the interface on the
+        // next line is the same declaration, and the per-line test read it as a
+        // service hand-rolling the mechanism it actually implements.
+        self::assertSame([], self::detect([
+            'final class LegacyPrompt implements',
+            '    PromptDefinitionInterface',
+            '{',
+            '    public function system(): string { return <<<PROMPT',
+        ]));
+    }
+
+    #[Test]
     public function a_prompt_shaped_fixture_in_a_test_is_left_alone(): void
     {
         // Nothing sends it anywhere; moving it to the catalog would only make
