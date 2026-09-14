@@ -48,6 +48,32 @@ final class HeredocPromptDetectorTest extends TestCase
         return self::detect([...$lines, '$answer = $this->llm->complete($body);'], $file);
     }
 
+    /**
+     * A catalog prompt class as one is really written: its own namespace, the
+     * imports PHP needs to resolve the symbols, and contact with a model.
+     *
+     * The imports are not decoration. A bare `#[AsPrompt]` in an unnamespaced
+     * file resolves to `\AsPrompt`, which is NOT the catalog attribute, so a
+     * fixture without them tests nothing. Neither is the model line: without it
+     * the model-facing gate returns early and every exemption assertion below
+     * passes without the exemption being reached at all — which is exactly the
+     * "examined nothing, reported a pass" failure this rule exists to prevent,
+     * and it was happening here.
+     *
+     * @param list<string> $lines
+     * @return list<\Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismFinding>
+     */
+    private static function detectInPromptClass(array $lines): array
+    {
+        return self::detect([
+            'namespace App\\Social;',
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            'use Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface;',
+            ...$lines,
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS);
+    }
+
     #[Test]
     public function a_prompt_constant_holding_a_heredoc_is_reported(): void
     {
@@ -264,6 +290,71 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function an_exemption_is_scoped_to_the_class_that_earns_it(): void
+    {
+        // Reported on the PR: one file may hold several classes, and a whole-file
+        // exemption let a catalog declaration hide hard-coded prompts in a
+        // neighbouring class that has nothing to do with the mechanism.
+        $findings = self::detect([
+            'namespace App\\Social;',
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            "#[AsPrompt(id: 'social.topic')]",
+            'final class TopicPrompt {',
+            '    private const BODY = <<<PROMPT',
+            'Write a post.',
+            'PROMPT;',
+            '}',
+            'final class GroupHarvester {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+            '$answer = $this->llm->complete($body);',
+        ]);
+
+        self::assertCount(1, $findings, 'only the class that declares nothing is reported');
+        self::assertStringContainsString('SYSTEM_PROMPT', $findings[0]->evidence);
+    }
+
+    #[Test]
+    public function a_nested_target_is_read_from_the_outside_in(): void
+    {
+        // Reported on the PR: `$systemPrompt = ['content' => <<<TXT` has the
+        // signal in the OUTER name, and stopping at the first assignment read
+        // `content` and missed the prompt whenever the label was generic.
+        self::assertCount(1, self::detectInLlmService([
+            "\$systemPrompt = ['content' => <<<TXT",
+            'You summarise a chat room.',
+            'TXT];',
+        ]));
+
+        // And the silence it must not cost.
+        self::assertSame([], self::detectInLlmService([
+            "\$rows = ['content' => <<<SQL",
+            'SELECT 1',
+            'SQL];',
+        ]));
+    }
+
+    #[Test]
+    public function a_project_local_symbol_of_the_same_name_exempts_nothing(): void
+    {
+        // Reported on the PR: an unimported `#[AsPrompt]` in a namespaced file
+        // resolves to THAT namespace's class, not the catalog attribute, so
+        // treating every bare short name as the catalog's was a way to hide a
+        // real SYSTEM_PROMPT heredoc behind a same-named local class.
+        self::assertCount(1, self::detectInLlmService([
+            'namespace App\\Social;',
+            '#[AsPrompt]',
+            'final class GroupHarvester {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
     public function a_user_facing_prompt_is_not_a_model_prompt(): void
     {
         // Reported on the PR: "prompt" means two things in English and only one
@@ -378,7 +469,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // It IS the mechanism. Firing here would point at the correct solution
         // and call it the mistake — including the legacy system() path, where a
         // heredoc body is the supported migration shape.
-        self::assertSame([], self::detect([
+        self::assertSame([], self::detectInPromptClass([
             "#[AsPrompt(id: 'social.topic')]",
             'final class TopicPrompt implements PromptDefinitionInterface',
             '{',
@@ -386,7 +477,7 @@ final class HeredocPromptDetectorTest extends TestCase
             'Write a post.',
             'PROMPT; }',
             '}',
-        ], self::PROMPT_CLASS));
+        ]));
     }
 
     #[Test]
@@ -529,7 +620,7 @@ final class HeredocPromptDetectorTest extends TestCase
         // `class Foo implements` with the interface on the next line is the same
         // declaration; a per-line test read it as a service hand-rolling the
         // mechanism it actually implements.
-        self::assertSame([], self::detect([
+        self::assertSame([], self::detectInPromptClass([
             'final class LegacyPrompt implements',
             '    PromptDefinitionInterface',
             '{',
@@ -537,7 +628,7 @@ final class HeredocPromptDetectorTest extends TestCase
             'body',
             'PROMPT; }',
             '}',
-        ], self::PROMPT_CLASS));
+        ]));
     }
 
     #[Test]

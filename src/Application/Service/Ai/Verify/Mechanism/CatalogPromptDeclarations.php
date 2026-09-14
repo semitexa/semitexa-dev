@@ -1,0 +1,434 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
+
+/**
+ * Where a PHP file declares the prompt-catalog mechanism, and what its names mean.
+ *
+ * Split out of {@see HeredocPromptDetector} once review had grown it past the
+ * structural budget: the detector answers "is this heredoc a model prompt", and
+ * everything here answers a different question — "what does this name refer to
+ * in this file". That second question turned out to carry most of the weight,
+ * because a short name is not an identity:
+ *
+ *   - `use Vendor\Ui\AsPrompt as CatalogPrompt;` is a DIFFERENT attribute;
+ *   - an unimported `#[AsPrompt]` resolves against the file's own namespace;
+ *   - PHP matches all of these case-insensitively;
+ *   - one `use` can introduce several names, grouped or comma-separated.
+ *
+ * Getting any of those wrong exempts a file that should be reported, which is
+ * the expensive direction: the rule goes quiet exactly where it should speak.
+ *
+ * Everything is read from tokens. An `#[AsPrompt]` written in a docblock to
+ * document a migration is prose, and exempting a service for it hid the real
+ * findings in that service.
+ */
+final class CatalogPromptDeclarations
+{
+    /** The symbols that mark a class as the mechanism, fully qualified. */
+    private const ATTRIBUTE_FQCN = 'Semitexa\\Prompt\\Attribute\\AsPrompt';
+    private const INTERFACE_FQCN = 'Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface';
+
+    /**
+     * Token ranges of the classes in this file that DECLARE a catalog prompt.
+     * Such a class is the mechanism, not a duplicate of it — including one still
+     * on the legacy `PromptDefinitionInterface::system()` path, where a heredoc
+     * body is the supported migration shape. Firing there would point at the
+     * correct solution and call it the mistake.
+     *
+     * Scoped to the class, not the file: one file may hold several classes, and
+     * a whole-file exemption let a catalog declaration hide hard-coded prompts
+     * in a neighbouring class that has nothing to do with the mechanism.
+     *
+     * Read from tokens: an `#[AsPrompt]` written in a docblock to document a
+     * migration is prose, and exempting a whole service for it silently hid the
+     * real findings that service had. `T_ATTRIBUTE` is emitted only where PHP
+     * attaches an attribute. Qualified names, aliased imports and declarations
+     * wrapped across lines all fall out of this for free.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @return list<array{0: int, 1: int}>
+     */
+    public static function classRanges(array $tokens): array
+    {
+        $aliases = self::aliasMap($tokens);
+        $namespace = self::namespaceOf($tokens);
+        $count = \count($tokens);
+
+        $ranges = [];
+        $markedFrom = null;
+
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!\is_array($token)) {
+                continue;
+            }
+
+            // An attribute sits BEFORE its class, so remember where it started;
+            // the range opens there and the class body closes it.
+            if ($token[0] === T_ATTRIBUTE) {
+                foreach (self::attributeNames($tokens, $i) as $name) {
+                    if (self::resolves($name, self::ATTRIBUTE_FQCN, $aliases, $namespace)) {
+                        $markedFrom ??= $i;
+                    }
+                }
+                continue;
+            }
+
+            if ($token[0] === T_IMPLEMENTS) {
+                for ($j = $i + 1; $j < $count; $j++) {
+                    $candidate = $tokens[$j];
+                    if (!\is_array($candidate)) {
+                        if (self::text($candidate) === '{') {
+                            break;
+                        }
+                        continue;
+                    }
+                    if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                        continue;
+                    }
+                    if (self::resolves($candidate[1], self::INTERFACE_FQCN, $aliases, $namespace)) {
+                        $markedFrom ??= $i;
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            if ($token[0] !== T_CLASS) {
+                continue;
+            }
+
+            $end = self::classBodyEnd($tokens, $i);
+            if ($markedFrom !== null) {
+                $ranges[] = [$markedFrom, $end];
+            } else {
+                // The interface may be named after the `class` token; re-check
+                // the declaration this class opens.
+                for ($j = $i + 1; $j < $end; $j++) {
+                    $candidate = $tokens[$j];
+                    if (!\is_array($candidate)) {
+                        if (self::text($candidate) === '{') {
+                            break;
+                        }
+                        continue;
+                    }
+                    if ($candidate[0] === T_IMPLEMENTS) {
+                        continue;
+                    }
+                    if (self::resolves($candidate[1], self::INTERFACE_FQCN, $aliases, $namespace)) {
+                        $ranges[] = [$i, $end];
+                        break;
+                    }
+                }
+            }
+
+            $markedFrom = null;
+            $i = $end;
+        }
+
+        return $ranges;
+    }
+
+    /**
+     * The token index of a class body's closing brace.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function classBodyEnd(array $tokens, int $classToken): int
+    {
+        $count = \count($tokens);
+        $depth = 0;
+        $opened = false;
+
+        for ($i = $classToken; $i < $count; $i++) {
+            $text = self::text($tokens[$i]);
+            if ($text === '{') {
+                $depth++;
+                $opened = true;
+                continue;
+            }
+            if ($text === '}') {
+                $depth--;
+                if ($opened && $depth === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return $count - 1;
+    }
+
+    /**
+     * @param list<array{0: int, 1: int}> $ranges
+     */
+    public static function within(array $ranges, int $index): bool
+    {
+        foreach ($ranges as [$from, $to]) {
+            if ($index >= $from && $index <= $to) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Every attribute name in one `#[...]` group.
+     *
+     * PHP allows several in a group — `#[Other, AsPrompt(id: 'x')]` — so reading
+     * only the first token missed the declaration and reported a real prompt
+     * class for the body it is supposed to have. Argument lists are skipped by
+     * depth, since a name inside `Other(AsPrompt::class)` is an argument, not an
+     * applied attribute.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @return list<string>
+     */
+    private static function attributeNames(array $tokens, int $index): array
+    {
+        $names = [];
+        $depth = 0;
+        $expectName = true;
+        $count = \count($tokens);
+
+        for ($i = $index + 1; $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (!\is_array($token)) {
+                $literal = self::text($token);
+                if ($literal === '(' || $literal === '[') {
+                    $depth++;
+                    continue;
+                }
+                if ($literal === ')') {
+                    $depth--;
+                    continue;
+                }
+                if ($literal === ']') {
+                    if ($depth === 0) {
+                        break;
+                    }
+                    $depth--;
+                    continue;
+                }
+                if ($literal === ',' && $depth === 0) {
+                    $expectName = true;
+                }
+                continue;
+            }
+
+            if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            if ($depth === 0 && $expectName) {
+                $names[] = $token[1];
+                $expectName = false;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Does $name, as written in this file, refer to $fqcn?
+     *
+     * Resolved through the file's own imports rather than by short name, because
+     * a short name is not an identity: `use Vendor\Ui\AsPrompt as CatalogPrompt;`
+     * is a DIFFERENT attribute, and exempting a file for it would hide every real
+     * prompt heredoc in that service. Imports carry the full namespace for
+     * exactly this comparison.
+     *
+     * A bare short name with no matching import is resolved against the file's
+     * OWN namespace, the way PHP resolves it — so an unrelated project-local
+     * `#[AsPrompt]` is `App\Social\AsPrompt`, not the catalog attribute, and
+     * exempts nothing. Treating every unimported short name as the catalog's was
+     * a way to hide a real SYSTEM_PROMPT heredoc behind a same-named class.
+     *
+     * @param array<string, string> $imports lower-cased local name => fully-qualified symbol
+     */
+    private static function resolves(string $name, string $fqcn, array $imports, string $namespace = ''): bool
+    {
+        // PHP resolves class, interface and alias names case-insensitively, so
+        // `#[catalogprompt]` is the same declaration as `#[CatalogPrompt]` and an
+        // exact-case comparison reported the catalog's own implementation as a
+        // hand-rolled copy of itself.
+        $name = ltrim($name, '\\');
+        $key = strtolower($name);
+
+        if (isset($imports[$key])) {
+            return strcasecmp($imports[$key], $fqcn) === 0;
+        }
+
+        if (str_contains($name, '\\')) {
+            // Fully qualified as written, or qualified through an imported
+            // prefix (`use Semitexa\Prompt; ... #[Prompt\Attribute\AsPrompt]`).
+            $segments = explode('\\', $name);
+            $first = strtolower((string) array_shift($segments));
+            $resolved = isset($imports[$first])
+                ? $imports[$first] . '\\' . implode('\\', $segments)
+                : $name;
+
+            return strcasecmp($resolved, $fqcn) === 0;
+        }
+
+        $resolved = $namespace === '' ? $name : $namespace . '\\' . $name;
+
+        return strcasecmp($resolved, $fqcn) === 0;
+    }
+
+    /**
+     * The namespace this file declares, or '' for the global one.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function namespaceOf(array $tokens): string
+    {
+        $count = \count($tokens);
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!\is_array($token) || $token[0] !== T_NAMESPACE) {
+                continue;
+            }
+
+            for ($j = $i + 1; $j < $count; $j++) {
+                $candidate = $tokens[$j];
+                if (\is_array($candidate)) {
+                    if ($candidate[0] === T_WHITESPACE) {
+                        continue;
+                    }
+
+                    return trim($candidate[1], '\\');
+                }
+
+                break;
+            }
+        }
+
+        return '';
+    }
+
+    private static function shortNameOf(string $fqcn): string
+    {
+        $short = strrchr($fqcn, '\\');
+
+        return $short === false ? $fqcn : substr($short, 1);
+    }
+
+    /**
+     * Local names introduced by `use`, mapped to the FULLY QUALIFIED symbol.
+     *
+     * One statement can introduce several names —
+     * `use A\B\{AsPrompt as CatalogPrompt, Other};` and
+     * `use A\B as X, C\D as Y;` — so this walks each statement to its `;`
+     * instead of stopping at the first alias it finds. A grouped import that
+     * aliased the attribute previously yielded no alias at all, and the class
+     * using it was reported for hand-rolling the mechanism it implements.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * Plain imports are recorded too, not only aliased ones: `use Vendor\Ui\AsPrompt;`
+     * makes the short name mean something other than the catalog attribute, and
+     * only the full namespace can tell the two apart.
+     *
+     * @return array<string, string> lower-cased local name => fully-qualified symbol
+     */
+    private static function aliasMap(array $tokens): array
+    {
+        $aliases = [];
+        $count = \count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!\is_array($token) || $token[0] !== T_USE) {
+                continue;
+            }
+
+            // One entry at a time: the last name seen is what an `as` renames,
+            // and a comma or a brace ends the entry without ending the statement.
+            $lastName = null;
+            $expectAlias = false;
+            $prefix = '';
+
+            $record = static function (?string $symbol, ?string $local) use (&$aliases): void {
+                if ($symbol === null) {
+                    return;
+                }
+                // Keyed lower-case: PHP matches these names case-insensitively.
+                $aliases[strtolower($local ?? self::shortNameOf($symbol))] = $symbol;
+            };
+
+            for ($j = $i + 1; $j < $count; $j++) {
+                $candidate = $tokens[$j];
+
+                if (!\is_array($candidate)) {
+                    $literal = self::text($candidate);
+                    if ($literal === ';') {
+                        if (!$expectAlias) {
+                            $record($lastName === null ? null : self::join($prefix, $lastName), null);
+                        }
+                        $i = $j;
+                        break;
+                    }
+                    if ($literal === '{') {
+                        // Everything before the brace was the group prefix.
+                        $prefix = $lastName ?? '';
+                        $lastName = null;
+                        $expectAlias = false;
+                        continue;
+                    }
+                    if ($literal === ',' || $literal === '}') {
+                        if (!$expectAlias) {
+                            $record($lastName === null ? null : self::join($prefix, $lastName), null);
+                        }
+                        if ($literal === '}') {
+                            $prefix = '';
+                        }
+                        $lastName = null;
+                        $expectAlias = false;
+                    }
+                    continue;
+                }
+
+                if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_NS_SEPARATOR], true)) {
+                    continue;
+                }
+
+                if ($candidate[0] === T_AS) {
+                    $expectAlias = true;
+                    continue;
+                }
+
+                if ($expectAlias && $lastName !== null) {
+                    $record(self::join($prefix, $lastName), $candidate[1]);
+                    $lastName = null;
+                    $expectAlias = false;
+                    continue;
+                }
+
+                // A grouped import's prefix and its entries arrive as separate
+                // name tokens; the entry is the one an `as` can rename, so the
+                // most recent name wins.
+                $lastName = $candidate[1];
+            }
+        }
+
+        return $aliases;
+    }
+
+    private static function join(string $prefix, string $name): string
+    {
+        $prefix = trim($prefix, '\\');
+
+        return $prefix === '' ? ltrim($name, '\\') : $prefix . '\\' . ltrim($name, '\\');
+    }
+
+
+    /** @param array{0: int, 1: string, 2: int}|string $token */
+    private static function text(array|string $token): string
+    {
+        return \is_array($token) ? $token[1] : $token;
+    }
+}
