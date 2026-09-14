@@ -69,7 +69,10 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'handler' => [
                 'Application/Handler/PayloadHandler/GetThingHandler.php',
                 ChangedFile::KIND_HANDLER,
-                ['lint:di', 'lint:handlers'],
+                // lint:mechanisms rides along here too: a handler can inline a
+                // heredoc straight into an LLM call, and a diff holding only a
+                // handler would otherwise pass standard verification.
+                ['lint:di', 'lint:handlers', 'lint:mechanisms'],
             ],
             'domain listener' => [
                 'Application/Handler/DomainListener/ThingChangedListener.php',

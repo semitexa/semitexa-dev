@@ -33,7 +33,11 @@ final class VerificationPlanner
      * only when scope is effectively `broad`.
      */
     private const KIND_LINT_MAP = [
-        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di'],
+        // lint:mechanisms sits on the handler row as well as the service row: a
+        // handler can inline a heredoc straight into an LLM call, and a diff
+        // holding only a handler would otherwise pass standard verification
+        // until some unrelated service change happened to schedule the lint.
+        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms'],
         ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
         ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
         ChangedFile::KIND_RESOURCE => ['lint:responses'],

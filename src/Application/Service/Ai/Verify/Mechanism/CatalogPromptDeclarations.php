@@ -348,6 +348,22 @@ final class CatalogPromptDeclarations
 
             // One entry at a time: the last name seen is what an `as` renames,
             // and a comma or a brace ends the entry without ending the statement.
+            // `use function ...` and `use const ...` import symbols in other
+            // namespaces entirely: neither affects how a class or attribute name
+            // resolves. Recording them as class aliases let an unrelated
+            // `#[CatalogPrompt]` suppress a real prompt heredoc.
+            $next = null;
+            for ($k = $i + 1; $k < $count; $k++) {
+                if (\is_array($tokens[$k]) && $tokens[$k][0] === T_WHITESPACE) {
+                    continue;
+                }
+                $next = $tokens[$k];
+                break;
+            }
+            if (\is_array($next) && \in_array($next[0], [T_FUNCTION, T_CONST], true)) {
+                continue;
+            }
+
             $lastName = null;
             $expectAlias = false;
             $prefix = '';

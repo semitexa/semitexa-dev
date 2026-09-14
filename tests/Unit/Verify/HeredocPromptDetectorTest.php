@@ -410,6 +410,55 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_short_marker_is_matched_as_an_identifier_segment(): void
+    {
+        // Reported on the PR: `llm` sits inside `fullMessage`, so an innocuous
+        // variable name qualified a file as model-facing and a user-facing
+        // confirmation prompt was reported as a catalog prompt.
+        self::assertSame([], self::detect([
+            '$fullMessage = 1;',
+            'final class Confirm {',
+            '    private const CONFIRMATION_PROMPT = <<<TXT',
+            'Are you sure?',
+            'TXT;',
+            '}',
+        ]));
+
+        // The marker still counts where it is genuinely a name segment.
+        self::assertCount(1, self::detect([
+            '$llm = null;',
+            'private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+        ]));
+        self::assertCount(1, self::detect([
+            'use App\\LlmClient;',
+            'private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+        ]));
+    }
+
+    #[Test]
+    public function a_function_import_is_not_a_class_alias(): void
+    {
+        // Reported on the PR: `use function ... as X;` imports a symbol in a
+        // different namespace entirely and does not affect how a class or
+        // attribute name resolves, so recording it as a class alias let an
+        // unrelated `#[CatalogPrompt]` suppress a real prompt heredoc.
+        self::assertCount(1, self::detectInLlmService([
+            'namespace App\\Social;',
+            'use function Semitexa\\Prompt\\Attribute\\AsPrompt as CatalogPrompt;',
+            '#[CatalogPrompt]',
+            'final class GroupHarvester {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
     public function the_corroboration_comes_from_code_not_from_a_comment(): void
     {
         // Otherwise a passing mention of an LLM in prose would qualify a file

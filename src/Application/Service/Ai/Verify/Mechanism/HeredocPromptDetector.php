@@ -161,11 +161,41 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
-            $text = strtolower($token[1]);
-            foreach (self::MODEL_FACING as $needle) {
-                if (str_contains($text, $needle)) {
+            if (self::namesAModel($token[1])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Does one identifier name a model?
+     *
+     * Short markers are matched as identifier SEGMENTS, not substrings: `llm`
+     * happens to sit inside `fullMessage`, and a user-facing confirmation prompt
+     * in a file with an innocuous variable name was reported as a catalog prompt
+     * because of it. Longer markers are distinctive enough to match anywhere in
+     * the name — `LlmClient`, `OpenAiDriver` — where segment-splitting would only
+     * make the list harder to read for no gain.
+     */
+    private static function namesAModel(string $identifier): bool
+    {
+        $lower = strtolower($identifier);
+        /** @var list<string> $segments */
+        $segments = preg_split('/(?<=[a-z0-9])(?=[A-Z])|[^A-Za-z0-9]+/', $identifier) ?: [];
+        $segments = array_map(strtolower(...), $segments);
+
+        foreach (self::MODEL_FACING as $marker) {
+            if (\strlen($marker) <= 4) {
+                if (\in_array($marker, $segments, true)) {
                     return true;
                 }
+                continue;
+            }
+
+            if (str_contains($lower, $marker)) {
+                return true;
             }
         }
 

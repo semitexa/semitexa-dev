@@ -38,7 +38,9 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(VerificationPlan::SCOPE_STANDARD, $plan->effectiveScope);
         $commands = $this->lintCommandNames($plan);
         sort($commands);
-        $this->assertSame(['lint:di', 'lint:handlers'], $commands);
+        // lint:mechanisms joined this row so a diff holding only a handler is
+        // still checked for a prompt inlined straight into an LLM call.
+        $this->assertSame(['lint:di', 'lint:handlers', 'lint:mechanisms'], $commands);
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
         $this->assertSame([], $plan->expansions);
     }

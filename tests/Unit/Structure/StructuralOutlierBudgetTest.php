@@ -226,7 +226,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // passes. The guard is inlined in the loop rather than extracted, which
         // is why the method count is unchanged; a predicate this small reads
         // better where it acts than as a twentieth method on this class.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 843],
+        // 843 -> 847 from review: lint:mechanisms joined the HANDLER row too,
+        // since a handler can inline a heredoc straight into an LLM call and a
+        // diff holding only a handler would otherwise pass standard
+        // verification. Four lines of comment, no new method.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 847],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One
