@@ -337,6 +337,33 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_later_sibling_does_not_borrow_its_neighbours_name(): void
+    {
+        // Reported on the PR, and the inverse of the nested-target fix: reaching
+        // outward for an enclosing assignment let a generic heredoc adopt the
+        // name of a prompt-shaped sibling that has nothing to do with it.
+        self::assertSame([], self::detectInLlmService([
+            "\$x = ['systemPrompt' => 'brief', <<<TXT",
+            'unrelated text',
+            'TXT];',
+        ]));
+
+        self::assertSame([], self::detectInLlmService([
+            'f($systemPrompt, <<<TXT',
+            'unrelated text',
+            'TXT);',
+        ]));
+
+        // Ascending is still allowed: an item of an array that IS assigned to a
+        // prompt-named target belongs to it, even after an earlier item.
+        self::assertCount(1, self::detectInLlmService([
+            "\$systemPrompt = ['a' => 'x', <<<TXT",
+            'You summarise a chat room.',
+            'TXT];',
+        ]));
+    }
+
+    #[Test]
     public function a_project_local_symbol_of_the_same_name_exempts_nothing(): void
     {
         // Reported on the PR: an unimported `#[AsPrompt]` in a namespaced file

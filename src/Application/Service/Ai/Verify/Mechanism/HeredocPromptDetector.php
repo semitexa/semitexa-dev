@@ -272,15 +272,25 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * Scans back to the start of the statement rather than looking at the single
      * token before the opener, because a heredoc is often part of a larger
      * expression: `$systemPrompt = $prefix . <<<TXT` puts a `.` immediately
-     * before it, and requiring adjacency silently missed the prompt whenever the
-     * label was generic. A statement boundary stops the walk, so a bare
-     * `return <<<PROMPT` still reports no target rather than borrowing one from
-     * the line above.
+     * before it, and requiring adjacency missed the prompt whenever the label
+     * was generic.
+     *
+     * Two boundaries keep that reach honest. A statement boundary stops the walk
+     * entirely, so a bare `return <<<PROMPT` reports no target instead of
+     * borrowing one from the line above. And a comma at the CURRENT depth means
+     * this heredoc is a later sibling — `['systemPrompt' => 'brief', <<<TXT` —
+     * whose neighbours' assignments are not its own; the walk then skips to the
+     * enclosing level rather than adopting the previous item's name. Ascending
+     * is still allowed, because `$systemPrompt = ['a' => 'x', <<<TXT]` really is
+     * assigned to `$systemPrompt`.
      *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
      */
     private static function assignmentBefore(array $tokens, int $index): ?int
     {
+        $depth = 0;
+        $sibling = false;
+
         for ($i = $index - 1; $i >= 0; $i--) {
             $token = $tokens[$i];
 
@@ -288,18 +298,41 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
-                if (\in_array($token[1], self::ASSIGNMENTS, true)) {
+                if (!$sibling && $depth === 0 && \in_array($token[1], self::ASSIGNMENTS, true)) {
                     return $i;
                 }
                 continue;
             }
 
             $text = self::text($token);
-            if (\in_array($text, self::ASSIGNMENTS, true)) {
-                return $i;
+
+            if ($text === ']' || $text === ')' || $text === '}') {
+                $depth++;
+                continue;
             }
-            if ($text === ';' || $text === '{' || $text === '}') {
+
+            if ($text === '[' || $text === '(') {
+                if ($depth === 0) {
+                    // Ascended out of the construct holding this heredoc; the
+                    // enclosing level may still own it.
+                    $sibling = false;
+                    continue;
+                }
+                $depth--;
+                continue;
+            }
+
+            if ($text === ',' && $depth === 0) {
+                $sibling = true;
+                continue;
+            }
+
+            if ($depth === 0 && ($text === ';' || $text === '{')) {
                 return null;
+            }
+
+            if (!$sibling && $depth === 0 && \in_array($text, self::ASSIGNMENTS, true)) {
+                return $i;
             }
         }
 
