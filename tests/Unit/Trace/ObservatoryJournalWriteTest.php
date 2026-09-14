@@ -185,4 +185,23 @@ final class ObservatoryJournalWriteTest extends TestCase
             'reopening a healthy file would throw away the whole point of keeping it open',
         );
     }
+
+    /**
+     * ROTATION BY RENAME leaves the old inode with nlink == 1, perfectly
+     * healthy — so an existence check passes and every later record goes into
+     * the archive while the live reader watches the original path.
+     */
+    #[Test]
+    public function a_renamed_journal_is_reopened_at_the_original_path(): void
+    {
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-before']);
+        rename($this->journalPath(), $this->journalPath() . '.1');
+        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+
+        ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
+
+        self::assertFileExists($this->journalPath(), 'the write followed the rename into the archive');
+        self::assertStringContainsString('p-after', (string) file_get_contents($this->journalPath()));
+        self::assertStringNotContainsString('p-after', (string) file_get_contents($this->journalPath() . '.1'));
+    }
 }

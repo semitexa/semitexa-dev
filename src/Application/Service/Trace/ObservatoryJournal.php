@@ -119,6 +119,35 @@ final class ObservatoryJournal
     }
 
     /**
+     * Whether an open handle still points at the file the path names.
+     *
+     * IDENTITY, not existence. `nlink > 0` catches a deletion and nothing else:
+     * an operator rotating today's journal with a RENAME leaves the old inode
+     * with one link, perfectly healthy, and every later record goes into the
+     * archive while the live reader watches the original path and sees nothing
+     * new until the day rolls over. Comparing device and inode catches both,
+     * and costs one extra stat inside a check that already runs at most once a
+     * second.
+     *
+     * @param resource $stream
+     */
+    private static function stillTheSameFile($stream, string $path): bool
+    {
+        $open = @fstat($stream);
+        if (!is_array($open) || ($open['nlink'] ?? 1) < 1) {
+            return false;
+        }
+
+        $onDisk = @stat($path);
+        if (!is_array($onDisk)) {
+            return false;
+        }
+
+        return ($open['dev'] ?? null) === ($onDisk['dev'] ?? null)
+            && ($open['ino'] ?? null) === ($onDisk['ino'] ?? null);
+    }
+
+    /**
      * The append handle for one journal file, kept open for the worker.
      *
      * KEYED ON THE FULL PATH, not on the day. The day is the reason it rolls
@@ -150,8 +179,7 @@ final class ObservatoryJournal
             }
 
             self::$streamCheckedAt = $now;
-            $stat = @fstat(self::$stream);
-            if (is_array($stat) && ($stat['nlink'] ?? 1) > 0) {
+            if (self::stillTheSameFile(self::$stream, $path)) {
                 return self::$stream;
             }
         }

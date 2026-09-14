@@ -45,8 +45,9 @@ final class PackageDependencyDirectionTest extends TestCase
      *   cms    <-> os         0 references either way
      *   ssr    <-> theme      0 references either way
      *
-     * Labelled by the loop the detector walks, rotated to its smallest name, so
-     * the same cycle found from two entry points is one entry.
+     * Recorded as strongly connected COMPONENTS, sorted and joined, so core's
+     * two entanglements read as the one component they really are — and so a
+     * component that grows by a member is a change the ratchet notices.
      *
      * So none of them is a legitimate exception; they are six composer
      * requirements nothing backs. Removing them is tracked as
@@ -56,10 +57,9 @@ final class PackageDependencyDirectionTest extends TestCase
      * @var list<string>
      */
     private const KNOWN_CYCLES = [
-        'semitexa/cms -> semitexa/os',
-        'semitexa/core -> semitexa/docs',
-        'semitexa/core -> semitexa/tenancy',
-        'semitexa/ssr -> semitexa/theme',
+        'semitexa/cms, semitexa/os',
+        'semitexa/core, semitexa/docs, semitexa/tenancy',
+        'semitexa/ssr, semitexa/theme',
     ];
 
     /** @return array<string, list<string>> package => required semitexa packages */
@@ -101,70 +101,91 @@ final class PackageDependencyDirectionTest extends TestCase
      * record, and that list may only shrink.
      */
     /**
-     * Every cycle, not only mutual pairs.
+     * Strongly connected components of two packages or more.
      *
-     * `A -> B -> C -> A` closes a loop with no reciprocal edge anywhere in it,
-     * and a two-node check never sees it — which is precisely the outward
-     * dependency the policy forbids. Depth-first over the whole graph instead.
+     * COMPONENTS, not individual loops. A depth-first search that records only
+     * back edges to a still-open node misses a cycle that closes through a node
+     * it already finished: with `A <-> B` allowed, adding `A -> C` and `C -> B`
+     * creates `A -> C -> B -> A`, and the search would have visited and closed
+     * B before ever seeing C -> B. Tarjan sees it, because that edge does not
+     * make a new loop so much as GROW the existing component — and a component
+     * that grew is exactly what the ratchet should refuse.
      *
-     * @return list<string> one normalised label per cycle found
+     * It also collapses `core <-> docs` and `core <-> tenancy` into the one
+     * component they really are, rather than two pairs that happen to share a
+     * member.
+     *
+     * @return list<string> one sorted, comma-joined component per entry
      */
-    private function cycles(): array
+    private function components(): array
     {
         $graph = $this->graph();
-        $state = [];
-        $found = [];
+        $index = [];
+        $low = [];
+        $onStack = [];
+        $stack = [];
+        $counter = 0;
+        $components = [];
 
-        $walk = function (string $node, array $stack) use (&$walk, &$state, &$found, $graph): void {
-            $state[$node] = 'open';
+        $connect = function (string $node) use (&$connect, &$index, &$low, &$onStack, &$stack, &$counter, &$components, $graph): void {
+            $index[$node] = $low[$node] = $counter++;
             $stack[] = $node;
+            $onStack[$node] = true;
 
             foreach ($graph[$node] ?? [] as $next) {
                 if (!isset($graph[$next])) {
                     continue;
                 }
-                if (($state[$next] ?? '') === 'open') {
-                    $loop = array_slice($stack, array_search($next, $stack, true));
-                    // Normalised so the same loop reported from two entry points
-                    // is one entry: rotate to the smallest name, then join.
-                    $smallest = array_search(min($loop), $loop, true);
-                    $rotated = array_merge(array_slice($loop, $smallest), array_slice($loop, 0, $smallest));
-                    $found[implode(' -> ', $rotated)] = true;
-                    continue;
-                }
-                if (!isset($state[$next])) {
-                    $walk($next, $stack);
+                if (!isset($index[$next])) {
+                    $connect($next);
+                    $low[$node] = min($low[$node], $low[$next]);
+                } elseif ($onStack[$next] ?? false) {
+                    $low[$node] = min($low[$node], $index[$next]);
                 }
             }
 
-            $state[$node] = 'closed';
+            if ($low[$node] !== $index[$node]) {
+                return;
+            }
+
+            $component = [];
+            do {
+                $member = array_pop($stack);
+                $onStack[$member] = false;
+                $component[] = $member;
+            } while ($member !== $node);
+
+            if (count($component) > 1) {
+                sort($component);
+                $components[] = implode(', ', $component);
+            }
         };
 
         foreach (array_keys($graph) as $node) {
-            if (!isset($state[$node])) {
-                $walk($node, []);
+            if (!isset($index[$node])) {
+                $connect($node);
             }
         }
 
-        $cycles = array_keys($found);
-        sort($cycles);
+        sort($components);
 
-        return $cycles;
+        return $components;
     }
 
     /**
      * No package may depend, directly or through others, on one that depends
-     * back — except the cycles on record, and that list may only shrink.
+     * back — except the components on record, and that list may only shrink.
      */
     #[Test]
     public function no_new_cycle_appears(): void
     {
-        $new = array_values(array_diff($this->cycles(), self::KNOWN_CYCLES));
+        $new = array_values(array_diff($this->components(), self::KNOWN_CYCLES));
 
         self::assertSame([], $new, implode("\n", [
             'A package depends on one that depends back, which no shape in the policy allows.',
             'Either the dependency belongs behind a contract the depended-upon package declares,',
             'or the require is unbacked by code and should not exist.',
+            'A component that merely GREW counts: it means a new package joined an existing loop.',
         ]));
     }
 
@@ -172,11 +193,11 @@ final class PackageDependencyDirectionTest extends TestCase
     #[Test]
     public function the_recorded_cycles_have_not_been_resurrected(): void
     {
-        $gone = array_values(array_diff(self::KNOWN_CYCLES, $this->cycles()));
+        $gone = array_values(array_diff(self::KNOWN_CYCLES, $this->components()));
 
         self::assertSame([], $gone, implode("\n", [
-            'These cycles are gone — delete them from KNOWN_CYCLES so the ratchet tightens:',
-            implode(', ', $gone),
+            'These components are gone or changed — update KNOWN_CYCLES so the ratchet tightens:',
+            implode(' | ', $gone),
         ]));
     }
 
@@ -184,13 +205,14 @@ final class PackageDependencyDirectionTest extends TestCase
      * DIRECTION, not only cycles.
      *
      * A one-way `update -> feature` edge breaks rule 1 and closes no loop, so
-     * the cycle check above would pass it. The two packages the policy names by
+     * the component check above would pass it. The packages the policy names by
      * position are pinned here: core is the foundation and requires nothing in
-     * the workspace, update is lifecycle and may reach the foundation and
-     * persistence but never outward to a feature.
+     * the workspace, while update and prompt are lifecycle and may reach the
+     * foundation and persistence but never outward to a feature.
      *
-     * Only those two, deliberately. Classifying all 42 packages into layers
-     * would be inventing a map rather than recording the decisions that exist.
+     * Only the packages the policy names by position, deliberately. Classifying
+     * all 42 into layers would be inventing a map rather than recording the
+     * decisions that exist.
      */
     #[Test]
     public function the_named_packages_depend_only_inward(): void
@@ -201,9 +223,13 @@ final class PackageDependencyDirectionTest extends TestCase
             // Foundation. The two it does require are unbacked by code and are
             // the KNOWN_CYCLES entries above — see tk-unbacked-package-requires.
             'semitexa/core' => ['semitexa/docs', 'semitexa/tenancy'],
-            // Lifecycle: it owns #[AsDataPatch] and os, tasks, platform-settings
-            // and prompt require IT. Foundation and persistence only.
+            // Lifecycle: it owns #[AsDataPatch] and os, tasks and
+            // platform-settings require IT. Foundation and persistence only.
             'semitexa/update' => ['semitexa/core', 'semitexa/orm'],
+            // Lifecycle too — rule 1 names it explicitly: prompt followed the
+            // same shape for #[AsUpdateAdvisory], so it may reach update and no
+            // further outward.
+            'semitexa/prompt' => ['semitexa/core', 'semitexa/orm', 'semitexa/update'],
         ];
 
         $violations = [];
