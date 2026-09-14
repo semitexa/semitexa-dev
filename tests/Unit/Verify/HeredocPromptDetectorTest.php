@@ -81,6 +81,70 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function an_indexed_target_still_yields_its_name(): void
+    {
+        // Reported on the PR: `$systemPrompts[] = <<<TXT` ends in `]`, so the
+        // token before the operator is a bracket and the prompt-bearing name
+        // sits before the subscript. With a generic label nothing was reported.
+        self::assertCount(1, self::detect(['$systemPrompts[] = <<<TXT', 'body', 'TXT;']));
+        self::assertCount(1, self::detect(["\$prompts['system'] = <<<TXT", 'body', 'TXT;']));
+        self::assertCount(1, self::detect(["\$this->prompts['system'] = <<<TXT", 'body', 'TXT;']));
+
+        // And the silence case it must not cost: an indexed target that is not
+        // a prompt stays quiet.
+        self::assertSame([], self::detect(["\$rows['x'] = <<<SQL", 'SELECT 1', 'SQL;']));
+    }
+
+    #[Test]
+    public function an_unrelated_symbol_with_the_same_short_name_exempts_nothing(): void
+    {
+        // Reported on the PR: a short name is not an identity.
+        // `use Vendor\Ui\AsPrompt as CatalogPrompt;` is a DIFFERENT attribute,
+        // and exempting the file for it would hide every real prompt heredoc in
+        // that service. Imports carry the namespace precisely for this.
+        self::assertCount(1, self::detect([
+            'use Vendor\\Ui\\AsPrompt as CatalogPrompt;',
+            '#[CatalogPrompt]',
+            'final class S {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+            '}',
+        ]));
+
+        self::assertCount(1, self::detect([
+            'use Vendor\\Ui\\AsPrompt;',
+            '#[AsPrompt]',
+            'final class S {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+            '}',
+        ]));
+
+        self::assertCount(1, self::detect([
+            'use Vendor\\Ui\\PromptDefinitionInterface as Def;',
+            'final class S implements Def',
+            '{',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'body',
+            'TXT;',
+            '}',
+        ]));
+
+        // The real symbol, plainly imported, still exempts.
+        self::assertSame([], self::detect([
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            "#[AsPrompt(id: 'x')]",
+            'final class P {',
+            '    private const B = <<<PROMPT',
+            'body',
+            'PROMPT;',
+            '}',
+        ], self::PROMPT_CLASS));
+    }
+
+    #[Test]
     public function the_intent_is_taken_from_the_label_when_it_is_not_in_the_name(): void
     {
         // `const SYSTEM = <<<PROMPT` says it in the label. Requiring the word in

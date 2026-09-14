@@ -45,6 +45,10 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private const LANGUAGE_LABELS = ['SQL', 'HTML', 'XML', 'JSON', 'CSS', 'JS', 'JAVASCRIPT', 'YAML', 'YML', 'CSV'];
 
+    /** The symbols that mark a file as the mechanism, fully qualified. */
+    private const ATTRIBUTE_FQCN = 'Semitexa\\Prompt\\Attribute\\AsPrompt';
+    private const INTERFACE_FQCN = 'Semitexa\\Prompt\\Domain\\Contract\\PromptDefinitionInterface';
+
     /** Assignment operators that still carry the target's intent — `.=` appends a prompt. */
     private const ASSIGNMENTS = ['=', '.=', '??=', '=>', ':'];
 
@@ -165,9 +169,46 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             return '';
         }
 
+        // An indexed target — `$systemPrompts[] = <<<TXT`, `$prompts['system'] =
+        // <<<TXT` — ends in `]`, so the token before the operator is a bracket
+        // and the prompt-bearing name sits before the subscript. Walk the
+        // balanced brackets back to it.
+        while (self::text($tokens[$name]) === ']') {
+            $name = self::beforeSubscript($tokens, $name);
+            if ($name === null) {
+                return '';
+            }
+        }
+
         $text = self::text($tokens[$name]);
 
         return trim($text, "'\"$");
+    }
+
+    /**
+     * The token holding the name a subscript belongs to: from the closing `]`,
+     * back over its balanced contents and past the opening `[`.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function beforeSubscript(array $tokens, int $closing): ?int
+    {
+        $depth = 0;
+        for ($i = $closing; $i >= 0; $i--) {
+            $text = self::text($tokens[$i]);
+            if ($text === ']') {
+                $depth++;
+                continue;
+            }
+            if ($text === '[') {
+                $depth--;
+                if ($depth === 0) {
+                    return self::previousMeaningful($tokens, $i);
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -219,7 +260,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
 
             if ($token[0] === T_ATTRIBUTE) {
                 foreach (self::attributeNames($tokens, $i) as $name) {
-                    if (self::resolves($name, 'AsPrompt', $aliases)) {
+                    if (self::resolves($name, self::ATTRIBUTE_FQCN, $aliases)) {
                         return true;
                     }
                 }
@@ -241,7 +282,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
-                if (self::resolves($candidate[1], 'PromptDefinitionInterface', $aliases)) {
+                if (self::resolves($candidate[1], self::INTERFACE_FQCN, $aliases)) {
                     return true;
                 }
             }
@@ -309,20 +350,54 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * Does $name refer to $symbol — as the short name, a qualified one, or a
-     * local alias?
+     * Does $name, as written in this file, refer to $fqcn?
      *
-     * @param array<string, string> $aliases alias => the symbol it was given to
+     * Resolved through the file's own imports rather than by short name, because
+     * a short name is not an identity: `use Vendor\Ui\AsPrompt as CatalogPrompt;`
+     * is a DIFFERENT attribute, and exempting a file for it would hide every real
+     * prompt heredoc in that service. Imports carry the full namespace for
+     * exactly this comparison.
+     *
+     * The fallback is the one case no import can settle: a bare short name with
+     * no matching import resolves against the file's own namespace, which needs
+     * resolution this rule does not do. Erring toward exemption there costs a
+     * missed finding; erring the other way reports a genuine prompt class for
+     * the body it is supposed to have, which is the louder mistake.
+     *
+     * @param array<string, string> $imports local name => fully-qualified symbol
      */
-    private static function resolves(string $name, string $symbol, array $aliases): bool
+    private static function resolves(string $name, string $fqcn, array $imports): bool
     {
-        $short = substr(strrchr($name, '\\') ?: $name, strrchr($name, '\\') !== false ? 1 : 0);
+        $name = ltrim($name, '\\');
 
-        return $short === $symbol || ($aliases[$name] ?? null) === $symbol;
+        if (isset($imports[$name])) {
+            return $imports[$name] === $fqcn;
+        }
+
+        if (str_contains($name, '\\')) {
+            // Fully qualified as written, or qualified through an imported
+            // prefix (`use Semitexa\Prompt; ... #[Prompt\Attribute\AsPrompt]`).
+            $segments = explode('\\', $name);
+            $first = array_shift($segments);
+            $resolved = isset($imports[$first])
+                ? $imports[$first] . '\\' . implode('\\', $segments)
+                : $name;
+
+            return $resolved === $fqcn;
+        }
+
+        return $name === self::shortNameOf($fqcn);
+    }
+
+    private static function shortNameOf(string $fqcn): string
+    {
+        $short = strrchr($fqcn, '\\');
+
+        return $short === false ? $fqcn : substr($short, 1);
     }
 
     /**
-     * Local aliases introduced by `use`, including grouped and multi-entry forms.
+     * Local names introduced by `use`, mapped to the FULLY QUALIFIED symbol.
      *
      * One statement can introduce several names —
      * `use A\B\{AsPrompt as CatalogPrompt, Other};` and
@@ -332,7 +407,11 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * using it was reported for hand-rolling the mechanism it implements.
      *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
-     * @return array<string, string> alias => the short symbol it was given to
+     * Plain imports are recorded too, not only aliased ones: `use Vendor\Ui\AsPrompt;`
+     * makes the short name mean something other than the catalog attribute, and
+     * only the full namespace can tell the two apart.
+     *
+     * @return array<string, string> local name => fully-qualified symbol
      */
     private static function aliasMap(array $tokens): array
     {
@@ -349,6 +428,14 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             // and a comma or a brace ends the entry without ending the statement.
             $lastName = null;
             $expectAlias = false;
+            $prefix = '';
+
+            $record = static function (?string $symbol, ?string $local) use (&$aliases): void {
+                if ($symbol === null) {
+                    return;
+                }
+                $aliases[$local ?? self::shortNameOf($symbol)] = $symbol;
+            };
 
             for ($j = $i + 1; $j < $count; $j++) {
                 $candidate = $tokens[$j];
@@ -356,10 +443,26 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 if (!\is_array($candidate)) {
                     $literal = self::text($candidate);
                     if ($literal === ';') {
+                        if (!$expectAlias) {
+                            $record($lastName === null ? null : self::join($prefix, $lastName), null);
+                        }
                         $i = $j;
                         break;
                     }
-                    if ($literal === ',' || $literal === '{' || $literal === '}') {
+                    if ($literal === '{') {
+                        // Everything before the brace was the group prefix.
+                        $prefix = $lastName ?? '';
+                        $lastName = null;
+                        $expectAlias = false;
+                        continue;
+                    }
+                    if ($literal === ',' || $literal === '}') {
+                        if (!$expectAlias) {
+                            $record($lastName === null ? null : self::join($prefix, $lastName), null);
+                        }
+                        if ($literal === '}') {
+                            $prefix = '';
+                        }
                         $lastName = null;
                         $expectAlias = false;
                     }
@@ -376,8 +479,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 }
 
                 if ($expectAlias && $lastName !== null) {
-                    $short = strrchr($lastName, '\\');
-                    $aliases[$candidate[1]] = $short === false ? $lastName : substr($short, 1);
+                    $record(self::join($prefix, $lastName), $candidate[1]);
                     $lastName = null;
                     $expectAlias = false;
                     continue;
@@ -391,6 +493,13 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         }
 
         return $aliases;
+    }
+
+    private static function join(string $prefix, string $name): string
+    {
+        $prefix = trim($prefix, '\\');
+
+        return $prefix === '' ? ltrim($name, '\\') : $prefix . '\\' . ltrim($name, '\\');
     }
 
     /**
