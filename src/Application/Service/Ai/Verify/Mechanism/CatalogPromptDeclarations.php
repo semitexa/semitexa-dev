@@ -78,6 +78,12 @@ final class CatalogPromptDeclarations
             }
 
             if ($token[0] === T_USE) {
+                // Top-level only. Inside a class-like body `use X;` composes a
+                // TRAIT and imports nothing, so reading it as an import let
+                // `trait T { use \Vendor\AsPrompt; }` shadow the real attribute
+                // import and un-exempt a genuine catalog class. The class-like
+                // branches below skip their bodies, so reaching here means top
+                // level — except for the one shape they did not skip.
                 $aliases += self::importsAt($tokens, $i);
                 continue;
             }
@@ -110,6 +116,15 @@ final class CatalogPromptDeclarations
                         break;
                     }
                 }
+                continue;
+            }
+
+            // Traits, interfaces and enums have bodies too, and only the class
+            // branch used to skip past one — so a `use` inside a trait was still
+            // read as an import.
+            if (\in_array($token[0], [T_TRAIT, T_INTERFACE, T_ENUM], true)) {
+                $i = self::classBodyEnd($tokens, $i);
+                $markedFrom = null;
                 continue;
             }
 

@@ -337,6 +337,60 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function only_a_named_argument_colon_counts_as_an_assignment(): void
+    {
+        // Reported on the PR: `:` is in the operator list for named arguments,
+        // but PHP spends it on case labels and the ternary too — so a heredoc
+        // could cross `case $promptMode:` and adopt the switch subject,
+        // reporting ordinary help text as a catalog prompt.
+        self::assertSame([], self::detectInLlmService([
+            'switch ($mode) {',
+            'case $promptMode:',
+            '    $help = <<<TXT',
+            'usage text',
+            'TXT;',
+            '}',
+        ]));
+
+        self::assertSame([], self::detectInLlmService([
+            '$x = $promptish ? 1 : 2;',
+            '$help = <<<TXT',
+            'usage text',
+            'TXT;',
+        ]));
+
+        // The shape the colon is in the list for.
+        self::assertCount(1, self::detectInLlmService([
+            '$x = f(system: <<<PROMPT',
+            'Write a post.',
+            'PROMPT);',
+        ]));
+    }
+
+    #[Test]
+    public function a_trait_use_is_not_an_import(): void
+    {
+        // Reported on the PR: inside a class-like body `use X;` composes a TRAIT
+        // and imports nothing. Reading it as an import let a same-named trait
+        // shadow the real attribute import and un-exempt a genuine catalog
+        // class — in whichever order it appeared.
+        foreach ([true, false] as $traitFirst) {
+            $trait = 'trait T { use \\Vendor\\AsPrompt; }';
+            $import = 'use Semitexa\\Prompt\\Attribute\\AsPrompt;';
+
+            self::assertSame([], self::detect([
+                'namespace App;',
+                ...($traitFirst ? [$trait, $import] : [$import, $trait]),
+                "#[AsPrompt(id: 'x')]",
+                'final class P { private const B = <<<PROMPT',
+                'body',
+                'PROMPT; }',
+                '$answer = $this->llm->complete($body);',
+            ], self::PROMPT_CLASS), $traitFirst ? 'trait first' : 'import first');
+        }
+    }
+
+    #[Test]
     public function a_later_sibling_does_not_borrow_its_neighbours_name(): void
     {
         // Reported on the PR, and the inverse of the nested-target fix: reaching

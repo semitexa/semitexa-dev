@@ -339,7 +339,8 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
-                if (!$sibling && $depth === 0 && \in_array($token[1], self::ASSIGNMENTS, true)) {
+                if (!$sibling && $depth === 0 && \in_array($token[1], self::ASSIGNMENTS, true)
+                    && self::isAssignmentHere($tokens, $i)) {
                     return $i;
                 }
                 continue;
@@ -375,12 +376,44 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 return null;
             }
 
-            if (!$sibling && $depth === 0 && \in_array($text, self::ASSIGNMENTS, true)) {
+            if (!$sibling && $depth === 0 && \in_array($text, self::ASSIGNMENTS, true)
+                && self::isAssignmentHere($tokens, $i)) {
                 return $i;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Is the operator at $index really assigning, or just a colon?
+     *
+     * `:` is in the operator list for named arguments — `f(system: <<<PROMPT)`
+     * — but PHP spends it on `case X:`, `default:` and the ternary too. Treating
+     * those as assignments let a heredoc cross a case label and adopt the
+     * switch subject: `case $promptMode: $help = <<<TXT` reported ordinary help
+     * text as a catalog prompt. A named argument is the only colon whose name
+     * sits in argument position, right after `(` or `,`.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function isAssignmentHere(array $tokens, int $index): bool
+    {
+        if (self::text($tokens[$index]) !== ':') {
+            return true;
+        }
+
+        $name = self::previousMeaningful($tokens, $index);
+        if ($name === null) {
+            return false;
+        }
+
+        $before = self::previousMeaningful($tokens, $name);
+        if ($before === null) {
+            return false;
+        }
+
+        return \in_array(self::text($tokens[$before]), ['(', ','], true);
     }
 
     /**
