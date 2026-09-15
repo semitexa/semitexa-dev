@@ -215,7 +215,35 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-update/src/Application/Service/Composer/ComposerUpdateRunner.php' => [20, 751],
         'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 742],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 827],
+        // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
+        // when the prompt.catalog detector landed, and the four lines are the
+        // comment saying why — a detector no kind schedules never runs and reads
+        // exactly like a passing check, which is the mistake this map has made
+        // before. The row edit itself costs nothing. NO NEW METHOD: still 19.
+        // 831 -> 843 the same day, from review: that row also scheduled the lint
+        // for package paths it cannot scan, which is the SAME mistake from the
+        // other side — a target that runs, examines nothing in the diff, and
+        // passes. The guard is inlined in the loop rather than extracted, which
+        // is why the method count is unchanged; a predicate this small reads
+        // better where it acts than as a twentieth method on this class.
+        // 843 -> 847 from review: lint:mechanisms joined the HANDLER row too,
+        // since a handler can inline a heredoc straight into an LLM call and a
+        // diff holding only a handler would otherwise pass standard
+        // verification. Four lines of comment, no new method.
+        // 847 -> 850: the listener row joined the handler and service rows for
+        // the same reason — a listener can call an LLM with an inline heredoc,
+        // and the execution shape decides, not the directory. Three lines of
+        // comment, no new method.
+        // 850 -> 859: nine lines recording WHY lint:mechanisms is not on the
+        // catch-all kind. It was tried — a module console command calling an LLM
+        // is a real gap — and it wedged the suite, because KIND_PHP_OTHER is what
+        // the verify tooling's own fixtures classify as, so plans built in tests
+        // started executing a real shell-out lint. A reverted experiment that
+        // leaves no trace invites the next person to repeat it.
+        // 859 -> 864: the application-root guard is anchored rather than a
+        // substring, since the lint scans the REPOSITORY-ROOT src/modules and a
+        // package path containing that segment is not somewhere it looks.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 864],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

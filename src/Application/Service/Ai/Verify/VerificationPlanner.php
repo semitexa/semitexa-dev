@@ -33,11 +33,22 @@ final class VerificationPlanner
      * only when scope is effectively `broad`.
      */
     private const KIND_LINT_MAP = [
-        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di'],
-        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping'],
+        // lint:mechanisms sits on the handler row as well as the service row: a
+        // handler can inline a heredoc straight into an LLM call, and a diff
+        // holding only a handler would otherwise pass standard verification
+        // until some unrelated service change happened to schedule the lint.
+        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms'],
+        // A domain listener can call an LLM with an inline heredoc exactly as a
+        // handler or a service can, so lint:mechanisms rides this row too — the
+        // execution shape is what matters, not which directory it sits in.
+        ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
         ChangedFile::KIND_RESOURCE => ['lint:responses'],
-        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping'],
+        // lint:mechanisms joined the service row when the prompt.catalog detector
+        // landed: every measured case of a prompt compiled into PHP was a service
+        // holding it in a heredoc const. A detector that no kind schedules never
+        // runs and reads exactly like a passing check.
+        ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
         // lint:deferred-twig belongs here because a deferred slot template is rendered
         // TWICE - by Twig on the server and by semitexa-twig.js on the client - and the
@@ -49,6 +60,15 @@ final class VerificationPlanner
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred.
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
+        // Not a catch-all row, and the reason is measured. lint:mechanisms scans
+        // ALL module PHP, so putting it on KIND_PHP_OTHER looks like the tidy
+        // way to cover every remaining kind — a module console command calling
+        // an LLM was the case raised. It wedges the suite: that kind is what the
+        // verify tooling's own fixtures classify as, so plans built in tests
+        // began executing a real shell-out lint and blocked at ~427/8500 with no
+        // CPU. Measured both ways before reverting. The three rows above cover
+        // where a prompt actually lives; a narrower kind for commands is the
+        // follow-up, not a row that stops the suite from finishing.
     ];
 
     private const ALL_LINTS = [
@@ -548,6 +568,23 @@ final class VerificationPlanner
     ): void {
         $lints = self::KIND_LINT_MAP[$file->kind] ?? [];
         foreach ($lints as $lint) {
+            // lint:mechanisms scans APPLICATION code only — LintMechanismsCommand's
+            // APPLICATION_ROOTS is ['src/modules'] — because framework packages
+            // IMPLEMENT the mechanisms it reports, so the same pattern there is the
+            // implementation rather than a duplicate of it. It takes no path from
+            // the executor, so scheduling it for a change under packages/ produced
+            // a target that ran, examined nothing in the diff, and passed: exactly
+            // the "gate that reads like a clean result" this row was added to
+            // guard against. Broad scope still runs it, under its own blanket
+            // reason, which never claimed per-file relevance.
+            // Anchored, not a substring: the command scans the REPOSITORY-ROOT
+            // src/modules, so a package that happens to contain that segment —
+            // packages/acme/src/modules/... — is not somewhere the lint will
+            // look, and scheduling it there is the same empty pass this guard
+            // exists to prevent.
+            if ($lint === 'lint:mechanisms' && !str_starts_with($file->path, 'src/modules/')) {
+                continue;
+            }
             if (!isset($lintsByCommand[$lint])) {
                 $lintsByCommand[$lint] = [
                     'triggeredBy' => [],
