@@ -433,6 +433,17 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
 
             if ($text === '[' || $text === '(' || $text === '{') {
                 if ($depth === 0) {
+                    // A `{` is only worth ascending out of when it belongs to a
+                    // match expression, which is what the ascent was added for.
+                    // Every other `{` opens a BODY — a closure, an anonymous
+                    // class, a control structure — and that is an executable
+                    // scope boundary, not an enclosing expression. Crossing one
+                    // let `$promptFactory = function () { return <<<TXT ... }`
+                    // hand its name to a heredoc that has nothing to do with it.
+                    if ($text === '{' && !self::isMatchBrace($tokens, $i)) {
+                        return null;
+                    }
+
                     // Ascended out of the construct holding this heredoc; the
                     // enclosing level may still own it.
                     $sibling = false;
@@ -477,6 +488,15 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private static function isAssignmentHere(array $tokens, int $index): bool
     {
+        // `=>` binds a value to a key in an array, and that key is a target.
+        // PHP spends the same token on two things that are NOT targets: a match
+        // arm (`$promptMode => <<<TXT`) and a keyed yield (`yield $promptKey =>
+        // $body`). In both the left side is a subject being tested or emitted,
+        // so lending its name to the heredoc reported ordinary text as a prompt.
+        if (self::text($tokens[$index]) === '=>') {
+            return !self::inMatchArm($tokens, $index) && !self::isKeyedYield($tokens, $index);
+        }
+
         if (self::text($tokens[$index]) !== ':') {
             return true;
         }
@@ -492,6 +512,133 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         }
 
         return \in_array(self::text($tokens[$before]), ['(', ','], true);
+    }
+
+    /**
+     * Does the `{` at $index open a match expression, rather than a body?
+     *
+     * A match brace is preceded by the balanced `(...)` holding the subject and
+     * then the `match` keyword. Anything else — `function () {`, `new class {`,
+     * `if (...) {`, a bare block — opens executable scope.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function isMatchBrace(array $tokens, int $index): bool
+    {
+        $closing = self::previousMeaningful($tokens, $index);
+        if ($closing === null || self::text($tokens[$closing]) !== ')') {
+            return false;
+        }
+
+        $depth = 0;
+        for ($i = $closing; $i >= 0; $i--) {
+            $text = self::text($tokens[$i]);
+            if ($text === ')') {
+                $depth++;
+                continue;
+            }
+            if ($text === '(') {
+                $depth--;
+                if ($depth === 0) {
+                    $keyword = self::previousMeaningful($tokens, $i);
+
+                    return $keyword !== null
+                        && \is_array($tokens[$keyword])
+                        && $tokens[$keyword][0] === T_MATCH;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Is the `=>` at $index a match ARM rather than an array entry?
+     *
+     * Answered by the brace it sits in: walk out to the nearest unbalanced `{`
+     * and ask {@see self::isMatchBrace()} the same question the ascent asks.
+     * A `[` or `(` reached first means an array or an argument list owns this
+     * `=>`, and that one really is a target.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function inMatchArm(array $tokens, int $index): bool
+    {
+        $depth = 0;
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $text = self::text($tokens[$i]);
+
+            if ($text === '}' || $text === ']' || $text === ')') {
+                $depth++;
+                continue;
+            }
+
+            if ($text === '{') {
+                if ($depth === 0) {
+                    return self::isMatchBrace($tokens, $i);
+                }
+                $depth--;
+                continue;
+            }
+
+            if ($text === '[' || $text === '(') {
+                if ($depth === 0) {
+                    return false;
+                }
+                $depth--;
+                continue;
+            }
+
+            if ($text === ';' && $depth === 0) {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Is the `=>` at $index the key separator of `yield $k => $v`?
+     *
+     * The key is an expression, so the `yield` is found by walking back over it
+     * to the statement boundary rather than by looking one token behind.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function isKeyedYield(array $tokens, int $index): bool
+    {
+        $depth = 0;
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $token = $tokens[$i];
+
+            if (\is_array($token)) {
+                if ($depth === 0 && \in_array($token[0], [T_YIELD, T_YIELD_FROM], true)) {
+                    return true;
+                }
+                continue;
+            }
+
+            $text = self::text($token);
+
+            if ($text === ')' || $text === ']' || $text === '}') {
+                $depth++;
+                continue;
+            }
+
+            if ($text === '(' || $text === '[' || $text === '{') {
+                if ($depth === 0) {
+                    return false;
+                }
+                $depth--;
+                continue;
+            }
+
+            if ($depth === 0 && ($text === ';' || $text === ',')) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /**

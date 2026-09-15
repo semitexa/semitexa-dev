@@ -1080,6 +1080,95 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_statement_level_import_kind_reaches_every_entry(): void
+    {
+        // Reported on the PR, and a regression from the per-entry fix: PHP puts
+        // the kind in two places with different reach. `use function A, B;`
+        // applies to BOTH entries, so a flag reset at the comma cleared it and
+        // recorded the second function as a class alias.
+        self::assertCount(1, self::detect([
+            'namespace App\\Social;',
+            'use function Vendor\\helper, Semitexa\\Prompt\\Attribute\\AsPrompt as CatalogPrompt;',
+            "#[CatalogPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+
+        // The per-entry shape still works, and still only skips its own entry.
+        self::assertSame([], self::detect([
+            'namespace App\\Social;',
+            'use Semitexa\\Prompt\\Attribute\\{function helper, AsPrompt};',
+            "#[AsPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+    }
+
+    #[Test]
+    public function a_closure_body_is_a_boundary_not_an_enclosing_expression(): void
+    {
+        // Reported on the PR: the brace ascent was added for match expressions,
+        // but it crossed every `{`. A closure body is executable scope, so the
+        // heredoc inside it borrowed the factory's name from outside.
+        self::assertSame([], self::detectInLlmService([
+            '$promptFactory = function () {',
+            '    return <<<TXT',
+            'usage text',
+            'TXT;',
+            '};',
+        ]));
+
+        self::assertSame([], self::detectInLlmService([
+            '$promptMaker = new class {',
+            '    public function help(): string { return <<<TXT',
+            'usage text',
+            'TXT; }',
+            '};',
+        ]));
+
+        // The match brace it was added for still ascends.
+        self::assertCount(1, self::detectInLlmService([
+            '$systemPrompt = match ($mode) {',
+            '    default => <<<TXT',
+            'You summarise a chat room.',
+            'TXT,',
+            '};',
+        ]));
+    }
+
+    #[Test]
+    public function a_match_arm_or_keyed_yield_is_not_an_assignment_target(): void
+    {
+        // Reported on the PR: `=>` binds a key to a value in an array, but PHP
+        // spends the same token on a match arm and a keyed yield, where the left
+        // side is a subject being tested or emitted rather than a target.
+        self::assertSame([], self::detectInLlmService([
+            '$help = match ($mode) {',
+            '    $promptMode => <<<TXT',
+            'usage text',
+            'TXT,',
+            '};',
+        ]));
+
+        self::assertSame([], self::detectInLlmService([
+            'yield $promptKey => <<<TXT',
+            'usage text',
+            'TXT;',
+        ]));
+
+        // The array entry the operator is in the list for.
+        self::assertCount(1, self::detectInLlmService([
+            "\$x = ['systemPrompt' => <<<TXT",
+            'You summarise a chat room.',
+            'TXT];',
+        ]));
+    }
+
+    #[Test]
     public function it_reads_php_and_says_so(): void
     {
         // A detector declaring the wrong extension never runs and looks exactly

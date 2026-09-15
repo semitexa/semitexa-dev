@@ -468,12 +468,17 @@ final class CatalogPromptDeclarations
             // resolves. Recording them as class aliases let an unrelated
             // `#[CatalogPrompt]` suppress a real prompt heredoc.
             //
-            // The kind is per ENTRY, not per statement. `use function A\B;` puts
-            // it right after `use`, but a legal mixed group —
-            // `use A\B\{function c, D};` — puts it inside the braces, where a
-            // guard that only looked at the first token never saw it and
-            // recorded the function's alias as a class. One flag, reset at every
-            // entry boundary, answers both shapes.
+            // PHP puts the kind in two places, and they have DIFFERENT reach:
+            //
+            //   use function A\helper, B\Other;      statement-level: every
+            //                                        comma-separated entry
+            //   use A\B\{function c, D};             per entry: only that one
+            //
+            // A single flag reset at every entry boundary gets the second shape
+            // right and the first one wrong — the comma cleared the statement's
+            // own kind and the next entry was recorded as a class. So the group
+            // is tracked, and a kind seen before it ends the statement outright.
+            $inGroup = false;
             $skipEntry = false;
 
             $record = static function (?string $symbol, ?string $local) use (&$aliases, &$skipEntry): void {
@@ -501,6 +506,7 @@ final class CatalogPromptDeclarations
                         $lastName = null;
                         $expectAlias = false;
                         $skipEntry = false;
+                        $inGroup = true;
                         continue;
                     }
                     if ($literal === ',' || $literal === '}') {
@@ -509,6 +515,7 @@ final class CatalogPromptDeclarations
                         }
                         if ($literal === '}') {
                             $prefix = '';
+                            $inGroup = false;
                         }
                         $lastName = null;
                         $expectAlias = false;
@@ -522,6 +529,11 @@ final class CatalogPromptDeclarations
                 }
 
                 if (\in_array($candidate[0], [T_FUNCTION, T_CONST], true)) {
+                    if (!$inGroup) {
+                        // Statement-level: the whole `use` imports symbols, so
+                        // nothing in it can alias a class.
+                        return [];
+                    }
                     $skipEntry = true;
                     continue;
                 }
