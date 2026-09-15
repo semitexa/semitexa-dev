@@ -53,8 +53,13 @@ final class CatalogPromptDeclarations
      */
     public static function classRanges(array $tokens): array
     {
-        $aliases = self::aliasMap($tokens);
-        $namespace = self::namespaceOf($tokens);
+        // Namespace and imports are tracked AS the walk proceeds, not computed
+        // once for the file. PHP scopes imports to their namespace block, and a
+        // file may hold several: computing one map merged every block's imports
+        // and let a later `use Vendor\AsPrompt` decide how an earlier block's
+        // catalog class resolved — in either direction, depending on order.
+        $namespace = '';
+        $aliases = [];
         $count = \count($tokens);
 
         $ranges = [];
@@ -63,6 +68,17 @@ final class CatalogPromptDeclarations
         for ($i = 0; $i < $count; $i++) {
             $token = $tokens[$i];
             if (!\is_array($token)) {
+                continue;
+            }
+
+            if ($token[0] === T_NAMESPACE) {
+                $namespace = self::namespaceAt($tokens, $i);
+                $aliases = [];
+                continue;
+            }
+
+            if ($token[0] === T_USE) {
+                $aliases += self::importsAt($tokens, $i);
                 continue;
             }
 
@@ -304,45 +320,34 @@ final class CatalogPromptDeclarations
     }
 
     /**
-     * The namespace this file declares, or '' for the global one.
+     * The namespace named by the T_NAMESPACE token at $index, or '' for the
+     * global one.
      *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
      */
-    private static function namespaceOf(array $tokens): string
+    private static function namespaceAt(array $tokens, int $index): string
     {
         $count = \count($tokens);
-        for ($i = 0; $i < $count; $i++) {
-            $token = $tokens[$i];
-            if (!\is_array($token) || $token[0] !== T_NAMESPACE) {
-                continue;
-            }
-
-            for ($j = $i + 1; $j < $count; $j++) {
-                $candidate = $tokens[$j];
-                if (\is_array($candidate)) {
-                    if ($candidate[0] === T_WHITESPACE) {
-                        continue;
-                    }
-
-                    return trim($candidate[1], '\\');
+        for ($j = $index + 1; $j < $count; $j++) {
+            $candidate = $tokens[$j];
+            if (\is_array($candidate)) {
+                if ($candidate[0] === T_WHITESPACE) {
+                    continue;
                 }
 
-                break;
+                return trim($candidate[1], '\\');
             }
+
+            // `namespace {` — the global namespace, written as a block.
+            return '';
         }
 
         return '';
     }
 
-    private static function shortNameOf(string $fqcn): string
-    {
-        $short = strrchr($fqcn, '\\');
-
-        return $short === false ? $fqcn : substr($short, 1);
-    }
-
     /**
-     * Local names introduced by `use`, mapped to the FULLY QUALIFIED symbol.
+     * The local names introduced by the ONE `use` statement at $index, mapped
+     * to their fully qualified symbol.
      *
      * One statement can introduce several names —
      * `use A\B\{AsPrompt as CatalogPrompt, Other};` and
@@ -358,17 +363,12 @@ final class CatalogPromptDeclarations
      *
      * @return array<string, string> lower-cased local name => fully-qualified symbol
      */
-    private static function aliasMap(array $tokens): array
+    private static function importsAt(array $tokens, int $i): array
     {
         $aliases = [];
         $count = \count($tokens);
 
-        for ($i = 0; $i < $count; $i++) {
-            $token = $tokens[$i];
-            if (!\is_array($token) || $token[0] !== T_USE) {
-                continue;
-            }
-
+        {
             // One entry at a time: the last name seen is what an `as` renames,
             // and a comma or a brace ends the entry without ending the statement.
             // `use function ...` and `use const ...` import symbols in other
@@ -384,7 +384,7 @@ final class CatalogPromptDeclarations
                 break;
             }
             if (\is_array($next) && \in_array($next[0], [T_FUNCTION, T_CONST], true)) {
-                continue;
+                return [];
             }
 
             $lastName = null;
@@ -408,7 +408,6 @@ final class CatalogPromptDeclarations
                         if (!$expectAlias) {
                             $record($lastName === null ? null : self::join($prefix, $lastName), null);
                         }
-                        $i = $j;
                         break;
                     }
                     if ($literal === '{') {
@@ -481,6 +480,13 @@ final class CatalogPromptDeclarations
         }
 
         return null;
+    }
+
+    private static function shortNameOf(string $fqcn): string
+    {
+        $short = strrchr($fqcn, '\\');
+
+        return $short === false ? $fqcn : substr($short, 1);
     }
 
     /** @param array{0: int, 1: string, 2: int}|string $token */

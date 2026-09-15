@@ -505,6 +505,46 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function imports_are_scoped_to_their_namespace_block(): void
+    {
+        // Reported on the PR: PHP scopes imports to their namespace block, and a
+        // file may hold several. Merging them let a later `use Vendor\AsPrompt`
+        // decide how an earlier block's catalog class resolved — reporting a real
+        // prompt class in one order, suppressing a real finding in the other.
+        $file = static fn (array $first, array $second): array => [
+            'namespace A {',
+            ...$first,
+            '}',
+            'namespace B {',
+            ...$second,
+            '}',
+            '$answer = $this->llm->complete($body);',
+        ];
+
+        $catalog = [
+            '  use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            "  #[AsPrompt(id: 'x')]",
+            '  final class Good { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+        ];
+        $unrelated = [
+            '  use Vendor\\Ui\\AsPrompt;',
+            '  #[AsPrompt]',
+            '  final class Bad { private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT; }',
+        ];
+
+        // Exactly one finding either way round, and always the same class.
+        foreach ([$file($catalog, $unrelated), $file($unrelated, $catalog)] as $lines) {
+            $findings = self::detect($lines);
+            self::assertCount(1, $findings);
+            self::assertStringContainsString('SYSTEM_PROMPT', $findings[0]->evidence);
+        }
+    }
+
+    #[Test]
     public function a_function_import_is_not_a_class_alias(): void
     {
         // Reported on the PR: `use function ... as X;` imports a symbol in a

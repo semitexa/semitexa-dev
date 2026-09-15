@@ -234,7 +234,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the same reason — a listener can call an LLM with an inline heredoc,
         // and the execution shape decides, not the directory. Three lines of
         // comment, no new method.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 850],
+        // 850 -> 859: nine lines recording WHY lint:mechanisms is not on the
+        // catch-all kind. It was tried — a module console command calling an LLM
+        // is a real gap — and it wedged the suite, because KIND_PHP_OTHER is what
+        // the verify tooling's own fixtures classify as, so plans built in tests
+        // started executing a real shell-out lint. A reverted experiment that
+        // leaves no trace invites the next person to repeat it.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 859],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

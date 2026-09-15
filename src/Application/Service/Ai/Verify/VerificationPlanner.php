@@ -60,6 +60,15 @@ final class VerificationPlanner
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred.
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
+        // Not a catch-all row, and the reason is measured. lint:mechanisms scans
+        // ALL module PHP, so putting it on KIND_PHP_OTHER looks like the tidy
+        // way to cover every remaining kind — a module console command calling
+        // an LLM was the case raised. It wedges the suite: that kind is what the
+        // verify tooling's own fixtures classify as, so plans built in tests
+        // began executing a real shell-out lint and blocked at ~427/8500 with no
+        // CPU. Measured both ways before reverting. The three rows above cover
+        // where a prompt actually lives; a narrower kind for commands is the
+        // follow-up, not a row that stops the suite from finishing.
     ];
 
     private const ALL_LINTS = [
