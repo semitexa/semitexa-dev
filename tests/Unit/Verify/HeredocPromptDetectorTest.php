@@ -657,6 +657,62 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function declaration_lookaheads_step_over_comments(): void
+    {
+        // Reported on the PR: `namespace /* here */ App;` made the comment the
+        // namespace, and every declaration in the file then resolved against
+        // nonsense.
+        self::assertSame([], self::detect([
+            'namespace /* here */ App;',
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            "#[AsPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+
+        // The `use function` lookahead had the same gap, in the other direction:
+        // a comment hid the keyword and the function import counted as a class
+        // alias again.
+        self::assertCount(1, self::detectInLlmService([
+            'namespace App;',
+            'use /* c */ function Semitexa\\Prompt\\Attribute\\AsPrompt as CP;',
+            '#[CP]',
+            'final class S { private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT; }',
+        ]));
+    }
+
+    #[Test]
+    public function the_namespace_operator_points_at_the_current_namespace(): void
+    {
+        // Reported on the PR: `namespace\AsPrompt` is PHP's operator for "the
+        // current namespace", so treating the keyword as a segment built
+        // `Semitexa\Prompt\Attribute\namespace\AsPrompt` and a genuine
+        // declaration stopped resolving.
+        self::assertSame([], self::detect([
+            'namespace Semitexa\\Prompt\\Attribute;',
+            "#[namespace\\AsPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+
+        // And it points at the CURRENT namespace, so elsewhere it is a
+        // different symbol and exempts nothing.
+        self::assertCount(1, self::detectInLlmService([
+            'namespace App;',
+            '#[namespace\\AsPrompt]',
+            'final class S { private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT; }',
+        ]));
+    }
+
+    #[Test]
     public function a_function_import_is_not_a_class_alias(): void
     {
         // Reported on the PR: `use function ... as X;` imports a symbol in a

@@ -577,7 +577,12 @@ final class VerificationPlanner
             // the "gate that reads like a clean result" this row was added to
             // guard against. Broad scope still runs it, under its own blanket
             // reason, which never claimed per-file relevance.
-            if ($lint === 'lint:mechanisms' && !str_contains($file->path, 'src/modules/')) {
+            // Anchored, not a substring: the command scans the REPOSITORY-ROOT
+            // src/modules, so a package that happens to contain that segment —
+            // packages/acme/src/modules/... — is not somewhere the lint will
+            // look, and scheduling it there is the same empty pass this guard
+            // exists to prevent.
+            if ($lint === 'lint:mechanisms' && !str_starts_with($file->path, 'src/modules/')) {
                 continue;
             }
             if (!isset($lintsByCommand[$lint])) {

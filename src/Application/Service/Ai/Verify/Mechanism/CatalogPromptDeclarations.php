@@ -378,6 +378,18 @@ final class CatalogPromptDeclarations
             // otherwise the whole thing hangs off the current namespace.
             $segments = explode('\\', $name);
             $first = strtolower((string) array_shift($segments));
+
+            // PHP's own `namespace\Name` operator means "the current namespace",
+            // so the keyword is a pointer, not a segment — appending it built
+            // `Semitexa\Prompt\Attribute\namespace\AsPrompt` and stopped a
+            // genuine declaration from resolving.
+            if ($first === 'namespace') {
+                $rest = implode('\\', $segments);
+                $resolved = $namespace === '' ? $rest : $namespace . '\\' . $rest;
+
+                return strcasecmp($resolved, $fqcn) === 0;
+            }
+
             if (isset($imports[$first])) {
                 $resolved = $imports[$first] . '\\' . implode('\\', $segments);
             } else {
@@ -404,7 +416,10 @@ final class CatalogPromptDeclarations
         for ($j = $index + 1; $j < $count; $j++) {
             $candidate = $tokens[$j];
             if (\is_array($candidate)) {
-                if ($candidate[0] === T_WHITESPACE) {
+                // Comments too: `namespace /* here */ App;` otherwise made the
+                // comment text the namespace, and every declaration in the file
+                // then resolved against nonsense.
+                if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
 
@@ -450,7 +465,8 @@ final class CatalogPromptDeclarations
             // `#[CatalogPrompt]` suppress a real prompt heredoc.
             $next = null;
             for ($k = $i + 1; $k < $count; $k++) {
-                if (\is_array($tokens[$k]) && $tokens[$k][0] === T_WHITESPACE) {
+                if (\is_array($tokens[$k])
+                    && \in_array($tokens[$k][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
                 $next = $tokens[$k];

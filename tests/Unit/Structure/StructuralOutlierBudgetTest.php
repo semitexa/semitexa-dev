@@ -240,7 +240,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the verify tooling's own fixtures classify as, so plans built in tests
         // started executing a real shell-out lint. A reverted experiment that
         // leaves no trace invites the next person to repeat it.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 859],
+        // 859 -> 864: the application-root guard is anchored rather than a
+        // substring, since the lint scans the REPOSITORY-ROOT src/modules and a
+        // package path containing that segment is not somewhere it looks.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 864],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

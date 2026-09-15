@@ -207,6 +207,21 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
     }
 
     #[Test]
+    public function a_package_that_contains_the_modules_segment_is_still_a_package(): void
+    {
+        // The guard is anchored, not a substring: lint:mechanisms scans the
+        // REPOSITORY-ROOT src/modules, so a package path that happens to carry
+        // that segment is not somewhere it looks, and scheduling it there is the
+        // same empty pass the guard exists to prevent.
+        $classified = (new ChangedFileClassifier())
+            ->classify('packages/acme/src/modules/Foo/src/Application/Service/Thing.php');
+
+        $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
+
+        self::assertNotContains('lint:mechanisms', $this->lintCommandNames($plan));
+    }
+
+    #[Test]
     public function a_package_client_script_does_not_schedule_a_lint_that_cannot_see_it(): void
     {
         // The same rule from the other side. lint:mechanisms takes no path from
