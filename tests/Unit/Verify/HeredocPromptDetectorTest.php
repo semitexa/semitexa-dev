@@ -1169,6 +1169,55 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function a_token_is_an_accounting_unit_before_it_is_a_credential(): void
+    {
+        // Reported on the PR, and a regression from the credential fix: `token`
+        // was on the credential list, so `OpenAiTokenCounter` — the only
+        // model-facing name in the file — withdrew its own corroboration and
+        // took a real SYSTEM_PROMPT down with it.
+        self::assertCount(1, self::detect([
+            'final class OpenAiTokenCounter',
+            '{',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            '    You summarise a chat room.',
+            '    TXT;',
+            '}',
+        ]));
+
+        // The words that stayed are the ones that name only a stored secret.
+        self::assertSame([], self::detect([
+            '$openaiApiKey = $this->ask();',
+            'const CONFIRMATION_PROMPT = <<<TXT',
+            'Overwrite the stored key?',
+            'TXT;',
+        ]));
+    }
+
+    #[Test]
+    public function an_arrow_function_body_is_the_value_being_assigned(): void
+    {
+        // Raised on the PR as a closure-style boundary; it is not one. `fn () =>
+        // X` has exactly ONE expression, and that expression IS what the name
+        // receives — unlike a `{}` body, which can hold statements having
+        // nothing to do with it. So the target is inherited on purpose here.
+        self::assertCount(1, self::detectInLlmService([
+            '$promptFactory = fn () => <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+        ]));
+
+        // The boundary that IS real, kept next to it so the distinction is
+        // visible rather than remembered.
+        self::assertSame([], self::detectInLlmService([
+            '$promptFactory = function () {',
+            '    return <<<TXT',
+            'usage text',
+            'TXT;',
+            '};',
+        ]));
+    }
+
+    #[Test]
     public function it_reads_php_and_says_so(): void
     {
         // A detector declaring the wrong extension never runs and looks exactly

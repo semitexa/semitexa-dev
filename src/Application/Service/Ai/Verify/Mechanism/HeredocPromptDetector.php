@@ -70,8 +70,16 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * the rest of the rule uses. Kept short on purpose: every entry here is a
      * word that names the thing being STORED, never the thing being called, so
      * `client`, `driver` and `service` are deliberately absent.
+     *
+     * `token` was here for one revision and is deliberately NOT: in code that
+     * talks to a model it is an accounting unit far more often than a
+     * credential — `maxTokens`, `tokenCount`, `OpenAiTokenCounter` — and as the
+     * only model-facing name in a file it withdrew the corroboration and took a
+     * real SYSTEM_PROMPT down with it. An `$openAiToken` credential now
+     * corroborates where it should not, which is the quieter error and the same
+     * direction this rule fails everywhere else.
      */
-    private const CREDENTIAL_WORDS = ['key', 'secret', 'token', 'password', 'credential'];
+    private const CREDENTIAL_WORDS = ['key', 'secret', 'password', 'credential'];
 
     /** Token kinds that are identifiers, as opposed to text a program prints. */
     private const NAME_TOKENS = [T_STRING, T_VARIABLE, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE];
