@@ -101,6 +101,14 @@ final class CatalogPromptDeclarations
                 continue;
             }
 
+            // `Foo::class` emits T_CLASS too, and treating it as a declaration
+            // invented a class range that could exempt heredocs nowhere near a
+            // catalog prompt.
+            $previous = self::previousMeaningfulToken($tokens, $i);
+            if (\is_array($previous) && $previous[0] === T_DOUBLE_COLON) {
+                continue;
+            }
+
             $end = self::classBodyEnd($tokens, $i);
             if ($markedFrom !== null) {
                 $ranges[] = [$markedFrom, $end];
@@ -456,6 +464,24 @@ final class CatalogPromptDeclarations
         return $prefix === '' ? ltrim($name, '\\') : $prefix . '\\' . ltrim($name, '\\');
     }
 
+
+    /**
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @return array{0: int, 1: string, 2: int}|string|null
+     */
+    private static function previousMeaningfulToken(array $tokens, int $index): array|string|null
+    {
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $token = $tokens[$i];
+            if (\is_array($token) && \in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            return $token;
+        }
+
+        return null;
+    }
 
     /** @param array{0: int, 1: string, 2: int}|string $token */
     private static function text(array|string $token): string

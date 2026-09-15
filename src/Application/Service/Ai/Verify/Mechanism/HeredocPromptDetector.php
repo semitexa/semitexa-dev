@@ -368,6 +368,13 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
+            // The statement boundary. Dropped by accident when `{` was changed
+            // from a stop to an ascend, which let the walk run backwards across
+            // whole statements and borrow a target from any earlier line.
+            if ($text === ';' && $depth === 0) {
+                return null;
+            }
+
             if (!$sibling && $depth === 0 && \in_array($text, self::ASSIGNMENTS, true)) {
                 return $i;
             }
