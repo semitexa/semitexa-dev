@@ -63,6 +63,16 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private const MODEL_FACING = ['llm', 'promptrenderer', 'promptrepository', 'asaiskill', 'aipersona', 'ollama', 'openai', 'anthropic', 'gemini'];
 
+    /**
+     * Words that turn a provider's name into configuration rather than a call.
+     *
+     * Matched as segments, plurals included, by the same {@see self::hasSegment()}
+     * the rest of the rule uses. Kept short on purpose: every entry here is a
+     * word that names the thing being STORED, never the thing being called, so
+     * `client`, `driver` and `service` are deliberately absent.
+     */
+    private const CREDENTIAL_WORDS = ['key', 'secret', 'token', 'password', 'credential'];
+
     /** Token kinds that are identifiers, as opposed to text a program prints. */
     private const NAME_TOKENS = [T_STRING, T_VARIABLE, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE];
 
@@ -170,7 +180,13 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
-            if (self::namesAModel($token[1])) {
+            // A provider's name in a CREDENTIAL is not model interaction.
+            // `$openaiApiKey` in a command that only stores settings carried the
+            // marker, corroborated the whole file, and the neighbouring
+            // `CONFIRMATION_PROMPT` was reported as a catalog prompt. Naming a
+            // provider is where configuration and integration read alike, so the
+            // credential word is what separates them.
+            if (self::namesAModel($token[1]) && !self::namesCredentials($token[1])) {
                 return true;
             }
         }
@@ -179,15 +195,25 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
     }
 
     /**
-     * Does one identifier name a model?
+     * Does one identifier name a credential or a setting rather than a call?
      *
-     * Short markers are matched as identifier SEGMENTS, not substrings: `llm`
-     * happens to sit inside `fullMessage`, and a user-facing confirmation prompt
-     * in a file with an innocuous variable name was reported as a catalog prompt
-     * because of it. Longer markers are distinctive enough to match anywhere in
-     * the name — `LlmClient`, `OpenAiDriver` — where segment-splitting would only
-     * make the list harder to read for no gain.
+     * Only ever asked of a name that already matched {@see self::MODEL_FACING},
+     * so it narrows corroboration and never widens it. Per-identifier, not
+     * per-file: a service holding `$openAiApiKey` beside `$openAiClient` still
+     * faces a model — the client says so, and the key saying nothing costs
+     * nothing.
      */
+    private static function namesCredentials(string $identifier): bool
+    {
+        foreach (self::CREDENTIAL_WORDS as $word) {
+            if (self::hasSegment($identifier, $word)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Does $identifier carry $word as a whole camelCase/snake_case segment?
      *
@@ -218,6 +244,16 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         return array_values(array_filter(array_map(strtolower(...), $segments)));
     }
 
+    /**
+     * Does one identifier name a model?
+     *
+     * Short markers are matched as identifier SEGMENTS, not substrings: `llm`
+     * happens to sit inside `fullMessage`, and a user-facing confirmation prompt
+     * in a file with an innocuous variable name was reported as a catalog prompt
+     * because of it. Longer markers are distinctive enough to match anywhere in
+     * the name — `LlmClient`, `OpenAiDriver` — where segment-splitting would only
+     * make the list harder to read for no gain.
+     */
     private static function namesAModel(string $identifier): bool
     {
         $lower = strtolower($identifier);
@@ -286,6 +322,13 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * outer one; stopping at the first assignment found read the wrong half and
      * missed the prompt whenever the label was generic.
      *
+     * The preference uses {@see self::hasSegment()}, the SAME predicate that
+     * judges the returned name in `detect()`. It used to be a substring test,
+     * and the two disagreeing is a silent miss rather than a false positive:
+     * in `$systemPrompt = ['unprompted' => <<<TXT`, `unprompted` won the
+     * substring test, was returned as the target, and was then rejected by the
+     * segment test — too late for anyone to look at the valid outer candidate.
+     *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
      */
     private static function targetBefore(array $tokens, int $index): string
@@ -293,7 +336,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         $candidates = self::assignmentTargets($tokens, $index);
 
         foreach ($candidates as $candidate) {
-            if (stripos($candidate, 'prompt') !== false) {
+            if (self::hasSegment($candidate, 'prompt')) {
                 return $candidate;
             }
         }

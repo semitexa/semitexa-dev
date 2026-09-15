@@ -459,29 +459,25 @@ final class CatalogPromptDeclarations
         {
             // One entry at a time: the last name seen is what an `as` renames,
             // and a comma or a brace ends the entry without ending the statement.
-            // `use function ...` and `use const ...` import symbols in other
-            // namespaces entirely: neither affects how a class or attribute name
-            // resolves. Recording them as class aliases let an unrelated
-            // `#[CatalogPrompt]` suppress a real prompt heredoc.
-            $next = null;
-            for ($k = $i + 1; $k < $count; $k++) {
-                if (\is_array($tokens[$k])
-                    && \in_array($tokens[$k][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-                    continue;
-                }
-                $next = $tokens[$k];
-                break;
-            }
-            if (\is_array($next) && \in_array($next[0], [T_FUNCTION, T_CONST], true)) {
-                return [];
-            }
-
             $lastName = null;
             $expectAlias = false;
             $prefix = '';
 
-            $record = static function (?string $symbol, ?string $local) use (&$aliases): void {
-                if ($symbol === null) {
+            // `use function ...` and `use const ...` import symbols in other
+            // namespaces entirely: neither affects how a class or attribute name
+            // resolves. Recording them as class aliases let an unrelated
+            // `#[CatalogPrompt]` suppress a real prompt heredoc.
+            //
+            // The kind is per ENTRY, not per statement. `use function A\B;` puts
+            // it right after `use`, but a legal mixed group —
+            // `use A\B\{function c, D};` — puts it inside the braces, where a
+            // guard that only looked at the first token never saw it and
+            // recorded the function's alias as a class. One flag, reset at every
+            // entry boundary, answers both shapes.
+            $skipEntry = false;
+
+            $record = static function (?string $symbol, ?string $local) use (&$aliases, &$skipEntry): void {
+                if ($symbol === null || $skipEntry) {
                     return;
                 }
                 // Keyed lower-case: PHP matches these names case-insensitively.
@@ -504,6 +500,7 @@ final class CatalogPromptDeclarations
                         $prefix = $lastName ?? '';
                         $lastName = null;
                         $expectAlias = false;
+                        $skipEntry = false;
                         continue;
                     }
                     if ($literal === ',' || $literal === '}') {
@@ -515,11 +512,17 @@ final class CatalogPromptDeclarations
                         }
                         $lastName = null;
                         $expectAlias = false;
+                        $skipEntry = false;
                     }
                     continue;
                 }
 
                 if (\in_array($candidate[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_NS_SEPARATOR], true)) {
+                    continue;
+                }
+
+                if (\in_array($candidate[0], [T_FUNCTION, T_CONST], true)) {
+                    $skipEntry = true;
                     continue;
                 }
 

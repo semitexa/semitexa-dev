@@ -1005,6 +1005,81 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function an_inner_lookalike_does_not_cost_the_outer_candidate(): void
+    {
+        // Reported on the PR: candidate SELECTION used a substring test while
+        // detection judged the winner by segment, so `unprompted` beat the outer
+        // `systemPrompt`, was returned, and was then rejected — too late for the
+        // valid candidate to be looked at. A silent miss, not a false positive,
+        // which is why no existing case caught it.
+        self::assertCount(1, self::detectInLlmService([
+            "\$systemPrompt = ['unprompted' => <<<TXT",
+            'You summarise a chat room.',
+            'TXT];',
+        ]));
+
+        // The silence it must not cost: neither name carries the segment.
+        self::assertSame([], self::detectInLlmService([
+            "\$unpromptedMessage = ['unprompted' => <<<TXT",
+            'plain text',
+            'TXT];',
+        ]));
+    }
+
+    #[Test]
+    public function a_credential_name_does_not_prove_the_file_talks_to_a_model(): void
+    {
+        // Reported on the PR: `$openaiApiKey` in a command that only STORES
+        // settings carried the provider marker, corroborated the whole file, and
+        // the CLI question next to it was reported as a catalog prompt.
+        self::assertSame([], self::detect([
+            '$openaiApiKey = $this->ask();',
+            'const CONFIRMATION_PROMPT = <<<TXT',
+            'Overwrite the stored key?',
+            'TXT;',
+        ]));
+
+        // And the finding it must not cost: the same file with a real call in
+        // it still faces a model, credential beside it or not.
+        self::assertCount(1, self::detect([
+            '$openaiApiKey = $this->ask();',
+            '$answer = $this->openAiClient->complete($body);',
+            'const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+        ]));
+    }
+
+    #[Test]
+    public function a_function_entry_inside_a_grouped_import_is_not_a_class_alias(): void
+    {
+        // Reported on the PR: the kind is per ENTRY. `use function A\B;` puts it
+        // right after `use`, but a legal mixed group puts it inside the braces,
+        // where the guard never saw it and recorded the function's alias as the
+        // catalog attribute — exempting a class that hand-rolls a real prompt.
+        self::assertCount(1, self::detect([
+            'namespace App\\Social;',
+            'use Semitexa\\Prompt\\Attribute\\{function asPrompt as AsPrompt, Other};',
+            "#[AsPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+
+        // The exemption a real grouped CLASS import still earns.
+        self::assertSame([], self::detect([
+            'namespace App\\Social;',
+            'use Semitexa\\Prompt\\Attribute\\{AsPrompt as CatalogPrompt, Other};',
+            "#[CatalogPrompt(id: 'x')]",
+            'final class P { private const B = <<<PROMPT',
+            'body',
+            'PROMPT; }',
+            '$answer = $this->llm->complete($body);',
+        ], self::PROMPT_CLASS));
+    }
+
+    #[Test]
     public function it_reads_php_and_says_so(): void
     {
         // A detector declaring the wrong extension never runs and looks exactly
