@@ -91,6 +91,13 @@ final class CatalogPromptDeclarations
             // An attribute sits BEFORE its class, so remember where it started;
             // the range opens there and the class body closes it.
             if ($token[0] === T_ATTRIBUTE) {
+                // The attribute must be the one attached to a CLASS. #[AsPrompt]
+                // on an enum case, a constant, a property or a parameter is not
+                // a catalog declaration, and a marker left standing from one of
+                // those exempted whatever class happened to come next.
+                if (!self::marksAClass($tokens, $i)) {
+                    continue;
+                }
                 foreach (self::attributeNames($tokens, $i) as $name) {
                     if (self::resolves($name, self::ATTRIBUTE_FQCN, $aliases, $namespace)) {
                         $markedFrom ??= $i;
@@ -208,6 +215,57 @@ final class CatalogPromptDeclarations
         foreach ($ranges as [$from, $to]) {
             if ($index >= $from && $index <= $to) {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Does the attribute group at $index attach to a class declaration?
+     *
+     * Looks past the group's closing bracket, then past any further attribute
+     * groups and declaration modifiers, and requires `class` to be what follows.
+     *
+     * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     */
+    private static function marksAClass(array $tokens, int $index): bool
+    {
+        $count = \count($tokens);
+        $depth = 0;
+
+        for ($i = $index; $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (\is_array($token)) {
+                if (\in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                if ($depth > 0) {
+                    continue;
+                }
+                if ($token[0] === T_ATTRIBUTE) {
+                    $depth++;
+                    continue;
+                }
+                if (\in_array($token[0], [T_FINAL, T_ABSTRACT, T_READONLY], true)) {
+                    continue;
+                }
+
+                return $token[0] === T_CLASS;
+            }
+
+            $text = self::text($token);
+            if ($text === '[' || $text === '(') {
+                $depth++;
+                continue;
+            }
+            if ($text === ']' || $text === ')') {
+                $depth--;
+                continue;
+            }
+            if ($depth === 0) {
+                return false;
             }
         }
 

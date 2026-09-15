@@ -599,6 +599,64 @@ final class HeredocPromptDetectorTest extends TestCase
     }
 
     #[Test]
+    public function the_word_prompt_must_be_a_whole_segment(): void
+    {
+        // Reported on the PR: `$unpromptedMessage` and `UNPROMPTED_TEXT` contain
+        // the letters and mean the opposite, and a substring test reported them.
+        self::assertSame([], self::detectInLlmService(['$unpromptedMessage = <<<TXT', 'body', 'TXT;']));
+        self::assertSame([], self::detectInLlmService(['$x = <<<UNPROMPTED_TEXT', 'body', 'UNPROMPTED_TEXT;']));
+        self::assertSame([], self::detectInLlmService(['$promptedAt = <<<TXT', 'body', 'TXT;']));
+
+        // The plural is an ordinary way to name the same thing, and is listed
+        // rather than stemmed — a "starts with prompt" rule would let
+        // `prompted` back in, which is the case above.
+        self::assertCount(1, self::detectInLlmService(['$systemPrompts[] = <<<TXT', 'body', 'TXT;']));
+
+        self::assertCount(1, self::detectInLlmService([
+            'private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+        ]));
+    }
+
+    #[Test]
+    public function the_text_a_prompt_displays_is_not_evidence_about_the_file(): void
+    {
+        // Reported on the PR: a user-facing `API_KEY_PROMPT` reading "Enter your
+        // OpenAI API key" corroborated ITSELF — the heredoc's own body is a
+        // token, so the text it displays became the proof that the file talks to
+        // a model. Only identifiers count now.
+        self::assertSame([], self::detect([
+            'final class ConfigureCommand {',
+            '    private const API_KEY_PROMPT = <<<TXT',
+            'Enter your OpenAI API key',
+            'TXT;',
+            '}',
+        ]));
+    }
+
+    #[Test]
+    public function an_attribute_on_something_other_than_a_class_marks_nothing(): void
+    {
+        // Reported on the PR: the marker was cleared only at T_CLASS, so
+        // #[AsPrompt] on a constant, property, enum case or parameter left a
+        // marker standing that exempted whatever class came next.
+        self::assertCount(1, self::detect([
+            'namespace App;',
+            'use Semitexa\\Prompt\\Attribute\\AsPrompt;',
+            'final class Holder {',
+            '    #[AsPrompt] public const X = 1;',
+            '}',
+            'final class GroupHarvester {',
+            '    private const SYSTEM_PROMPT = <<<TXT',
+            'You summarise a chat room.',
+            'TXT;',
+            '}',
+            '$answer = $this->llm->complete($body);',
+        ]));
+    }
+
+    #[Test]
     public function a_function_import_is_not_a_class_alias(): void
     {
         // Reported on the PR: `use function ... as X;` imports a symbol in a

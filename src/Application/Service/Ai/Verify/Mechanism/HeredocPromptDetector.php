@@ -63,6 +63,9 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      */
     private const MODEL_FACING = ['llm', 'promptrenderer', 'promptrepository', 'asaiskill', 'aipersona', 'ollama', 'openai', 'anthropic', 'gemini'];
 
+    /** Token kinds that are identifiers, as opposed to text a program prints. */
+    private const NAME_TOKENS = [T_STRING, T_VARIABLE, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE];
+
     /** Assignment operators that still carry the target's intent — `.=` appends a prompt. */
     private const ASSIGNMENTS = ['=', '.=', '??=', '=>', ':'];
 
@@ -111,8 +114,10 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
             $label = self::labelOf($token[1]);
             $target = self::targetBefore($tokens, $i);
 
-            $labelSaysPrompt = stripos($label, 'prompt') !== false;
-            $targetSaysPrompt = $target !== '' && stripos($target, 'prompt') !== false;
+            // A SEGMENT, not a substring: `$unpromptedMessage` and
+            // `UNPROMPTED_TEXT` contain the letters and mean the opposite.
+            $labelSaysPrompt = self::hasSegment($label, 'prompt');
+            $targetSaysPrompt = $target !== '' && self::hasSegment($target, 'prompt');
 
             // Either name may carry the intent: someone writing
             // `const SYSTEM = <<<PROMPT` said it in the label rather than the
@@ -157,7 +162,11 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
                 continue;
             }
 
-            if (\in_array($token[0], [T_COMMENT, T_DOC_COMMENT, T_INLINE_HTML], true)) {
+            // NAMES only. A heredoc's own body is a token too, so a
+            // user-facing `API_KEY_PROMPT` reading "Enter your OpenAI API key"
+            // was corroborating itself: the text it displays became the evidence
+            // that the file talks to a model.
+            if (!\in_array($token[0], self::NAME_TOKENS, true)) {
                 continue;
             }
 
@@ -179,6 +188,36 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
      * the name — `LlmClient`, `OpenAiDriver` — where segment-splitting would only
      * make the list harder to read for no gain.
      */
+    /**
+     * Does $identifier carry $word as a whole camelCase/snake_case segment?
+     *
+     * The plural counts — `$systemPrompts`, `SYSTEM_PROMPTS` and `$prompts[]`
+     * are ordinary ways to name the same thing. Listed rather than stemmed: a
+     * "starts with prompt" rule would quietly admit `prompted` and `prompting`,
+     * which is how `unpromptedMessage` got reported in the first place, one
+     * loosening later.
+     */
+    private static function hasSegment(string $identifier, string $word): bool
+    {
+        $segments = self::segmentsOf($identifier);
+
+        return \in_array($word, $segments, true) || \in_array($word . 's', $segments, true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function segmentsOf(string $identifier): array
+    {
+        /** @var list<string> $segments */
+        $segments = preg_split(
+            '/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|[^A-Za-z0-9]+/',
+            $identifier,
+        ) ?: [];
+
+        return array_values(array_filter(array_map(strtolower(...), $segments)));
+    }
+
     private static function namesAModel(string $identifier): bool
     {
         $lower = strtolower($identifier);
@@ -187,11 +226,7 @@ final class HeredocPromptDetector implements MechanismDetectorInterface
         // yields `llm` + `client` rather than one `llmclient` segment that the
         // short marker could never match — which discarded the file before its
         // prompt was ever inspected.
-        $segments = preg_split(
-            '/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|[^A-Za-z0-9]+/',
-            $identifier,
-        ) ?: [];
-        $segments = array_map(strtolower(...), $segments);
+        $segments = self::segmentsOf($identifier);
 
         foreach (self::MODEL_FACING as $marker) {
             if (\strlen($marker) <= 4) {
