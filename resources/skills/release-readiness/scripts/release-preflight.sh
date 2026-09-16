@@ -44,6 +44,17 @@ run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
 # 'src/modules/*/tests/E2E/**') runs directly in the automated-checks stage. The
 # old root tests/ dir is gone and was never in testMatch, so this stage synced
 # files that never ran.
+# Constraint FORMS plus the question that matters: does the release a package
+# floored actually contain what that package uses. Two kinds of "uses" are
+# checked — a PHP class, named by an import or written out in full, and a Twig
+# function the dependency registers, which a template reaches with no import
+# and no class name anywhere.
+#
+# STILL INVISIBLE, and named here rather than discovered during a release: a
+# Twig VARIABLE a provider binds into the render context, and a template
+# NAMESPACE a consumer extends. Neither has a registration site to compare a
+# tagged release against, so neither is checkable the way a class or a function
+# is. A floor for one of those is still found by a person.
 run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-constraints.php"
 # The shipped capability index is generated in the monorepo and travels inside
 # semitexa/dev. Without this stage a package that gained a capability could be

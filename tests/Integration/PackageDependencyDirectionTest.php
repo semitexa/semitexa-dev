@@ -28,39 +28,49 @@ use PHPUnit\Framework\TestCase;
  * require graph means some package is depended upon AND depends outward, which
  * none of the three shapes allows.
  *
- * A RATCHET, not a clean sweep. Four cycles exist today and the list is
- * allowed to shrink, never grow.
+ * A RATCHET. Three components existed when this check was written; all
+ * three are gone, and the recorded list is allowed to shrink, never grow.
  */
 final class PackageDependencyDirectionTest extends TestCase
 {
     /**
-     * Mutual requires that exist today. EVERY ONE IS UNBACKED BY CODE —
-     * measured 2026-09-14, zero references of any type (php, twig, yaml, json,
-     * js) in either direction:
+     * EMPTY, and the ratchet holds it there.
      *
-     *   core    -> docs       0 references
-     *   core    -> tenancy    0 references (the one mention is a docblock in
-     *                         TenancyBootstrapperInterface, whose whole purpose
-     *                         is to AVOID this dependency)
-     *   cms    <-> os         0 references either way
-     *   ssr    <-> theme      0 references either way
+     * Three components existed until 2026-09-16, and the entry that used to
+     * live here recorded all six of their requires as "unbacked by code,
+     * measured, zero references in either direction". RE-MEASURING BEFORE
+     * DELETING FOUND TWO OF THE SIX LOAD-BEARING:
      *
-     * Recorded as strongly connected COMPONENTS, sorted and joined, so core's
-     * two entanglements read as the one component they really are — and so a
-     * component that grows by a member is a change the ratchet notices.
+     *   theme -> ssr   FOUR files import Ssr classes — AsTwigExtension,
+     *                  TwigExtensionRegistry, ModuleAssetRegistry and
+     *                  ModuleTemplateRegistry. A theme package that cannot
+     *                  reach the renderer is not a theme package.
+     *   cms   -> os    FIVE payloads import OsContentSurfaceInterface.
      *
-     * So none of them is a legitimate exception; they are six composer
-     * requirements nothing backs. Removing them is tracked as
-     * tk-unbacked-package-requires and is a deliberate change, because dropping
-     * a require changes what a consumer gets transitively.
+     * Both were kept. Dropping either would have left a consumer installing
+     * that package alone with a fatal on a missing class — the kind of
+     * breakage that shows up only in an install nobody runs in development.
+     *
+     * The other four WERE unbacked and are gone:
+     *
+     *   core -> docs      the require plus two README mentions
+     *   core -> tenancy   no import anywhere; two string paths in
+     *                     LintResponsesCommand and one
+     *                     isActive('semitexa-tenancy'), all written to work
+     *                     when the package is ABSENT — which is the shape
+     *                     rule 3 asks for
+     *   os   -> cms       the require and nothing else
+     *   ssr  -> theme     the require and five docblock mentions
+     *
+     * Removing those four resolved every component, and the two that remain
+     * point the way the policy wants: theme depends on the renderer, cms
+     * depends on the surface it fills, and neither is depended upon back.
+     *
+     * A component recorded here is a debt. The list may shrink, never grow.
      *
      * @var list<string>
      */
-    private const KNOWN_CYCLES = [
-        'semitexa/cms, semitexa/os',
-        'semitexa/core, semitexa/docs, semitexa/tenancy',
-        'semitexa/ssr, semitexa/theme',
-    ];
+    private const KNOWN_CYCLES = [];
 
     /** @return array<string, list<string>> package => required semitexa packages */
     private function graph(): array
@@ -220,9 +230,10 @@ final class PackageDependencyDirectionTest extends TestCase
         $graph = $this->graph();
 
         $inwardOnly = [
-            // Foundation. The two it does require are unbacked by code and are
-            // the KNOWN_CYCLES entries above — see tk-unbacked-package-requires.
-            'semitexa/core' => ['semitexa/docs', 'semitexa/tenancy'],
+            // Foundation, and now literally so: core requires NO semitexa
+            // package at all. The two it used to carry were unbacked and were
+            // removed on 2026-09-16.
+            'semitexa/core' => [],
             // Lifecycle: it owns #[AsDataPatch] and os, tasks and
             // platform-settings require IT. Foundation and persistence only.
             'semitexa/update' => ['semitexa/core', 'semitexa/orm'],

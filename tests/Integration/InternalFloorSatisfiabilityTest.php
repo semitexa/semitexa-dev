@@ -135,6 +135,126 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         return ['exit' => proc_close($process), 'output' => $output];
     }
 
+
+    /**
+     * A provider that registers Twig functions, one set at a tag and another
+     * in the working tree — the shape of a package that ADDED a function
+     * after its last release.
+     *
+     * @param list<string> $atTag       functions the tagged release registers
+     * @param list<string> $addedSince  functions only today's tree registers
+     */
+    private function twigProvider(string $tag, array $atTag, array $addedSince): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+
+        $write = static function (array $functions) use ($dir): void {
+            $body = "<?php\n\nnamespace Semitexa\\Core\\Application;\n\nfinal class Extension\n{\n    public function register(): void\n    {\n";
+            foreach ($functions as $function) {
+                $body .= "        TwigExtensionRegistry::registerFunction('{$function}', [\$this, 'x']);\n";
+            }
+            $body .= "    }\n}\n";
+            file_put_contents($dir . '/src/Application/Extension.php', $body);
+        };
+
+        $write($atTag);
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag " . escapeshellarg($tag) . " 2>&1");
+
+        if ($addedSince !== []) {
+            $write(array_merge($atTag, $addedSince));
+            exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+            exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m added 2>&1");
+        }
+    }
+
+    /** A consumer whose TEMPLATE calls a Twig function — no PHP import anywhere. */
+    private function templateConsumer(string $floor, string $twig, string $root = 'src'): void
+    {
+        $dir = $this->root . '/packages/semitexa-ssr';
+        mkdir($dir . '/' . $root . '/templates', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['php' => '^8.4', 'semitexa/core' => $floor],
+            'autoload' => ['psr-4' => ['Semitexa\\Ssr\\' => 'src/']],
+        ]));
+        file_put_contents($dir . '/' . $root . '/templates/page.html.twig', $twig);
+    }
+
+    /**
+     * THE CASE THIS CHECK WAS ADDED FOR. A Twig function is a contract the
+     * provider owns, reached from a template with no import and no class name,
+     * so the PHP scan walks straight past it. The first time it mattered the
+     * missing floor was found by a person; the second time — theme and demo
+     * calling ssr's csp_nonce_attr() — it would have been found the same way.
+     */
+    #[Test]
+    public function a_floor_without_the_called_twig_function_fails_the_release(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '<script{{ csp_nonce_attr() }}>go()</script>');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('csp_nonce_attr()', $result['output']);
+        self::assertStringContainsString('2026.09.13.0749', $result['output'], 'name the floor that is wrong');
+    }
+
+    /** And passes once the floor names a release that registers it. */
+    #[Test]
+    public function a_floor_that_contains_the_twig_function_passes(): void
+    {
+        $this->twigProvider('2026.09.13.1330', ['asset', 'csp_nonce_attr'], []);
+        $this->templateConsumer('>=2026.09.13.1330 || dev-master', '<script{{ csp_nonce_attr() }}>go()</script>');
+
+        self::assertSame(0, $this->gate()['exit']);
+    }
+
+    /**
+     * `resources/` counts as well as `src/`. The case that raised this lives
+     * there: a package that ships assets rather than modules keeps its
+     * templates outside src, and a scan that only walked src saw nothing.
+     */
+    #[Test]
+    public function a_template_under_resources_is_scanned_too(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ csp_nonce_attr() }}', 'resources');
+
+        self::assertSame(1, $this->gate()['exit']);
+    }
+
+    /**
+     * A name the dependency does not register is not its business.
+     *
+     * Ownership is decided by the provider, never guessed from the name — a
+     * Twig builtin or the consumer's own helper must cost nothing, or the gate
+     * becomes a wall of findings about functions nobody shipped.
+     */
+    #[Test]
+    public function a_function_the_dependency_does_not_register_is_ignored(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], []);
+        $this->templateConsumer(
+            '>=2026.09.13.0749 || dev-master',
+            '{{ include("x.twig") }}{{ my_own_helper() }}{{ date() }}',
+        );
+
+        self::assertSame(0, $this->gate()['exit']);
+    }
+
     /** The case review caught, reproduced: the class is not in the floored release. */
     #[Test]
     public function a_floor_without_the_imported_class_fails_the_release(): void

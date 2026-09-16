@@ -27,6 +27,19 @@ final readonly class ChangedFile
     public const KIND_RESOURCE     = 'resource';
     public const KIND_SERVICE      = 'service';
     public const KIND_CONTRACT     = 'contract';
+
+    /**
+     * A console command in a module or a package.
+     *
+     * Narrow on purpose. lint:mechanisms belongs on any code that can inline a
+     * prompt into an LLM call, and a module console command does exactly that
+     * — but putting the lint on KIND_PHP_OTHER to reach it was MEASURED and
+     * rejected: that kind is what the verify tooling's own fixtures classify
+     * as, so plans built inside tests began executing a real shell-out lint
+     * and the suite wedged at ~427 of 8500 with no CPU. A kind that names the
+     * directory reaches the same code and cannot reach the fixtures.
+     */
+    public const KIND_COMMAND      = 'command';
     public const KIND_TEMPLATE     = 'template';
     /**
      * Browser-side script shipped by a module or package.

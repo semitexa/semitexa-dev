@@ -399,7 +399,180 @@ function verifyAgainstTree(
         };
     }
 
+    foreach (templateContractProblems($name, $packageDir, $dependency, $target, $version, $kind) as $problem) {
+        $problems[] = $problem;
+    }
+
     return $problems;
+}
+
+/**
+ * The same question, asked of the TEMPLATE contract.
+ *
+ * A provider owns more than classes. A Twig function is reached from a
+ * template, with no import and no class name, so the PHP scan above walks past
+ * it — and the first time that mattered the missing floor was found by hand,
+ * not by this gate. The rule is identical: if a consumer calls a function the
+ * dependency registers TODAY, the release it floored has to register it too.
+ *
+ * Ownership is decided by the provider, not guessed from the name: a call this
+ * finds is only ever compared against the functions THIS dependency registers.
+ * A Twig builtin, or the consumer's own helper, matches nothing and costs
+ * nothing.
+ *
+ * @param array{dir: string, psr4: array<string, list<string>>} $target
+ * @return list<string>
+ */
+function templateContractProblems(
+    string $name,
+    string $packageDir,
+    string $dependency,
+    array $target,
+    string $version,
+    string $kind,
+): array {
+    $calls = twigFunctionCalls($packageDir);
+    if ($calls === []) {
+        return [];
+    }
+
+    $ownedNow = registeredTwigFunctions($target['dir'], null);
+    if ($ownedNow === []) {
+        return [];
+    }
+
+    $ownedThen = registeredTwigFunctions($target['dir'], $kind === 'planned' ? null : $version);
+
+    $problems = [];
+    foreach (array_keys($calls) as $function) {
+        if (!isset($ownedNow[$function]) || isset($ownedThen[$function])) {
+            continue;
+        }
+
+        $problems[] = match ($kind) {
+            'wildcard' => sprintf(
+                '%s calls the Twig function %s() from a template but requires %s at "*", and no '
+                . 'released %s registers it (newest is %s) — floor it at the release that ships the function',
+                $name,
+                $function,
+                $dependency,
+                $dependency,
+                $version,
+            ),
+            'planned' => sprintf(
+                '%s calls the Twig function %s() and floors %s at %s, the release being cut, but the '
+                . 'tree that is about to become it does not register it',
+                $name,
+                $function,
+                $dependency,
+                $version,
+            ),
+            default => sprintf(
+                '%s calls the Twig function %s() but %s %s at %s, which does not register it',
+                $name,
+                $function,
+                $kind === 'pin' ? 'pins' : 'floors',
+                $dependency,
+                $version,
+            ),
+        };
+    }
+
+    return $problems;
+}
+
+/**
+ * Twig functions a package REGISTERS at a revision.
+ *
+ * WHY THIS EXISTS. The gate's whole question is "does the release you floored
+ * declare what you use", and until now "what you use" meant a PHP class. A
+ * provider owns more than classes: a Twig function is a contract a consumer
+ * reaches for from a TEMPLATE, with no import and no class name anywhere. The
+ * first case cost a floor found by hand — semitexa-os reaching the prompt
+ * package's guidance — and the second arrived the same week, with theme and
+ * demo calling ssr's csp_nonce_attr(). Neither is visible to a PHP scan.
+ *
+ * A function is checkable because it has a REGISTRATION SITE: the provider
+ * names it in a call the scan can find at any revision, exactly as a class
+ * names itself in its declaration.
+ *
+ * WHAT IS STILL INVISIBLE, stated so nobody reads this as covering templates:
+ * a Twig VARIABLE the provider binds into the render context has no
+ * registration site at all — `guidance` is a string in one package and a
+ * string in another, and nothing declares it. So is a template NAMESPACE a
+ * consumer extends. Those remain a known limit of this gate rather than
+ * something it silently half-checks.
+ *
+ * @param string|null $tag null reads the working tree — the release being cut
+ * @return array<string, true> function name => true
+ */
+function registeredTwigFunctions(string $dir, ?string $tag): array
+{
+    $command = sprintf(
+        'git -C %s grep -hoE %s %s2>/dev/null',
+        escapeshellarg($dir),
+        escapeshellarg("registerFunction\\(\\s*'[A-Za-z_][A-Za-z0-9_]*'"),
+        $tag === null ? '' : escapeshellarg($tag) . ' ',
+    );
+
+    exec($command, $lines, $code);
+    if ($code !== 0) {
+        return [];
+    }
+
+    $functions = [];
+    foreach ($lines as $line) {
+        if (preg_match("/'([A-Za-z_][A-Za-z0-9_]*)'/", $line, $m) === 1) {
+            $functions[$m[1]] = true;
+        }
+    }
+
+    return $functions;
+}
+
+/**
+ * Twig function names a package's own templates CALL.
+ *
+ * Scans `.twig` under both roots a package can keep templates in: `src` for a
+ * module-shaped package and `resources` for one that ships assets — the second
+ * is where the case that raised this lives.
+ *
+ * Deliberately generous about what looks like a call, and deliberately NOT
+ * authoritative about whose call it is: the caller decides that by asking
+ * which names the DEPENDENCY registers. A name this returns that nobody
+ * registers is simply never matched, so a Twig builtin or the consumer's own
+ * helper costs nothing here.
+ *
+ * @return array<string, true> function name => true
+ */
+function twigFunctionCalls(string $packageDir): array
+{
+    $calls = [];
+
+    foreach (['src', 'resources'] as $root) {
+        $dir = $packageDir . '/' . $root;
+        if (!is_dir($dir)) {
+            continue;
+        }
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
+        foreach ($files as $file) {
+            if (!$file instanceof SplFileInfo || $file->getExtension() !== 'twig') {
+                continue;
+            }
+
+            $contents = (string) file_get_contents($file->getPathname());
+            if (preg_match_all('/([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $contents, $matches) === false) {
+                continue;
+            }
+
+            foreach ($matches[1] as $name) {
+                $calls[$name] = true;
+            }
+        }
+    }
+
+    return $calls;
 }
 
 /**
@@ -493,56 +666,6 @@ function workingTree(string $dir): ?array
     exec($command, $lines, $code);
 
     return $code === 0 && $lines !== [] ? $lines : null;
-}
-
-/**
- * The working-tree twin of {@see classDeclaredAtTag}, for the release being cut.
- *
- * @param array<string, list<string>> $psr4
- */
-function classDeclaredInTree(string $dir, string $fqcn, array $psr4): bool
-{
-    $short = $fqcn;
-    $namespace = '';
-    $lastSeparator = strrpos($short, '\\');
-    if ($lastSeparator !== false) {
-        $namespace = substr($fqcn, 0, $lastSeparator);
-        $short = substr($short, $lastSeparator + 1);
-    }
-    if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
-        return false;
-    }
-
-    $paths = [];
-    foreach ($psr4 as $dirs) {
-        foreach ($dirs as $sourceDir) {
-            $paths[] = escapeshellarg($sourceDir);
-        }
-    }
-
-    $command = sprintf(
-        'git -C %s grep -lE %s --%s 2>/dev/null',
-        escapeshellarg($dir),
-        escapeshellarg('^[a-z ]*(class|interface|trait|enum) ' . $short . '\b'),
-        $paths === [] ? '' : ' ' . implode(' ', $paths),
-    );
-
-    exec($command, $lines, $code);
-    if ($code !== 0 || $lines === []) {
-        return false;
-    }
-
-    foreach ($lines as $path) {
-        $contents = @file_get_contents($dir . '/' . $path);
-        if ($contents === false) {
-            continue;
-        }
-        if (declaresClassInNamespace($contents, $namespace, $short)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 /**

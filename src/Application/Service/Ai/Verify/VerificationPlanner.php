@@ -37,26 +37,40 @@ final class VerificationPlanner
         // handler can inline a heredoc straight into an LLM call, and a diff
         // holding only a handler would otherwise pass standard verification
         // until some unrelated service change happened to schedule the lint.
-        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms'],
+        ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms', 'lint:inline-script'],
         // A domain listener can call an LLM with an inline heredoc exactly as a
         // handler or a service can, so lint:mechanisms rides this row too — the
         // execution shape is what matters, not which directory it sits in.
         ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
-        ChangedFile::KIND_RESOURCE => ['lint:responses'],
+        // A slot resource is where `deferred: true` is written, and the only
+        // thing that makes it true is a template calling layout_slot_deferred.
+        // The two live in different files, so a diff touching either one is
+        // where the disagreement can be caught.
+        ChangedFile::KIND_RESOURCE => ['lint:responses', 'lint:deferred-slots'],
         // lint:mechanisms joined the service row when the prompt.catalog detector
         // landed: every measured case of a prompt compiled into PHP was a service
         // holding it in a heredoc const. A detector that no kind schedules never
         // runs and reads exactly like a passing check.
         ChangedFile::KIND_SERVICE  => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
         ChangedFile::KIND_CONTRACT => ['lint:di'],
+        // A console command is container-managed, so lint:di applies for the
+        // same reason it applies to a service; and it can hold a prompt in a
+        // heredoc, which is the gap lint:mechanisms exists to report and which
+        // no kind reached until this one.
+        ChangedFile::KIND_COMMAND  => ['lint:di', 'lint:mechanisms'],
         // lint:deferred-twig belongs here because a deferred slot template is rendered
         // TWICE - by Twig on the server and by semitexa-twig.js on the client - and the
         // client subset has no functions, no filters beyond |raw and no ternary. Anything
         // outside it renders as an EMPTY STRING with no error, so the divergence is
         // invisible until someone notices missing text. The command already existed and
         // was wired into no gate at all; it was red on a real template when connected.
-        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig'],
+        // lint:inline-script rides the template and handler rows because those are
+        // the two places a `<script>` gets written by hand. It fails on a
+        // package emission only: a nonce-less inline script in a package is a
+        // defect no consumer can fix, and it fails in the BROWSER, never on the
+        // server, so nothing else in this plan can see it.
+        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred.
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
@@ -79,6 +93,8 @@ final class VerificationPlanner
         'lint:templates',
         'lint:mechanisms',
         'lint:deferred-twig',
+        'lint:inline-script',
+        'lint:deferred-slots',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;

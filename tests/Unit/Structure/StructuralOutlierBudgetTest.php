@@ -29,6 +29,17 @@ final class StructuralOutlierBudgetTest extends TestCase
 {
     /** Classes at or above 30 methods or 700 lines: path => [methods, lines]. */
     private const BUDGETS = [
+        // NEW on 2026-09-16, at 655 -> 756 lines, and recorded rather than
+        // trimmed. A page's body can now be a PAGE — an ordered list of
+        // passages and pictures, each with its own layout — so this class
+        // renders one more kind of body and had to learn which control a body's
+        // kind asks for. The rendering of the blocks themselves is NOT here: it
+        // was extracted to ContentBlocksControl precisely because folding it in
+        // made the biggest class in the package bigger still. What remains is
+        // the seam (bodyControl), the two predicates it needs, and the comments
+        // saying why a page of blocks belongs on the canvas and not behind
+        // «Властивості» — a mistake this file already made once, invisibly.
+        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 756],
         // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
         // now arrive as a Closure resolved AFTER the connection caps, so an
         // over-cap attempt no longer pays for a full graphql document execution
@@ -268,7 +279,21 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 859 -> 864: the application-root guard is anchored rather than a
         // substring, since the lint scans the REPOSITORY-ROOT src/modules and a
         // package path containing that segment is not somewhere it looks.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 864],
+        // 864 -> 870: lint:inline-script joined the handler and template rows,
+        // plus the six lines saying why it is scheduled by those two kinds and
+        // what makes it different from every other lint here — it is the only
+        // one whose subject fails in a BROWSER, on a consumer that enforces a
+        // policy, and never on the server where the rest of this plan looks.
+        // 870 -> 875: lint:deferred-slots joined the resource and template rows,
+        // and the four lines saying why a slot resource schedules a TEMPLATE
+        // audit — `deferred: true` is a claim the resource cannot make true on
+        // its own, and the file that would make it true is a different one.
+        // 875 -> 880: a row for KIND_COMMAND, and the four lines saying why the
+        // catch-all could not carry it — putting lint:mechanisms on
+        // KIND_PHP_OTHER was tried, and it wedged the suite at ~427/8500
+        // because that is the kind the verify tooling's own fixtures classify
+        // as. A reverted experiment that leaves no trace invites the repeat.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 880],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

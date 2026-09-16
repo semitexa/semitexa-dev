@@ -40,7 +40,7 @@ class VerificationPlannerTest extends TestCase
         sort($commands);
         // lint:mechanisms joined this row so a diff holding only a handler is
         // still checked for a prompt inlined straight into an LLM call.
-        $this->assertSame(['lint:di', 'lint:handlers', 'lint:mechanisms'], $commands);
+        $this->assertSame(['lint:di', 'lint:handlers', 'lint:inline-script', 'lint:mechanisms'], $commands);
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
         $this->assertSame([], $plan->expansions);
     }
@@ -101,9 +101,13 @@ class VerificationPlannerTest extends TestCase
             // Deferred slot templates are rendered twice - Twig on the server,
             // semitexa-twig.js on the client - and anything outside the client
             // subset renders as an empty string with no error.
+            'lint:deferred-slots',
             'lint:deferred-twig',
             'lint:di',
             'lint:handlers',
+            // A nonce-less inline <script> in a package fails only in a
+            // browser, and only on a consumer that enforces a policy.
+            'lint:inline-script',
             // Broad scope runs every lint, including the mechanism check that
             // reports application code hand-rolling a framework capability.
             'lint:mechanisms',

@@ -103,6 +103,58 @@ class MakePageCommandTest extends TestCase
         $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.js', $paths);
     }
 
+    /**
+     * The generated page script has to survive markup that arrives later.
+     *
+     * The obvious thing to write is a `<script>` in the page template, and it
+     * works — until the page becomes swappable, at which point it is inert
+     * until re-created, then runs once per arrival, and has already missed
+     * DOMContentLoaded. The scaffold is where that lesson is cheapest to
+     * teach, so it ships the shape instead of describing it.
+     */
+    public function test_generated_page_script_binds_idempotently_and_not_on_domcontentloaded(): void
+    {
+        $builder = new PagePlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Website',
+            'name' => 'Pricing',
+            'path' => '/pricing',
+            'method' => 'GET',
+            'access' => 'public',
+            'withAssets' => true,
+            'withTest' => false,
+            'dryRun' => false,
+        ]);
+
+        $js = '';
+        $twig = '';
+        foreach ($plan->files as $file) {
+            if (str_ends_with($file->path, 'pages/pricing.js')) {
+                $js = $file->content;
+            }
+            if (str_ends_with($file->path, 'pages/pricing.html.twig')) {
+                $twig = $file->content;
+            }
+        }
+
+        self::assertNotSame('', $js, 'the page script must be generated');
+        // The docblock NAMES that event — explaining why it is the wrong hook
+        // is half the point of the scaffold. What must not appear is code
+        // waiting on it.
+        self::assertStringNotContainsString("addEventListener('DOMContentLoaded'", $js);
+        self::assertStringNotContainsString('addEventListener("DOMContentLoaded"', $js);
+        self::assertStringContainsString('MutationObserver', $js, 'markup that arrives later has to be connected too');
+        self::assertStringContainsString('data-pricing-bound', $js, 'binding twice is the failure this guards');
+        self::assertStringContainsString('AsUiBehavior', $js, 'the scaffold names the mechanism that solves this outright');
+
+        self::assertStringNotContainsString('<script', $twig, 'the template must not teach the inline shape');
+    }
+
     private function assertPhpSyntaxValid(string $code): void
     {
         $tmp = tempnam(sys_get_temp_dir(), 'php_lint_');

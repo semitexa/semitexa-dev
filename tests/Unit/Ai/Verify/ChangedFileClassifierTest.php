@@ -32,6 +32,14 @@ class ChangedFileClassifierTest extends TestCase
             'template' => ['src/modules/Foo/Resources/views/page.html.twig', ChangedFile::KIND_TEMPLATE],
             'test_by_dir' => ['tests/Unit/Foo/SomethingTest.php', ChangedFile::KIND_TEST],
             'test_by_suffix' => ['src/modules/Foo/SomethingTest.php', ChangedFile::KIND_TEST],
+            'command_in_module' => [
+                'src/modules/Foo/src/Application/Console/Command/SyncCommand.php',
+                ChangedFile::KIND_COMMAND,
+            ],
+            'command_in_package' => [
+                'packages/semitexa-mail/src/Application/Console/Command/MailWorkCommand.php',
+                ChangedFile::KIND_COMMAND,
+            ],
             'php_other' => ['src/modules/Foo/Random.php', ChangedFile::KIND_PHP_OTHER],
             'non_php' => ['composer.json', ChangedFile::KIND_NON_PHP],
 
