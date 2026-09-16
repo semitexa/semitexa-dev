@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-09-13T13:52:50+00:00",
+    "generated_at": "2026-09-14T18:17:57+00:00",
     "source_version": "dev-develop@3bbb0c9",
     "count": 62,
     "packages": [
@@ -51,7 +51,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "4cd084000636fe725134e634409e0111c896189008d368f4c5856d80912a23b9",
+    "content_hash": "ee855d671bb56b27985e303874f9a336bf7f5ccb545aa2e47e8179f56c86ff37",
     "capabilities": [
         {
             "id": "api.external",
@@ -418,12 +418,13 @@
         },
         {
             "id": "prompt.catalog",
-            "summary": "Prompts as discoverable Twig templates declared with #[AsPrompt], composable and overridable per tenant.",
+            "summary": "Prompts as discoverable Twig templates declared with #[AsPrompt], composable, overridable per tenant, and open to attributable operator guidance at a point the template declares.",
             "use_when": "Prompt text has to be edited, reviewed or varied per tenant without touching PHP.",
             "avoid_when": "One short fixed instruction used in exactly one place.",
             "replaces": [
                 "heredoc prompt strings inside the service that sends them",
-                "a per-tenant if-branch selecting between copies of the same prompt"
+                "a per-tenant if-branch selecting between copies of the same prompt",
+                "rewriting a whole prompt to honour one sentence of operator feedback"
             ],
             "see_also": "semitexa/llm",
             "kind": "package",

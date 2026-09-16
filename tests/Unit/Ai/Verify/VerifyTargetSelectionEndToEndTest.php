@@ -69,12 +69,18 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'handler' => [
                 'Application/Handler/PayloadHandler/GetThingHandler.php',
                 ChangedFile::KIND_HANDLER,
-                ['lint:di', 'lint:handlers'],
+                // lint:mechanisms rides along here too: a handler can inline a
+                // heredoc straight into an LLM call, and a diff holding only a
+                // handler would otherwise pass standard verification.
+                ['lint:di', 'lint:handlers', 'lint:mechanisms'],
             ],
             'domain listener' => [
                 'Application/Handler/DomainListener/ThingChangedListener.php',
                 ChangedFile::KIND_LISTENER,
-                ['lint:di', 'lint:scoping'],
+                // A listener can call an LLM with an inline heredoc exactly as a
+                // handler or a service can; the execution shape is what decides,
+                // not the directory.
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'server lifecycle listener' => [
                 // Ordering-sensitive: this fragment must stay ABOVE the generic
@@ -84,7 +90,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 // ever have shown it.
                 'Application/Service/Server/Lifecycle/WireThingListener.php',
                 ChangedFile::KIND_LISTENER,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'payload' => [
                 'Application/Payload/Request/GetThingPayload.php',
@@ -99,12 +105,12 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'application service' => [
                 'Application/Service/Thing/ThingCatalog.php',
                 ChangedFile::KIND_SERVICE,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'domain service' => [
                 'Domain/Service/ThingPolicy.php',
                 ChangedFile::KIND_SERVICE,
-                ['lint:di', 'lint:scoping'],
+                ['lint:di', 'lint:mechanisms', 'lint:scoping'],
             ],
             'contract' => [
                 // A contract change auto-expands the scope to broad, so it
@@ -128,11 +134,41 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
 
         $out = [];
         foreach ($cases as $name => [$suffix, $kind, $lints]) {
-            $out[$name . ' (package)'] = ['packages/semitexa-ssr/src/' . $suffix, $kind, $lints];
+            // lint:mechanisms scans src/modules only, so scheduling it for a
+            // package path produced a target that ran, examined nothing in the
+            // diff, and passed — indistinguishable from a clean result. The two
+            // locations therefore select DIFFERENT sets, and that difference is
+            // the thing worth pinning.
+            //
+            // Broad scope is exempt, and deliberately: it schedules every lint
+            // under "broad scope — every lint is required", a blanket run that
+            // never claimed per-file relevance. The contract row below is pinned
+            // at that widened set because the risk with a contract is a plan that
+            // narrows.
+            $isBroad = count($lints) === count(self::everyLint());
+            $packageLints = $isBroad ? $lints : array_values(array_filter(
+                $lints,
+                static fn (string $lint): bool => $lint !== 'lint:mechanisms',
+            ));
+
+            $out[$name . ' (package)'] = ['packages/semitexa-ssr/src/' . $suffix, $kind, $packageLints];
             $out[$name . ' (module)'] = ['src/modules/Foo/src/' . $suffix, $kind, $lints];
         }
 
         return $out;
+    }
+
+    /**
+     * The full lint set, read from the planner so this test cannot drift from it.
+     *
+     * @return list<string>
+     */
+    private static function everyLint(): array
+    {
+        /** @var list<string> $all */
+        $all = new \ReflectionClassConstant(VerificationPlanner::class, 'ALL_LINTS')->getValue();
+
+        return $all;
     }
 
     /**
@@ -162,12 +198,41 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         // The only kind decided by extension rather than by directory, and the
         // only one whose whole point is catching a framework mechanism rebuilt
         // by hand in the browser. Unpinned on both sides until now.
-        $classified = (new ChangedFileClassifier())->classify('packages/semitexa-ssr/src/Application/Static/js/disclosure.js');
+        $classified = (new ChangedFileClassifier())->classify('src/modules/Foo/public/js/disclosure.js');
         self::assertSame(ChangedFile::KIND_CLIENT_SCRIPT, $classified->kind);
 
         $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
 
         self::assertSame(['lint:mechanisms'], $this->lintCommandNames($plan));
+    }
+
+    #[Test]
+    public function a_package_that_contains_the_modules_segment_is_still_a_package(): void
+    {
+        // The guard is anchored, not a substring: lint:mechanisms scans the
+        // REPOSITORY-ROOT src/modules, so a package path that happens to carry
+        // that segment is not somewhere it looks, and scheduling it there is the
+        // same empty pass the guard exists to prevent.
+        $classified = (new ChangedFileClassifier())
+            ->classify('packages/acme/src/modules/Foo/src/Application/Service/Thing.php');
+
+        $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
+
+        self::assertNotContains('lint:mechanisms', $this->lintCommandNames($plan));
+    }
+
+    #[Test]
+    public function a_package_client_script_does_not_schedule_a_lint_that_cannot_see_it(): void
+    {
+        // The same rule from the other side. lint:mechanisms takes no path from
+        // the executor and scans src/modules, so for a file under packages/ it
+        // would have reported a pass having examined nothing of the diff.
+        $classified = (new ChangedFileClassifier())->classify('packages/semitexa-ssr/src/Application/Static/js/disclosure.js');
+        self::assertSame(ChangedFile::KIND_CLIENT_SCRIPT, $classified->kind);
+
+        $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
+
+        self::assertSame([], $this->lintCommandNames($plan));
     }
 
     #[Test]

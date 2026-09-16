@@ -13,6 +13,7 @@ use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledDeferredDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HandRolledLiveTransportDetector;
+use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HeredocPromptDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\InlineEventHandlerDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismDetectorInterface;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismFinding;
@@ -317,6 +318,7 @@ final class LintMechanismsCommand extends BaseCommand
             new HandRolledDeferredDetector(),
             new HandRolledLiveTransportDetector(),
             new InlineEventHandlerDetector(),
+            new HeredocPromptDetector(),
         ];
     }
 
