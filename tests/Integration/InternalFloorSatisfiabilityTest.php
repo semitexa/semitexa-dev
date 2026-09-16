@@ -337,6 +337,76 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertStringContainsString('csp_nonce_attr()', $result['output']);
     }
 
+    /**
+     * A string literal INSIDE an executable block is still text.
+     *
+     * The comment case was fixed one level out; this one lives inside
+     * `{{ … }}`, where the block really is executed but the literal in it
+     * prints a sentence and calls nothing.
+     */
+    #[Test]
+    public function a_function_named_only_in_a_twig_string_literal_is_not_called(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer(
+            '>=2026.09.13.0749 || dev-master',
+            '{{ "use csp_nonce_attr() once core is bumped" }}{{ asset("app.css") }}',
+        );
+
+        self::assertSame(0, $this->gate()['exit']);
+    }
+
+    /**
+     * A registration NAMED in a comment is not a registration.
+     *
+     * This direction fails closed in the worst way: the name is added to what
+     * the FLOORED release registers, so the gate decides the floor is fine and
+     * lets a consumer call a function that release never shipped.
+     */
+    #[Test]
+    public function a_registration_mentioned_in_a_comment_does_not_satisfy_a_floor(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+
+        $write = static function (string $body) use ($dir): void {
+            file_put_contents(
+                $dir . '/src/Application/Extension.php',
+                "<?php\n\nnamespace Semitexa\\Core\\Application;\n\nfinal class Extension\n{\n"
+                . "    public function register(): void\n    {\n" . $body . "    }\n}\n",
+            );
+        };
+
+        // The floored release only TALKS about the function.
+        $write("        // One day: TwigExtensionRegistry::registerFunction('csp_nonce_attr', [\$this, 'x']);\n"
+            . "        TwigExtensionRegistry::registerFunction('asset', [\$this, 'x']);\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.0749 2>&1");
+
+        // Today it really registers it.
+        $write("        TwigExtensionRegistry::registerFunction('asset', [\$this, 'x']);\n"
+            . "        TwigExtensionRegistry::registerFunction('csp_nonce_attr', [\$this, 'x']);\n");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m added 2>&1");
+
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ csp_nonce_attr() }}');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('csp_nonce_attr()', $result['output']);
+    }
+
     /** The case review caught, reproduced: the class is not in the floored release. */
     #[Test]
     public function a_floor_without_the_imported_class_fails_the_release(): void

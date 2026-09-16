@@ -508,11 +508,19 @@ function templateContractProblems(
  */
 function registeredTwigFunctions(string $dir, ?string $tag): array
 {
-    // PRODUCTION ROOTS ONLY. Without a pathspec this also reads tests,
-    // fixtures and README examples, and a name that appears only in one of
-    // those becomes a runtime contract the gate will demand a floor for — a
-    // release blocked by a documentation snippet.
-    $paths = ['src', 'resources'];
+    // The provider's OWN production roots, read from its composer autoload
+    // map at the revision being checked — not a hard-coded `src`. A package
+    // that maps `lib/` registers its functions there, and a scan that never
+    // looks finds no names at all, which makes this check skip that provider
+    // in silence.
+    //
+    // Without any pathspec the scan also reads tests, fixtures and README
+    // examples, and a name that appears only in one of those becomes a
+    // runtime contract: a release blocked by a documentation snippet.
+    $paths = autoloadRoots($dir, $tag);
+    if ($paths === []) {
+        return [];
+    }
 
     $files = sprintf(
         'git -C %s grep -l %s %s-- %s 2>/dev/null',
@@ -547,17 +555,102 @@ function registeredTwigFunctions(string $dir, ?string $tag): array
             continue;
         }
 
-        // Both quote styles, any whitespace between the parts.
-        if (preg_match_all('/registerFunction\s*\(\s*[\'"]([A-Za-z_][A-Za-z0-9_]*)[\'"]/', $contents, $matches) === false) {
-            continue;
-        }
-
-        foreach ($matches[1] as $name) {
+        foreach (registrationNames($contents) as $name) {
             $functions[$name] = true;
         }
     }
 
     return $functions;
+}
+
+/**
+ * Names passed to a real `registerFunction('x', …)` CALL.
+ *
+ * Tokens rather than a regex over the file, because the regex counted the same
+ * text in a comment or an ordinary string. That direction fails CLOSED in the
+ * worst way: a name that only a docblock mentions is added to what the FLOORED
+ * release "registers", so the gate decides the floor is satisfied and lets a
+ * consumer call a function that release never shipped.
+ *
+ * @return list<string>
+ */
+function registrationNames(string $contents): array
+{
+    if (!str_contains($contents, 'registerFunction')) {
+        return [];
+    }
+
+    $tokens = @token_get_all($contents);
+    $count = count($tokens);
+    $names = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $token = $tokens[$i];
+        if (!is_array($token) || $token[0] !== T_STRING || $token[1] !== 'registerFunction') {
+            continue;
+        }
+
+        // `(` then a single quoted string, skipping whitespace.
+        $j = $i + 1;
+        while ($j < $count && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
+            $j++;
+        }
+        if ($j >= $count || $tokens[$j] !== '(') {
+            continue;
+        }
+
+        $j++;
+        while ($j < $count && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
+            $j++;
+        }
+        if ($j >= $count || !is_array($tokens[$j]) || $tokens[$j][0] !== T_CONSTANT_ENCAPSED_STRING) {
+            continue;
+        }
+
+        $name = trim($tokens[$j][1], "'\"");
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) === 1) {
+            $names[] = $name;
+        }
+    }
+
+    return $names;
+}
+
+/**
+ * A package's own source roots at a revision, from its composer autoload map.
+ *
+ * `resources` is added because a package that ships assets rather than modules
+ * keeps templates and registrations outside its PSR-4 roots, and that is the
+ * case that raised the template contract in the first place.
+ *
+ * @return list<string>
+ */
+function autoloadRoots(string $dir, ?string $tag): array
+{
+    $raw = $tag === null
+        ? (string) @file_get_contents($dir . '/composer.json')
+        : shellOutput(sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':composer.json')));
+
+    $roots = [];
+    $manifest = $raw === '' ? null : json_decode($raw, true);
+
+    if (is_array($manifest)) {
+        foreach (['autoload', 'autoload-dev'] as $section) {
+            foreach ((array) ($manifest[$section]['psr-4'] ?? []) as $paths) {
+                foreach ((array) $paths as $path) {
+                    $roots[] = trim((string) $path, '/') ?: '.';
+                }
+            }
+            foreach ((array) ($manifest[$section]['files'] ?? []) as $file) {
+                $roots[] = trim((string) $file, '/');
+            }
+        }
+    }
+
+    $roots[] = 'src';
+    $roots[] = 'resources';
+
+    return array_values(array_unique(array_filter($roots, static fn (string $p): bool => $p !== '')));
 }
 
 /** stdout of a command, or '' when it fails. */
@@ -612,7 +705,17 @@ function executableTwig(string $source): string
     }
 
     foreach ($matches[0] as [$block, $offset]) {
-        $kept = substr_replace($kept, (string) $block, (int) $offset, strlen((string) $block));
+        // The STRING LITERALS inside an executable block are still text:
+        // `{{ "use new_fn() after upgrading" }}` prints a sentence and calls
+        // nothing. Left readable, that sentence demanded a floor and stopped a
+        // release, which is the same defect as the comment case one level out.
+        $code = (string) preg_replace_callback(
+            '/"[^"]*"|\'[^\']*\'/',
+            static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
+            (string) $block,
+        );
+
+        $kept = substr_replace($kept, $code, (int) $offset, strlen((string) $block));
     }
 
     return $kept;
