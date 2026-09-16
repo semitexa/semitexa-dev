@@ -184,6 +184,31 @@ final class StructuralOutlierBudgetTest extends TestCase
         // one command with one flow; if it grows again, the envelope-building
         // half is the seam — the same one VerifyReportSerializer was cut along.
         'semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php' => [18, 713],
+        // FIRST RECORDING, 2026-09-16: crossed the 700-line threshold during the
+        // review round on dev#90, at 20 methods — two thirds of the way to the
+        // method threshold it never approached. Every line of the growth is the
+        // same shape: a reviewer named a PHP construct the token scan read
+        // wrongly, the guard for it is one or two lines, and the sentence saying
+        // WHICH construct and what it did instead is the rest. `use function A\B,
+        // C\D;` carries its kind across the comma while `use A\{function b, C};`
+        // does not; `{` opens a match arm and also a closure body, and only one
+        // of them is an enclosing expression; `=>` binds an array key and also a
+        // match arm, and only one of them is an assignment.
+        //
+        // Recorded rather than trimmed, and the comments are the reason. This
+        // rule's entire failure history is someone loosening a predicate that
+        // looked arbitrary — `unpromptedMessage` was reported because "contains
+        // prompt" read as obviously equivalent to "is a prompt". A guard whose
+        // note has been deleted to buy lines is the next loosening waiting to
+        // happen, and the file is already the one place in the repo that
+        // remembers why each one is there.
+        //
+        // If it grows again the seam is real and not a budget dodge: the token
+        // walking (targetBefore/assignmentTargets and the brace and `=>`
+        // questions under them) is a PHP-shape reader with no opinion about
+        // prompts, and detect() plus the corroboration predicates are the rule.
+        // CatalogPromptDeclarations was already cut along that line.
+        'semitexa-dev/src/Application/Service/Ai/Verify/Mechanism/HeredocPromptDetector.php' => [20, 715],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
