@@ -39,7 +39,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the seam (bodyControl), the two predicates it needs, and the comments
         // saying why a page of blocks belongs on the canvas and not behind
         // «Властивості» — a mistake this file already made once, invisibly.
-        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 756],
+        // 756 -> 764 after a review pass: BLOCKS joins HTML and IMAGE in the
+        // plain-<div> wrapper condition, plus the five lines saying why. A
+        // <label> around this control forwards a click anywhere in the page
+        // body to the first labelable thing inside it, which is a move-up
+        // button — the same class of defect as the Trix toolbar the
+        // condition was written for, so it belongs in the same comment.
+        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 764],
         // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
         // now arrive as a Closure resolved AFTER the connection caps, so an
         // over-cap attempt no longer pays for a full graphql document execution
@@ -293,7 +299,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // KIND_PHP_OTHER was tried, and it wedged the suite at ~427/8500
         // because that is the kind the verify tooling's own fixtures classify
         // as. A reverted experiment that leaves no trace invites the repeat.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 880],
+        // 880 -> 907: a DELETED file now still schedules the whole-tree lints.
+        // The skip was a hole in the case lint:deferred-slots exists for —
+        // delete the template that called layout_slot_deferred and the
+        // resource still declaring `deferred: true` is a lie with no file
+        // left to notice it. A CROSS_FILE_LINTS constant, its docblock, the
+        // branch and the comment saying why almost nothing else applies.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 907],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

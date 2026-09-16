@@ -85,6 +85,18 @@ final class VerificationPlanner
         // follow-up, not a row that stops the suite from finishing.
     ];
 
+    /**
+     * Lints that read the WHOLE TREE rather than the changed file.
+     *
+     * The distinction only matters for a DELETED file: there is no source to
+     * hand these, and they never wanted one — they compare two halves of a
+     * declaration that live in different files, so the deletion of one half is
+     * the event worth checking, not a reason to check nothing.
+     */
+    private const CROSS_FILE_LINTS = [
+        'lint:deferred-slots',
+    ];
+
     private const ALL_LINTS = [
         'lint:handlers',
         'lint:di',
@@ -128,6 +140,16 @@ final class VerificationPlanner
 
         foreach ($changedFiles as $file) {
             if ($file->status === ChangedFile::STATUS_DELETED) {
+                // Almost nothing applies to a file that is gone — there is no
+                // source to syntax-check or lint. A WHOLE-TREE audit is the
+                // exception, and skipping those was a hole in exactly the case
+                // they exist for: delete the template that called
+                // layout_slot_deferred and the resource still declaring
+                // deferred: true is now a lie, with no file left to notice it.
+                if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL) {
+                    $this->collectLintsForFile($file, $effectiveScope, $lintsByCommand, onlyCrossFile: true);
+                }
+
                 continue;
             }
 
@@ -581,9 +603,14 @@ final class VerificationPlanner
         ChangedFile $file,
         string $effectiveScope,
         array &$lintsByCommand,
+        bool $onlyCrossFile = false,
     ): void {
         $lints = self::KIND_LINT_MAP[$file->kind] ?? [];
         foreach ($lints as $lint) {
+            if ($onlyCrossFile && !in_array($lint, self::CROSS_FILE_LINTS, true)) {
+                continue;
+            }
+
             // lint:mechanisms scans APPLICATION code only — LintMechanismsCommand's
             // APPLICATION_ROOTS is ['src/modules'] — because framework packages
             // IMPLEMENT the mechanisms it reports, so the same pattern there is the

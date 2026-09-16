@@ -255,6 +255,88 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertSame(0, $this->gate()['exit']);
     }
 
+    /**
+     * Text a template PRINTS is not a call, and this gate blocks a release.
+     *
+     * A Twig comment emits nothing and a name inside a JavaScript string is a
+     * string. Read as calls, each demands a floor for a function the template
+     * never invokes — so the release stops on a note somebody left for a
+     * reader.
+     */
+    #[Test]
+    public function a_function_named_only_in_a_comment_or_a_string_is_not_called(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer(
+            '>=2026.09.13.0749 || dev-master',
+            "{# use csp_nonce_attr() once core is bumped #}\n"
+            . "<script>var hint = 'csp_nonce_attr()';</script>\n"
+            . '{{ asset("app.css") }}',
+        );
+
+        self::assertSame(0, $this->gate()['exit']);
+    }
+
+    /** `value.asset()` is a method on something the template was handed, not the global. */
+    #[Test]
+    public function a_method_call_on_a_value_is_not_the_global_function(): void
+    {
+        $this->twigProvider('2026.09.13.0749', [], ['asset']);
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ page.asset() }}');
+
+        self::assertSame(0, $this->gate()['exit']);
+    }
+
+    /**
+     * A registration whose name sits on the next line is still a registration.
+     *
+     * The scan was line-oriented, so a provider that formats its long argument
+     * lists across lines looked as though it registered NOTHING — and a
+     * provider that owns no names is one this check skips entirely, silently.
+     */
+    #[Test]
+    public function a_registration_wrapped_across_lines_is_still_found(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        mkdir($dir . '/src/Application', 0777, true);
+        file_put_contents($dir . '/composer.json', (string) json_encode([
+            'name' => 'semitexa/core',
+            'autoload' => ['psr-4' => ['Semitexa\\Core\\' => 'src/']],
+        ]));
+
+        $write = static function (string $registrations) use ($dir): void {
+            file_put_contents(
+                $dir . '/src/Application/Extension.php',
+                "<?php\n\nnamespace Semitexa\\Core\\Application;\n\nfinal class Extension\n{\n"
+                . "    public function register(): void\n    {\n" . $registrations . "    }\n}\n",
+            );
+        };
+
+        // Double-quoted and wrapped — both forms the old single-line,
+        // single-quoted pattern walked past.
+        $write("        TwigExtensionRegistry::registerFunction(\n            \"asset\",\n            [\$this, 'x'],\n        );\n");
+
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} init -q 2>&1");
+        exec("git -C {$q} config user.email probe@example.com 2>&1");
+        exec("git -C {$q} config user.name Probe 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m base 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} tag 2026.09.13.0749 2>&1");
+
+        $write("        TwigExtensionRegistry::registerFunction(\n            \"asset\",\n            [\$this, 'x'],\n        );\n"
+            . "        TwigExtensionRegistry::registerFunction(\n            \"csp_nonce_attr\",\n            [\$this, 'x'],\n        );\n");
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m added 2>&1");
+
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ csp_nonce_attr() }}');
+
+        $result = $this->gate();
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('csp_nonce_attr()', $result['output']);
+    }
+
     /** The case review caught, reproduced: the class is not in the floored release. */
     #[Test]
     public function a_floor_without_the_imported_class_fails_the_release(): void

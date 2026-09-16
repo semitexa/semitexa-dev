@@ -508,26 +508,66 @@ function templateContractProblems(
  */
 function registeredTwigFunctions(string $dir, ?string $tag): array
 {
-    $command = sprintf(
-        'git -C %s grep -hoE %s %s2>/dev/null',
+    // PRODUCTION ROOTS ONLY. Without a pathspec this also reads tests,
+    // fixtures and README examples, and a name that appears only in one of
+    // those becomes a runtime contract the gate will demand a floor for — a
+    // release blocked by a documentation snippet.
+    $paths = ['src', 'resources'];
+
+    $files = sprintf(
+        'git -C %s grep -l %s %s-- %s 2>/dev/null',
         escapeshellarg($dir),
-        escapeshellarg("registerFunction\\(\\s*'[A-Za-z_][A-Za-z0-9_]*'"),
+        escapeshellarg('registerFunction'),
         $tag === null ? '' : escapeshellarg($tag) . ' ',
+        implode(' ', array_map('escapeshellarg', $paths)),
     );
 
-    exec($command, $lines, $code);
+    exec($files, $lines, $code);
     if ($code !== 0) {
         return [];
     }
 
     $functions = [];
     foreach ($lines as $line) {
-        if (preg_match("/'([A-Za-z_][A-Za-z0-9_]*)'/", $line, $m) === 1) {
-            $functions[$m[1]] = true;
+        // With a tag, `git grep -l` prints `<tag>:<path>`.
+        $path = $tag === null ? $line : substr($line, strpos($line, ':') + 1);
+        if ($path === '' || !str_ends_with($path, '.php')) {
+            continue;
+        }
+
+        // The whole FILE, not one line of it. A line-oriented scan misses a
+        // registration whose name sits on the next line — which is how a long
+        // argument list gets formatted — and the provider then looks as though
+        // it registers nothing at all, which makes the gate skip it silently.
+        $contents = $tag === null
+            ? (string) @file_get_contents($dir . '/' . $path)
+            : shellOutput(sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':' . $path)));
+
+        if ($contents === '') {
+            continue;
+        }
+
+        // Both quote styles, any whitespace between the parts.
+        if (preg_match_all('/registerFunction\s*\(\s*[\'"]([A-Za-z_][A-Za-z0-9_]*)[\'"]/', $contents, $matches) === false) {
+            continue;
+        }
+
+        foreach ($matches[1] as $name) {
+            $functions[$name] = true;
         }
     }
 
     return $functions;
+}
+
+/** stdout of a command, or '' when it fails. */
+function shellOutput(string $command): string
+{
+    $out = [];
+    $code = 0;
+    exec($command, $out, $code);
+
+    return $code === 0 ? implode("\n", $out) : '';
 }
 
 /**
@@ -543,8 +583,41 @@ function registeredTwigFunctions(string $dir, ?string $tag): array
  * registers is simply never matched, so a Twig builtin or the consumer's own
  * helper costs nothing here.
  *
+ * Generous is not the same as indiscriminate, and the difference matters
+ * because this gate BLOCKS A RELEASE. Text a template merely prints is not a
+ * call: `{# use new_fn() after upgrading #}`, a name inside a string, a line
+ * of JavaScript. Read as calls, each of those demands a floor for a function
+ * the template never invokes, and the release stops on a comment.
+ *
  * @return array<string, true> function name => true
  */
+/**
+ * A template with everything Twig does not EXECUTE blanked out.
+ *
+ * `{# … #}` emits nothing; text outside `{{ … }}` and `{% … %}` is printed
+ * verbatim, whatever it spells. Replaced by spaces of the same length so
+ * nothing shifts.
+ */
+function executableTwig(string $source): string
+{
+    $source = (string) preg_replace_callback(
+        '/\{#.*?#\}/s',
+        static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+        $source,
+    );
+
+    $kept = str_repeat(' ', strlen($source));
+    if (preg_match_all('/\{\{.*?\}\}|\{%.*?%\}/s', $source, $matches, PREG_OFFSET_CAPTURE) === false) {
+        return $kept;
+    }
+
+    foreach ($matches[0] as [$block, $offset]) {
+        $kept = substr_replace($kept, (string) $block, (int) $offset, strlen((string) $block));
+    }
+
+    return $kept;
+}
+
 function twigFunctionCalls(string $packageDir): array
 {
     $calls = [];
@@ -561,8 +634,13 @@ function twigFunctionCalls(string $packageDir): array
                 continue;
             }
 
-            $contents = (string) file_get_contents($file->getPathname());
-            if (preg_match_all('/([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $contents, $matches) === false) {
+            $contents = executableTwig((string) file_get_contents($file->getPathname()));
+
+            // Not preceded by a `.`: `page.asset()` is a method on a value the
+            // template was handed, not the global function of the same name,
+            // and reading it as one demanded a floor for a dependency the
+            // template never calls.
+            if (preg_match_all('/(?<![\w.])([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $contents, $matches) === false) {
                 continue;
             }
 

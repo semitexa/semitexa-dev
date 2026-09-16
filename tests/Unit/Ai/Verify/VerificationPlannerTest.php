@@ -158,6 +158,28 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame('tests/Unit/Foo/GetThingHandlerTest.php', $phpunit[0]->filePath);
     }
 
+    public function test_a_deleted_template_still_schedules_the_whole_tree_audit(): void
+    {
+        // The exception to "a deleted file has nothing to check", and it is
+        // the case lint:deferred-slots exists for: `deferred: true` on a slot
+        // resource is only true while some template calls
+        // layout_slot_deferred() for it. DELETE that template and the claim
+        // becomes a lie — with no file left for a per-file lint to read, which
+        // is exactly why a whole-tree audit has to be scheduled here.
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'src/modules/Foo/src/Application/View/templates/pages/gone.html.twig',
+                ChangedFile::KIND_TEMPLATE,
+                ChangedFile::STATUS_DELETED,
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        // Only the cross-file one. lint:templates, lint:deferred-twig and
+        // lint:inline-script all read the file's own source, and there is none.
+        $this->assertSame(['lint:deferred-slots'], $this->lintCommandNames($plan));
+        $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
+    }
+
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void
     {
         $plan = $this->planner()->plan([
