@@ -14,12 +14,24 @@ final class NameInflector implements NameInflectorInterface
         return Str::toStudly($input);
     }
 
+    /**
+     * A kebab SLUG — letters, digits and hyphens, and nothing else.
+     *
+     * The filter is not tidiness. This value is substituted into generated
+     * code, including a single-quoted JavaScript literal in page-js.js.tpl, so
+     * a name carrying an apostrophe wrote a file that does not parse — or one
+     * with a statement in it. A kebab name never legitimately contained
+     * anything this drops.
+     */
     public function toKebab(string $input): string
     {
         // Convert StudlyCase or snake_case to kebab-case
         $result = preg_replace('/([a-z])([A-Z])/', '$1-$2', $input);
         $result = preg_replace('/[_\s]+/', '-', $result);
-        return strtolower($result);
+        $result = strtolower((string) $result);
+        $result = preg_replace('/[^a-z0-9-]+/', '-', $result);
+
+        return trim(preg_replace('/-{2,}/', '-', (string) $result) ?? '', '-');
     }
 
     public function toPayloadClass(string $input): string

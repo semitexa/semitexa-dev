@@ -725,7 +725,21 @@ function executableTwig(string $source): string
     // insufficient floor then passes preflight.
     $masked = (string) preg_replace_callback(
         '/"[^"]*"|\'[^\']*\'/',
-        static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
+        static function (array $m): string {
+            // A double-quoted Twig string can INTERPOLATE: `"nonce=#{fn()}"`
+            // really does call fn(). Blanking the whole literal hid the call
+            // and let a template use a function without the floor for it.
+            // Single quotes do not interpolate, so they are blanked whole.
+            if ($m[0][0] !== '"' || !str_contains($m[0], '#{')) {
+                return preg_replace('/[^\n]/', ' ', $m[0]) ?? '';
+            }
+
+            return (string) preg_replace_callback(
+                '/#\{[^}]*\}|[^\n]/',
+                static fn (array $p): string => str_starts_with($p[0], '#{') ? $p[0] : ' ',
+                $m[0],
+            );
+        },
         $source,
     );
 
