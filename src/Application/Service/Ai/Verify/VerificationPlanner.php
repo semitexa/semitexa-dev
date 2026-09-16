@@ -153,6 +153,14 @@ final class VerificationPlanner
                 continue;
             }
 
+            // A RENAME is a deletion of the old path as well as a change to the
+            // new one, and only the new one gets classified. Rename the
+            // template that held the sole layout_slot_deferred() call to
+            // something that is not a template and the cross-file audit was
+            // never scheduled — the same hole as a plain deletion, wearing a
+            // different status.
+            $this->collectCrossFileLintsForVanishedPath($file, $effectiveScope, $lintsByCommand);
+
             if (str_ends_with($file->path, '.php')) {
                 $syntaxTargets[$file->path] = new VerificationTarget(
                     type: VerificationTarget::TYPE_SYNTAX,
@@ -594,6 +602,30 @@ final class VerificationPlanner
         }
 
         return [$scope, $expansions];
+    }
+
+    /**
+     * The whole-tree lints the OLD side of a rename still deserves.
+     *
+     * @param array<string, array{triggeredBy: list<string>, reason: string}> $lintsByCommand
+     */
+    private function collectCrossFileLintsForVanishedPath(
+        ChangedFile $file,
+        string $effectiveScope,
+        array &$lintsByCommand,
+    ): void {
+        $original = $file->originalPath;
+        if ($original === null || $original === $file->path || $effectiveScope === VerificationPlan::SCOPE_MINIMAL) {
+            return;
+        }
+
+        $vanished = new ChangedFile(
+            path: $original,
+            kind: $this->classifier->classify($original)->kind,
+            status: ChangedFile::STATUS_DELETED,
+        );
+
+        $this->collectLintsForFile($vanished, $effectiveScope, $lintsByCommand, onlyCrossFile: true);
     }
 
     /**

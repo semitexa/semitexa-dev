@@ -305,7 +305,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // resource still declaring `deferred: true` is a lie with no file
         // left to notice it. A CROSS_FILE_LINTS constant, its docblock, the
         // branch and the comment saying why almost nothing else applies.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 907],
+        // 907 -> 939, 19 -> 20 methods: a RENAME is a deletion of the old path
+        // as well as a change to the new one, and only the new one was ever
+        // classified. Rename the template holding the sole
+        // layout_slot_deferred() call to something that is not a template and
+        // the whole-tree audit was never scheduled — the same hole as a plain
+        // deletion, wearing a different status. One method for the old side,
+        // and the comment saying why the status is not enough to spot it.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

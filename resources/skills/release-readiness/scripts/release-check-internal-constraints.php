@@ -590,19 +590,16 @@ function registrationNames(string $contents): array
             continue;
         }
 
-        // `(` then a single quoted string, skipping whitespace.
-        $j = $i + 1;
-        while ($j < $count && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
-            $j++;
-        }
+        // `(` then a quoted string, stepping over whitespace AND comments:
+        // `registerFunction(/* the public name */ 'csp_nonce_attr', …)` is a
+        // real registration, and skipping only whitespace missed it — which
+        // credits the floored release with a function it does not have.
+        $j = nextCodeToken($tokens, $i + 1, $count);
         if ($j >= $count || $tokens[$j] !== '(') {
             continue;
         }
 
-        $j++;
-        while ($j < $count && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
-            $j++;
-        }
+        $j = nextCodeToken($tokens, $j + 1, $count);
         if ($j >= $count || !is_array($tokens[$j]) || $tokens[$j][0] !== T_CONSTANT_ENCAPSED_STRING) {
             continue;
         }
@@ -614,6 +611,26 @@ function registrationNames(string $contents): array
     }
 
     return $names;
+}
+
+/**
+ * The next token_get_all() entry that is neither whitespace nor a comment.
+ *
+ * Named apart from nextMeaningfulToken() further down, which answers the same
+ * question about PhpToken objects for a different scan.
+ */
+function nextCodeToken(array $tokens, int $from, int $count): int
+{
+    for ($j = $from; $j < $count; $j++) {
+        if (!is_array($tokens[$j])) {
+            return $j;
+        }
+        if ($tokens[$j][0] !== T_WHITESPACE && $tokens[$j][0] !== T_COMMENT && $tokens[$j][0] !== T_DOC_COMMENT) {
+            return $j;
+        }
+    }
+
+    return $count;
 }
 
 /**
@@ -635,7 +652,10 @@ function autoloadRoots(string $dir, ?string $tag): array
     $manifest = $raw === '' ? null : json_decode($raw, true);
 
     if (is_array($manifest)) {
-        foreach (['autoload', 'autoload-dev'] as $section) {
+        // `autoload` ONLY. A function registered from an autoload-dev root is
+        // not loaded from a production dependency, so counting it would let a
+        // consumer floor a release that cannot actually give it the function.
+        foreach (['autoload'] as $section) {
             foreach ((array) ($manifest[$section]['psr-4'] ?? []) as $paths) {
                 foreach ((array) $paths as $path) {
                     $roots[] = trim((string) $path, '/') ?: '.';
@@ -699,23 +719,27 @@ function executableTwig(string $source): string
         $source,
     );
 
+    // Quoted runs are blanked BEFORE the block boundaries are found, not
+    // after: `{{ "}}" ~ csp_nonce_attr() }}` ends its first block inside the
+    // string otherwise, and the real call after it is discarded — an
+    // insufficient floor then passes preflight.
+    $masked = (string) preg_replace_callback(
+        '/"[^"]*"|\'[^\']*\'/',
+        static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
+        $source,
+    );
+
     $kept = str_repeat(' ', strlen($source));
-    if (preg_match_all('/\{\{.*?\}\}|\{%.*?%\}/s', $source, $matches, PREG_OFFSET_CAPTURE) === false) {
+    if (preg_match_all('/\{\{.*?\}\}|\{%.*?%\}/s', $masked, $matches, PREG_OFFSET_CAPTURE) === false) {
         return $kept;
     }
 
+    // The blocks are taken from the MASKED copy, so a string literal inside an
+    // executable block is already blank: `{{ "use new_fn() after upgrading" }}`
+    // prints a sentence and calls nothing, and left readable that sentence
+    // demanded a floor and stopped a release.
     foreach ($matches[0] as [$block, $offset]) {
-        // The STRING LITERALS inside an executable block are still text:
-        // `{{ "use new_fn() after upgrading" }}` prints a sentence and calls
-        // nothing. Left readable, that sentence demanded a floor and stopped a
-        // release, which is the same defect as the comment case one level out.
-        $code = (string) preg_replace_callback(
-            '/"[^"]*"|\'[^\']*\'/',
-            static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
-            (string) $block,
-        );
-
-        $kept = substr_replace($kept, $code, (int) $offset, strlen((string) $block));
+        $kept = substr_replace($kept, (string) $block, (int) $offset, strlen((string) $block));
     }
 
     return $kept;

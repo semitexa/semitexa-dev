@@ -180,6 +180,25 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
     }
 
+    public function test_renaming_a_template_away_still_schedules_the_whole_tree_audit(): void
+    {
+        // A rename is a deletion of the OLD path as well as a change to the
+        // new one, and only the new one gets classified. Rename the template
+        // holding the sole layout_slot_deferred() call to something that is
+        // not a template and the audit was never scheduled — the same hole as
+        // a plain deletion, wearing a different status.
+        $plan = $this->planner()->plan([
+            new ChangedFile(
+                'src/modules/Foo/src/Application/Service/Notes.md',
+                ChangedFile::KIND_NON_PHP,
+                ChangedFile::STATUS_RENAMED,
+                originalPath: 'src/modules/Foo/src/Application/View/templates/pages/gone.html.twig',
+            ),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $this->assertContains('lint:deferred-slots', $this->lintCommandNames($plan));
+    }
+
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void
     {
         $plan = $this->planner()->plan([
