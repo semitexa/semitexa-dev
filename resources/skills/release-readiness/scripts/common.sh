@@ -155,6 +155,8 @@ release_channel_prompt() {
     local answer
 
     if [ -n "${RELEASE_CHANNEL:-}" ]; then
+        RELEASE_CHANNEL_SOURCE="${RELEASE_CHANNEL_SOURCE:-explicit}"
+        export RELEASE_CHANNEL_SOURCE
         return 0
     fi
 
@@ -168,26 +170,31 @@ release_channel_prompt() {
         case "$answer" in
             stable|beta)
                 RELEASE_CHANNEL="$answer"
-                export RELEASE_CHANNEL
+                RELEASE_CHANNEL_SOURCE="prompt"
+                export RELEASE_CHANNEL RELEASE_CHANNEL_SOURCE
                 return 0
                 ;;
         esac
     fi
 
     # Reached whenever stdin/stdout is not a terminal -- which is every agent-driven
-    # run, since the output is captured. The prompt above is for a human at a shell;
-    # for everyone else this must say exactly how to proceed, because the channel is
-    # needed HERE, at preflight, not at tagging: it decides the -beta suffix on
-    # RELEASE_VERSION, which the internal-constraints floor gate reads and the pending
-    # report prints. Do NOT default it -- the choice is sticky, since beta cannot be
-    # promoted to stable on the same master commit.
-    fail "Release channel is required, and it is needed now rather than at tagging time.
-Re-run the same command with it set, e.g.:
-
-    RELEASE_CHANNEL=stable $(basename "${BASH_SOURCE[-1]:-release-preflight.sh}")
-
-Use 'beta' to append -beta to the version. The choice is sticky: the tool cannot
-promote beta to stable on the same master commit, so pick it deliberately."
+    # run, since the output is captured. This used to be a hard failure, on the
+    # reasoning that the channel is sticky (beta cannot be promoted to stable on the
+    # same master commit) and so must never be guessed. In practice the release is
+    # stable every time, the refusal fired on the FIRST command of every release, and
+    # the cost was a wasted round trip rather than a considered decision.
+    #
+    # So: default to stable, and make the default loud instead of silent. Choosing
+    # beta stays a deliberate act -- RELEASE_CHANNEL=beta -- and the report records
+    # which of the two ways the channel was picked, so "did anyone actually choose
+    # this?" is answerable later.
+    RELEASE_CHANNEL="stable"
+    RELEASE_CHANNEL_SOURCE="default"
+    export RELEASE_CHANNEL RELEASE_CHANNEL_SOURCE
+    warn "No RELEASE_CHANNEL set and no terminal to ask: defaulting to 'stable'.
+Pass RELEASE_CHANNEL=beta to cut a -beta version instead. Note that the choice is
+sticky -- beta cannot be promoted to stable on the same master commit."
+    return 0
 }
 
 normalize_release_channel() {
@@ -260,7 +267,9 @@ init_release_session() {
     RELEASE_GENERATED_AT_UTC="$generated_at"
     REPORT_PATH="$REPORT_DIR/${report_date}-${codename}-${version_seed//./-}.md"
 
-    export REPORT_DATE REPORT_CODENAME REPORT_PATH RELEASE_CHANNEL RELEASE_CODENAME RELEASE_VERSION_SEED RELEASE_VERSION RELEASE_GENERATED_AT_UTC
+    RELEASE_CHANNEL_SOURCE="${RELEASE_CHANNEL_SOURCE:-explicit}"
+
+    export REPORT_DATE REPORT_CODENAME REPORT_PATH RELEASE_CHANNEL RELEASE_CHANNEL_SOURCE RELEASE_CODENAME RELEASE_VERSION_SEED RELEASE_VERSION RELEASE_GENERATED_AT_UTC
 
     : >"$RELEASE_FAILURE_FILE"
     rm -f "$RELEASE_SUMMARY_FILE"
@@ -271,6 +280,7 @@ REPORT_DATE=$REPORT_DATE
 REPORT_CODENAME=$REPORT_CODENAME
 REPORT_PATH=$REPORT_PATH
 RELEASE_CHANNEL=$RELEASE_CHANNEL
+RELEASE_CHANNEL_SOURCE=$RELEASE_CHANNEL_SOURCE
 RELEASE_CODENAME=$RELEASE_CODENAME
 RELEASE_VERSION_SEED=$RELEASE_VERSION_SEED
 RELEASE_VERSION=$RELEASE_VERSION
@@ -287,7 +297,19 @@ load_release_session() {
     # shellcheck disable=SC1090
     source "$RELEASE_SESSION_FILE"
 
-    export REPORT_DATE REPORT_CODENAME REPORT_PATH RELEASE_CHANNEL RELEASE_CODENAME RELEASE_VERSION_SEED RELEASE_VERSION RELEASE_GENERATED_AT_UTC RELEASE_ROOT DEV_ROOT RELEASE_SUMMARY_FILE
+    RELEASE_CHANNEL_SOURCE="${RELEASE_CHANNEL_SOURCE:-explicit}"
+    export REPORT_DATE REPORT_CODENAME REPORT_PATH RELEASE_CHANNEL RELEASE_CHANNEL_SOURCE RELEASE_CODENAME RELEASE_VERSION_SEED RELEASE_VERSION RELEASE_GENERATED_AT_UTC RELEASE_ROOT DEV_ROOT RELEASE_SUMMARY_FILE
+}
+
+# `stable` is the default when nothing chose one, so the report has to say which of
+# the two it was -- otherwise a sticky decision looks identical whether it was made
+# or merely fell out.
+report_channel_line() {
+    case "${RELEASE_CHANNEL_SOURCE:-explicit}" in
+        default) printf '`%s` (defaulted — nothing passed RELEASE_CHANNEL)' "$RELEASE_CHANNEL" ;;
+        prompt)  printf '`%s` (chosen at the prompt)' "$RELEASE_CHANNEL" ;;
+        *)       printf '`%s` (explicitly passed)' "$RELEASE_CHANNEL" ;;
+    esac
 }
 
 report_title() {
@@ -369,7 +391,7 @@ write_pending_report() {
 # Release Report: $REPORT_DATE / $title
 
 - Status: preflight passed
-- Release channel: \`${RELEASE_CHANNEL}\`
+- Release channel: $(report_channel_line)
 - Release codename: \`${RELEASE_CODENAME^}\`
 - Planned package version: \`${RELEASE_VERSION}\`
 - Release root: \`$RELEASE_ROOT\`
@@ -404,7 +426,7 @@ write_failure_report() {
     {
         printf '# Release Report: %s / %s\n\n' "$REPORT_DATE" "$title"
         printf -- '- Status: postponed\n'
-        printf -- '- Release channel: `%s`\n' "$RELEASE_CHANNEL"
+        printf -- '- Release channel: %s\n' "$(report_channel_line)"
         printf -- '- Release codename: `%s`\n' "${RELEASE_CODENAME^}"
         printf -- '- Planned package version: `%s`\n' "$RELEASE_VERSION"
         printf -- '- Release root: `%s`\n' "$RELEASE_ROOT"
@@ -428,7 +450,7 @@ write_success_report() {
 
     [ -f "$RELEASE_SUMMARY_FILE" ] || fail "Release summary file not found: $RELEASE_SUMMARY_FILE"
 
-    python3 - "$RELEASE_SUMMARY_FILE" "$REPORT_PATH" "$REPORT_DATE" "$(report_title)" "$RELEASE_ROOT" "$RELEASE_CHANNEL" "$RELEASE_CODENAME" "$RELEASE_VERSION" "$RELEASE_GENERATED_AT_UTC" <<'PY'
+    python3 - "$RELEASE_SUMMARY_FILE" "$REPORT_PATH" "$REPORT_DATE" "$(report_title)" "$RELEASE_ROOT" "$(report_channel_line)" "$RELEASE_CODENAME" "$RELEASE_VERSION" "$RELEASE_GENERATED_AT_UTC" <<'PY'
 import json
 import pathlib
 import sys
@@ -441,7 +463,7 @@ lines = [
     f"# Release Report: {report_date} / {title}",
     "",
     "- Status: released",
-    f"- Release channel: `{release_channel}`",
+    f"- Release channel: {release_channel}",
     f"- Release codename: `{release_codename.capitalize()}`",
     f"- Package version seed: `{release_version}`",
     f"- Release root: `{release_root}`",
