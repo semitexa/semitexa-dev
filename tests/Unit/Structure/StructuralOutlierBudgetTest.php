@@ -319,7 +319,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // compilation and relation persistence as the follow-up, and that is a
         // refactor with its own risk, not a line-count exercise to be done
         // under a security fix.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [34, 886],
+        // 886 -> 939, 34 -> 35: the version is read and locked BEFORE a
+        // cascade delete removes owned children. Without a TransactionManager
+        // nothing rolls back, so a stale root used to throw after the children
+        // were already gone — and gone for good. One method and the paragraph
+        // saying why the guarded DELETE alone was not enough.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 939],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by

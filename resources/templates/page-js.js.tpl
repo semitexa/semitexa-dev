@@ -1,5 +1,5 @@
 /**
- * {{pageName}} — page script.
+ * {{kebabName}} — page script.
  *
  * A FILE, not a `<script>` in the template, and the difference is not style:
  *

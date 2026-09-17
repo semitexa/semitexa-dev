@@ -724,6 +724,17 @@ function executableTwig(string $source): string
         $source,
     );
 
+    // `{% verbatim %}` first. Its body is PRINTED, so a documented
+    // `{{ csp_nonce_attr() }}` inside one is text — counted as a call, it
+    // demanded a floor for a function the template never executes and
+    // rejected a valid release. The audit in semitexa/ssr learned this about
+    // the same construct; the gate had not.
+    $source = (string) preg_replace_callback(
+        '/\{%-?\s*verbatim\s*-?%\}.*?\{%-?\s*endverbatim\s*-?%\}/s',
+        static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
+        $source,
+    );
+
     // Quoted runs are blanked BEFORE the block boundaries are found, not
     // after: `{{ "}}" ~ csp_nonce_attr() }}` ends its first block inside the
     // string otherwise, and the real call after it is discarded — an
