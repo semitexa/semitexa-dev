@@ -60,7 +60,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // to string conversion" rather than yielding the default, so a
         // malformed row took the worker down. NO NEW METHODS in any of the three.
         'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2088],
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1128],
+        // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
+        // method: resolveTenantColumnName() stopped chaining
+        // `tenantColumn()?->columnName ?? throw` and names the null case in an
+        // if instead. phpstan called the nullsafe unnecessary on the left of
+        // `??`, and the three lines are what makes the missing-metadata branch
+        // readable rather than a suffix on a return.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1131],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -333,7 +339,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // nothing rolls back, so a stale root used to throw after the children
         // were already gone — and gone for good. One method and the paragraph
         // saying why the guarded DELETE alone was not enough.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 939],
+        // 939 -> 947 on 2026-09-17, also no new method. Two sites now test
+        // `$metadata->versionProperty !== null` beside the expectedVersion()
+        // check, because the two being tied is a fact about that method's
+        // body and not about these types — phpstan could not see it and was
+        // passing `string|null` into a `string` parameter. The added lines are
+        // the second condition and the paragraph saying why it is not
+        // redundant, which is the thing a later reader would otherwise delete.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 947],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
