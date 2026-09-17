@@ -26,7 +26,20 @@ Default assumptions:
 - every release must also bump `packages/semitexa-ultimate` and rewrite its internal `semitexa/*` requirements to exact released versions
 - after `semitexa-ultimate` pins are refreshed in the release clone, sync the matching clean authoring checkout in `semitexa.dev/packages/semitexa-ultimate`
 - every run must generate a short markdown release report in `/home/taras/Documents/Projects/semitexa.dev/var/docs/release`
-- before any tagging step, explicitly ask whether the release channel is `stable` or `beta`
+- **the release channel defaults to `stable`.** Just run preflight; do not stop to ask, and do not
+  treat the channel as an open question when nothing suggests otherwise. Pass
+  `RELEASE_CHANNEL=beta` only when a beta is actually wanted
+- the channel is resolved at **preflight**, not at tagging: it decides the `-beta` suffix on
+  `RELEASE_VERSION`, which the internal-constraints floor gate reads and the pending report prints.
+  `init_release_session()` records it in the session file and **finalize reuses it without asking again**
+- the default is deliberate but **not silent**: a defaulted run prints a `[WARN]` naming the channel
+  and how to pick beta, and every report says which of the three ways the channel was chosen —
+  `(defaulted …)`, `(chosen at the prompt)` or `(explicitly passed)` — so "did anyone actually choose
+  this?" stays answerable after the fact
+- the choice is **sticky**: the tool cannot promote `beta`→`stable` on the same `master` commit
+  (`bump-packages.php` treats any release tag on HEAD as released), so a later stable re-run is a
+  no-op and the tags have to be placed by hand. That is the reason to raise beta *before* preflight
+  if it is wanted at all — not a reason to ask on every release
 - new package versions use UTC date-based tags in the format `YYYY.MM.DD.HHMM`, with `-beta` appended for beta releases
 - the release workflow also assigns a monthly codename, stored separately from the Composer package version
 - manual browser QA is now fallback-only and should be used only when automated browser smoke fails or when the user explicitly asks for extra spot checks
@@ -49,8 +62,10 @@ Default assumptions:
 
 1. Run the full preflight:
 ```bash
-scripts/release-preflight.sh
+scripts/release-preflight.sh                  # channel defaults to stable
+RELEASE_CHANNEL=beta scripts/release-preflight.sh   # only when a beta is wanted
 ```
+- say in the final report which channel the run used, and say so explicitly when it was the default
 
 2. If preflight fails, stop and report the first failing gate with the relevant command output.
 
@@ -58,7 +73,9 @@ scripts/release-preflight.sh
 ```bash
 scripts/release-finalize.sh
 ```
-- before running finalize, explicitly determine the release channel with the user: `stable` or `beta`
+- the channel is NOT asked again here: finalize calls `load_release_session()` and inherits the
+  `RELEASE_CHANNEL` and `RELEASE_VERSION` preflight recorded. Passing a different one now does not
+  re-cut the version
 - this fetches `origin/master` per package, fast-forwards local `master`, tags any untagged `master` HEAD with the UTC release version, refreshes `packages/semitexa-ultimate` exact internal pins (commit on `develop`, fast-forwarded to `master`, tagged), and triggers Packagist updates
 - finalize does NOT merge `develop`→`master`; if every `master` HEAD is already tagged, finalize is a no-op (zero new tags). Tell the user and offer to open develop→master PRs (e.g. via `/review-prep`) before retrying
 - it must always release `packages/semitexa-ultimate` and replace wildcard internal package constraints with exact released versions
@@ -86,4 +103,7 @@ scripts/release-post-merge.sh
 - If automated checks fail, do not continue to release finalize.
 - Tagging must use the skill-local `bump-packages.php` via `release-finalize.sh` (or `release-post-merge.sh` as recovery), not the project copies in `semitexa.rls/bin/`.
 - Every release-readiness run must leave behind a markdown report in `/home/taras/Documents/Projects/semitexa.dev/var/docs/release`.
-- The release assistant must not guess stability intent; it must ask for `stable` vs `beta` before tagging.
+- The release assistant defaults to `stable` and does not stop to ask. It must still **report** the
+  channel it used and flag when it was defaulted, and must pass `RELEASE_CHANNEL=beta` when the user
+  asks for a beta. Changed 2026-09-17: this used to be "never guess, always ask", which refused to
+  start on the first command of every agent-driven release while the answer was `stable` every time.
