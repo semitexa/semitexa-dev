@@ -608,6 +608,106 @@ phpstan_neutrality_gate() {
     fi
 }
 
+
+# ── semantic-rule ratchet ──────────────────────────────────────────────────
+#
+# The level-max gate above analyses four packages: orm, core, ssr, tenancy. The
+# Semitexa rules — the ones that encode THIS framework's contracts rather than
+# general PHP hygiene — are cheap enough to run over everything, and until
+# 2026-09-17 nothing did. `ai:verify` runs them on the files a change TOUCHES,
+# so a violation in a file nobody edits was never looked at again.
+#
+# MEASURED 2026-09-17: 223 of them, in 20 packages, accumulated exactly that
+# way. This gate does not demand zero — it demands that the number per package
+# does not move without somebody saying so.
+#
+# Compared per package and in BOTH directions. A package that gains a violation
+# fails, which is the point. A package that loses one fails too, and the message
+# says to lower the entry: a recorded number that silently drifts down stops
+# being evidence of anything, and the next reader cannot tell a fix from a gate
+# that went blind.
+#
+# Cost: ~87s cold, ~2s warm. That is why it is here and not in the unit suite,
+# where its neighbours in tests/Unit/Structure are pure-PHP scans that finish in
+# milliseconds, and where it would add 87s to every test:run for everyone.
+semantic_rule_ratchet_gate() {
+    local snapshot="packages/semitexa-dev/resources/phpstan/semantic-rule-counts.json"
+
+    if [ ! -f "$RELEASE_ROOT/$snapshot" ]; then
+        fail "Semantic-rule snapshot missing: ${snapshot}"
+        fail "Something it cannot judge is not something it passes."
+        exit 1
+    fi
+
+    info "semantic rules: counting across every package..."
+
+    local report stderr_file
+    stderr_file="$(mktemp)"
+    # Spelled out for the same reason the gate above spells it out: there is no
+    # COMPOSE variable in this script, and referring to one dies on `set -u`.
+    report="$(cd "$RELEASE_ROOT" && docker compose \
+        -f docker-compose.yml -f docker-compose.mysql.yml \
+        -f docker-compose.redis.yml -f docker-compose.ollama.yml \
+        exec -T app sh -lc 'php -d memory_limit=2G vendor/bin/phpstan analyse \
+            --no-progress --error-format=json \
+            -c packages/semitexa-dev/config/phpstan-ai-verify.neon \
+            $(ls -d packages/semitexa-*/src | grep -v semitexa-ultimate)' 2>"$stderr_file")" || true
+
+    local verdict
+    export SNAPSHOT_PATH="$RELEASE_ROOT/$snapshot"
+    verdict="$(printf '%s' "$report" | php -r '
+        $snapshot = json_decode(file_get_contents(getenv("SNAPSHOT_PATH")), true);
+        $report   = json_decode(stream_get_contents(STDIN), true);
+
+        // A run that never ran reports no file errors, which reads exactly like
+        // a clean tree. Refuse it rather than pass it.
+        if (!is_array($report["totals"] ?? null)) { echo "UNREADABLE"; exit; }
+        if ((int) ($report["totals"]["errors"] ?? 0) > 0) { echo "GLOBAL"; exit; }
+        if (($report["totals"]["file_errors"] ?? 0) === 0 && ($snapshot["total"] ?? 0) > 0) {
+            echo "EMPTY"; exit;
+        }
+
+        $found = [];
+        foreach ($report["files"] ?? [] as $path => $file) {
+            if (preg_match("#packages/(semitexa-[^/]+)/#", $path, $m) !== 1) { continue; }
+            $found[$m[1]] = ($found[$m[1]] ?? 0) + count($file["messages"]);
+        }
+        ksort($found);
+
+        $expected = $snapshot["packages"] ?? [];
+        ksort($expected);
+        if ($found === $expected) { echo "OK"; exit; }
+
+        foreach (array_keys($found + $expected) as $pkg) {
+            $was = $expected[$pkg] ?? 0;
+            $now = $found[$pkg] ?? 0;
+            if ($was !== $now) { echo $pkg, " ", $was, " -> ", $now, "\n"; }
+        }
+    ' 2>/dev/null)"
+
+    case "$verdict" in
+        OK)
+            ok "semantic rules: every package matches the recorded count."
+            rm -f "$stderr_file"
+            return 0
+            ;;
+        UNREADABLE|EMPTY|GLOBAL)
+            fail "semantic rules: the analysis did not produce a judgeable report (${verdict})."
+            sed -n '1,20p' "$stderr_file" >&2 || true
+            rm -f "$stderr_file"
+            exit 1
+            ;;
+    esac
+
+    fail "semantic rules: the per-package counts moved."
+    printf '%s\n' "$verdict" | sed 's/^/  /' >&2
+    fail "A count that went UP is a new violation — fix it, or record it deliberately."
+    fail "A count that went DOWN is a fix — lower the entry in ${snapshot} in the same commit."
+    rm -f "$stderr_file"
+    exit 1
+}
+
 phpstan_neutrality_gate
+semantic_rule_ratchet_gate
 
 ok "Automated release checks passed"

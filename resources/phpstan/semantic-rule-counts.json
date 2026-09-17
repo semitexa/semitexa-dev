@@ -1,0 +1,28 @@
+{
+    "_": "Per-package counts for the Semitexa semantic rules, measured across the whole tree.",
+    "measured_at": "2026-09-17",
+    "command": "vendor/bin/phpstan analyse -c packages/semitexa-dev/config/phpstan-ai-verify.neon --error-format=json --no-progress packages/semitexa-*/src   (semitexa-ultimate excluded)",
+    "total": 223,
+    "packages": {
+        "semitexa-cache": 1,
+        "semitexa-core": 10,
+        "semitexa-dev": 8,
+        "semitexa-docs": 6,
+        "semitexa-graphql": 3,
+        "semitexa-ledger": 12,
+        "semitexa-llm": 1,
+        "semitexa-orm": 3,
+        "semitexa-os": 3,
+        "semitexa-platform-ui": 5,
+        "semitexa-project-graph": 20,
+        "semitexa-scheduler": 52,
+        "semitexa-showcase-kit": 1,
+        "semitexa-ssr": 1,
+        "semitexa-tenancy": 2,
+        "semitexa-testing": 2,
+        "semitexa-theme": 8,
+        "semitexa-update": 1,
+        "semitexa-webhooks": 52,
+        "semitexa-workflow": 32
+    }
+}
