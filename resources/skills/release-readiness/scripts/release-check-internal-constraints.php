@@ -739,8 +739,13 @@ function executableTwig(string $source): string
     // after: `{{ "}}" ~ csp_nonce_attr() }}` ends its first block inside the
     // string otherwise, and the real call after it is discarded — an
     // insufficient floor then passes preflight.
+    //
+    // Escapes are part of the literal: Twig reads `"he said \\" fn()"` as one
+    // string, and a pattern that stops at the escaped quote handed the rest
+    // of it back as executable — so a function NAMED inside a sentence was
+    // counted as a call and demanded a floor for it.
     $masked = (string) preg_replace_callback(
-        '/"[^"]*"|\'[^\']*\'/',
+        '/"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'/s',
         static function (array $m): string {
             // A double-quoted Twig string can INTERPOLATE: `"nonce=#{fn()}"`
             // really does call fn(). Blanking the whole literal hid the call
@@ -806,6 +811,16 @@ function twigFunctionCalls(string $packageDir, array $consumerRoots = ['src']): 
             }
 
             $contents = executableTwig((string) file_get_contents($file->getPathname()));
+
+            // A macro DECLARATION is not a call. `{% macro csp_nonce_attr(v) %}`
+            // is the package writing the helper itself, and counted as a call
+            // it demanded a floor on whichever package happens to publish a
+            // function of that name — a dependency the template does not have.
+            $contents = (string) preg_replace_callback(
+                '/\{%-?\s*macro\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/',
+                static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+                $contents,
+            );
 
             // Not preceded by a `.`: `page.asset()` is a method on a value the
             // template was handed, not the global function of the same name,

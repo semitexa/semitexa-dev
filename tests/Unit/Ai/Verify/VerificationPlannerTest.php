@@ -196,7 +196,10 @@ class VerificationPlannerTest extends TestCase
             ),
         ], VerificationPlan::SCOPE_STANDARD);
 
-        $this->assertContains('lint:deferred-slots', $this->lintCommandNames($plan));
+        // Exactly that one, the way the deletion case above is asserted. The
+        // vanished path is a template nobody can read any more, so a lint
+        // that would open it is scheduled against a file that is not there.
+        $this->assertSame(['lint:deferred-slots'], $this->lintCommandNames($plan));
     }
 
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void

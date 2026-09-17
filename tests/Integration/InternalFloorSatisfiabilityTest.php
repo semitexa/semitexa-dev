@@ -357,6 +357,46 @@ final class InternalFloorSatisfiabilityTest extends TestCase
     }
 
     /**
+     * An ESCAPED quote does not end the literal.
+     *
+     * `"[^"]*"` stopped at the `\\"` in the middle of the sentence and handed
+     * the rest of it back as executable code, so a function named after the
+     * escape was counted as a call and demanded a floor for it — a valid
+     * release refused by a quotation mark.
+     */
+    #[Test]
+    public function a_function_named_after_an_escaped_quote_is_still_a_string(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer(
+            '>=2026.09.13.0749 || dev-master',
+            '{{ "they said \\" use csp_nonce_attr() later" }}{{ asset("app.css") }}',
+        );
+
+        self::assertSame(0, $this->gate()['exit'], 'an escaped quote is inside the string, not the end of it');
+    }
+
+    /**
+     * DECLARING a macro is not calling a function.
+     *
+     * `{% macro csp_nonce_attr(v) %}` is the package writing the helper for
+     * itself. Counted as a call it demanded a floor on whichever package
+     * publishes a Twig function of that name — a dependency this template
+     * does not have and a release stopped for nothing.
+     */
+    #[Test]
+    public function a_macro_declaration_is_not_a_call_to_the_function_it_names(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer(
+            '>=2026.09.13.0749 || dev-master',
+            "{% macro csp_nonce_attr(value) %}nonce=\"{{ value }}\"{% endmacro %}\n{{ asset('app.css') }}",
+        );
+
+        self::assertSame(0, $this->gate()['exit'], 'the template declares the macro, it does not call the dependency');
+    }
+
+    /**
      * A registration NAMED in a comment is not a registration.
      *
      * This direction fails closed in the worst way: the name is added to what

@@ -152,6 +152,10 @@ class MakePageCommandTest extends TestCase
         self::assertStringContainsString('data-pricing-bound', $js, 'binding twice is the failure this guards');
         self::assertStringContainsString('AsUiBehavior', $js, 'the scaffold names the mechanism that solves this outright');
 
+        // Asserted non-empty FIRST: the negative below is satisfied by a
+        // template that was never generated, so a rename of the page file
+        // would turn this into a test that passes on nothing.
+        self::assertNotSame('', $twig, 'the page template must be generated');
         self::assertStringNotContainsString('<script', $twig, 'the template must not teach the inline shape');
     }
 
