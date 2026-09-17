@@ -111,6 +111,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // rest. The three outcomes are now distinct and the nine lines are the
         // sentence explaining which is which.
         'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 718],
+        // NEW on 2026-09-17, at 701 lines, and recorded rather than trimmed.
+        // The class did not gain a method or a branch: `slot.resolve` stopped
+        // being a begin/end pair and became a mark carrying its own duration,
+        // because this is the path that resolves slots CONCURRENTLY — one
+        // coroutine per slot, all sharing the request's tracer — and a span
+        // stack matched by name cannot survive that. The increase is the
+        // paragraph saying so, at the one place a later reader would otherwise
+        // "restore" the pair.
+        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 701],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
