@@ -1,26 +1,8 @@
 includes:
+    # One list, shared with ai:verify — see the file for why it is not copied.
+    - packages/semitexa-core/config/phpstan-rules.neon
     - phpstan-baseline.neon
 
-rules:
-    - Semitexa\Core\PHPStan\Rules\InjectionViaConstructorRule
-    - Semitexa\Core\PHPStan\Rules\ConfigOnClassTypeRule
-    - Semitexa\Core\PHPStan\Rules\ConfigOnArrayTypeRule
-    - Semitexa\Core\PHPStan\Rules\InjectOnScalarTypeRule
-    - Semitexa\Core\PHPStan\Rules\StaticContainerAccessRule
-    - Semitexa\Core\PHPStan\Rules\UnannotatedServicePropertyRule
-    - Semitexa\Core\PHPStan\Rules\InjectedPropertyVisibilityRule
-    - Semitexa\Core\PHPStan\Rules\ExecutionScopedWithoutAttributeRule
-    - Semitexa\Core\PHPStan\Rules\DirectResponseConstructionRule
-    - Semitexa\Core\PHPStan\Rules\HandlerReturnsResponseRule
-    - Semitexa\Core\PHPStan\Rules\ExplicitOptionalDependencyRule
-    - Semitexa\Core\PHPStan\Rules\EventListenerMissingExecutionRule
-    - Semitexa\Core\PHPStan\Rules\DiscoveryCallSiteRule
-    - Semitexa\Core\PHPStan\Rules\FactoryStringKeyRule
-    - Semitexa\Core\PHPStan\Rules\FactoryContractRule
-    - Semitexa\Core\PHPStan\Rules\FactoryClosedWorldRule
-    - Semitexa\Core\PHPStan\Rules\TraitInjectionRule
-    - Semitexa\Core\PHPStan\Rules\ModuleContractOwnershipRule
-    - Semitexa\Core\PHPStan\Rules\DisallowErrorLogRule
 
 parameters:
     level: max
