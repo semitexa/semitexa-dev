@@ -30,6 +30,11 @@ final class ChangedFileClassifier
         '/Application/Service/'                => ChangedFile::KIND_SERVICE,
         '/Domain/Service/'                     => ChangedFile::KIND_SERVICE,
         '/Domain/Contract/'                    => ChangedFile::KIND_CONTRACT,
+        // Console commands are container-managed like a service and can inline
+        // a prompt like a handler, so they need a row of their own rather than
+        // falling through to KIND_PHP_OTHER — see ChangedFile::KIND_COMMAND for
+        // why the catch-all could not carry it.
+        '/Application/Console/Command/'        => ChangedFile::KIND_COMMAND,
     ];
 
     /**

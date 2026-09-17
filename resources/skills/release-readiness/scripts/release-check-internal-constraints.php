@@ -399,7 +399,526 @@ function verifyAgainstTree(
         };
     }
 
+    foreach (templateContractProblems($name, $packageDir, $dependency, $target, $version, $kind, $consumerRoots) as $problem) {
+        $problems[] = $problem;
+    }
+
     return $problems;
+}
+
+/**
+ * The same question, asked of the TEMPLATE contract.
+ *
+ * A provider owns more than classes. A Twig function is reached from a
+ * template, with no import and no class name, so the PHP scan above walks past
+ * it — and the first time that mattered the missing floor was found by hand,
+ * not by this gate. The rule is identical: if a consumer calls a function the
+ * dependency registers TODAY, the release it floored has to register it too.
+ *
+ * Ownership is decided by the provider, not guessed from the name: a call this
+ * finds is only ever compared against the functions THIS dependency registers.
+ * A Twig builtin, or the consumer's own helper, matches nothing and costs
+ * nothing.
+ *
+ * @param array{dir: string, psr4: array<string, list<string>>} $target
+ * @return list<string>
+ */
+function templateContractProblems(
+    string $name,
+    string $packageDir,
+    string $dependency,
+    array $target,
+    string $version,
+    string $kind,
+    array $consumerRoots = ['src'],
+): array {
+    // The CONSUMER's own roots, which the gate already knows from its composer
+    // autoload map and was throwing away here. A package that keeps templates
+    // under a mapped root such as `lib/` could call a newly registered
+    // function with no floor for it, because nothing looked there.
+    $calls = twigFunctionCalls($packageDir, $consumerRoots);
+    if ($calls === []) {
+        return [];
+    }
+
+    $ownedNow = registeredTwigFunctions($target['dir'], null);
+    if ($ownedNow === []) {
+        return [];
+    }
+
+    $ownedThen = registeredTwigFunctions($target['dir'], $kind === 'planned' ? null : $version);
+
+    $problems = [];
+    foreach (array_keys($calls) as $function) {
+        if (!isset($ownedNow[$function]) || isset($ownedThen[$function])) {
+            continue;
+        }
+
+        $problems[] = match ($kind) {
+            'wildcard' => sprintf(
+                '%s calls the Twig function %s() from a template but requires %s at "*", and no '
+                . 'released %s registers it (newest is %s) — floor it at the release that ships the function',
+                $name,
+                $function,
+                $dependency,
+                $dependency,
+                $version,
+            ),
+            'planned' => sprintf(
+                '%s calls the Twig function %s() and floors %s at %s, the release being cut, but the '
+                . 'tree that is about to become it does not register it',
+                $name,
+                $function,
+                $dependency,
+                $version,
+            ),
+            default => sprintf(
+                '%s calls the Twig function %s() but %s %s at %s, which does not register it',
+                $name,
+                $function,
+                $kind === 'pin' ? 'pins' : 'floors',
+                $dependency,
+                $version,
+            ),
+        };
+    }
+
+    return $problems;
+}
+
+/**
+ * Twig functions a package REGISTERS at a revision.
+ *
+ * WHY THIS EXISTS. The gate's whole question is "does the release you floored
+ * declare what you use", and until now "what you use" meant a PHP class. A
+ * provider owns more than classes: a Twig function is a contract a consumer
+ * reaches for from a TEMPLATE, with no import and no class name anywhere. The
+ * first case cost a floor found by hand — semitexa-os reaching the prompt
+ * package's guidance — and the second arrived the same week, with theme and
+ * demo calling ssr's csp_nonce_attr(). Neither is visible to a PHP scan.
+ *
+ * A function is checkable because it has a REGISTRATION SITE: the provider
+ * names it in a call the scan can find at any revision, exactly as a class
+ * names itself in its declaration.
+ *
+ * WHAT IS STILL INVISIBLE, stated so nobody reads this as covering templates:
+ * a Twig VARIABLE the provider binds into the render context has no
+ * registration site at all — `guidance` is a string in one package and a
+ * string in another, and nothing declares it. So is a template NAMESPACE a
+ * consumer extends. Those remain a known limit of this gate rather than
+ * something it silently half-checks.
+ *
+ * @param string|null $tag null reads the working tree — the release being cut
+ * @return array<string, true> function name => true
+ */
+function registeredTwigFunctions(string $dir, ?string $tag): array
+{
+    // The provider's OWN production roots, read from its composer autoload
+    // map at the revision being checked — not a hard-coded `src`. A package
+    // that maps `lib/` registers its functions there, and a scan that never
+    // looks finds no names at all, which makes this check skip that provider
+    // in silence.
+    //
+    // Without any pathspec the scan also reads tests, fixtures and README
+    // examples, and a name that appears only in one of those becomes a
+    // runtime contract: a release blocked by a documentation snippet.
+    $paths = autoloadRoots($dir, $tag);
+    if ($paths === []) {
+        return [];
+    }
+
+    // stderr is CAPTURED rather than discarded, because the exit code alone
+    // does not tell a failed scan from an empty one. Measured: `git grep`
+    // answers 1 for "no matches" AND 1 when it could not stat a file or read a
+    // directory, printing `error: failed to stat …` to stderr in the second
+    // case and nothing at all in the first. Only a repository it cannot open
+    // gives a code above 1.
+    $errors = (string) tempnam(sys_get_temp_dir(), 'semitexa-gate-');
+
+    $files = sprintf(
+        'git -C %s grep -l %s %s-- %s 2>%s',
+        escapeshellarg($dir),
+        escapeshellarg('registerFunction'),
+        $tag === null ? '' : escapeshellarg($tag) . ' ',
+        implode(' ', array_map('escapeshellarg', $paths)),
+        escapeshellarg($errors),
+    );
+
+    exec($files, $lines, $code);
+
+    $diagnostics = trim((string) @file_get_contents($errors));
+    @unlink($errors);
+
+    // Both used to mean "this provider registers nothing", so a scan that
+    // FAILED cleared the contract check for it — templateContractProblems()
+    // sees an empty set, returns early, and the gate reports a clean result
+    // for work it never did. On a release gate that is the worst direction to
+    // fail, so anything other than a silent, successful no-match stops it.
+    if ($code > 1 || $diagnostics !== '') {
+        abortGate(sprintf(
+            "Could not scan %s for Twig registrations (git grep exited %d)%s\n"
+            . 'The template contract for this dependency was not checked.',
+            $dir,
+            $code,
+            $diagnostics === '' ? '.' : ":\n" . $diagnostics,
+        ));
+    }
+
+    if ($code !== 0) {
+        return [];
+    }
+
+    $functions = [];
+    foreach ($lines as $line) {
+        // With a tag, `git grep -l` prints `<tag>:<path>`.
+        $path = $tag === null ? $line : substr($line, strpos($line, ':') + 1);
+        if ($path === '' || !str_ends_with($path, '.php')) {
+            continue;
+        }
+
+        // The whole FILE, not one line of it. A line-oriented scan misses a
+        // registration whose name sits on the next line — which is how a long
+        // argument list gets formatted — and the provider then looks as though
+        // it registers nothing at all, which makes the gate skip it silently.
+        // A provider file that cannot be READ is not a provider that registers
+        // nothing. `file_get_contents()` answers false and the cast turned that
+        // into '', and `git show` failing answered '' too — so the file was
+        // skipped, the registration set came back incomplete, and a required
+        // floor went unchecked. Only a successful read of an empty file may
+        // skip; a failed read stops the gate.
+        if ($tag === null) {
+            $raw = @file_get_contents($dir . '/' . $path);
+            if ($raw === false) {
+                abortGate(sprintf('Could not read the provider file %s/%s.', $dir, $path));
+            }
+            $contents = $raw;
+        } else {
+            $contents = shellOutputOrAbort(
+                sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':' . $path)),
+                sprintf('Could not read %s at %s from %s.', $path, $tag, $dir),
+            );
+        }
+
+        if ($contents === '') {
+            continue;
+        }
+
+        foreach (registrationNames($contents) as $name) {
+            $functions[$name] = true;
+        }
+    }
+
+    return $functions;
+}
+
+/**
+ * Names passed to a real `registerFunction('x', …)` CALL.
+ *
+ * Tokens rather than a regex over the file, because the regex counted the same
+ * text in a comment or an ordinary string. That direction fails CLOSED in the
+ * worst way: a name that only a docblock mentions is added to what the FLOORED
+ * release "registers", so the gate decides the floor is satisfied and lets a
+ * consumer call a function that release never shipped.
+ *
+ * @return list<string>
+ */
+function registrationNames(string $contents): array
+{
+    if (!str_contains($contents, 'registerFunction')) {
+        return [];
+    }
+
+    $tokens = @token_get_all($contents);
+    $count = count($tokens);
+    $names = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $token = $tokens[$i];
+        if (!is_array($token) || $token[0] !== T_STRING || $token[1] !== 'registerFunction') {
+            continue;
+        }
+
+        // `(` then a quoted string, stepping over whitespace AND comments:
+        // `registerFunction(/* the public name */ 'csp_nonce_attr', …)` is a
+        // real registration, and skipping only whitespace missed it — which
+        // credits the floored release with a function it does not have.
+        $j = nextCodeToken($tokens, $i + 1, $count);
+        if ($j >= $count || $tokens[$j] !== '(') {
+            continue;
+        }
+
+        $j = nextCodeToken($tokens, $j + 1, $count);
+        if ($j >= $count || !is_array($tokens[$j]) || $tokens[$j][0] !== T_CONSTANT_ENCAPSED_STRING) {
+            continue;
+        }
+
+        $name = trim($tokens[$j][1], "'\"");
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) === 1) {
+            $names[] = $name;
+        }
+    }
+
+    return $names;
+}
+
+/**
+ * The next token_get_all() entry that is neither whitespace nor a comment.
+ *
+ * Named apart from nextMeaningfulToken() further down, which answers the same
+ * question about PhpToken objects for a different scan.
+ */
+function nextCodeToken(array $tokens, int $from, int $count): int
+{
+    for ($j = $from; $j < $count; $j++) {
+        if (!is_array($tokens[$j])) {
+            return $j;
+        }
+        if ($tokens[$j][0] !== T_WHITESPACE && $tokens[$j][0] !== T_COMMENT && $tokens[$j][0] !== T_DOC_COMMENT) {
+            return $j;
+        }
+    }
+
+    return $count;
+}
+
+/**
+ * A package's own source roots at a revision, from its composer autoload map.
+ *
+ * `resources` is added because a package that ships assets rather than modules
+ * keeps templates and registrations outside its PSR-4 roots, and that is the
+ * case that raised the template contract in the first place.
+ *
+ * @return list<string>
+ */
+function autoloadRoots(string $dir, ?string $tag): array
+{
+    $raw = $tag === null
+        ? (string) @file_get_contents($dir . '/composer.json')
+        : shellOutput(sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':composer.json')));
+
+    $roots = [];
+    $manifest = $raw === '' ? null : json_decode($raw, true);
+
+    if (is_array($manifest)) {
+        // `autoload` ONLY. A function registered from an autoload-dev root is
+        // not loaded from a production dependency, so counting it would let a
+        // consumer floor a release that cannot actually give it the function.
+        foreach (['autoload'] as $section) {
+            foreach ((array) ($manifest[$section]['psr-4'] ?? []) as $paths) {
+                foreach ((array) $paths as $path) {
+                    $roots[] = trim((string) $path, '/') ?: '.';
+                }
+            }
+            foreach ((array) ($manifest[$section]['files'] ?? []) as $file) {
+                $roots[] = trim((string) $file, '/');
+            }
+        }
+    }
+
+    $roots[] = 'src';
+    $roots[] = 'resources';
+
+    return array_values(array_unique(array_filter($roots, static fn (string $p): bool => $p !== '')));
+}
+
+/** stdout of a command, or '' when it fails. */
+/**
+ * Stop the gate, loudly, because it cannot answer the question it was asked.
+ *
+ * A release gate has exactly two honest outcomes: it checked and found nothing,
+ * or it could not check. Collapsing the second into the first is how a release
+ * ships past a contract nobody verified.
+ */
+function abortGate(string $why): never
+{
+    fwrite(STDERR, 'Release gate could not complete: ' . $why . "\n");
+    exit(1);
+}
+
+/** {@see shellOutput()}, but a non-zero exit stops the gate instead of reading as empty. */
+function shellOutputOrAbort(string $command, string $why): string
+{
+    $out = [];
+    $code = 0;
+    exec($command, $out, $code);
+
+    if ($code !== 0) {
+        abortGate($why);
+    }
+
+    return implode("\n", $out);
+}
+
+function shellOutput(string $command): string
+{
+    $out = [];
+    $code = 0;
+    exec($command, $out, $code);
+
+    return $code === 0 ? implode("\n", $out) : '';
+}
+
+/**
+ * Twig function names a package's own templates CALL.
+ *
+ * Scans `.twig` under both roots a package can keep templates in: `src` for a
+ * module-shaped package and `resources` for one that ships assets — the second
+ * is where the case that raised this lives.
+ *
+ * Deliberately generous about what looks like a call, and deliberately NOT
+ * authoritative about whose call it is: the caller decides that by asking
+ * which names the DEPENDENCY registers. A name this returns that nobody
+ * registers is simply never matched, so a Twig builtin or the consumer's own
+ * helper costs nothing here.
+ *
+ * Generous is not the same as indiscriminate, and the difference matters
+ * because this gate BLOCKS A RELEASE. Text a template merely prints is not a
+ * call: `{# use new_fn() after upgrading #}`, a name inside a string, a line
+ * of JavaScript. Read as calls, each of those demands a floor for a function
+ * the template never invokes, and the release stops on a comment.
+ *
+ * @return array<string, true> function name => true
+ */
+/**
+ * A template with everything Twig does not EXECUTE blanked out.
+ *
+ * `{# … #}` emits nothing; text outside `{{ … }}` and `{% … %}` is printed
+ * verbatim, whatever it spells. Replaced by spaces of the same length so
+ * nothing shifts.
+ */
+function executableTwig(string $source): string
+{
+    $source = (string) preg_replace_callback(
+        '/\{#.*?#\}/s',
+        static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+        $source,
+    );
+
+    // `{% verbatim %}` first. Its body is PRINTED, so a documented
+    // `{{ csp_nonce_attr() }}` inside one is text — counted as a call, it
+    // demanded a floor for a function the template never executes and
+    // rejected a valid release. The audit in semitexa/ssr learned this about
+    // the same construct; the gate had not.
+    $source = (string) preg_replace_callback(
+        '/\{%-?\s*verbatim\s*-?%\}.*?\{%-?\s*endverbatim\s*-?%\}/s',
+        static fn (array $m): string => preg_replace('/[^\n]/', ' ', $m[0]) ?? '',
+        $source,
+    );
+
+    // Quoted runs are blanked BEFORE the block boundaries are found, not
+    // after: `{{ "}}" ~ csp_nonce_attr() }}` ends its first block inside the
+    // string otherwise, and the real call after it is discarded — an
+    // insufficient floor then passes preflight.
+    //
+    // Escapes are part of the literal: Twig reads `"he said \\" fn()"` as one
+    // string, and a pattern that stops at the escaped quote handed the rest
+    // of it back as executable — so a function NAMED inside a sentence was
+    // counted as a call and demanded a floor for it.
+    $masked = (string) preg_replace_callback(
+        '/"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'/s',
+        static function (array $m): string {
+            // A double-quoted Twig string can INTERPOLATE: `"nonce=#{fn()}"`
+            // really does call fn(). Blanking the whole literal hid the call
+            // and let a template use a function without the floor for it.
+            // Single quotes do not interpolate, so they are blanked whole.
+            if ($m[0][0] !== '"' || !str_contains($m[0], '#{')) {
+                return preg_replace('/[^\n]/', ' ', $m[0]) ?? '';
+            }
+
+            // `\#{…}` is LITERAL in Twig, so preserving it read a call that
+            // never happens and demanded a floor for it — a valid release
+            // stopped by an escape. The backslash is consumed with the
+            // sequence so the branch below cannot see it as interpolation.
+            return (string) preg_replace_callback(
+                '/\\\\#\{[^}]*\}|#\{[^}]*\}|[^\n]/',
+                static fn (array $p): string => str_starts_with($p[0], '#{')
+                    ? $p[0]
+                    : preg_replace('/[^\n]/', ' ', $p[0]) ?? ' ',
+                $m[0],
+            );
+        },
+        $source,
+    );
+
+    $kept = str_repeat(' ', strlen($source));
+    if (preg_match_all('/\{\{.*?\}\}|\{%.*?%\}/s', $masked, $matches, PREG_OFFSET_CAPTURE) === false) {
+        return $kept;
+    }
+
+    // The blocks are taken from the MASKED copy, so a string literal inside an
+    // executable block is already blank: `{{ "use new_fn() after upgrading" }}`
+    // prints a sentence and calls nothing, and left readable that sentence
+    // demanded a floor and stopped a release.
+    foreach ($matches[0] as [$block, $offset]) {
+        $kept = substr_replace($kept, (string) $block, (int) $offset, strlen((string) $block));
+    }
+
+    return $kept;
+}
+
+/**
+ * @param list<string> $consumerRoots the package's own source roots
+ */
+function twigFunctionCalls(string $packageDir, array $consumerRoots = ['src']): array
+{
+    $calls = [];
+
+    // `resources` is always included: a package that ships assets rather than
+    // modules keeps its templates outside the PSR-4 roots, and that is the
+    // case the template contract was written for.
+    $roots = array_values(array_unique(array_merge($consumerRoots, ['src', 'resources'])));
+
+    foreach ($roots as $root) {
+        $dir = $packageDir . '/' . $root;
+        if (!is_dir($dir)) {
+            continue;
+        }
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
+        foreach ($files as $file) {
+            if (!$file instanceof SplFileInfo || $file->getExtension() !== 'twig') {
+                continue;
+            }
+
+            $contents = executableTwig((string) file_get_contents($file->getPathname()));
+
+            // A macro DECLARATION is not a call. `{% macro csp_nonce_attr(v) %}`
+            // is the package writing the helper itself, and counted as a call
+            // it demanded a floor on whichever package happens to publish a
+            // function of that name — a dependency the template does not have.
+            $contents = (string) preg_replace_callback(
+                '/\{%-?\s*macro\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/',
+                static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+                $contents,
+            );
+
+            // A FILTER is not a global call either. `{{ value|asset('app.css') }}`
+            // pipes into asset, and counted as a call it demanded a floor on
+            // whichever package registers a FUNCTION of that name — failing a
+            // release that is perfectly valid. Twig allows whitespace around
+            // the pipe, so the name is blanked wherever a pipe precedes it
+            // rather than matched with a fixed-width lookbehind.
+            $contents = (string) preg_replace_callback(
+                '/\|\s*[A-Za-z_][A-Za-z0-9_]*\s*\(/',
+                static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+                $contents,
+            );
+
+            // Not preceded by a `.`: `page.asset()` is a method on a value the
+            // template was handed, not the global function of the same name,
+            // and reading it as one demanded a floor for a dependency the
+            // template never calls.
+            if (preg_match_all('/(?<![\w.])([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $contents, $matches) === false) {
+                continue;
+            }
+
+            foreach ($matches[1] as $name) {
+                $calls[$name] = true;
+            }
+        }
+    }
+
+    return $calls;
 }
 
 /**
@@ -493,56 +1012,6 @@ function workingTree(string $dir): ?array
     exec($command, $lines, $code);
 
     return $code === 0 && $lines !== [] ? $lines : null;
-}
-
-/**
- * The working-tree twin of {@see classDeclaredAtTag}, for the release being cut.
- *
- * @param array<string, list<string>> $psr4
- */
-function classDeclaredInTree(string $dir, string $fqcn, array $psr4): bool
-{
-    $short = $fqcn;
-    $namespace = '';
-    $lastSeparator = strrpos($short, '\\');
-    if ($lastSeparator !== false) {
-        $namespace = substr($fqcn, 0, $lastSeparator);
-        $short = substr($short, $lastSeparator + 1);
-    }
-    if ($short === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $short) !== 1) {
-        return false;
-    }
-
-    $paths = [];
-    foreach ($psr4 as $dirs) {
-        foreach ($dirs as $sourceDir) {
-            $paths[] = escapeshellarg($sourceDir);
-        }
-    }
-
-    $command = sprintf(
-        'git -C %s grep -lE %s --%s 2>/dev/null',
-        escapeshellarg($dir),
-        escapeshellarg('^[a-z ]*(class|interface|trait|enum) ' . $short . '\b'),
-        $paths === [] ? '' : ' ' . implode(' ', $paths),
-    );
-
-    exec($command, $lines, $code);
-    if ($code !== 0 || $lines === []) {
-        return false;
-    }
-
-    foreach ($lines as $path) {
-        $contents = @file_get_contents($dir . '/' . $path);
-        if ($contents === false) {
-            continue;
-        }
-        if (declaresClassInNamespace($contents, $namespace, $short)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 /**

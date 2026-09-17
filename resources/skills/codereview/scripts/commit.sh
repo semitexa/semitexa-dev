@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Prepare a review-fix commit: set the authoring identity, then stage the work.
+# Prepare a review-fix commit: check the authoring identity, then stage the work.
 #
 # Usage: commit.sh /absolute/path/to/repo
 #
@@ -21,12 +21,6 @@
 # So: stage, and exit non-zero when there is nothing to stage, which stops the
 # sequence before it can report a push that did not happen.
 set -euo pipefail
-
-authors=(
-  "SyntaxWanderer <email1@example.com>"
-  "Profile 朝 <email2@example.com>"
-  "Yuchera <email3@example.com>"
-)
 
 repo="${1:-}"
 
@@ -70,23 +64,33 @@ case "$branch" in
         ;;
 esac
 
-author="$(shuf -n1 -e "${authors[@]}")"
-author_name="$(printf '%s' "$author" | sed 's/ <.*//')"
-author_email="$(printf '%s' "$author" | sed 's/.*<//;s/>//')"
+# The identity belongs to whoever is committing, and this script does not get
+# to invent one.
+#
+# It used to pick at random from three made-up authors and write the winner
+# into the repository's own config. That is how 36 of these repositories came
+# to publish their history under people who do not exist, and it silently
+# overrode whatever identity the developer had configured.
+#
+# It is also wrong the moment this file leaves this machine: it ships inside
+# semitexa/dev, so any identity hardcoded here would be stamped onto someone
+# else's commits in their own repository.
+#
+# So the script only CHECKS. Git resolves the identity from the worktree, the
+# repository and the global config in that order; when none of them answers,
+# the commit that follows fails with git's own message — but only after the
+# staging has already happened, which is the confusing half-done state this
+# file exists to prevent. Failing here keeps the documented sequence honest.
+author_name="$(git -C "$repo" config user.name || true)"
+author_email="$(git -C "$repo" config user.email || true)"
 
-# Repository-local config is SHARED across linked worktrees, so two worktrees
-# staging at once would overwrite each other's identity and the commit could go
-# out under whichever name landed last. In a linked worktree the identity is
-# therefore written worktree-locally instead; extensions.worktreeConfig is the
-# switch git requires for that to take effect, and it is scoped to this repo.
-if [ -f "$repo/.git" ]; then
-    git -C "$repo" config extensions.worktreeConfig true
-    git -C "$repo" config --worktree user.name "$author_name"
-    git -C "$repo" config --worktree user.email "$author_email"
-else
-    git -C "$repo" config user.name "$author_name"
-    git -C "$repo" config user.email "$author_email"
+if [ -z "$author_name" ] || [ -z "$author_email" ]; then
+    printf 'No git identity configured for %s.\n' "$repo" >&2
+    printf 'Set user.name and user.email — globally, or in this repository — before staging.\n' >&2
+    exit 1
 fi
+
+author="$author_name <$author_email>"
 
 git -C "$repo" add -A
 

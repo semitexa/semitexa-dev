@@ -29,6 +29,23 @@ final class StructuralOutlierBudgetTest extends TestCase
 {
     /** Classes at or above 30 methods or 700 lines: path => [methods, lines]. */
     private const BUDGETS = [
+        // NEW on 2026-09-16, at 655 -> 756 lines, and recorded rather than
+        // trimmed. A page's body can now be a PAGE — an ordered list of
+        // passages and pictures, each with its own layout — so this class
+        // renders one more kind of body and had to learn which control a body's
+        // kind asks for. The rendering of the blocks themselves is NOT here: it
+        // was extracted to ContentBlocksControl precisely because folding it in
+        // made the biggest class in the package bigger still. What remains is
+        // the seam (bodyControl), the two predicates it needs, and the comments
+        // saying why a page of blocks belongs on the canvas and not behind
+        // «Властивості» — a mistake this file already made once, invisibly.
+        // 756 -> 764 after a review pass: BLOCKS joins HTML and IMAGE in the
+        // plain-<div> wrapper condition, plus the five lines saying why. A
+        // <label> around this control forwards a click anywhere in the page
+        // body to the first labelable thing inside it, which is a move-up
+        // button — the same class of defect as the Trix toolbar the
+        // condition was written for, so it belongs in the same comment.
+        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 764],
         // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
         // now arrive as a Closure resolved AFTER the connection caps, so an
         // over-cap attempt no longer pays for a full graphql document execution
@@ -94,6 +111,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // rest. The three outcomes are now distinct and the nine lines are the
         // sentence explaining which is which.
         'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 718],
+        // NEW on 2026-09-17, at 701 lines, and recorded rather than trimmed.
+        // The class did not gain a method or a branch: `slot.resolve` stopped
+        // being a begin/end pair and became a mark carrying its own duration,
+        // because this is the path that resolves slots CONCURRENTLY — one
+        // coroutine per slot, all sharing the request's tracer — and a span
+        // stack matched by name cannot survive that. The increase is the
+        // paragraph saying so, at the one place a later reader would otherwise
+        // "restore" the pair.
+        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 701],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
@@ -268,7 +294,47 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 859 -> 864: the application-root guard is anchored rather than a
         // substring, since the lint scans the REPOSITORY-ROOT src/modules and a
         // package path containing that segment is not somewhere it looks.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 864],
+        // 864 -> 870: lint:inline-script joined the handler and template rows,
+        // plus the six lines saying why it is scheduled by those two kinds and
+        // what makes it different from every other lint here — it is the only
+        // one whose subject fails in a BROWSER, on a consumer that enforces a
+        // policy, and never on the server where the rest of this plan looks.
+        // 870 -> 875: lint:deferred-slots joined the resource and template rows,
+        // and the four lines saying why a slot resource schedules a TEMPLATE
+        // audit — `deferred: true` is a claim the resource cannot make true on
+        // its own, and the file that would make it true is a different one.
+        // 875 -> 880: a row for KIND_COMMAND, and the four lines saying why the
+        // catch-all could not carry it — putting lint:mechanisms on
+        // KIND_PHP_OTHER was tried, and it wedged the suite at ~427/8500
+        // because that is the kind the verify tooling's own fixtures classify
+        // as. A reverted experiment that leaves no trace invites the repeat.
+        // 880 -> 907: a DELETED file now still schedules the whole-tree lints.
+        // The skip was a hole in the case lint:deferred-slots exists for —
+        // delete the template that called layout_slot_deferred and the
+        // resource still declaring `deferred: true` is a lie with no file
+        // left to notice it. A CROSS_FILE_LINTS constant, its docblock, the
+        // branch and the comment saying why almost nothing else applies.
+        // 907 -> 939, 19 -> 20 methods: a RENAME is a deletion of the old path
+        // as well as a change to the new one, and only the new one was ever
+        // classified. Rename the template holding the sole
+        // layout_slot_deferred() call to something that is not a template and
+        // the whole-tree audit was never scheduled — the same hole as a plain
+        // deletion, wearing a different status. One method for the old side,
+        // and the comment saying why the status is not enough to spot it.
+        // semitexa-orm's write engine crossed the threshold in the ORM audit
+        // (PR #70): tenant scope now travels with every aggregate write, and
+        // #[SoftDelete] finally does something. Recorded rather than trimmed —
+        // the audit itself names extracting tenant guards, SQL mutation
+        // compilation and relation persistence as the follow-up, and that is a
+        // refactor with its own risk, not a line-count exercise to be done
+        // under a security fix.
+        // 886 -> 939, 34 -> 35: the version is read and locked BEFORE a
+        // cascade delete removes owned children. Without a TransactionManager
+        // nothing rolls back, so a stale root used to throw after the children
+        // were already gone — and gone for good. One method and the paragraph
+        // saying why the guarded DELETE alone was not enough.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 939],
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

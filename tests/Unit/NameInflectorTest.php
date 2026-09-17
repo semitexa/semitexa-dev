@@ -36,6 +36,23 @@ class NameInflectorTest extends TestCase
         $this->assertSame('user-profile', $this->inflector->toKebab('UserProfile'));
     }
 
+    public function test_a_name_that_sanitises_to_nothing_is_refused(): void
+    {
+        // The filter drops everything unusable in a file name, and for some
+        // inputs that leaves NOTHING. MakePageCommand only checks that --name
+        // was passed, so an apostrophe or an emoji reached the plan builder and
+        // it planned files named for nothing at all: `.html.twig`, and with
+        // --with-assets a `.js`, a `.css` and a `.json` beside it.
+        foreach (["'", '💣', '---', '   '] as $junk) {
+            try {
+                $this->inflector->toKebab($junk);
+                $this->fail(sprintf('toKebab(%s) must be refused, not answered with an empty name.', var_export($junk, true)));
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('no characters usable', $e->getMessage());
+            }
+        }
+    }
+
     public function test_to_kebab_from_snake(): void
     {
         $this->assertSame('user-profile', $this->inflector->toKebab('user_profile'));

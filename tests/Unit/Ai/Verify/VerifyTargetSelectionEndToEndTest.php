@@ -72,7 +72,17 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 // lint:mechanisms rides along here too: a handler can inline a
                 // heredoc straight into an LLM call, and a diff holding only a
                 // handler would otherwise pass standard verification.
-                ['lint:di', 'lint:handlers', 'lint:mechanisms'],
+                // lint:inline-script rides both locations — a handler that
+                // writes a whole HTML document is where the OS apps put theirs.
+                ['lint:di', 'lint:handlers', 'lint:inline-script', 'lint:mechanisms'],
+            ],
+            'console command' => [
+                'Application/Console/Command/SyncCommand.php',
+                ChangedFile::KIND_COMMAND,
+                // Container-managed like a service, and able to hold a prompt
+                // in a heredoc like a handler. Until this kind existed it fell
+                // through to the catch-all and selected nothing at all.
+                ['lint:di', 'lint:mechanisms'],
             ],
             'domain listener' => [
                 'Application/Handler/DomainListener/ThingChangedListener.php',
@@ -100,7 +110,9 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'resource' => [
                 'Application/Resource/Response/ThingResource.php',
                 ChangedFile::KIND_RESOURCE,
-                ['lint:responses'],
+                // A slot resource declares deferred: true; only a template can
+                // make that true, so touching either half schedules the audit.
+                ['lint:deferred-slots', 'lint:responses'],
             ],
             'application service' => [
                 'Application/Service/Thing/ThingCatalog.php',
@@ -121,9 +133,11 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 'Domain/Contract/ThingRepositoryInterface.php',
                 ChangedFile::KIND_CONTRACT,
                 [
+                    'lint:deferred-slots',
                     'lint:deferred-twig',
                     'lint:di',
                     'lint:handlers',
+                    'lint:inline-script',
                     'lint:mechanisms',
                     'lint:responses',
                     'lint:scoping',
