@@ -399,7 +399,7 @@ function verifyAgainstTree(
         };
     }
 
-    foreach (templateContractProblems($name, $packageDir, $dependency, $target, $version, $kind) as $problem) {
+    foreach (templateContractProblems($name, $packageDir, $dependency, $target, $version, $kind, $consumerRoots) as $problem) {
         $problems[] = $problem;
     }
 
@@ -430,8 +430,13 @@ function templateContractProblems(
     array $target,
     string $version,
     string $kind,
+    array $consumerRoots = ['src'],
 ): array {
-    $calls = twigFunctionCalls($packageDir);
+    // The CONSUMER's own roots, which the gate already knows from its composer
+    // autoload map and was throwing away here. A package that keeps templates
+    // under a mapped root such as `lib/` could call a newly registered
+    // function with no floor for it, because nothing looked there.
+    $calls = twigFunctionCalls($packageDir, $consumerRoots);
     if ($calls === []) {
         return [];
     }
@@ -734,9 +739,15 @@ function executableTwig(string $source): string
                 return preg_replace('/[^\n]/', ' ', $m[0]) ?? '';
             }
 
+            // `\#{…}` is LITERAL in Twig, so preserving it read a call that
+            // never happens and demanded a floor for it — a valid release
+            // stopped by an escape. The backslash is consumed with the
+            // sequence so the branch below cannot see it as interpolation.
             return (string) preg_replace_callback(
-                '/#\{[^}]*\}|[^\n]/',
-                static fn (array $p): string => str_starts_with($p[0], '#{') ? $p[0] : ' ',
+                '/\\\\#\{[^}]*\}|#\{[^}]*\}|[^\n]/',
+                static fn (array $p): string => str_starts_with($p[0], '#{')
+                    ? $p[0]
+                    : preg_replace('/[^\n]/', ' ', $p[0]) ?? ' ',
                 $m[0],
             );
         },
@@ -759,11 +770,19 @@ function executableTwig(string $source): string
     return $kept;
 }
 
-function twigFunctionCalls(string $packageDir): array
+/**
+ * @param list<string> $consumerRoots the package's own source roots
+ */
+function twigFunctionCalls(string $packageDir, array $consumerRoots = ['src']): array
 {
     $calls = [];
 
-    foreach (['src', 'resources'] as $root) {
+    // `resources` is always included: a package that ships assets rather than
+    // modules keeps its templates outside the PSR-4 roots, and that is the
+    // case the template contract was written for.
+    $roots = array_values(array_unique(array_merge($consumerRoots, ['src', 'resources'])));
+
+    foreach ($roots as $root) {
         $dir = $packageDir . '/' . $root;
         if (!is_dir($dir)) {
             continue;
