@@ -527,15 +527,43 @@ function registeredTwigFunctions(string $dir, ?string $tag): array
         return [];
     }
 
+    // stderr is CAPTURED rather than discarded, because the exit code alone
+    // does not tell a failed scan from an empty one. Measured: `git grep`
+    // answers 1 for "no matches" AND 1 when it could not stat a file or read a
+    // directory, printing `error: failed to stat …` to stderr in the second
+    // case and nothing at all in the first. Only a repository it cannot open
+    // gives a code above 1.
+    $errors = (string) tempnam(sys_get_temp_dir(), 'semitexa-gate-');
+
     $files = sprintf(
-        'git -C %s grep -l %s %s-- %s 2>/dev/null',
+        'git -C %s grep -l %s %s-- %s 2>%s',
         escapeshellarg($dir),
         escapeshellarg('registerFunction'),
         $tag === null ? '' : escapeshellarg($tag) . ' ',
         implode(' ', array_map('escapeshellarg', $paths)),
+        escapeshellarg($errors),
     );
 
     exec($files, $lines, $code);
+
+    $diagnostics = trim((string) @file_get_contents($errors));
+    @unlink($errors);
+
+    // Both used to mean "this provider registers nothing", so a scan that
+    // FAILED cleared the contract check for it — templateContractProblems()
+    // sees an empty set, returns early, and the gate reports a clean result
+    // for work it never did. On a release gate that is the worst direction to
+    // fail, so anything other than a silent, successful no-match stops it.
+    if ($code > 1 || $diagnostics !== '') {
+        abortGate(sprintf(
+            "Could not scan %s for Twig registrations (git grep exited %d)%s\n"
+            . 'The template contract for this dependency was not checked.',
+            $dir,
+            $code,
+            $diagnostics === '' ? '.' : ":\n" . $diagnostics,
+        ));
+    }
+
     if ($code !== 0) {
         return [];
     }
@@ -552,9 +580,24 @@ function registeredTwigFunctions(string $dir, ?string $tag): array
         // registration whose name sits on the next line — which is how a long
         // argument list gets formatted — and the provider then looks as though
         // it registers nothing at all, which makes the gate skip it silently.
-        $contents = $tag === null
-            ? (string) @file_get_contents($dir . '/' . $path)
-            : shellOutput(sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':' . $path)));
+        // A provider file that cannot be READ is not a provider that registers
+        // nothing. `file_get_contents()` answers false and the cast turned that
+        // into '', and `git show` failing answered '' too — so the file was
+        // skipped, the registration set came back incomplete, and a required
+        // floor went unchecked. Only a successful read of an empty file may
+        // skip; a failed read stops the gate.
+        if ($tag === null) {
+            $raw = @file_get_contents($dir . '/' . $path);
+            if ($raw === false) {
+                abortGate(sprintf('Could not read the provider file %s/%s.', $dir, $path));
+            }
+            $contents = $raw;
+        } else {
+            $contents = shellOutputOrAbort(
+                sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($dir), escapeshellarg($tag . ':' . $path)),
+                sprintf('Could not read %s at %s from %s.', $path, $tag, $dir),
+            );
+        }
 
         if ($contents === '') {
             continue;
@@ -679,6 +722,33 @@ function autoloadRoots(string $dir, ?string $tag): array
 }
 
 /** stdout of a command, or '' when it fails. */
+/**
+ * Stop the gate, loudly, because it cannot answer the question it was asked.
+ *
+ * A release gate has exactly two honest outcomes: it checked and found nothing,
+ * or it could not check. Collapsing the second into the first is how a release
+ * ships past a contract nobody verified.
+ */
+function abortGate(string $why): never
+{
+    fwrite(STDERR, 'Release gate could not complete: ' . $why . "\n");
+    exit(1);
+}
+
+/** {@see shellOutput()}, but a non-zero exit stops the gate instead of reading as empty. */
+function shellOutputOrAbort(string $command, string $why): string
+{
+    $out = [];
+    $code = 0;
+    exec($command, $out, $code);
+
+    if ($code !== 0) {
+        abortGate($why);
+    }
+
+    return implode("\n", $out);
+}
+
 function shellOutput(string $command): string
 {
     $out = [];
@@ -818,6 +888,18 @@ function twigFunctionCalls(string $packageDir, array $consumerRoots = ['src']): 
             // function of that name — a dependency the template does not have.
             $contents = (string) preg_replace_callback(
                 '/\{%-?\s*macro\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/',
+                static fn (array $m): string => str_repeat(' ', strlen($m[0])),
+                $contents,
+            );
+
+            // A FILTER is not a global call either. `{{ value|asset('app.css') }}`
+            // pipes into asset, and counted as a call it demanded a floor on
+            // whichever package registers a FUNCTION of that name — failing a
+            // release that is perfectly valid. Twig allows whitespace around
+            // the pipe, so the name is blanked wherever a pipe precedes it
+            // rather than matched with a fixed-width lookbehind.
+            $contents = (string) preg_replace_callback(
+                '/\|\s*[A-Za-z_][A-Za-z0-9_]*\s*\(/',
                 static fn (array $m): string => str_repeat(' ', strlen($m[0])),
                 $contents,
             );

@@ -31,7 +31,22 @@ final class NameInflector implements NameInflectorInterface
         $result = strtolower((string) $result);
         $result = preg_replace('/[^a-z0-9-]+/', '-', $result);
 
-        return trim(preg_replace('/-{2,}/', '-', (string) $result) ?? '', '-');
+        $kebab = trim(preg_replace('/-{2,}/', '-', (string) $result) ?? '', '-');
+
+        // Everything dropped leaves NOTHING for some inputs — `'` or an emoji
+        // sanitise to the empty string. The generator then planned files named
+        // for nothing at all: `.html.twig`, and with --with-assets a `.js`, a
+        // `.css` and a `.json` beside it. The command only checks that --name
+        // was PASSED, so the refusal has to be here, where the emptiness is
+        // first visible.
+        if ($kebab === '') {
+            throw new \InvalidArgumentException(sprintf(
+                'The name "%s" has no characters usable in a file name. Use letters or digits.',
+                $input,
+            ));
+        }
+
+        return $kebab;
     }
 
     public function toPayloadClass(string $input): string

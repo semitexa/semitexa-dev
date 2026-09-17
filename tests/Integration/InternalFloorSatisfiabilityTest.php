@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Integration;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -233,7 +234,87 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
         $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ csp_nonce_attr() }}', 'resources');
 
-        self::assertSame(1, $this->gate()['exit']);
+        $result = $this->gate();
+
+        // The FUNCTION, not only the exit code. This fixture can fail the gate
+        // for reasons that have nothing to do with the `resources` root, and an
+        // exit-code assertion would call that a pass — proving the scan reached
+        // there when it never did.
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('csp_nonce_attr()', $result['output']);
+    }
+
+    /**
+     * A FILTER is not a call to a global function of the same name.
+     *
+     * `{{ value|asset('app.css') }}` pipes into asset. Counted as a call, it
+     * demanded a floor on whichever package registers a FUNCTION called asset,
+     * and a release that is perfectly valid failed the gate. Twig allows
+     * whitespace around the pipe, so both spellings are here.
+     */
+    #[Test]
+    #[DataProvider('filterSpellings')]
+    public function a_filter_is_not_a_call_to_the_global_function(string $template): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', $template);
+
+        $result = $this->gate();
+
+        self::assertSame(0, $result['exit'], $result['output']);
+    }
+
+    /**
+     * A gate that cannot SCAN must not report a clean contract.
+     *
+     * `git grep` answers 1 for "no matches" and more for "I could not run",
+     * and both used to mean "this provider registers nothing" — so a failed
+     * scan made templateContractProblems() return early and the release went
+     * out past a contract nobody checked. The two honest outcomes of a gate
+     * are "checked, nothing found" and "could not check".
+     */
+    #[Test]
+    public function a_provider_that_cannot_be_scanned_stops_the_gate(): void
+    {
+        $this->twigProvider('2026.09.13.0749', ['asset'], ['csp_nonce_attr']);
+        $this->templateConsumer('>=2026.09.13.0749 || dev-master', '{{ csp_nonce_attr() }}');
+
+        // The provider's sources become unreadable while its git objects stay
+        // intact, so only the working-tree scan breaks and every other check
+        // still has what it needs. This is also the case the exit code alone
+        // misses: measured, `git grep` answers 1 here — the same 1 it uses for
+        // "no matches" — and says why only on stderr.
+        $src = $this->root . '/packages/semitexa-core/src';
+        chmod($src, 0o000);
+
+        if (is_readable($src)) {
+            chmod($src, 0o755);
+            self::markTestSkipped('Running as a user that reads mode-000 directories; the failure cannot be staged.');
+        }
+
+        $result = $this->gate();
+        chmod($src, 0o755);
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('could not complete', strtolower($result['output']));
+        self::assertStringContainsString('Twig registrations', $result['output'], 'it must say WHICH check it could not run');
+    }
+
+    /**
+     * The filter name is the one ADDED SINCE the floor, on purpose.
+     *
+     * Piping into `asset` proves nothing: it is registered at the floored
+     * release too, so no problem is reported whether the pipe is understood or
+     * not, and the test passes on broken code. `csp_nonce_attr` exists only in
+     * the newer release, so counting it as a call is the difference between a
+     * failing gate and a passing one.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function filterSpellings(): iterable
+    {
+        yield 'tight pipe' => ['{{ value|csp_nonce_attr() }}{{ asset("app.css") }}'];
+        yield 'spaced pipe' => ['{{ value |  csp_nonce_attr() }}{{ asset("app.css") }}'];
     }
 
     /**

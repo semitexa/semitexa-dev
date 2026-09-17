@@ -36,12 +36,24 @@ function connectAll() {
     document.querySelectorAll(ROOT).forEach(connect);
 }
 
+// The first pass is the only one that looks at the whole document.
 connectAll();
 
 // Markup that arrives after this module ran — a deferred slot resolving, a
-// region re-rendering — is connected by the same function. connect() is
-// guarded, so a second pass over the same element does nothing.
-new MutationObserver(connectAll).observe(document.documentElement, {
+// region re-rendering — is connected from the MUTATION RECORDS, not by
+// re-scanning the page. Every generated page ships this file, so a callback
+// that runs `querySelectorAll` over the whole document on any unrelated
+// child-list change is a cost each of them pays for the lifetime of the page.
+// connect() is guarded, so a second pass over the same element does nothing.
+new MutationObserver((records) => {
+    for (const record of records) {
+        for (const node of record.addedNodes) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            if (node.matches(ROOT)) connect(node);
+            node.querySelectorAll(ROOT).forEach(connect);
+        }
+    }
+}).observe(document.documentElement, {
     childList: true,
     subtree: true,
 });
