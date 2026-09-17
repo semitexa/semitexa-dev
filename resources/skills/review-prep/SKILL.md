@@ -66,7 +66,18 @@ scripts/create-review-pr.sh /absolute/path/to/repo --checks-file /tmp/review-che
 ```
 - this must push the current branch if needed
 - this must create a PR when none exists or update the existing open PR body and title when one already exists
-- use the latest commit subject as the default PR title unless the user asked for a specific title
+- use the latest commit subject as the default PR title unless the user asked for a specific title —
+  but when the last commit is a self-review follow-up, the PR is not about it: pass `--title` with the
+  subject that names what the branch actually does, or the reviewer is told the wrong thing first
+- when the rendered body is too generic for the change (see the `What to Review` rule below), write the
+  body yourself and pass it in — do **not** leave this script to do it:
+```bash
+scripts/create-review-pr.sh /absolute/path/to/repo --checks-file /tmp/review-checks.txt \
+    --title 'Subject that names the change' --body-file /tmp/pr-body.md
+```
+- **never reach for `gh pr edit`.** On orgs that still carry Projects (classic) it fails with a
+  `projectCards` deprecation error even though the edit is valid; this script goes through
+  `gh api -X PATCH` for exactly that reason, and going around it re-learns the failure by hand
 - if the self-review step added a follow-up fix commit, make sure its subject is PR-ready before creating or updating the PR
 
 ## Rules
