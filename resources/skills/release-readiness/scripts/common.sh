@@ -174,7 +174,20 @@ release_channel_prompt() {
         esac
     fi
 
-    fail "Release channel is required. Set RELEASE_CHANNEL=stable or RELEASE_CHANNEL=beta before running the release workflow."
+    # Reached whenever stdin/stdout is not a terminal -- which is every agent-driven
+    # run, since the output is captured. The prompt above is for a human at a shell;
+    # for everyone else this must say exactly how to proceed, because the channel is
+    # needed HERE, at preflight, not at tagging: it decides the -beta suffix on
+    # RELEASE_VERSION, which the internal-constraints floor gate reads and the pending
+    # report prints. Do NOT default it -- the choice is sticky, since beta cannot be
+    # promoted to stable on the same master commit.
+    fail "Release channel is required, and it is needed now rather than at tagging time.
+Re-run the same command with it set, e.g.:
+
+    RELEASE_CHANNEL=stable $(basename "${BASH_SOURCE[-1]:-release-preflight.sh}")
+
+Use 'beta' to append -beta to the version. The choice is sticky: the tool cannot
+promote beta to stable on the same master commit, so pick it deliberately."
 }
 
 normalize_release_channel() {
