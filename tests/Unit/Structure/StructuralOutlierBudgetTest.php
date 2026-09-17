@@ -312,6 +312,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the whole-tree audit was never scheduled — the same hole as a plain
         // deletion, wearing a different status. One method for the old side,
         // and the comment saying why the status is not enough to spot it.
+        // semitexa-orm's write engine crossed the threshold in the ORM audit
+        // (PR #70): tenant scope now travels with every aggregate write, and
+        // #[SoftDelete] finally does something. Recorded rather than trimmed —
+        // the audit itself names extracting tenant guards, SQL mutation
+        // compilation and relation persistence as the follow-up, and that is a
+        // refactor with its own risk, not a line-count exercise to be done
+        // under a security fix.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [34, 886],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
