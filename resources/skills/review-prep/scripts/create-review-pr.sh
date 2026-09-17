@@ -6,6 +6,7 @@ repo=""
 checks_file=""
 base_branch=""
 title=""
+body_source=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -21,6 +22,10 @@ while [ "$#" -gt 0 ]; do
             title="${2:-}"
             shift 2
             ;;
+        --body-file)
+            body_source="${2:-}"
+            shift 2
+            ;;
         *)
             if [ -z "$repo" ]; then
                 repo="$1"
@@ -33,7 +38,14 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title]\n' "$0" >&2; exit 1; }
+[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title] [--body-file /tmp/body.md]\n' "$0" >&2; exit 1; }
+if [ -n "$body_source" ]; then
+    [ -f "$body_source" ] || { printf 'Body file not found: %s\n' "$body_source" >&2; exit 1; }
+    # An empty file is the likelier mistake than a missing one -- a heredoc that
+    # failed still leaves the path behind. Refusing here beats opening a PR with
+    # no description and noticing on GitHub.
+    [ -s "$body_source" ] || { printf 'Body file is empty: %s\n' "$body_source" >&2; exit 1; }
+fi
 
 branch="$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
 case "$branch" in
@@ -75,9 +87,20 @@ if [ -z "$title" ]; then
     title="$(python3 "$script_dir/generate-review-summary.py" "$repo" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pr_title"])')"
 fi
 
+# `--body-file` is for the case the skill body asks for: a description whose
+# "What to Review" and "What to Verify" are derived from the actual change
+# rather than from the file list. Writing one by hand used to mean leaving this
+# script and reaching for `gh pr edit`, which is exactly the call that fails on
+# orgs carrying Projects (classic) — the failure this script already works
+# around below. Routing a hand-written body through here keeps that workaround
+# in one place instead of re-learning it at the terminal.
 body_file="$(mktemp)"
 trap 'rm -f "$body_file"' EXIT
-"$script_dir/render-pr-body.sh" "$repo" "$checks_file" "$base_branch" > "$body_file"
+if [ -n "$body_source" ]; then
+    cat "$body_source" > "$body_file"
+else
+    "$script_dir/render-pr-body.sh" "$repo" "$checks_file" "$base_branch" > "$body_file"
+fi
 
 git -C "$repo" push -u origin HEAD
 
