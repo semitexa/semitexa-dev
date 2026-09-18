@@ -1,7 +1,0 @@
-# The Semitexa rules for ai:verify.
-#
-# The list itself lives with the rules, in semitexa/core, so the two gates that
-# run them cannot drift apart again — which they had, to 8 of 24 shared. See
-# that file for the measurement.
-includes:
-    - ../../semitexa-core/config/phpstan-rules.neon

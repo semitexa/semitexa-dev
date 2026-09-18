@@ -1,6 +1,13 @@
 # Consumer projects have vendor/, not the framework authoring packages/ tree.
 includes:
-    - phpstan-ai-verify-rules.neon
+    # The rule list lives with the rules, in semitexa/core. Addressed through
+    # the cwd rather than relatively, because the same list is included from
+    # four places with three different bases, and composer installs a package
+    # under its PACKAGE name: the authoring checkout is packages/semitexa-core,
+    # a consumer's is vendor/semitexa/core. This one form is right in both --
+    # in the workspace vendor/semitexa/core is a symlink to the package -- and
+    # it is the same address bootstrapFiles below already uses.
+    - %currentWorkingDirectory%/vendor/semitexa/core/config/phpstan-rules.neon
 
 parameters:
     level: 0

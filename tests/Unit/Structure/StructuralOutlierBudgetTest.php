@@ -79,6 +79,16 @@ final class StructuralOutlierBudgetTest extends TestCase
         // arguments nor pipeline while the OpenDialog branch beside it did, so
         // a caller learned that SOMETHING was already open and not which
         // record. Two constructor arguments and the sentence saying why.
+        // NEW on 2026-09-18, and the shape is the point rather than the size.
+        // These three were anaemic records with public fields; closing them
+        // over their own data means a getter and a setter per field, so method
+        // count tracks field count and nothing else. They sit beside
+        // OutboundDelivery and InboundDelivery below, which crossed the same
+        // threshold the same way. A class that is 53 accessors over 352 lines
+        // is not a god class; splitting it would only scatter one record.
+        'semitexa-scheduler/src/Domain/Model/ScheduledRun.php' => [53, 352],
+        'semitexa-scheduler/src/Domain/Model/ScheduleDefinition.php' => [37, 248],
+        'semitexa-workflow/src/Domain/Model/WorkflowInstance.php' => [36, 208],
         'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 932],

@@ -1058,6 +1058,11 @@ $packageRoot = new ModuleStructureRule(
         '.env.default',
         '.phpunit.result.cache',
         'LICENSE',
+        // The one place GitHub and package-health scanners look for a
+        // vulnerability-reporting policy. Aikido Intel reports its absence as a
+        // caution on every Semitexa package; a policy filed anywhere else does
+        // not answer it, because nothing looks anywhere else.
+        'SECURITY.md',
         'Dockerfile',
         'phpstan.neon',
         'phpstan-baseline.neon',
