@@ -66,7 +66,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // if instead. phpstan called the nullsafe unnecessary on the left of
         // `??`, and the three lines are what makes the missing-metadata branch
         // readable rather than a suffix on a return.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1131],
+        // 1131 -> 1132 on 2026-09-18, one line, NO new method: the SqlIdentifier
+        // sweep. Every `%s` in a SQL format string lost its backticks and the
+        // argument gained SqlIdentifier::quote(), which is one line wider where
+        // the sprintf was already wrapped. Wrapping a name in backticks is not
+        // escaping it, and countBy() was shown emitting
+        //   SELECT `name` , (SELECT 1) AS x -- ` AS __g ... GROUP BY ...
+        // from a hand-built ColumnRef.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1132],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -252,7 +259,20 @@ final class StructuralOutlierBudgetTest extends TestCase
         // CatalogPromptDeclarations was already cut along that line.
         'semitexa-dev/src/Application/Service/Ai/Verify/Mechanism/HeredocPromptDetector.php' => [20, 715],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
-        'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
+        // 865 -> 882 on 2026-09-18, seventeen lines, NO new method: the
+        // SqlIdentifier sweep, which costs most here because the DDL builders
+        // interpolate several identifiers per statement AND carry a dialect —
+        // SqlIdentifier::quote($name, $q) with the ANSI quote on the SQLite
+        // branch. A "CREATE TABLE `%s`" that was one interpolated string is now
+        // a quote call and a concatenation.
+        //
+        // The last two of the seventeen came from a self-review, and are the
+        // reason this number was recorded twice: the sweep left four
+        // "ALTER TABLE {$q}{$name}{$q}" behind, and the rule guarding it
+        // reported the tree clean because it only read String_ nodes. An
+        // interpolated string is a different node, and one that carries no
+        // literal backtick at all when the quote character lives in $q.
+        'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 882],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
         // shipped in 2026.09.08.2003 and turned the first ai:verify after any
         // framework update red in every consumer project. The new method is
@@ -356,7 +376,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // passing `string|null` into a `string` parameter. The added lines are
         // the second condition and the paragraph saying why it is not
         // redundant, which is the thing a later reader would otherwise delete.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 947],
+        // 947 -> 948 on 2026-09-18, one line, NO new method: the SqlIdentifier
+        // sweep, same as ResourceModelQuery above.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 948],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
