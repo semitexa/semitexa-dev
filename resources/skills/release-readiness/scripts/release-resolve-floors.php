@@ -288,7 +288,13 @@ function deriveReleaseSet(string $packagesDir): ?array
             continue; // already released at this commit
         }
 
-        $json = json_decode((string) file_get_contents($packageDir . '/composer.json'), true);
+        $manifest = file_get_contents($packageDir . '/composer.json');
+        if ($manifest === false) {
+            fwrite(STDERR, "Cannot read {$packageDir}/composer.json while working out the release set\n");
+            exit(1);
+        }
+
+        $json = json_decode($manifest, true);
         $name = is_array($json) && is_string($json['name'] ?? null) ? $json['name'] : basename($packageDir);
         $set[] = $name;
     }
@@ -306,9 +312,20 @@ function collectDeclarations(string $packagesDir): array
     $out = [];
 
     foreach (glob($packagesDir . '/*/composer.json') ?: [] as $composerPath) {
-        $json = json_decode((string) file_get_contents($composerPath), true);
+        // A manifest this script cannot read or parse is not a manifest it can
+        // clear. Skipping one would let --check exit 0 with an undated floor
+        // sitting in the very file it failed to open, which is the shape of a
+        // gate that passes because it did not look.
+        $raw = file_get_contents($composerPath);
+        if ($raw === false) {
+            fwrite(STDERR, "Cannot read {$composerPath}\n");
+            exit(1);
+        }
+
+        $json = json_decode($raw, true);
         if (!is_array($json)) {
-            continue;
+            fwrite(STDERR, "Invalid JSON in {$composerPath}\n");
+            exit(1);
         }
 
         $floors = $json['extra']['semitexa']['floors'] ?? null;
@@ -366,13 +383,32 @@ function floorConstraint(string $version): string
  */
 function writeResolvedFloor(string $composerPath, string $dependency, string $version): void
 {
-    $json = json_decode((string) file_get_contents($composerPath), true);
+    $raw = file_get_contents($composerPath);
+    if ($raw === false) {
+        fwrite(STDERR, "Cannot read {$composerPath}\n");
+        exit(1);
+    }
+
+    $json = json_decode($raw, true);
     if (!is_array($json)) {
-        throw new RuntimeException("Invalid JSON: {$composerPath}");
+        fwrite(STDERR, "Invalid JSON: {$composerPath}\n");
+        exit(1);
     }
 
     $json['require'][$dependency] = floorConstraint($version);
     $json['extra']['semitexa']['floors'][$dependency] = $version;
 
-    file_put_contents($composerPath, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+    $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if ($encoded === false) {
+        fwrite(STDERR, "Cannot encode {$composerPath}\n");
+        exit(1);
+    }
+
+    // A failed write that is reported as a dated floor is the worst outcome
+    // available here: the operator reads "[OK] Dated 1" and tags a tree that
+    // still carries the old constraint.
+    if (file_put_contents($composerPath, $encoded . PHP_EOL) === false) {
+        fwrite(STDERR, "Cannot write {$composerPath} — the floor is NOT dated.\n");
+        exit(1);
+    }
 }

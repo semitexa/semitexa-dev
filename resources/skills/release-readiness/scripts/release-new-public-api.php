@@ -168,9 +168,21 @@ function grownSymbols(string $packageDir, string $tag): array
             continue;
         }
 
-        $now = @file_get_contents($packageDir . '/' . $relative);
+        $path = $packageDir . '/' . $relative;
+
+        // DELETED and UNREADABLE are different answers. A file that is gone
+        // gained nothing, which is the whole of the first case. A file that is
+        // there and cannot be read is a file this report did not inspect, and
+        // clearing a package on the strength of an unread file is the failure
+        // the house rule names: a gate that cannot check must not pass.
+        if (!file_exists($path)) {
+            continue;
+        }
+
+        $now = file_get_contents($path);
         if ($now === false) {
-            continue; // deleted; nothing gained
+            fwrite(STDERR, "Cannot read {$path} — refusing to report on a package that was not fully read.\n");
+            exit(1);
         }
 
         $before = shell_exec(sprintf(
@@ -217,15 +229,76 @@ function publicMembers(string $source): array
         }
     }
 
-    if (preg_match_all('/^\s*(?:final\s+)?public\s+const\s+(?:[\w\\\\|?]+\s+)?(\w+)/mi', $source, $m) > 0) {
-        foreach ($m[1] as $name) {
-            $members[] = $name;
+    // A class constant is PUBLIC unless it says otherwise, so `const VERSION`
+    // inside a class is part of the surface a sibling can reach. Matching that
+    // on the whole file would also collect namespace-level constants and file
+    // them under whichever class fqcnIn() happened to find, so the search is
+    // limited to the inside of class-like bodies first.
+    foreach (classLikeBodies($source) as $body) {
+        if (preg_match_all('/^\s*(?:final\s+)?(?:public\s+)?const\s+(?:[\w\\\\|?]+\s+)?(\w+)/mi', $body, $m) > 0) {
+            foreach ($m[1] as $name) {
+                $members[] = $name;
+            }
         }
     }
 
     sort($members);
 
     return array_values(array_unique($members));
+}
+
+/**
+ * The source inside each class, interface, trait or enum body.
+ *
+ * Tokenised rather than matched, because the question "is this const inside a
+ * class?" is about brace depth and a regex cannot see depth. Anything declared
+ * at namespace level — `const APP_NAME = '...';` — stays outside, where it
+ * belongs: it is not a member of the class this file happens to declare.
+ *
+ * @return list<string>
+ */
+function classLikeBodies(string $source): array
+{
+    $bodies = [];
+    $tokens = token_get_all($source);
+
+    $depth = 0;
+    $inClassAtDepth = null;
+    $pendingClass = false;
+    $buffer = '';
+
+    foreach ($tokens as $token) {
+        $text = is_array($token) ? $token[1] : $token;
+
+        if (is_array($token)) {
+            if (in_array($token[0], [T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM], true)) {
+                $pendingClass = true;
+            }
+            if ($token[0] === T_CURLY_OPEN || $token[0] === T_DOLLAR_OPEN_CURLY_BRACES) {
+                $depth++;
+            }
+        } elseif ($text === '{') {
+            $depth++;
+            if ($pendingClass && $inClassAtDepth === null) {
+                $inClassAtDepth = $depth;
+                $buffer = '';
+            }
+            $pendingClass = false;
+        } elseif ($text === '}') {
+            if ($inClassAtDepth === $depth) {
+                $bodies[] = $buffer;
+                $inClassAtDepth = null;
+                $buffer = '';
+            }
+            $depth--;
+        }
+
+        if ($inClassAtDepth !== null) {
+            $buffer .= $text;
+        }
+    }
+
+    return $bodies;
 }
 
 function fqcnIn(string $source): ?string

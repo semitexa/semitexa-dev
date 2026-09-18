@@ -69,16 +69,21 @@ final class NewPublicApiReportTest extends TestCase
         file_put_contents($dir . '/src/ShellResponder.php', $source);
     }
 
+    private int $lastExit = 0;
+
     private function report(): string
     {
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-new-public-api.php';
 
         $output = [];
+        $exit = 0;
         exec(sprintf(
             'RELEASE_ROOT=%s php %s 2>&1',
             escapeshellarg($this->root),
             escapeshellarg($script),
-        ), $output);
+        ), $output, $exit);
+
+        $this->lastExit = $exit;
 
         return implode("\n", $output);
     }
@@ -120,6 +125,10 @@ final class NewPublicApiReportTest extends TestCase
 
         $report = $this->report();
 
+        // The exit status is contract, not incidental: preflight's run_stage
+        // calls fail() on anything nonzero, so a finding-specific exit(1) added
+        // later would block every release that contains an ordinary feature.
+        self::assertSame(0, $this->lastExit, 'a report that blocks the release is not a report');
         self::assertStringContainsString('semitexa/core (since 2026.09.17.1037)', $report);
         self::assertStringContainsString('getServedPath()', $report);
         self::assertStringContainsString('semitexa/ssr', $report);
@@ -194,5 +203,64 @@ final class NewPublicApiReportTest extends TestCase
         $this->dependent(['name' => 'semitexa/ssr', 'require' => []], self::USES_REQUEST);
 
         self::assertStringContainsString('No package in this set grew public API', $this->report());
+    }
+
+    /**
+     * A class constant is PUBLIC unless it says otherwise, so `const VERSION`
+     * inside a class is surface a sibling can reach — and it was invisible,
+     * because the scan required the word `public`.
+     */
+    #[Test]
+    public function an_implicit_public_class_constant_counts_as_new_surface(): void
+    {
+        $grown = <<<'PHP'
+            <?php
+            namespace Semitexa\Core;
+            const FILE_LEVEL_CONSTANT = 'not a member of anything';
+            class Request
+            {
+                const SERVED_PATH_HEADER = 'X-Served-Path';
+                private const INTERNAL = 'no';
+                public function getPath(): string { return '/'; }
+            }
+            PHP;
+
+        $this->provider(self::RELEASED, $grown);
+        $this->dependent(['name' => 'semitexa/ssr', 'require' => ['semitexa/core' => '*']], self::USES_REQUEST);
+
+        $report = $this->report();
+
+        self::assertStringContainsString('SERVED_PATH_HEADER', $report);
+        self::assertStringNotContainsString('INTERNAL', $report, 'a private constant is not surface');
+        self::assertStringNotContainsString(
+            'FILE_LEVEL_CONSTANT',
+            $report,
+            'a namespace-level constant is not a member of the class in the same file',
+        );
+    }
+
+    /**
+     * A file that is there and cannot be read is a file this report did not
+     * inspect. Clearing the package on the strength of it is the failure the
+     * house rule names: a gate that cannot check must not pass.
+     */
+    #[Test]
+    public function an_unreadable_source_file_stops_the_report(): void
+    {
+        $this->provider(self::RELEASED, self::GROWN);
+        $this->dependent(['name' => 'semitexa/ssr', 'require' => ['semitexa/core' => '*']], self::USES_REQUEST);
+
+        $unreadable = $this->root . '/packages/semitexa-core/src/Request.php';
+        chmod($unreadable, 0o000);
+
+        $report = $this->report();
+        chmod($unreadable, 0o644);
+
+        if (posix_geteuid() === 0) {
+            self::markTestSkipped('running as root: an unreadable file cannot be simulated with chmod');
+        }
+
+        self::assertSame(1, $this->lastExit, $report);
+        self::assertStringContainsString('Cannot read', $report);
     }
 }
