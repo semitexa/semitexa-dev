@@ -143,6 +143,29 @@ final class NewPublicApiReportTest extends TestCase
         self::assertStringContainsString('No package in this set grew public API', $this->report());
     }
 
+    /**
+     * A RESOLVED declaration is a date, and a date is about the release it was
+     * written in. When the provider adds another method two cuts later, that
+     * dependent's floor still points at the earlier release and the question is
+     * live again — suppressing on any value would silence it forever after the
+     * first floor anyone ever declared.
+     */
+    #[Test]
+    public function a_dated_floor_does_not_silence_the_question_for_ever(): void
+    {
+        $this->provider(self::RELEASED, self::GROWN);
+        $this->dependent([
+            'name' => 'semitexa/ssr',
+            'require' => ['semitexa/core' => '>=2026.09.10.1200 || dev-master'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => '2026.09.10.1200']]],
+        ], self::USES_REQUEST);
+
+        $report = $this->report();
+
+        self::assertStringContainsString('getServedPath()', $report);
+        self::assertStringContainsString('semitexa/ssr', $report);
+    }
+
     /** A private addition cannot be what a sibling calls. */
     #[Test]
     public function a_private_addition_is_not_public_api(): void

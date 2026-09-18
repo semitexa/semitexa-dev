@@ -26,23 +26,58 @@ final class FloorDeclarationResolutionTest extends TestCase
     {
         $this->root = sys_get_temp_dir() . '/semitexa-floors-' . uniqid('', true);
         mkdir($this->root . '/packages/semitexa-ssr', 0777, true);
+        mkdir($this->root . '/packages/semitexa-core', 0777, true);
     }
 
     protected function tearDown(): void
     {
-        @unlink($this->root . '/packages/semitexa-ssr/composer.json');
-        @rmdir($this->root . '/packages/semitexa-ssr');
-        @rmdir($this->root . '/packages');
-        @rmdir($this->root);
+        exec('rm -rf ' . escapeshellarg($this->root));
     }
 
-    /** @param array<string, mixed> $composer */
-    private function writePackage(array $composer): void
+    private function git(string $dir, string $command): void
+    {
+        exec(sprintf('git -C %s %s 2>&1', escapeshellarg($dir), $command), $output, $exit);
+        self::assertSame(0, $exit, "git {$command} failed: " . implode("\n", (array) $output));
+    }
+
+    /**
+     * A package checkout, released or not.
+     *
+     * The release set is DERIVED from "master HEAD carries no release tag", the
+     * same rule the tagger uses, so a fixture of plain directories would test a
+     * different script than the one that runs.
+     */
+    private function checkout(string $name, bool $alreadyReleased): void
+    {
+        $dir = $this->root . '/packages/' . $name;
+        $this->git($dir, 'init -q -b master');
+        $this->git($dir, 'config user.email test@example.com');
+        $this->git($dir, 'config user.name Test');
+        $this->git($dir, 'add -A');
+        $this->git($dir, 'commit -q -m state');
+
+        if ($alreadyReleased) {
+            $this->git($dir, 'tag 2026.09.17.1037');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $composer
+     * @param bool $providerIsBeingTagged false leaves semitexa/core already released
+     */
+    private function writePackage(array $composer, bool $providerIsBeingTagged = true): void
     {
         file_put_contents(
             $this->root . '/packages/semitexa-ssr/composer.json',
             json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL,
         );
+        file_put_contents(
+            $this->root . '/packages/semitexa-core/composer.json',
+            json_encode(['name' => 'semitexa/core'], JSON_PRETTY_PRINT) . PHP_EOL,
+        );
+
+        $this->checkout('semitexa-ssr', false);
+        $this->checkout('semitexa-core', !$providerIsBeingTagged);
     }
 
     /** @return array{exit: int, output: string} */
@@ -94,7 +129,7 @@ final class FloorDeclarationResolutionTest extends TestCase
     {
         $this->writePackage($this->declaringPackage());
 
-        $result = $this->resolve('--confirm', '2026.09.18.1500', 'semitexa/ssr,semitexa/core');
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
 
         self::assertSame(0, $result['exit'], $result['output']);
 
@@ -114,7 +149,7 @@ final class FloorDeclarationResolutionTest extends TestCase
     {
         $this->writePackage($this->declaringPackage());
 
-        $this->resolve('--confirm', '2026.09.18.1500', 'semitexa/ssr,semitexa/core');
+        $this->resolve('--confirm', '2026.09.18.1500');
 
         self::assertStringContainsString('|| dev-master', $this->readPackage()['require']['semitexa/core']);
     }
@@ -124,9 +159,9 @@ final class FloorDeclarationResolutionTest extends TestCase
     public function a_dated_floor_is_not_moved_by_the_next_release(): void
     {
         $this->writePackage($this->declaringPackage());
-        $this->resolve('--confirm', '2026.09.18.1500', 'semitexa/ssr,semitexa/core');
+        $this->resolve('--confirm', '2026.09.18.1500');
 
-        $result = $this->resolve('--check', '2026.09.19.0900', 'semitexa/ssr,semitexa/core');
+        $result = $this->resolve('--check', '2026.09.19.0900');
 
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertSame('>=2026.09.18.1500 || dev-master', $this->readPackage()['require']['semitexa/core']);
@@ -141,9 +176,9 @@ final class FloorDeclarationResolutionTest extends TestCase
     #[Test]
     public function a_floor_on_a_package_outside_the_release_set_is_refused(): void
     {
-        $this->writePackage($this->declaringPackage());
+        $this->writePackage($this->declaringPackage(), providerIsBeingTagged: false);
 
-        $result = $this->resolve('--confirm', '2026.09.18.1500', 'semitexa/ssr,semitexa/demo');
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
 
         self::assertSame(1, $result['exit']);
         self::assertStringContainsString('is not being tagged', $result['output']);
@@ -159,7 +194,7 @@ final class FloorDeclarationResolutionTest extends TestCase
     {
         $this->writePackage($this->declaringPackage());
 
-        $result = $this->resolve('--check', '2026.09.18.1500', 'semitexa/ssr,semitexa/core');
+        $result = $this->resolve('--check', '2026.09.18.1500');
 
         self::assertSame(1, $result['exit']);
         self::assertStringContainsString('still name the release', $result['output']);
@@ -188,9 +223,89 @@ final class FloorDeclarationResolutionTest extends TestCase
     {
         $this->writePackage(['name' => 'semitexa/ssr', 'require' => ['semitexa/core' => '*']]);
 
-        $result = $this->resolve('--check', '2026.09.18.1500', 'semitexa/ssr,semitexa/core');
+        $result = $this->resolve('--check', '2026.09.18.1500');
 
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertSame('*', $this->readPackage()['require']['semitexa/core']);
+    }
+
+    /**
+     * WRITING THE FLOOR IS NOT LANDING IT. bump-packages.php tags each package
+     * after `git reset --hard origin/master`, so an edit left in the working
+     * tree is discarded before the tag: the release ships the old constraint
+     * while the operator watched the new one being written.
+     */
+    #[Test]
+    public function writing_without_committing_says_the_edit_will_not_survive(): void
+    {
+        $this->writePackage($this->declaringPackage());
+
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringContainsString('NOT COMMITTED', $result['output']);
+        self::assertStringContainsString('reset --hard origin/master', $result['output']);
+    }
+
+    /** With --commit the floor reaches origin/master, which is where the tag is cut from. */
+    #[Test]
+    public function commit_puts_the_resolved_floor_on_origin_master(): void
+    {
+        $this->writePackage($this->declaringPackage());
+
+        $remote = $this->root . '/origin-ssr.git';
+        exec(sprintf('git init -q --bare %s', escapeshellarg($remote)));
+        $this->git($this->root . '/packages/semitexa-ssr', 'remote add origin ' . escapeshellarg($remote));
+        $this->git($this->root . '/packages/semitexa-ssr', 'push -q origin HEAD:master');
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(0, $result['exit'], $result['output']);
+
+        $onRemote = shell_exec(sprintf(
+            'git -C %s show master:composer.json 2>/dev/null',
+            escapeshellarg($remote),
+        ));
+        $composer = json_decode((string) $onRemote, true);
+
+        self::assertIsArray($composer);
+        self::assertSame(
+            '>=2026.09.18.1500 || dev-master',
+            $composer['require']['semitexa/core'],
+            'the tagger resets to origin/master, so this is the only copy that counts',
+        );
+    }
+
+    /**
+     * And it refuses to commit anywhere but master: the tag is cut from master,
+     * so a commit on another branch is not in the release however green it looks.
+     */
+    #[Test]
+    public function commit_refuses_a_checkout_that_is_not_on_master(): void
+    {
+        $this->writePackage($this->declaringPackage());
+        $this->git($this->root . '/packages/semitexa-ssr', 'checkout -q -b develop');
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit']);
+        self::assertStringContainsString('not master', $result['output']);
+    }
+
+    /**
+     * The set of packages being tagged is DERIVED — "master HEAD carries no
+     * release tag", the same rule the tagger uses. It was an environment
+     * variable nothing set, so the empty value meant "assume everything is being
+     * released" and the refusal above could never fire.
+     */
+    #[Test]
+    public function the_release_set_is_derived_rather_than_assumed(): void
+    {
+        $this->writePackage($this->declaringPackage(), providerIsBeingTagged: false);
+
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit'], 'core carries a tag on HEAD, so it is not being released');
+        self::assertStringContainsString('semitexa/core is not being tagged', $result['output']);
     }
 }

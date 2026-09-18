@@ -55,8 +55,18 @@ declare(strict_types=1);
  *
  * ## Usage
  *
- *   php release-resolve-floors.php --check      # report, change nothing (preflight)
- *   php release-resolve-floors.php --confirm    # write the resolved floors
+ *   php release-resolve-floors.php --check              # report, change nothing (preflight)
+ *   php release-resolve-floors.php --confirm            # write the resolved floors
+ *   php release-resolve-floors.php --confirm --commit   # write, commit and push them to master
+ *
+ * ## Why --commit exists, and why writing alone is not enough
+ *
+ * bump-packages.php tags each package after `git reset --hard origin/master`.
+ * A floor written into the clone and left uncommitted is therefore DISCARDED
+ * before the tag is made — the release would ship the old constraint while the
+ * operator had watched the new one being written. A floor that is not in the
+ * tagged tree is not in the release, so the resolved file has to reach
+ * origin/master before tagging, and --commit is that step.
  *
  * RELEASE_ROOT selects the tree (default: the release clone). RELEASE_VERSION is
  * required for --confirm and for a meaningful --check.
@@ -66,6 +76,7 @@ const SENTINEL = 'next';
 
 $args = array_slice($argv, 1);
 $confirm = in_array('--confirm', $args, true);
+$commit = in_array('--commit', $args, true);
 $check = in_array('--check', $args, true) || !$confirm;
 
 $releaseRoot = rtrim(getenv('RELEASE_ROOT') ?: '/home/taras/Documents/Projects/semitexa.rls', DIRECTORY_SEPARATOR);
@@ -78,11 +89,16 @@ if (!is_dir($packagesDir)) {
 
 $releaseVersion = trim((string) (getenv('RELEASE_VERSION') ?: ''));
 
-/** @var list<string> $releaseSet packages being tagged in this cut, '' means "every package" */
+// WHICH PACKAGES THIS CUT IS TAGGING, derived rather than trusted to an
+// environment variable nothing sets. RELEASE_SET used to be the only source and
+// no release script passed it, so the empty value meant "assume everything is
+// being tagged" — the refusal below could never fire, which is worse than not
+// promising it. It is kept as an explicit override, for tests and for a release
+// that knows better than the derivation.
 $releaseSetRaw = trim((string) (getenv('RELEASE_SET') ?: ''));
-$releaseSet = $releaseSetRaw === ''
-    ? null
-    : array_values(array_filter(array_map('trim', explode(',', $releaseSetRaw))));
+$releaseSet = $releaseSetRaw !== ''
+    ? array_values(array_filter(array_map('trim', explode(',', $releaseSetRaw))))
+    : deriveReleaseSet($packagesDir);
 
 $declarations = collectDeclarations($packagesDir);
 $pending = array_values(array_filter($declarations, static fn (array $d): bool => $d['declared'] === SENTINEL));
@@ -107,8 +123,18 @@ if ($releaseVersion === '' || preg_match('/^\d{4}\.\d{2}\.\d{2}\.\d{4}$/', $rele
 }
 
 $problems = [];
+if ($releaseSet === null) {
+    fwrite(
+        STDERR,
+        "Cannot tell which packages this release is tagging: the package directories are not git\n"
+        . "checkouts, and RELEASE_SET was not passed. Refusing to date a floor without knowing whether\n"
+        . "the dependency it names is even being released — that is the one check this script owes.\n"
+    );
+    exit(1);
+}
+
 foreach ($pending as $d) {
-    if ($releaseSet !== null && !in_array($d['dependency'], $releaseSet, true)) {
+    if (!in_array($d['dependency'], $releaseSet, true)) {
         $problems[] = sprintf(
             '%s floors %s at this release, but %s is not being tagged in it. A dependency that is not '
             . 'changing cannot have grown the API the floor is for — check whether the floor belongs on a '
@@ -133,17 +159,142 @@ if ($check) {
     foreach ($pending as $d) {
         fwrite(STDERR, sprintf("- %s: %s -> >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion));
     }
-    fwrite(STDERR, "\nRun this script with --confirm before tagging, or the packages ship a floor that says nothing.\n");
+    fwrite(
+        STDERR,
+        "\nThe sequence, and the order matters:\n"
+        . "  1. php release-resolve-floors.php --confirm --commit\n"
+        . "     (writes the floor, commits it on master and pushes — the tagger resets to origin/master,\n"
+        . "      so an uncommitted edit is discarded before the tag)\n"
+        . "  2. then tag, via the normal finalize path\n"
+    );
     exit(1);
 }
 
+$touchedPackages = [];
 foreach ($pending as $d) {
     writeResolvedFloor($d['composer_path'], $d['dependency'], $releaseVersion);
     printf("  %s: %s >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion);
+    $touchedPackages[dirname($d['composer_path'])] = true;
 }
 
 printf("[OK] Dated %d floor declaration(s) at %s.\n", count($pending), $releaseVersion);
+
+if (!$commit) {
+    fwrite(
+        STDERR,
+        "\nNOT COMMITTED. bump-packages.php tags each package after `git reset --hard origin/master`,\n"
+        . "so this edit is discarded before the tag unless it reaches origin/master first. Re-run with\n"
+        . "--confirm --commit, or commit and push these files yourself, BEFORE tagging.\n"
+    );
+    exit(0);
+}
+
+foreach (array_keys($touchedPackages) as $packageDir) {
+    commitAndPush($packageDir, $releaseVersion);
+}
+
 exit(0);
+
+/**
+ * Put the resolved floor where the tagger will see it.
+ *
+ * On master, because that is the branch the tag is cut from, and pushed, because
+ * the tagger resets to origin/master and a local commit would go with it.
+ */
+function commitAndPush(string $packageDir, string $releaseVersion): void
+{
+    $run = static function (string $command) use ($packageDir): array {
+        $output = [];
+        $exit = 0;
+        exec(sprintf('git -C %s %s 2>&1', escapeshellarg($packageDir), $command), $output, $exit);
+
+        return ['exit' => $exit, 'output' => implode("\n", $output)];
+    };
+
+    $branch = trim((string) shell_exec(sprintf(
+        'git -C %s rev-parse --abbrev-ref HEAD 2>/dev/null',
+        escapeshellarg($packageDir),
+    )));
+
+    if ($branch !== 'master') {
+        fwrite(STDERR, sprintf(
+            "Refusing to commit the resolved floor in %s: HEAD is on \"%s\", not master. The tag is cut\n"
+            . "from master, so a commit anywhere else is not in the release.\n",
+            basename($packageDir),
+            $branch,
+        ));
+        exit(1);
+    }
+
+    $add = $run('add -- composer.json');
+    if ($add['exit'] !== 0) {
+        fwrite(STDERR, "git add failed in " . basename($packageDir) . ": " . $add['output'] . "\n");
+        exit(1);
+    }
+
+    $commitResult = $run(sprintf(
+        'commit -m %s',
+        escapeshellarg('Date the declared internal floors at ' . $releaseVersion),
+    ));
+    if ($commitResult['exit'] !== 0) {
+        fwrite(STDERR, "git commit failed in " . basename($packageDir) . ": " . $commitResult['output'] . "\n");
+        exit(1);
+    }
+
+    $push = $run('push origin HEAD:master');
+    if ($push['exit'] !== 0) {
+        fwrite(STDERR, "git push failed in " . basename($packageDir) . ": " . $push['output'] . "\n");
+        exit(1);
+    }
+
+    printf("  committed and pushed %s\n", basename($packageDir));
+}
+
+/**
+ * The packages this cut will tag: the ones whose master HEAD carries no release
+ * tag yet.
+ *
+ * The same rule bump-packages.php uses to decide whether a package needs
+ * releasing at all (`head_has_release_tag`), so the two cannot disagree about
+ * what "being released" means. Null when the question cannot be answered — a
+ * tree of plain directories rather than checkouts — and the caller refuses
+ * rather than guessing.
+ *
+ * @return list<string>|null
+ */
+function deriveReleaseSet(string $packagesDir): ?array
+{
+    $set = [];
+    $sawGit = false;
+
+    foreach (glob($packagesDir . '/*') ?: [] as $packageDir) {
+        if (!is_file($packageDir . '/composer.json')) {
+            continue;
+        }
+
+        if (!is_dir($packageDir . '/.git')) {
+            continue;
+        }
+
+        $sawGit = true;
+
+        $tagsOnHead = shell_exec(sprintf(
+            'git -C %s tag --points-at HEAD --list %s 2>/dev/null',
+            escapeshellarg($packageDir),
+            escapeshellarg('20*'),
+        ));
+
+        if (trim((string) $tagsOnHead) !== '') {
+            continue; // already released at this commit
+        }
+
+        $json = json_decode((string) file_get_contents($packageDir . '/composer.json'), true);
+        $name = is_array($json) && is_string($json['name'] ?? null) ? $json['name'] : basename($packageDir);
+        $set[] = $name;
+    }
+
+    return $sawGit ? $set : null;
+}
 
 /**
  * Every `extra.semitexa.floors` entry in the tree.

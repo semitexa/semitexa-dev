@@ -62,7 +62,10 @@ run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-c
 # stale the moment a release slips. MEASURED 2026-09-16: os floored prompt at
 # the day the author expected, review ran a day past it, and preflight died on
 # "that tag is not in semitexa-prompt". This stage fails while any declaration
-# is still undated, so the resolve step cannot be forgotten on the way to a tag.
+# is still undated, so the resolve step cannot be forgotten on the way to a tag. The way out is
+# printed by the failure itself: --confirm --commit, which lands the floor on origin/master. The
+# commit is not optional — bump-packages.php tags after `git reset --hard origin/master`, so an
+# edit left in the working tree never reaches the tag.
 run_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" --check
 # Not a gate — a question, printed where the operator is already reading. The
 # constraint check above compares CLASS declarations, so a new public METHOD on

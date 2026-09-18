@@ -267,8 +267,13 @@ function dependentsUsing(string $packagesDir, string $provider, array $classes):
             continue;
         }
 
-        // Already answered for this provider.
-        if (($json['extra']['semitexa']['floors'][$provider] ?? null) !== null) {
+        // Already answered for this provider — but ONLY while the answer is
+        // still outstanding. A resolved declaration is a date, and a date is
+        // about the release it was written in: when the provider adds another
+        // method two cuts later, that dependent's floor still points at the
+        // earlier release and the question is live again. Suppressing on any
+        // value would silence it forever after the first floor.
+        if (($json['extra']['semitexa']['floors'][$provider] ?? null) === 'next') {
             continue;
         }
 

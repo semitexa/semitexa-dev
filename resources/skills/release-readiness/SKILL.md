@@ -36,10 +36,16 @@ Default assumptions:
   calling a new API of a sibling writes
   `"extra": { "semitexa": { "floors": { "semitexa/<provider>": "next" } } }` and leaves `require`
   alone. Preflight's `floors-are-dated` stage fails while any declaration is still undated, and
-  `release-resolve-floors.php --confirm` writes `>=$RELEASE_VERSION || dev-master` into `require`
-  and records the same version back in `extra`, so a later release finds nothing to do.
-  ⚠️ Run it **before** the packages are tagged — a floor that is not in the tagged tree is not in
-  the release. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
+  `release-resolve-floors.php --confirm --commit` writes `>=$RELEASE_VERSION || dev-master` into
+  `require`, records the same version back in `extra` (so a later release finds nothing to do),
+  commits it on master and pushes.
+  ⚠️ **`--commit` is not optional at a real cut.** `bump-packages.php` tags each package after
+  `git reset --hard origin/master`, so a floor written and left uncommitted is DISCARDED before
+  the tag — the release would ship the old constraint while you watched the new one being
+  written. Without `--commit` the script says so and exits 0; with it, it refuses to commit on
+  any branch but master. Run it before the finalize step, never after.
+  The set of packages being tagged is derived the way the tagger derives it (master HEAD carries
+  no release tag), so a declaration naming a dependency that is not being released is refused. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
   that has not happened, and it goes stale the first time a release slips (measured 2026-09-16 on
   `os` → `prompt`, which died in preflight a day later)
 - **the `new-public-api` stage is a question, not a gate.** The constraint check compares CLASS
