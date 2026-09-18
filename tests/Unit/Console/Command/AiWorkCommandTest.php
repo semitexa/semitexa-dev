@@ -262,4 +262,94 @@ class AiWorkCommandTest extends TestCase
             (string) json_encode($traces->read('tk-o'), JSON_UNESCAPED_UNICODE),
         );
     }
+
+    /**
+     * Splitting an epic is the operation people actually perform, and it is
+     * this command run once per task. Four of them were moved by editing
+     * epic_id in the JSON by hand, because nothing could do it — which works,
+     * writes no trace event, and loses the reason for the move.
+     */
+    public function test_update_re_parents_a_task_to_another_epic(): void
+    {
+        [$command, $tasks, $epics, $traces] = $this->wiredWithTask('tk-m', 'ep-from');
+        $epics->save(new Epic('ep-to', 'T2', 'G2', EpicStatus::NEW, '2026-09-18T00:00:00+00:00', '2026-09-18T00:00:00+00:00'));
+
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'update', '--id' => 'tk-m', '--epic' => 'ep-to', '--json' => true]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $this->assertSame('ep-to', $tasks->get('tk-m')->epicId, 'the task did not move');
+
+        $envelope = json_decode(trim($tester->getDisplay()), true);
+        $this->assertIsArray($envelope);
+        $this->assertSame('ep-to', $envelope['task']['epic_id']);
+
+        $recorded = (string) json_encode($traces->read('tk-m'), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString("moved ep-from \u{2192} ep-to", $recorded, 'the move is not in the trace');
+        $this->assertStringContainsString('ep-from', $recorded, 'the trace must say where it came from');
+    }
+
+    /**
+     * An unknown epic id is the orphan case BacklogHygiene reports: the task
+     * would vanish from every listing that starts at an epic. Refusing is the
+     * whole point of validating rather than writing whatever was typed.
+     */
+    public function test_update_refuses_an_epic_that_does_not_exist(): void
+    {
+        [$command, $tasks] = $this->wiredWithTask('tk-x', 'ep-real');
+
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'update', '--id' => 'tk-x', '--epic' => 'ep-imaginary', '--json' => true]);
+
+        $this->assertNotSame(0, $tester->getStatusCode());
+        $this->assertSame('ep-real', $tasks->get('tk-x')->epicId, 'a refused move must not half-apply');
+        $this->assertStringContainsString('ep-imaginary', $tester->getDisplay());
+    }
+
+    public function test_update_refuses_a_malformed_epic_id(): void
+    {
+        [$command, $tasks] = $this->wiredWithTask('tk-y', 'ep-real');
+
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'update', '--id' => 'tk-y', '--epic' => 'Not An Id!', '--json' => true]);
+
+        $this->assertNotSame(0, $tester->getStatusCode());
+        $this->assertSame('ep-real', $tasks->get('tk-y')->epicId);
+    }
+
+    /**
+     * Moving a task to the epic it is already in changes nothing, so it must
+     * not write a "moved ep-a -> ep-a" event. A trace that records non-moves is
+     * a trace people stop reading.
+     */
+    public function test_moving_a_task_to_its_own_epic_is_not_a_move(): void
+    {
+        [$command, $tasks, , $traces] = $this->wiredWithTask('tk-s', 'ep-same');
+
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'update', '--id' => 'tk-s', '--epic' => 'ep-same', '--json' => true]);
+
+        $this->assertNotSame(0, $tester->getStatusCode(), 'nothing was asked for, so this is the "no fields" error');
+        $this->assertSame('ep-same', $tasks->get('tk-s')->epicId);
+        $this->assertStringNotContainsString('moved', (string) json_encode($traces->read('tk-s'), JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * @return array{0: AiWorkCommand, 1: TaskStore, 2: EpicStore, 3: TraceStore}
+     */
+    private function wiredWithTask(string $taskId, string $epicId): array
+    {
+        $now = '2026-09-18T00:00:00+00:00';
+        $tasks = new TaskStore();
+        $epics = $this->newEpicStore($tasks);
+        $traces = new TraceStore();
+        $epics->save(new Epic($epicId, 'T', 'G', EpicStatus::NEW, $now, $now));
+
+        $command = $this->buildWiredCommand($tasks, $epics, $traces, $this->newResumeService($tasks, $traces));
+        (new CommandTester($command))->execute([
+            'action' => 'start', '--id' => $taskId, '--epic' => $epicId, '--title' => 'do it', '--json' => true,
+        ]);
+
+        return [$command, $tasks, $epics, $traces];
+    }
 }

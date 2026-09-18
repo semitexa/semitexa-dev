@@ -87,6 +87,56 @@ final class AcceptedViolations
                     . 'never filled. Fixing it means changing who builds it, which is not a one-step change.',
             ],
         ],
+        'packages/semitexa-orm/src/Query/CollectionQueryCompiler.php' => [
+            'semitexa.builtSqlFragment' => [
+                'site' => 'applyKeysetPredicate',
+                'diagnostics' => 1,
+                'source_occurrences' => 1,
+                'reason' => 'The ONE composed whereRaw() fragment in the tree, and the reason the rule '
+                    . 'reports composition rather than trying to judge the string: keyset pagination builds '
+                    . 'an OR of AND-branches whose shape depends on how many sort terms the request carries, '
+                    . 'so it cannot be written as a literal. Every identifier in it goes through '
+                    . 'SqlIdentifier::quote() (from ORM metadata, never from the request), every value is a '
+                    . '? binding, and the only other inserted text is < or > chosen from SortDirection. '
+                    . 'Nothing user-supplied reaches the statement text.',
+            ],
+        ],
+        // THE TWO CLASS-LEVEL ENTRIES. `domainModelEncapsulation` reports at the
+        // MAPPER's declaration, not inside any method, so until
+        // EnclosingSymbol::at() learned to fall back to the enclosing class
+        // these could not be written at all — the site never matched and the
+        // allowance silently did nothing. See tk-accepted-violations-cannot-
+        // express-a-class-level-finding.
+        //
+        // source_occurrences equals diagnostics here because this rule is
+        // semantic: no textual ratchet scans for it, so there is no second
+        // number to record. The count still does its job — a twentieth
+        // violation in these files is reported.
+        'packages/semitexa-webhooks/src/Application/Db/MySQL/Mapper/WebhookInboxMapper.php' => [
+            'semitexa.domainModelEncapsulation' => [
+                'site' => 'WebhookInboxMapper',
+                'diagnostics' => 8,
+                'source_occurrences' => 8,
+                'reason' => 'InboundDelivery mutates ONLY through transitions that name an intention — '
+                    . 'markProcessing(), markProcessed(), markFailed(), markDuplicateIgnored() — and carries '
+                    . 'not one plain setter. The rule asks for setStatus(), setFailedAt(), setProcessedAt(); '
+                    . 'adding them would let any caller put a delivery into a state no transition allows, '
+                    . 'which is the thing the model is shaped to prevent. The rule is right about the '
+                    . 'general case and wrong about this one.',
+            ],
+        ],
+        'packages/semitexa-webhooks/src/Application/Db/MySQL/Mapper/WebhookOutboxMapper.php' => [
+            'semitexa.domainModelEncapsulation' => [
+                'site' => 'WebhookOutboxMapper',
+                'diagnostics' => 11,
+                'source_occurrences' => 11,
+                'reason' => 'OutboundDelivery is the same shape as InboundDelivery: markDelivering(), '
+                    . 'markDelivered(), markRetryScheduled(), markCancelled(), resetToPending() — a lease '
+                    . 'and a retry schedule that only move together. A setLeaseOwner() beside them would '
+                    . 'let a caller take a lease without setting its expiry, which is precisely the state '
+                    . 'the transitions exist to make unreachable.',
+            ],
+        ],
         'packages/semitexa-graphql/src/Application/Service/Runtime/ContainerHandlerInvoker.php' => [
             'semitexa.staticContainerAccess' => [
                 // One real call, plus one mention in a docblock that the
@@ -123,7 +173,8 @@ final class AcceptedViolations
     }
 
     /**
-     * The method the accepted violation lives in.
+     * The symbol the accepted violation lives in — the method, or the class
+     * when the rule reports on the declaration itself.
      *
      * The file and the rule were the whole key, so removing the blessed call
      * and writing a different one elsewhere in the same class kept the gate
@@ -134,6 +185,15 @@ final class AcceptedViolations
      * Not the line, which moves whenever anything above it does, and not the
      * message, which for `staticContainerAccess` names the class and not the
      * method. See {@see EnclosingSymbol}.
+     *
+     * A CLASS NAME IS A WIDER STATEMENT than a method name, and that is the
+     * cost of accepting a class-level finding. It is not the whole class: a
+     * method always wins over the class holding it, so a violation INSIDE
+     * toDomain() resolves to `toDomain` and is reported as usual. What the
+     * class site covers is the part of the class that is in no method — the
+     * declaration, its attributes, its properties and constants. The
+     * `diagnostics` count holds the rest: the twentieth report is not absorbed
+     * by an allowance written for nineteen.
      */
     public static function siteFor(string $path, string $rule): ?string
     {

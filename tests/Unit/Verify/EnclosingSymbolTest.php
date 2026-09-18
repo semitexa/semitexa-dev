@@ -20,6 +20,11 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\EnclosingSymbol;
  * The message is not one either — `semitexa.staticContainerAccess` names the
  * class, not the method. The enclosing method is what is recorded, and this is
  * what has to find it.
+ *
+ * And when there is no enclosing method — a rule that reports on the class
+ * itself — the class is what is recorded. That half returned null until
+ * 2026-09-18, so a class-level entry could be written, could look right, and
+ * accepted nothing.
  */
 final class EnclosingSymbolTest extends TestCase
 {
@@ -154,12 +159,20 @@ final class EnclosingSymbolTest extends TestCase
         self::assertSame('real', EnclosingSymbol::at($file, $lines['real']));
     }
 
+    /**
+     * Some rules report on the class, not inside a method —
+     * `semitexa.domainModelEncapsulation` names the mapper and reports at its
+     * declaration. This returned null there, null never equalled a site, and
+     * the entry that should have accepted it silently did nothing.
+     */
     #[Test]
-    public function a_line_outside_every_method_belongs_to_none(): void
+    public function a_line_outside_every_method_belongs_to_its_class(): void
     {
         $source = <<<'PHP'
         <?php
         class A { // HERE:classLine
+            private int $field = 1; // HERE:property
+
             public function only(): void
             {
             }
@@ -169,7 +182,156 @@ final class EnclosingSymbolTest extends TestCase
         $file = $this->write($source);
         $lines = $this->markers($source);
 
-        self::assertNull(EnclosingSymbol::at($file, $lines['classLine']));
+        self::assertSame('A', EnclosingSymbol::at($file, $lines['classLine']));
+        self::assertSame('A', EnclosingSymbol::at($file, $lines['property']));
+    }
+
+    /**
+     * THE CASE THAT MATTERS AND THE ONE A FIXTURE WITHOUT ATTRIBUTES HIDES.
+     * PHPStan reports a class error at the node's start line, and a node with
+     * attributes starts at the first `#[` — one line ABOVE the `class` keyword.
+     * WebhookInboxMapper.php reports at line 14, which is `#[AsMapper(...)]`.
+     * A range that began at the keyword would miss every attributed class in
+     * the codebase, which is nearly all of them.
+     */
+    #[Test]
+    public function an_attributed_class_owns_the_line_its_attribute_is_on(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        #[AsMapper(resourceModel: RowModel::class, domainModel: Thing::class)] // HERE:attribute
+        final class Mapper
+        { // HERE:brace
+            public function toDomain(object $row): object
+            {
+                return new Thing(); // HERE:inside
+            }
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('Mapper', EnclosingSymbol::at($file, $lines['attribute']));
+        self::assertSame('Mapper', EnclosingSymbol::at($file, $lines['brace']));
+        self::assertSame('toDomain', EnclosingSymbol::at($file, $lines['inside']), 'a method still wins over its class');
+    }
+
+    #[Test]
+    public function a_run_of_attribute_groups_starts_at_the_first_one(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        #[First] // HERE:first
+        #[Second]
+        class Decorated
+        {
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('Decorated', EnclosingSymbol::at($file, $lines['first']));
+    }
+
+    /**
+     * `Foo::class` is a constant, not a declaration, and it appears in the
+     * arguments of nearly every attribute in this codebase — including the one
+     * on the mapper this whole fallback exists for.
+     */
+    #[Test]
+    public function a_class_constant_does_not_open_a_range(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        class Holder
+        {
+            public function name(): string
+            {
+                return Other::class; // HERE:constant
+            }
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('name', EnclosingSymbol::at($file, $lines['constant']));
+    }
+
+    /**
+     * An anonymous class belongs to whatever wrote it, for the same reason a
+     * closure does: it is not a thing a reader can name in a registry entry.
+     */
+    #[Test]
+    public function an_anonymous_class_is_transparent(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        class Outer
+        {
+            public function build(): object
+            {
+                return new class extends Base {
+                    public $field = 1; // HERE:inside
+                };
+            }
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('build', EnclosingSymbol::at($file, $lines['inside']));
+    }
+
+    #[Test]
+    public function an_interface_a_trait_and_an_enum_are_named_too(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        interface Contract
+        {
+            public function run(): void; // HERE:interfaceLine
+        }
+
+        trait Helper
+        {
+            private int $helped = 0; // HERE:traitLine
+        }
+
+        enum Status: string
+        {
+            case Open = 'open'; // HERE:enumLine
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('Contract', EnclosingSymbol::at($file, $lines['interfaceLine']));
+        self::assertSame('Helper', EnclosingSymbol::at($file, $lines['traitLine']));
+        self::assertSame('Status', EnclosingSymbol::at($file, $lines['enumLine']));
+    }
+
+    #[Test]
+    public function a_line_in_no_class_and_no_function_belongs_to_none(): void
+    {
+        $source = <<<'PHP'
+        <?php
+
+        declare(strict_types=1); // HERE:header
+
+        class A
+        {
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertNull(EnclosingSymbol::at($file, $lines['header']));
     }
 
     #[Test]
@@ -179,12 +341,17 @@ final class EnclosingSymbolTest extends TestCase
     }
 
     /**
-     * Every registry entry must name a method that exists where it says, or the
+     * Every registry entry must name a symbol that exists where it says, or the
      * allowance silently stops applying and the gate goes red for a reason
      * nobody wrote down.
+     *
+     * Asked through the resolver the gate itself uses, rather than by grepping
+     * for `function <site>(`: that pattern was the check, and it could not see
+     * a class site at all — which is how an entry that looked right did
+     * nothing. A site is real when some line of that file resolves to it.
      */
     #[Test]
-    public function every_accepted_entry_names_a_real_method_in_its_file(): void
+    public function every_accepted_entry_names_a_symbol_the_resolver_finds(): void
     {
         $root = dirname(__DIR__, 5);
 
@@ -194,12 +361,22 @@ final class EnclosingSymbolTest extends TestCase
                 continue; // a package that is not installed here
             }
 
+            $lines = substr_count((string) file_get_contents($absolute), "\n") + 1;
+
             foreach ($rules as $rule => $entry) {
                 self::assertArrayHasKey('site', $entry, "{$path} / {$rule} accepts without naming a site");
-                self::assertMatchesRegularExpression(
-                    '/function\s+' . preg_quote($entry['site'], '/') . '\s*\(/',
-                    (string) file_get_contents($absolute),
-                    "{$path} accepts {$rule} in {$entry['site']}(), which is not in that file",
+
+                $found = false;
+                for ($line = 1; $line <= $lines; $line++) {
+                    if (EnclosingSymbol::at($absolute, $line) === $entry['site']) {
+                        $found = true;
+                        break;
+                    }
+                }
+
+                self::assertTrue(
+                    $found,
+                    "{$path} accepts {$rule} at '{$entry['site']}', which no line of that file resolves to",
                 );
             }
         }

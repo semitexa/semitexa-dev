@@ -73,7 +73,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // escaping it, and countBy() was shown emitting
         //   SELECT `name` , (SELECT 1) AS x -- ` AS __g ... GROUP BY ...
         // from a hand-built ColumnRef.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1132],
+        // 1132 -> 1147 on 2026-09-18, all docblock and no code: whereRaw() now
+        // states its contract where somebody reaching for it reads it — the
+        // bindings are bound, the FRAGMENT is concatenated verbatim, so this is
+        // the one door in the ORM an injection can still arrive through, and it
+        // arrives from the caller. An Aikido finding was refuted on exactly
+        // this distinction and the method said nothing about it either way.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1147],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -117,7 +123,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // this exact failure mode, shipped TRUSTED_PROXIES as the remedy, and
         // production was still serving Secure-less cookies over HTTPS months
         // later because nothing ever said the remedy was needed.
-        'semitexa-core/src/Request.php' => [32, 471],
+        // 32/471 -> 33/501 on 2026-09-18: getServedPath(), the path the client
+        // asked for, beside getPath(), the path the ROUTER matched. They part
+        // company as soon as the locale layer strips a URL prefix, and the
+        // shell envelope was reporting the second — so /ka/gallery answered
+        // url=/gallery, the client pushState'd it, and the visitor's next
+        // reload came back in another language. Most of the 30 lines are the
+        // docblock saying which question each method answers, because getting
+        // that wrong is silent until somebody reloads.
+        'semitexa-core/src/Request.php' => [33, 501],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
