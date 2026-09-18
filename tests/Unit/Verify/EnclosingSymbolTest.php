@@ -341,6 +341,44 @@ final class EnclosingSymbolTest extends TestCase
     }
 
     /**
+     * A by-reference method keeps its name.
+     *
+     * PHP 8.1 stopped emitting the `&` of `public function &items()` as a plain
+     * character and gives T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG, so the
+     * walk read it as "this declaration has no name of its own", the method got
+     * no range, and a line inside it resolved to the enclosing CLASS — where it
+     * could match a class-level accepted site and consume an allowance written
+     * for something else.
+     */
+    #[Test]
+    public function a_by_reference_method_is_still_a_named_method(): void
+    {
+        $source = <<<'PHP'
+        <?php
+        class A
+        {
+            public function &items(): array
+            {
+                $x = []; // HERE:inside
+
+                return $x;
+            }
+
+            public function after(): void
+            {
+                $y = 1; // HERE:after
+            }
+        }
+        PHP;
+
+        $file = $this->write($source);
+        $lines = $this->markers($source);
+
+        self::assertSame('items', EnclosingSymbol::at($file, $lines['inside']));
+        self::assertSame('after', EnclosingSymbol::at($file, $lines['after']), 'and the next method is unaffected');
+    }
+
+    /**
      * Every registry entry must name a symbol that exists where it says, or the
      * allowance silently stops applying and the gate goes red for a reason
      * nobody wrote down.

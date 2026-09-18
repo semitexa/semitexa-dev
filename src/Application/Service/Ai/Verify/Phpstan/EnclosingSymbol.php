@@ -44,6 +44,26 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Phpstan;
  */
 final class EnclosingSymbol
 {
+    /**
+     * Tokens that may sit between `function` and the name, and therefore must
+     * not be taken for evidence that there is no name.
+     *
+     * The ampersand of `public function &items(): array` is the one that is not
+     * obvious. PHP 8.1 stopped emitting it as a plain `&` character and gives
+     * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG` instead, so the by-reference
+     * method fell into the "no name of its own" branch and got no range at all
+     * — and a diagnostic inside it then resolved to the enclosing CLASS, where
+     * it could match a class-level accepted site and consume an allowance
+     * written for something else.
+     */
+    private const BEFORE_A_NAME = [
+        T_WHITESPACE,
+        T_COMMENT,
+        T_DOC_COMMENT,
+        T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG,
+        T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
+    ];
+
     /** @var array<string, list<array{name: string, kind: 'function'|'class', from: int, to: int}>> */
     private static array $cache = [];
 
@@ -126,7 +146,7 @@ final class EnclosingSymbol
                 } elseif ($pending !== null && $pending['name'] === false && $token[0] === T_STRING) {
                     $pending['name'] = $token[1];
                 } elseif ($pending !== null && $pending['name'] === false
-                    && $token[0] !== T_WHITESPACE && $token[0] !== T_COMMENT && $token[0] !== T_DOC_COMMENT) {
+                    && !in_array($token[0], self::BEFORE_A_NAME, true)) {
                     // `function (`, `function use`, `new class extends` — a
                     // declaration with no name of its own is transparent.
                     $pending = null;

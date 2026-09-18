@@ -331,7 +331,14 @@ class AiWorkCommandTest extends TestCase
 
         $this->assertNotSame(0, $tester->getStatusCode(), 'nothing was asked for, so this is the "no fields" error');
         $this->assertSame('ep-same', $tasks->get('tk-s')->epicId);
-        $this->assertStringNotContainsString('moved', (string) json_encode($traces->read('tk-s'), JSON_UNESCAPED_UNICODE));
+
+        // The trace is read into a variable and checked for content FIRST: a
+        // json_encode() that returned false would cast to '' and satisfy the
+        // negative assertion below without ever looking at a trace.
+        $recorded = (string) json_encode($traces->read('tk-s'), JSON_UNESCAPED_UNICODE);
+        $this->assertNotSame('', $recorded, 'there is no trace to assert against');
+        $this->assertStringContainsString('tk-s', $recorded, 'and it is this task\'s trace');
+        $this->assertStringNotContainsString('moved', $recorded);
     }
 
     /**
