@@ -131,7 +131,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // reload came back in another language. Most of the 30 lines are the
         // docblock saying which question each method answers, because getting
         // that wrong is silent until somebody reloads.
-        'semitexa-core/src/Request.php' => [33, 501],
+        // 33/501 -> 34/541 on 2026-09-18, from code review:
+        // isUsableTrustedProxyEntry(). A doctor check was calling a
+        // TRUSTED_PROXIES list healthy because it COUNTED the entries — and
+        // `not-an-ip,172.18.0.0/99` is two entries that match no peer, ever,
+        // while the app goes on dropping X-Forwarded-Proto. The shape test now
+        // lives beside the matcher that has to agree with it, and
+        // ipMatchesEntry() calls it first so the two cannot drift.
+        'semitexa-core/src/Request.php' => [34, 541],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
