@@ -1,6 +1,7 @@
 includes:
-    # One list, shared with ai:verify — see the file for why it is not copied.
-    - packages/semitexa-core/config/phpstan-rules.neon
+    # One list, shared with ai:verify — see that file for why it is addressed
+    # through the cwd rather than relatively.
+    - %currentWorkingDirectory%/vendor/semitexa/core/config/phpstan-rules.neon
     - phpstan-baseline.neon
 
 

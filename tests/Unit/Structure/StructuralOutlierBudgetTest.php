@@ -66,7 +66,20 @@ final class StructuralOutlierBudgetTest extends TestCase
         // if instead. phpstan called the nullsafe unnecessary on the left of
         // `??`, and the three lines are what makes the missing-metadata branch
         // readable rather than a suffix on a return.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1131],
+        // 1131 -> 1132 on 2026-09-18, one line, NO new method: the SqlIdentifier
+        // sweep. Every `%s` in a SQL format string lost its backticks and the
+        // argument gained SqlIdentifier::quote(), which is one line wider where
+        // the sprintf was already wrapped. Wrapping a name in backticks is not
+        // escaping it, and countBy() was shown emitting
+        //   SELECT `name` , (SELECT 1) AS x -- ` AS __g ... GROUP BY ...
+        // from a hand-built ColumnRef.
+        // 1132 -> 1147 on 2026-09-18, all docblock and no code: whereRaw() now
+        // states its contract where somebody reaching for it reads it — the
+        // bindings are bound, the FRAGMENT is concatenated verbatim, so this is
+        // the one door in the ORM an injection can still arrive through, and it
+        // arrives from the caller. An Aikido finding was refuted on exactly
+        // this distinction and the method said nothing about it either way.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1147],
         'semitexa-orm/src/OrmManager.php' => [41, 917],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
@@ -79,6 +92,16 @@ final class StructuralOutlierBudgetTest extends TestCase
         // arguments nor pipeline while the OpenDialog branch beside it did, so
         // a caller learned that SOMETHING was already open and not which
         // record. Two constructor arguments and the sentence saying why.
+        // NEW on 2026-09-18, and the shape is the point rather than the size.
+        // These three were anaemic records with public fields; closing them
+        // over their own data means a getter and a setter per field, so method
+        // count tracks field count and nothing else. They sit beside
+        // OutboundDelivery and InboundDelivery below, which crossed the same
+        // threshold the same way. A class that is 53 accessors over 352 lines
+        // is not a god class; splitting it would only scatter one record.
+        'semitexa-scheduler/src/Domain/Model/ScheduledRun.php' => [53, 352],
+        'semitexa-scheduler/src/Domain/Model/ScheduleDefinition.php' => [37, 248],
+        'semitexa-workflow/src/Domain/Model/WorkflowInstance.php' => [36, 208],
         'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 932],
@@ -86,7 +109,36 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-weave/src/Application/Service/GraphStore.php' => [32, 685],
         'semitexa-webhooks/src/Domain/Model/InboundDelivery.php' => [32, 122],
         'semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [31, 473],
-        'semitexa-core/src/Request.php' => [31, 443],
+        // 31/443 -> 32/471 on 2026-09-18, and this one DOES add a method, so it
+        // is a decision rather than a recording.
+        //
+        // refusedForwardedProto() reports the scheme a proxy claimed and this
+        // request did not believe. It belongs here and nowhere else: the trust
+        // check it depends on, isTrustedForwardedRequest(), is private to this
+        // class, and moving the accessor out would mean exposing the trust
+        // decision itself — a worse API for a smaller file.
+        //
+        // Most of the 28 lines are the docblock, because the thing worth
+        // recording is WHY a silent refusal needed a name: core#102 documented
+        // this exact failure mode, shipped TRUSTED_PROXIES as the remedy, and
+        // production was still serving Secure-less cookies over HTTPS months
+        // later because nothing ever said the remedy was needed.
+        // 32/471 -> 33/501 on 2026-09-18: getServedPath(), the path the client
+        // asked for, beside getPath(), the path the ROUTER matched. They part
+        // company as soon as the locale layer strips a URL prefix, and the
+        // shell envelope was reporting the second — so /ka/gallery answered
+        // url=/gallery, the client pushState'd it, and the visitor's next
+        // reload came back in another language. Most of the 30 lines are the
+        // docblock saying which question each method answers, because getting
+        // that wrong is silent until somebody reloads.
+        // 33/501 -> 34/541 on 2026-09-18, from code review:
+        // isUsableTrustedProxyEntry(). A doctor check was calling a
+        // TRUSTED_PROXIES list healthy because it COUNTED the entries — and
+        // `not-an-ip,172.18.0.0/99` is two entries that match no peer, ever,
+        // while the app goes on dropping X-Forwarded-Proto. The shape test now
+        // lives beside the matcher that has to agree with it, and
+        // ipMatchesEntry() calls it first so the two cannot drift.
+        'semitexa-core/src/Request.php' => [34, 541],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
@@ -242,7 +294,20 @@ final class StructuralOutlierBudgetTest extends TestCase
         // CatalogPromptDeclarations was already cut along that line.
         'semitexa-dev/src/Application/Service/Ai/Verify/Mechanism/HeredocPromptDetector.php' => [20, 715],
         'semitexa-dev/src/Application/Service/Ai/Verify/Structure/ModuleStructureValidator.php' => [22, 1092],
-        'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 865],
+        // 865 -> 882 on 2026-09-18, seventeen lines, NO new method: the
+        // SqlIdentifier sweep, which costs most here because the DDL builders
+        // interpolate several identifiers per statement AND carry a dialect —
+        // SqlIdentifier::quote($name, $q) with the ANSI quote on the SQLite
+        // branch. A "CREATE TABLE `%s`" that was one interpolated string is now
+        // a quote call and a concatenation.
+        //
+        // The last two of the seventeen came from a self-review, and are the
+        // reason this number was recorded twice: the sweep left four
+        // "ALTER TABLE {$q}{$name}{$q}" behind, and the rule guarding it
+        // reported the tree clean because it only read String_ nodes. An
+        // interpolated string is a different node, and one that carries no
+        // literal backtick at all when the quote character lives in $q.
+        'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 882],
         // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
         // shipped in 2026.09.08.2003 and turned the first ai:verify after any
         // framework update red in every consumer project. The new method is
@@ -346,7 +411,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // passing `string|null` into a `string` parameter. The added lines are
         // the second condition and the paragraph saying why it is not
         // redundant, which is the thing a later reader would otherwise delete.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 947],
+        // 947 -> 948 on 2026-09-18, one line, NO new method: the SqlIdentifier
+        // sweep, same as ResourceModelQuery above.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 948],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by

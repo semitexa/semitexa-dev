@@ -27,7 +27,13 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
  */
 final class RuleGuidanceCoverageTest extends TestCase
 {
-    private const RULES_NEON = __DIR__ . '/../../../../../config/phpstan-ai-verify-rules.neon';
+    /**
+     * The list moved to semitexa/core on 2026-09-18, beside the rules it names,
+     * so the two gates that run them cannot drift apart again. It is reached
+     * here through the packages tree rather than through vendor/, because a
+     * test should read the file it is asserting about, not a symlink to it.
+     */
+    private const RULES_NEON = __DIR__ . '/../../../../../../semitexa-core/config/phpstan-rules.neon';
 
     /**
      * Identifiers the registered rules can actually emit, read from the rules

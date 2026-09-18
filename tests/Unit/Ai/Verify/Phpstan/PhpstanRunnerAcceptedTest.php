@@ -28,6 +28,10 @@ final class PhpstanRunnerAcceptedTest extends TestCase
     private const ACCEPTED_FILE = 'packages/semitexa-dev/src/Application/Console/Command/AiInvokeCommand.php';
     private const ACCEPTED_RULE = 'semitexa.staticContainerAccess';
 
+    /** An entry whose site is a CLASS, because the rule reports on the declaration. */
+    private const CLASS_LEVEL_FILE = 'packages/semitexa-webhooks/src/Application/Db/MySQL/Mapper/WebhookInboxMapper.php';
+    private const CLASS_LEVEL_RULE = 'semitexa.domainModelEncapsulation';
+
     private function projectRoot(): string
     {
         return dirname(__DIR__, 7);
@@ -192,6 +196,94 @@ final class PhpstanRunnerAcceptedTest extends TestCase
         ]);
 
         self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status);
+    }
+
+    /**
+     * THE SHAPE THAT COULD NOT BE ACCEPTED AT ALL until EnclosingSymbol learned
+     * to fall back to the class. `domainModelEncapsulation` reports at the
+     * mapper's declaration — its `#[AsMapper]` line, outside every method — so
+     * the site never resolved, the entry did nothing, and the only options were
+     * to obey a rule that made the model worse or to endure the violations.
+     */
+    #[Test]
+    public function a_class_level_violation_is_accepted_at_its_declaration(): void
+    {
+        $result = $this->runWith([[
+            'file' => self::CLASS_LEVEL_FILE,
+            'rule' => self::CLASS_LEVEL_RULE,
+            'line' => $this->lineAtClassDeclaration(),
+        ]]);
+
+        self::assertSame(PhpstanRunResult::STATUS_PASS, $result->status);
+        self::assertCount(1, $result->accepted, 'the rule fired, so it must still be visible');
+        self::assertSame('accepted', $result->accepted[0]['severity']);
+        self::assertStringContainsString('markProcessing', (string) $result->accepted[0]['accepted_reason']);
+    }
+
+    /**
+     * A class site is not the whole class. A method always wins over the class
+     * holding it, so a violation inside toDomain() resolves to `toDomain` and is
+     * reported as usual — otherwise accepting one class-level finding would
+     * quietly bless every later violation of that rule anywhere in the file.
+     */
+    #[Test]
+    public function the_same_rule_inside_a_method_of_that_class_still_fails(): void
+    {
+        $result = $this->runWith([[
+            'file' => self::CLASS_LEVEL_FILE,
+            'rule' => self::CLASS_LEVEL_RULE,
+            'line' => $this->lineInsideAMethodOfTheMapper(),
+        ]]);
+
+        self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status);
+        self::assertCount(1, $result->diagnostics);
+        self::assertSame([], $result->accepted);
+    }
+
+    /**
+     * The count still bounds a class site: nine reports where eight were
+     * accepted is one violation, not a green run.
+     */
+    #[Test]
+    public function one_more_class_level_report_than_was_accepted_still_fails(): void
+    {
+        $line = $this->lineAtClassDeclaration();
+        $violations = array_fill(0, 9, [
+            'file' => self::CLASS_LEVEL_FILE,
+            'rule' => self::CLASS_LEVEL_RULE,
+            'line' => $line,
+        ]);
+
+        $result = $this->runWith($violations);
+
+        self::assertSame(PhpstanRunResult::STATUS_FAIL, $result->status);
+        self::assertCount(8, $result->accepted, 'the entry accepts eight');
+        self::assertCount(1, $result->diagnostics, 'the ninth is a plain violation');
+    }
+
+    /** The `#[AsMapper(...)]` line, which is where PHPStan reports the class error. */
+    private function lineAtClassDeclaration(): int
+    {
+        $source = (string) file_get_contents($this->projectRoot() . '/' . self::CLASS_LEVEL_FILE);
+        foreach (explode("\n", $source) as $i => $line) {
+            if (str_starts_with(trim($line), '#[AsMapper(')) {
+                return $i + 1;
+            }
+        }
+
+        self::fail('the mapper no longer carries the attribute this test reports at');
+    }
+
+    private function lineInsideAMethodOfTheMapper(): int
+    {
+        $source = (string) file_get_contents($this->projectRoot() . '/' . self::CLASS_LEVEL_FILE);
+        foreach (explode("\n", $source) as $i => $line) {
+            if (str_contains($line, 'public function toDomain(')) {
+                return $i + 3;
+            }
+        }
+
+        self::fail('the mapper no longer has toDomain()');
     }
 
     #[Test]

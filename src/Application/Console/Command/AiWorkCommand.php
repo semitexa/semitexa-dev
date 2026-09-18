@@ -30,7 +30,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--trace=...] [--context-ref=...]* [--next-step=...]
  *   bin/semitexa ai:work list   [--epic=...] [--status=new|in_progress|blocked|done] [--json]
  *   bin/semitexa ai:work show   --id=tk-fix-wm [--json]
- *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--next-step=...] [--context-ref=...]*
+ *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--next-step=...] [--context-ref=...]* [--epic=...]
  *   bin/semitexa ai:work note   --id=tk-fix-wm --note="..." [--next-step=...]
  *   bin/semitexa ai:work resume --id=tk-fix-wm [--tail=5]
  *
@@ -75,7 +75,7 @@ final class AiWorkCommand extends BaseCommand
         $this
             ->addArgument('action', InputArgument::REQUIRED, 'start | list | show | update | note | resume')
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Task id (a-z, 0-9, -, _)')
-            ->addOption('epic', null, InputOption::VALUE_REQUIRED, 'Epic id (required on start)')
+            ->addOption('epic', null, InputOption::VALUE_REQUIRED, 'Epic id (required on start; on update, re-parents the task)')
             ->addOption('title', null, InputOption::VALUE_REQUIRED, 'Task title')
             ->addOption('recipe', null, InputOption::VALUE_REQUIRED, 'Recipe id (see ai:task)')
             ->addOption('risk', null, InputOption::VALUE_REQUIRED, 'Risk: ' . implode('|', self::ALLOWED_RISK))
@@ -300,6 +300,29 @@ final class AiWorkCommand extends BaseCommand
         $refs = $this->contextRefs($input);
         $refsOpt = $refs === [] ? null : $refs;
 
+        // Re-parenting. Epic membership is derived from the task, so a move is
+        // one field — and without this it was one field edited in the JSON by
+        // hand, which leaves no trace event and no record of why. Validated
+        // against the store because an unknown epic id is the orphan case
+        // BacklogHygiene already reports, and creating one here is worse than
+        // refusing: the task disappears from every listing that starts at an
+        // epic.
+        $epicId = $this->optionalString($input, 'epic');
+        if ($epicId !== null) {
+            try {
+                WorkId::assertValid($epicId, 'epic id');
+            } catch (\InvalidArgumentException $e) {
+                return $this->error($output, $e->getMessage(), $jsonMode);
+            }
+            if (!$this->epicStore->exists($epicId)) {
+                return $this->error($output, "epic '{$epicId}' does not exist — run ai:epic start first", $jsonMode);
+            }
+            if ($epicId === $task->epicId) {
+                $epicId = null; // already there; not a change to report
+            }
+        }
+        $movedFrom = $epicId === null ? null : $task->epicId;
+
         // Read here, not only in the note action. --note is declared on the
         // command and its description promises the trace; update() ignored it,
         // so closing a task WITH its reasoning changed the status, printed the
@@ -308,8 +331,8 @@ final class AiWorkCommand extends BaseCommand
         $note = $this->optionalString($input, 'note');
 
         if ($title === null && $recipe === null && $risk === null && $status === null
-            && $nextStep === null && $refsOpt === null && $note === null) {
-            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref, --note', $jsonMode);
+            && $nextStep === null && $refsOpt === null && $note === null && $epicId === null) {
+            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref, --note, --epic', $jsonMode);
         }
 
         $updated = $task->with(
@@ -320,13 +343,18 @@ final class AiWorkCommand extends BaseCommand
             contextRefs: $refsOpt,
             nextStep:    $nextStep,
             updatedAt:   date('c'),
+            epicId:      $epicId,
         );
         $this->taskStore->save($updated);
 
         $kind = $status !== null ? TraceEventKind::NEXT_STEP : TraceEventKind::NOTE;
-        $summary = $status !== null
-            ? "task '{$id}' status → {$status->value}"
-            : "task '{$id}' updated";
+        $summary = match (true) {
+            $status !== null  => "task '{$id}' status → {$status->value}",
+            // The move is named in the summary rather than left in the payload:
+            // a reader scanning a trace for where a task went reads summaries.
+            $epicId !== null  => "task '{$id}' moved {$movedFrom} → {$epicId}",
+            default           => "task '{$id}' updated",
+        };
         $changes = array_filter([
             'title'        => $title,
             'recipe'       => $recipe,
@@ -334,6 +362,8 @@ final class AiWorkCommand extends BaseCommand
             'status'       => $status?->value,
             'next_step'    => $nextStep,
             'context_refs' => $refsOpt,
+            'epic_id'      => $epicId,
+            'moved_from'   => $movedFrom,
         ], static fn($v) => $v !== null);
 
         if ($changes !== []) {

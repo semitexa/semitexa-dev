@@ -40,6 +40,14 @@ final readonly class Task
     ) {}
 
     /**
+     * The same task with some fields replaced.
+     *
+     * $epicId re-parents it. Epic membership is DERIVED — an epic file stores no
+     * task ids, `ai:epic show` builds the list by scanning — so a move is this
+     * one field and the store stays consistent by construction. Splitting an
+     * epic used to mean editing epic_id in the JSON by hand, which works and
+     * writes no trace event, so the reason for the move was lost every time.
+     *
      * @param list<string>|null $contextRefs
      */
     public function with(
@@ -50,10 +58,11 @@ final readonly class Task
         ?array $contextRefs = null,
         ?string $nextStep = null,
         ?string $updatedAt = null,
+        ?string $epicId = null,
     ): self {
         return new self(
             id:           $this->id,
-            epicId:       $this->epicId,
+            epicId:       $epicId ?? $this->epicId,
             title:        $title ?? $this->title,
             status:       $status ?? $this->status,
             recipe:       $recipe ?? $this->recipe,
