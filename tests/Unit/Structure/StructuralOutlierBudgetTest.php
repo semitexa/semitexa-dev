@@ -103,7 +103,21 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-weave/src/Application/Service/GraphStore.php' => [32, 685],
         'semitexa-webhooks/src/Domain/Model/InboundDelivery.php' => [32, 122],
         'semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [31, 473],
-        'semitexa-core/src/Request.php' => [31, 443],
+        // 31/443 -> 32/471 on 2026-09-18, and this one DOES add a method, so it
+        // is a decision rather than a recording.
+        //
+        // refusedForwardedProto() reports the scheme a proxy claimed and this
+        // request did not believe. It belongs here and nowhere else: the trust
+        // check it depends on, isTrustedForwardedRequest(), is private to this
+        // class, and moving the accessor out would mean exposing the trust
+        // decision itself — a worse API for a smaller file.
+        //
+        // Most of the 28 lines are the docblock, because the thing worth
+        // recording is WHY a silent refusal needed a name: core#102 documented
+        // this exact failure mode, shipped TRUSTED_PROXIES as the remedy, and
+        // production was still serving Secure-less cookies over HTTPS months
+        // later because nothing ever said the remedy was needed.
+        'semitexa-core/src/Request.php' => [32, 471],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
