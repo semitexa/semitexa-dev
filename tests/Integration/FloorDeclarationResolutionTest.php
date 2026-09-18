@@ -308,4 +308,88 @@ final class FloorDeclarationResolutionTest extends TestCase
         self::assertSame(1, $result['exit'], 'core carries a tag on HEAD, so it is not being released');
         self::assertStringContainsString('semitexa/core is not being tagged', $result['output']);
     }
+
+    /**
+     * A commit that carries somebody else's work to master.
+     *
+     * `git add composer.json` would stage an unrelated edit to the same file
+     * along with the floor, and an unrestricted `git commit` would sweep in
+     * anything already in the index. Both reach master, where the tag is cut.
+     */
+    #[Test]
+    public function a_dirty_repository_is_refused_before_anything_is_written(): void
+    {
+        $this->writePackage($this->declaringPackage());
+        $this->withRemote();
+
+        file_put_contents($this->root . '/packages/semitexa-ssr/UNRELATED.md', "someone else's work\n");
+        $this->git($this->root . '/packages/semitexa-ssr', 'add -A');
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit']);
+        self::assertStringContainsString('uncommitted changes', $result['output']);
+        self::assertSame(
+            'next',
+            $this->readPackage()['extra']['semitexa']['floors']['semitexa/core'],
+            'refusing before the first write is what leaves nothing behind',
+        );
+    }
+
+    /**
+     * A push that fails must leave the declaration PENDING. Dated-but-unpushed
+     * is the worst state available: a retry finds no `next`, reports success,
+     * and finalize then resets the file away — so the release ships the old
+     * constraint with nothing left to show why.
+     */
+    #[Test]
+    public function a_failed_push_restores_the_declaration_for_a_retry(): void
+    {
+        $this->writePackage($this->declaringPackage());
+
+        // A remote that cannot be pushed to.
+        $this->git($this->root . '/packages/semitexa-ssr', 'remote add origin ' . escapeshellarg($this->root . '/nowhere.git'));
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit']);
+        self::assertStringContainsString('git push failed', $result['output']);
+
+        $composer = $this->readPackage();
+        self::assertSame('next', $composer['extra']['semitexa']['floors']['semitexa/core'], 'still pending');
+        self::assertSame('*', $composer['require']['semitexa/core'], 'and the constraint is back');
+
+        $log = shell_exec(sprintf(
+            'git -C %s log --oneline -1 2>/dev/null',
+            escapeshellarg($this->root . '/packages/semitexa-ssr'),
+        ));
+        self::assertStringNotContainsString('Date the declared internal floors', (string) $log, 'the local commit is undone too');
+    }
+
+    /**
+     * Membership comes from MASTER, not the checked-out HEAD. A provider sitting
+     * on an untagged develop while origin/master is already released would
+     * otherwise join the release set, and a consumer floor would be dated
+     * against a provider this cut never tags.
+     */
+    #[Test]
+    public function a_provider_checked_out_on_another_branch_is_judged_by_its_master(): void
+    {
+        $this->writePackage($this->declaringPackage(), providerIsBeingTagged: false);
+        $this->git($this->root . '/packages/semitexa-core', 'checkout -q -b develop');
+        $this->git($this->root . '/packages/semitexa-core', 'commit -q --allow-empty -m "work in progress"');
+
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit'], 'master carries the tag, so core is not being released');
+        self::assertStringContainsString('semitexa/core is not being tagged', $result['output']);
+    }
+
+    private function withRemote(): void
+    {
+        $remote = $this->root . '/origin-ssr.git';
+        exec(sprintf('git init -q --bare %s', escapeshellarg($remote)));
+        $this->git($this->root . '/packages/semitexa-ssr', 'remote add origin ' . escapeshellarg($remote));
+        $this->git($this->root . '/packages/semitexa-ssr', 'push -q origin HEAD:master');
+    }
 }

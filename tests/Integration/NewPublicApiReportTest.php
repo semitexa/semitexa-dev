@@ -263,4 +263,41 @@ final class NewPublicApiReportTest extends TestCase
         self::assertSame(1, $this->lastExit, $report);
         self::assertStringContainsString('Cannot read', $report);
     }
+
+    /**
+     * `const A = 1, B = 2;` declares two constants, and a scan anchored on
+     * `const` sees only the first — so adding a name to an existing declaration
+     * added nothing to the report.
+     */
+    #[Test]
+    public function every_name_in_a_shared_constant_declaration_is_counted(): void
+    {
+        $released = <<<'PHP'
+            <?php
+            namespace Semitexa\Core;
+            class Request
+            {
+                public const A = 1;
+                public function getPath(): string { return '/'; }
+            }
+            PHP;
+
+        $grown = <<<'PHP'
+            <?php
+            namespace Semitexa\Core;
+            class Request
+            {
+                public const A = 1, B = 2;
+                public function getPath(): string { return '/'; }
+            }
+            PHP;
+
+        $this->provider($released, $grown);
+        $this->dependent(['name' => 'semitexa/ssr', 'require' => ['semitexa/core' => '*']], self::USES_REQUEST);
+
+        $report = $this->report();
+
+        self::assertStringContainsString('+ B', $report);
+        self::assertStringNotContainsString('+ A', $report, 'A was already released');
+    }
 }

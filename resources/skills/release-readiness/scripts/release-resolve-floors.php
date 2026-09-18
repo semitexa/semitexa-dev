@@ -170,14 +170,57 @@ if ($check) {
     exit(1);
 }
 
-$touchedPackages = [];
-foreach ($pending as $d) {
-    writeResolvedFloor($d['composer_path'], $d['dependency'], $releaseVersion);
-    printf("  %s: %s >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion);
-    $touchedPackages[dirname($d['composer_path'])] = true;
+// EVERY REPOSITORY IS CHECKED BEFORE ANY MANIFEST IS WRITTEN. The writes happen
+// per package and the pushes happen after them, so a branch or cleanliness
+// problem discovered halfway leaves earlier packages pushed and later ones dated
+// locally — and finalize resets those away, silently, taking the floor with
+// them. Refusing before the first write is the only ordering where a failure
+// leaves nothing behind.
+if ($commit) {
+    $blockers = [];
+    foreach (packageDirsOf($pending) as $packageDir) {
+        $blocker = whyNotCommittable($packageDir);
+        if ($blocker !== null) {
+            $blockers[] = $blocker;
+        }
+    }
+
+    if ($blockers !== []) {
+        fwrite(STDERR, "Refusing to date any floor — these repositories cannot take the commit:\n");
+        foreach ($blockers as $blocker) {
+            fwrite(STDERR, "- {$blocker}\n");
+        }
+        exit(1);
+    }
 }
 
-printf("[OK] Dated %d floor declaration(s) at %s.\n", count($pending), $releaseVersion);
+$applied = 0;
+foreach ($pending as $d) {
+    $packageDir = dirname($d['composer_path']);
+    $before = file_get_contents($d['composer_path']);
+
+    writeResolvedFloor($d['composer_path'], $d['dependency'], $releaseVersion);
+    printf("  %s: %s >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion);
+    $applied++;
+
+    if (!$commit) {
+        continue;
+    }
+
+    // Committed and pushed one package at a time, and RESTORED on failure. A
+    // dated-but-unpushed manifest is the worst state to leave: a retry finds no
+    // `next` to resolve, reports success, and finalize then resets the file away
+    // — so the release ships the old constraint with nothing left to show why.
+    if (!commitAndPush($packageDir, $releaseVersion)) {
+        if (is_string($before)) {
+            file_put_contents($d['composer_path'], $before);
+            fwrite(STDERR, "Restored {$d['composer_path']} so the declaration stays pending for a retry.\n");
+        }
+        exit(1);
+    }
+}
+
+printf("[OK] Dated %d floor declaration(s) at %s.\n", $applied, $releaseVersion);
 
 if (!$commit) {
     fwrite(
@@ -186,11 +229,6 @@ if (!$commit) {
         . "so this edit is discarded before the tag unless it reaches origin/master first. Re-run with\n"
         . "--confirm --commit, or commit and push these files yourself, BEFORE tagging.\n"
     );
-    exit(0);
-}
-
-foreach (array_keys($touchedPackages) as $packageDir) {
-    commitAndPush($packageDir, $releaseVersion);
 }
 
 exit(0);
@@ -201,15 +239,51 @@ exit(0);
  * On master, because that is the branch the tag is cut from, and pushed, because
  * the tagger resets to origin/master and a local commit would go with it.
  */
-function commitAndPush(string $packageDir, string $releaseVersion): void
+function commitAndPush(string $packageDir, string $releaseVersion): bool
 {
-    $run = static function (string $command) use ($packageDir): array {
-        $output = [];
-        $exit = 0;
-        exec(sprintf('git -C %s %s 2>&1', escapeshellarg($packageDir), $command), $output, $exit);
+    // ONLY composer.json, by path. `git commit` with no path commits the index,
+    // so anything another process had staged in that repository would ride to
+    // master on the back of a floor. The pathspec form ignores the index
+    // entirely and commits exactly the file this script wrote.
+    $commit = runGitIn($packageDir, sprintf(
+        'commit -m %s -- composer.json',
+        escapeshellarg('Date the declared internal floors at ' . $releaseVersion),
+    ));
 
-        return ['exit' => $exit, 'output' => implode("\n", $output)];
-    };
+    if ($commit['exit'] !== 0) {
+        fwrite(STDERR, 'git commit failed in ' . basename($packageDir) . ': ' . $commit['output'] . "\n");
+
+        return false;
+    }
+
+    $push = runGitIn($packageDir, 'push origin HEAD:master');
+    if ($push['exit'] !== 0) {
+        fwrite(STDERR, 'git push failed in ' . basename($packageDir) . ': ' . $push['output'] . "\n");
+        // The commit is local and the manifest is about to be restored, so undo
+        // it too — otherwise a retry sees a clean tree with a floor already
+        // committed and nothing to push it.
+        runGitIn($packageDir, 'reset --hard HEAD~1');
+
+        return false;
+    }
+
+    printf("  committed and pushed %s\n", basename($packageDir));
+
+    return true;
+}
+
+/**
+ * Why this repository cannot take the commit, or null when it can.
+ *
+ * Both halves matter and they fail differently. HEAD somewhere other than master
+ * means the commit would not be in the release at all. An unclean worktree or
+ * index means the commit would carry somebody else's work to master: an
+ * unrelated edit to composer.json is staged with the floor, and anything already
+ * in the index rides along with an unrestricted commit.
+ */
+function whyNotCommittable(string $packageDir): ?string
+{
+    $name = basename($packageDir);
 
     $branch = trim((string) shell_exec(sprintf(
         'git -C %s rev-parse --abbrev-ref HEAD 2>/dev/null',
@@ -217,37 +291,64 @@ function commitAndPush(string $packageDir, string $releaseVersion): void
     )));
 
     if ($branch !== 'master') {
-        fwrite(STDERR, sprintf(
-            "Refusing to commit the resolved floor in %s: HEAD is on \"%s\", not master. The tag is cut\n"
-            . "from master, so a commit anywhere else is not in the release.\n",
-            basename($packageDir),
-            $branch,
-        ));
-        exit(1);
+        return sprintf(
+            '%s is on "%s", not master — the tag is cut from master, so a commit anywhere else is not in the release',
+            $name,
+            $branch === '' ? '(unknown)' : $branch,
+        );
     }
 
-    $add = $run('add -- composer.json');
-    if ($add['exit'] !== 0) {
-        fwrite(STDERR, "git add failed in " . basename($packageDir) . ": " . $add['output'] . "\n");
-        exit(1);
+    $status = runGitIn($packageDir, 'status --porcelain');
+    if ($status['exit'] !== 0) {
+        return sprintf('%s: cannot read git status (%s)', $name, $status['output']);
     }
 
-    $commitResult = $run(sprintf(
-        'commit -m %s',
-        escapeshellarg('Date the declared internal floors at ' . $releaseVersion),
-    ));
-    if ($commitResult['exit'] !== 0) {
-        fwrite(STDERR, "git commit failed in " . basename($packageDir) . ": " . $commitResult['output'] . "\n");
-        exit(1);
+    if (trim($status['output']) !== '') {
+        return sprintf(
+            "%s has uncommitted changes, and this script commits composer.json on master:\n    %s",
+            $name,
+            str_replace("\n", "\n    ", trim($status['output'])),
+        );
     }
 
-    $push = $run('push origin HEAD:master');
-    if ($push['exit'] !== 0) {
-        fwrite(STDERR, "git push failed in " . basename($packageDir) . ": " . $push['output'] . "\n");
-        exit(1);
+    return null;
+}
+
+/**
+ * @param list<array{composer_path: string}> $declarations
+ * @return list<string>
+ */
+function packageDirsOf(array $declarations): array
+{
+    $dirs = [];
+    foreach ($declarations as $declaration) {
+        $dirs[dirname($declaration['composer_path'])] = true;
     }
 
-    printf("  committed and pushed %s\n", basename($packageDir));
+    return array_keys($dirs);
+}
+
+/** The master commit this cut would tag: origin/master, or the local one. */
+function masterRef(string $packageDir): ?string
+{
+    foreach (['refs/remotes/origin/master', 'refs/heads/master'] as $ref) {
+        $exists = runGitIn($packageDir, 'rev-parse --verify --quiet ' . escapeshellarg($ref));
+        if ($exists['exit'] === 0 && trim($exists['output']) !== '') {
+            return $ref;
+        }
+    }
+
+    return null;
+}
+
+/** @return array{exit: int, output: string} */
+function runGitIn(string $packageDir, string $command): array
+{
+    $output = [];
+    $exit = 0;
+    exec(sprintf('git -C %s %s 2>&1', escapeshellarg($packageDir), $command), $output, $exit);
+
+    return ['exit' => $exit, 'output' => implode("\n", $output)];
 }
 
 /**
@@ -278,14 +379,25 @@ function deriveReleaseSet(string $packagesDir): ?array
 
         $sawGit = true;
 
-        $tagsOnHead = shell_exec(sprintf(
-            'git -C %s tag --points-at HEAD --list %s 2>/dev/null',
+        // MASTER, not HEAD. The tagger releases master; a checkout sitting on
+        // develop would otherwise look untagged and put its package in the
+        // release set, so a consumer floor could be dated against a provider
+        // this cut never tags. origin/master is what bump-packages.php resets
+        // to, with the local master as the fallback for a repo without a remote.
+        $ref = masterRef($packageDir);
+        if ($ref === null) {
+            return null; // no master to reason about: the caller refuses
+        }
+
+        $tagsOnMaster = shell_exec(sprintf(
+            'git -C %s tag --points-at %s --list %s 2>/dev/null',
             escapeshellarg($packageDir),
+            escapeshellarg($ref),
             escapeshellarg('20*'),
         ));
 
-        if (trim((string) $tagsOnHead) !== '') {
-            continue; // already released at this commit
+        if (trim((string) $tagsOnMaster) !== '') {
+            continue; // already released at the commit this cut would tag
         }
 
         $manifest = file_get_contents($packageDir . '/composer.json');

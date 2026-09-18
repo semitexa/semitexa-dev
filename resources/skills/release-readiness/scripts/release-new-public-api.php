@@ -235,16 +235,107 @@ function publicMembers(string $source): array
     // them under whichever class fqcnIn() happened to find, so the search is
     // limited to the inside of class-like bodies first.
     foreach (classLikeBodies($source) as $body) {
-        if (preg_match_all('/^\s*(?:final\s+)?(?:public\s+)?const\s+(?:[\w\\\\|?]+\s+)?(\w+)/mi', $body, $m) > 0) {
-            foreach ($m[1] as $name) {
-                $members[] = $name;
-            }
+        foreach (constantNamesIn($body) as $name) {
+            $members[] = $name;
         }
     }
 
     sort($members);
 
     return array_values(array_unique($members));
+}
+
+/**
+ * Every public constant NAME declared in a class body, including the second and
+ * third of a shared declaration.
+ *
+ * `const A = 1, B = 2;` declares two constants, and a regex anchored on `const`
+ * sees only the first — so adding `B` to an existing line added nothing to the
+ * report. Walked with the tokeniser instead: from each `const` to its
+ * terminating `;`, every name that sits immediately before an `=` is one.
+ *
+ * @return list<string>
+ */
+function constantNamesIn(string $classBody): array
+{
+    $names = [];
+    $tokens = token_get_all('<?php class X {' . $classBody . '}');
+
+    $inConst = false;
+    $visibility = null;
+    $expectName = false;
+
+    foreach ($tokens as $index => $token) {
+        if (is_array($token)) {
+            if (in_array($token[0], [T_PRIVATE, T_PROTECTED, T_PUBLIC], true)) {
+                $visibility = $token[0];
+                continue;
+            }
+
+            if ($token[0] === T_CONST) {
+                $inConst = true;
+                $expectName = true;
+                continue;
+            }
+
+            if ($token[0] === T_WHITESPACE || $token[0] === T_COMMENT || $token[0] === T_DOC_COMMENT) {
+                continue;
+            }
+
+            if ($inConst && $expectName && $token[0] === T_STRING) {
+                // A typed constant puts the type here first; the NAME is the
+                // identifier that an `=` follows.
+                if (nextMeaningful($tokens, $index) === '=') {
+                    if ($visibility !== T_PRIVATE && $visibility !== T_PROTECTED) {
+                        $names[] = $token[1];
+                    }
+                    $expectName = false;
+                }
+            }
+
+            continue;
+        }
+
+        if (!$inConst) {
+            if ($token === ';' || $token === '{' || $token === '}') {
+                $visibility = null;
+            }
+            continue;
+        }
+
+        if ($token === ',') {
+            $expectName = true; // the next name of the same declaration
+            continue;
+        }
+
+        if ($token === ';') {
+            $inConst = false;
+            $expectName = false;
+            $visibility = null;
+        }
+    }
+
+    return $names;
+}
+
+/** The next token that is not whitespace or a comment, as text. */
+function nextMeaningful(array $tokens, int $from): ?string
+{
+    $count = count($tokens);
+    for ($i = $from + 1; $i < $count; $i++) {
+        $token = $tokens[$i];
+        if (is_array($token)) {
+            if (in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            return $token[1];
+        }
+
+        return $token;
+    }
+
+    return null;
 }
 
 /**
