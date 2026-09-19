@@ -56,6 +56,23 @@ run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
 # tagged release against, so neither is checkable the way a class or a function
 # is. A floor for one of those is still found by a person.
 run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-constraints.php"
+# A floor declared but not dated. An author writes WHICH dependency needs one —
+# extra.semitexa.floors: {"semitexa/core": "next"} — and the release writes the
+# version, because until the tag exists the date is a guess and a guess goes
+# stale the moment a release slips. MEASURED 2026-09-16: os floored prompt at
+# the day the author expected, review ran a day past it, and preflight died on
+# "that tag is not in semitexa-prompt". This stage fails while any declaration
+# is still undated, so the resolve step cannot be forgotten on the way to a tag. The way out is
+# printed by the failure itself: --confirm --commit, which lands the floor on origin/master. The
+# commit is not optional — bump-packages.php tags after `git reset --hard origin/master`, so an
+# edit left in the working tree never reaches the tag.
+run_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" --check
+# Not a gate — a question, printed where the operator is already reading. The
+# constraint check above compares CLASS declarations, so a new public METHOD on
+# a class that shipped months ago is invisible to it: ssr called
+# Request::getServedPath() on 2026-09-18 while its floor named a core that had
+# no such method, and only a person remembering stood in the way.
+run_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
 # The shipped capability index is generated in the monorepo and travels inside
 # semitexa/dev. Without this stage a package that gained a capability could be
 # released while the index still described the previous shape — and an index

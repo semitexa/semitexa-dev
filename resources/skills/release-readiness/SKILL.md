@@ -32,6 +32,27 @@ Default assumptions:
 - the channel is resolved at **preflight**, not at tagging: it decides the `-beta` suffix on
   `RELEASE_VERSION`, which the internal-constraints floor gate reads and the pending report prints.
   `init_release_session()` records it in the session file and **finalize reuses it without asking again**
+- **an internal floor is DECLARED by the author and DATED by the release.** A package that starts
+  calling a new API of a sibling writes
+  `"extra": { "semitexa": { "floors": { "semitexa/<provider>": "next" } } }` and leaves `require`
+  alone. Preflight's `floors-are-dated` stage fails while any declaration is still undated, and
+  `release-resolve-floors.php --confirm --commit` writes `>=$RELEASE_VERSION || dev-master` into
+  `require`, records the same version back in `extra` (so a later release finds nothing to do),
+  commits it on master and pushes.
+  ⚠️ **`--commit` is not optional at a real cut.** `bump-packages.php` tags each package after
+  `git reset --hard origin/master`, so a floor written and left uncommitted is DISCARDED before
+  the tag — the release would ship the old constraint while you watched the new one being
+  written. Without `--commit` the script says so and exits 0; with it, it refuses to commit on
+  any branch but master. Run it before the finalize step, never after.
+  The set of packages being tagged is derived the way the tagger derives it (master HEAD carries
+  no release tag), so a declaration naming a dependency that is not being released is refused. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
+  that has not happened, and it goes stale the first time a release slips (measured 2026-09-16 on
+  `os` → `prompt`, which died in preflight a day later)
+- **the `new-public-api` stage is a question, not a gate.** The constraint check compares CLASS
+  declarations, so a new public METHOD on a class that shipped months ago is invisible to it — ssr
+  called `Request::getServedPath()` on 2026-09-18 while its floor named a core with no such method.
+  The stage prints what each tagged package gained since its last tag and which dependents touch
+  those classes, so the floor question is asked by the tool rather than remembered by a person
 - the default is deliberate but **not silent**: a defaulted run prints a `[WARN]` naming the channel
   and how to pick beta, and every report says which of the three ways the channel was chosen —
   `(defaulted …)`, `(chosen at the prompt)` or `(explicitly passed)` — so "did anyone actually choose
