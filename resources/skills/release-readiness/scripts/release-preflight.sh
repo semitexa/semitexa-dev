@@ -27,6 +27,58 @@ ${failure_output}"
     fi
 }
 
+# THE CHEAP GATES REPORT TOGETHER, NOT ONE PER RUN.
+#
+# Every stage used to abort the whole preflight, so N independent problems cost
+# N runs. Measured 2026-09-19: five unrelated blockers -- an undeclared floor, a
+# stale version, three packages whose sweeps were never pushed, and a phpstan
+# ceiling -- took SEVEN preflight runs at ~12 minutes each, because each run
+# revealed exactly one of them.
+#
+# The structural gates below are read-only, take seconds, and do not depend on
+# each other's outcome. So they run as a group: every failure is collected and
+# printed together, and the preflight stops once. The expensive stages after
+# them (containers, phpunit, playwright) still stop at the first failure, where
+# one-at-a-time is the right trade.
+SOFT_FAILURES=()
+
+run_soft_stage() {
+    local stage="$1"
+    shift
+
+    local log_file="$RELEASE_STATE_DIR/${stage}.log"
+    CURRENT_STAGE="$stage"
+    : >"$log_file"
+
+    if ! "$@" > >(tee "$log_file") 2>&1; then
+        local failure_output
+        failure_output="$(tail -n 40 "$log_file")"
+        SOFT_FAILURES+=("${stage}
+${failure_output}")
+        warn "Stage '${stage}' failed — continuing to collect the rest."
+        return 0
+    fi
+}
+
+report_soft_failures() {
+    [ "${#SOFT_FAILURES[@]}" -eq 0 ] && return 0
+
+    local names=() entry
+    for entry in "${SOFT_FAILURES[@]}"; do
+        names+=("${entry%%$'\n'*}")
+    done
+
+    printf '\n\033[1;31m%s structural gate(s) failed — all of them, not just the first:\033[0m\n' "${#SOFT_FAILURES[@]}" >&2
+    for entry in "${SOFT_FAILURES[@]}"; do
+        printf '\n\033[1m--- %s ---\033[0m\n' "${entry%%$'\n'*}" >&2
+        printf '%s\n' "${entry#*$'\n'}" >&2
+    done
+
+    CURRENT_STAGE="$(printf '%s, ' "${names[@]}")"
+    CURRENT_STAGE="${CURRENT_STAGE%, }"
+    fail "Structural gates failed: ${CURRENT_STAGE}. Fix them together and re-run once."
+}
+
 on_exit() {
     local status=$?
     if [ "$status" -ne 0 ]; then
@@ -38,6 +90,11 @@ on_exit() {
 trap on_exit EXIT
 
 run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
+# FIRST of the structural gates, because it is the only one that can explain the
+# others. Every gate after this reads origin or the clone; a commit that never
+# left the authoring workspace is invisible to all of them, and a registry that
+# describes such code reads as a regression in whatever package it measures.
+run_soft_stage "workspace-is-pushed" "$SCRIPT_DIR/release-workspace-is-pushed.sh"
 # sync-root-tests removed: the root semitexa.dev/tests/ release-smoke suite was
 # superseded by the module/package-level tests/E2E convention, which the release
 # clone's playwright.config testMatch ('packages/*/tests/E2E/**',
@@ -55,7 +112,7 @@ run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
 # NAMESPACE a consumer extends. Neither has a registration site to compare a
 # tagged release against, so neither is checkable the way a class or a function
 # is. A floor for one of those is still found by a person.
-run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-constraints.php"
+run_soft_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-constraints.php"
 # A floor declared but not dated. An author writes WHICH dependency needs one —
 # extra.semitexa.floors: {"semitexa/core": "next"} — and the release writes the
 # version, because until the tag exists the date is a guess and a guess goes
@@ -66,24 +123,28 @@ run_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-internal-c
 # printed by the failure itself: --confirm --commit, which lands the floor on origin/master. The
 # commit is not optional — bump-packages.php tags after `git reset --hard origin/master`, so an
 # edit left in the working tree never reaches the tag.
-run_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" --check
+run_soft_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" --check
 # Not a gate — a question, printed where the operator is already reading. The
 # constraint check above compares CLASS declarations, so a new public METHOD on
 # a class that shipped months ago is invisible to it: ssr called
 # Request::getServedPath() on 2026-09-18 while its floor named a core that had
 # no such method, and only a person remembering stood in the way.
-run_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
+run_soft_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
 # The shipped capability index is generated in the monorepo and travels inside
 # semitexa/dev. Without this stage a package that gained a capability could be
 # released while the index still described the previous shape — and an index
 # that has silently rotted teaches a confidently shrinking subset of the
 # framework, which is worse than shipping none at all.
-run_stage "capability-index-freshness" "$SCRIPT_DIR/release-capability-index-check.sh"
+run_soft_stage "capability-index-freshness" "$SCRIPT_DIR/release-capability-index-check.sh"
 # Refresh the clone's application code before the containers come up. The package
 # tree is pulled every release, but src/ was not — so a package change needing a
 # matching consumer-side change was smoke-tested against frozen app code. That is
 # how a stale test double survived a release and failed the NEXT preflight instead
 # of its own. --code-only leaves the clone's .env and composer.json alone.
+# Everything above is cheap and independent; stop here with the full list
+# rather than spending twelve minutes to reveal the next one.
+report_soft_failures
+
 run_stage "sync-release-code" "$SCRIPT_DIR/release-sync-root.sh" --code-only
 # ...and its infrastructure, which no stage refreshed until now. The clone had
 # drifted far enough that its checks were not measuring what we ship: no node, so

@@ -1047,7 +1047,7 @@ function latestReleaseTag(string $dir): ?string
 }
 
 /**
- * @return array<string, array{dir: string, psr4: array<string, list<string>>, roots: list<string>, files: list<string>, promises: array<string, array{version: string, kind: string}>, wildcards: list<string>}>
+ * @return array<string, array{dir: string, psr4: array<string, list<string>>, roots: list<string>, files: list<string>, promises: array<string, array{version: string, kind: string}>, wildcards: list<string>, declared_floors: array<string, string>}>
  */
 function indexPackages(string $packagesDir): array
 {
@@ -1091,6 +1091,37 @@ function indexPackages(string $packagesDir): array
             }
         }
 
+        // A DECLARED-BUT-UNDATED FLOOR IS NOT A WILDCARD.
+        //
+        // The authoring contract is: write extra.semitexa.floors: {"semitexa/x":
+        // "next"} and leave `require` alone, because the RELEASE dates it --
+        // release-resolve-floors.php --confirm --commit rewrites `require`
+        // before bump-packages.php tags anything.
+        //
+        // This gate runs BEFORE the resolver (preflight stage 2 of 3, floors-are-dated
+        // is stage 3) and reads `require` only, so it saw the untouched `*` and
+        // reported a missing floor on a package that had declared one correctly.
+        // The documented flow could not pass its own first gate: measured
+        // 2026-09-19 on semitexa/webhooks -> semitexa/orm, which cost two full
+        // preflight runs before the cause was visible.
+        //
+        // A declaration is not a free pass. It is removed from the wildcard set
+        // here, and floors-are-dated then FAILS while it is still undated -- so
+        // an author who declares and never resolves is still stopped, one stage
+        // later and by the gate that owns the question.
+        $declaredFloors = [];
+        foreach ($json['extra']['semitexa']['floors'] ?? [] as $dependency => $declared) {
+            if (is_string($dependency) && str_starts_with($dependency, 'semitexa/') && is_string($declared)) {
+                $declaredFloors[$dependency] = $declared;
+            }
+        }
+        if ($declaredFloors !== []) {
+            $wildcards = array_values(array_filter(
+                $wildcards,
+                static fn (string $dependency): bool => !isset($declaredFloors[$dependency]),
+            ));
+        }
+
         $ownPsr4 = normalizePsr4($json['autoload']['psr-4'] ?? null) ?? [];
 
         // The package's OWN source roots, from its autoload block. Hardcoding
@@ -1132,6 +1163,7 @@ function indexPackages(string $packagesDir): array
             'files' => array_values(array_unique($files)),
             'promises' => $promises,
             'wildcards' => $wildcards,
+            'declared_floors' => $declaredFloors,
         ];
     }
 
