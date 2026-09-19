@@ -25,6 +25,10 @@ trap on_exit EXIT
 info "Tagging untagged package master heads with the UTC release version ${RELEASE_VERSION} (${RELEASE_CHANNEL})..."
 RELEASE_ROOT="$RELEASE_ROOT" php "$SCRIPT_DIR/bump-packages.php" --yes --summary-json "$RELEASE_SUMMARY_FILE"
 
+# The cut is done: close the session so the next preflight mints a fresh
+# version instead of handing back one that is already tagged.
+mark_release_finalized
+
 write_success_report
 
 printf '

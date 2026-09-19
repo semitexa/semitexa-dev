@@ -255,9 +255,49 @@ init_release_session() {
     report_date="$(date -u +%F)"
     utc_month="$(current_utc_month)"
     codename="$(monthly_release_codename "$utc_month")"
+    # A CUT IS ONE VERSION, however many preflight runs it takes.
+    #
+    # This used to mint a fresh UTC stamp on every run. That is wrong the moment
+    # anything durable is written with the version -- and something always is:
+    # release-resolve-floors.php --confirm --commit writes `>=$RELEASE_VERSION`
+    # into a package's require and PUSHES it to master. A second preflight then
+    # minted a later stamp, and check-internal-constraints reported the floor it
+    # had just committed as naming "a release that does not exist", because no
+    # such tag would ever be created. Measured 2026-09-19: floors dated at
+    # .1020, next run minted .1024, gate red on a floor the flow itself wrote.
+    #
+    # So the session is sticky. It is re-minted only when there is no open cut:
+    # no session file, or the last one was finalized. RELEASE_NEW_CUT=1 forces a
+    # fresh one, and an explicit RELEASE_VERSION still wins over everything.
+    local reused_version=""
+    if [ -z "${RELEASE_VERSION:-}" ] \
+        && [ "${RELEASE_NEW_CUT:-0}" != "1" ] \
+        && [ -f "$RELEASE_SESSION_FILE" ]; then
+        local prior_version prior_seed prior_finalized prior_channel
+        prior_version="$(sed -n 's/^RELEASE_VERSION=//p' "$RELEASE_SESSION_FILE" | tail -n1)"
+        prior_seed="$(sed -n 's/^RELEASE_VERSION_SEED=//p' "$RELEASE_SESSION_FILE" | tail -n1)"
+        prior_finalized="$(sed -n 's/^RELEASE_FINALIZED=//p' "$RELEASE_SESSION_FILE" | tail -n1)"
+        prior_channel="$(sed -n 's/^RELEASE_CHANNEL=//p' "$RELEASE_SESSION_FILE" | tail -n1)"
+        # A channel change is a different cut: the channel decides the -beta
+        # suffix, so reusing across it would hand back the wrong version.
+        # EXPLICITLY "0", not merely "not 1". A session file written before this
+        # field existed has no RELEASE_FINALIZED at all, and its version may
+        # already be tagged — reusing it would re-cut a released version. An
+        # absent or malformed flag means "unknown", and unknown mints fresh.
+        if [ -n "$prior_version" ] && [ "$prior_finalized" = "0" ] && [ "$prior_channel" = "$RELEASE_CHANNEL" ]; then
+            RELEASE_VERSION="$prior_version"
+            RELEASE_VERSION_SEED="${prior_seed:-$prior_version}"
+            reused_version="$prior_version"
+        fi
+    fi
+
     version_seed="${RELEASE_VERSION_SEED:-$(current_utc_version_seed)}"
     version_value="${RELEASE_VERSION:-$(release_version_for_channel "$version_seed" "$RELEASE_CHANNEL")}"
     generated_at="$(current_utc_timestamp)"
+
+    if [ -n "$reused_version" ]; then
+        info "Continuing the open cut at ${reused_version} (RELEASE_NEW_CUT=1 starts a new one)."
+    fi
 
     REPORT_DATE="$report_date"
     REPORT_CODENAME="$codename"
@@ -288,7 +328,19 @@ RELEASE_GENERATED_AT_UTC=$RELEASE_GENERATED_AT_UTC
 RELEASE_ROOT=$RELEASE_ROOT
 DEV_ROOT=$DEV_ROOT
 RELEASE_SUMMARY_FILE=$RELEASE_SUMMARY_FILE
+RELEASE_FINALIZED=0
 EOF
+}
+
+# Closes the cut, so the NEXT preflight mints a fresh version instead of
+# handing back the one that was already tagged.
+mark_release_finalized() {
+    [ -f "$RELEASE_SESSION_FILE" ] || return 0
+    if grep -q '^RELEASE_FINALIZED=' "$RELEASE_SESSION_FILE"; then
+        sed -i 's/^RELEASE_FINALIZED=.*/RELEASE_FINALIZED=1/' "$RELEASE_SESSION_FILE"
+    else
+        printf 'RELEASE_FINALIZED=1\n' >>"$RELEASE_SESSION_FILE"
+    fi
 }
 
 load_release_session() {
