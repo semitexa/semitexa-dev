@@ -256,13 +256,19 @@ function commitAndPush(string $packageDir, string $releaseVersion): bool
         return false;
     }
 
+    // THE COMMIT THIS INVOCATION MADE, by sha. The rollback below undoes one
+    // commit, and "one commit" is only safe to name relative to something that
+    // was true when it was created.
+    $made = runGitIn($packageDir, 'rev-parse HEAD');
+    $madeSha = $made['exit'] === 0 ? trim($made['output']) : '';
+
     $push = runGitIn($packageDir, 'push origin HEAD:master');
     if ($push['exit'] !== 0) {
         fwrite(STDERR, 'git push failed in ' . basename($packageDir) . ': ' . $push['output'] . "\n");
         // The commit is local and the manifest is about to be restored, so undo
         // it too — otherwise a retry sees a clean tree with a floor already
         // committed and nothing to push it.
-        runGitIn($packageDir, 'reset --hard HEAD~1');
+        undoLocalCommit($packageDir, $madeSha);
 
         return false;
     }
@@ -270,6 +276,62 @@ function commitAndPush(string $packageDir, string $releaseVersion): bool
     printf("  committed and pushed %s\n", basename($packageDir));
 
     return true;
+}
+
+/**
+ * Take back the local floor commit, and nothing else.
+ *
+ * `reset --hard HEAD~1` was the obvious undo and the wrong one. It resets every
+ * tracked path, so a file some other process touched between the cleanliness
+ * check and the failed push is destroyed by a rollback whose whole purpose was
+ * to leave the repository as it was found. `--soft` moves the branch pointer and
+ * touches neither index nor worktree; the one index entry the commit did move —
+ * composer.json, which `git commit -- <path>` stages as it commits — is put back
+ * by hand, and the caller restores the file itself straight afterwards.
+ *
+ * It fires only while HEAD is still the commit this invocation made. If it is
+ * not, "one commit back" names somebody else's work, and undoing that is worse
+ * than leaving a floor commit behind with a sentence explaining it. Every step
+ * is checked: a rollback that quietly failed is the state this function exists
+ * to prevent.
+ */
+function undoLocalCommit(string $packageDir, string $madeSha): void
+{
+    $name = basename($packageDir);
+    $head = runGitIn($packageDir, 'rev-parse HEAD');
+    $headSha = $head['exit'] === 0 ? trim($head['output']) : '';
+
+    if ($madeSha === '' || $headSha !== $madeSha) {
+        fwrite(STDERR, sprintf(
+            "NOT undoing the floor commit in %s: HEAD is no longer the commit this script made.\n"
+            . "Undo it by hand before retrying — a retry otherwise finds a clean tree with the floor\n"
+            . "already committed and nothing left to push it.\n",
+            $name,
+        ));
+
+        return;
+    }
+
+    $reset = runGitIn($packageDir, 'reset --soft HEAD~1');
+    if ($reset['exit'] !== 0) {
+        fwrite(STDERR, sprintf(
+            "Could not undo the floor commit in %s (%s). It is still on the local master and unpushed;\n"
+            . "undo it by hand before retrying.\n",
+            $name,
+            $reset['output'],
+        ));
+
+        return;
+    }
+
+    $unstage = runGitIn($packageDir, 'restore --staged -- composer.json');
+    if ($unstage['exit'] !== 0) {
+        fwrite(STDERR, sprintf(
+            "Undid the floor commit in %s, but composer.json is still staged (%s) — unstage it before retrying.\n",
+            $name,
+            $unstage['output'],
+        ));
+    }
 }
 
 /**
@@ -311,7 +373,64 @@ function whyNotCommittable(string $packageDir): ?string
         );
     }
 
-    return null;
+    return whyMasterIsNotOriginMaster($packageDir, $name);
+}
+
+/**
+ * Why local master cannot be pushed as-is, or null when it can.
+ *
+ * A CLEAN WORKTREE SAYS NOTHING ABOUT UNPUSHED HISTORY, and the push is
+ * `HEAD:master` — whatever HEAD carries goes to master with the floor. A local
+ * master one commit ahead of origin publishes that commit under a message about
+ * dating floors, which is exactly the "commit carries somebody else's work to
+ * master" failure the cleanliness check above was written to stop; it simply
+ * looks clean because the work is already committed. A master that has DIVERGED
+ * fails at push time instead, which is later and worse: earlier packages in the
+ * loop are already pushed by then.
+ *
+ * So origin is fetched and HEAD is required to equal it. Fetching is the check;
+ * a fetch that cannot run leaves the question unanswered, and an unanswerable
+ * question is a refusal, not a pass.
+ */
+function whyMasterIsNotOriginMaster(string $packageDir, string $name): ?string
+{
+    $remote = runGitIn($packageDir, 'remote get-url origin');
+    if ($remote['exit'] !== 0 || trim($remote['output']) === '') {
+        return sprintf('%s has no "origin" remote, and --commit pushes the floor to origin/master', $name);
+    }
+
+    // `fetch origin master` writes FETCH_HEAD unconditionally, which an
+    // opportunistic update of refs/remotes/origin/master does not guarantee.
+    $fetch = runGitIn($packageDir, 'fetch --quiet origin master');
+    if ($fetch['exit'] !== 0) {
+        return sprintf(
+            "%s: cannot fetch origin master, so whether the push would carry anything besides the floor is unknown:\n    %s",
+            $name,
+            str_replace("\n", "\n    ", trim($fetch['output'])),
+        );
+    }
+
+    $head = runGitIn($packageDir, 'rev-parse HEAD');
+    $origin = runGitIn($packageDir, 'rev-parse FETCH_HEAD');
+
+    if ($head['exit'] !== 0 || $origin['exit'] !== 0) {
+        return sprintf('%s: cannot compare master with origin/master (%s)', $name, trim($head['output'] . ' ' . $origin['output']));
+    }
+
+    if (trim($head['output']) === trim($origin['output'])) {
+        return null;
+    }
+
+    $ahead = runGitIn($packageDir, 'rev-list --count FETCH_HEAD..HEAD');
+    $behind = runGitIn($packageDir, 'rev-list --count HEAD..FETCH_HEAD');
+
+    return sprintf(
+        '%s: master is not origin/master (%s ahead, %s behind) — `push origin HEAD:master` would publish that '
+        . 'history with the floor, or be rejected halfway through the release. Sync master first.',
+        $name,
+        $ahead['exit'] === 0 ? trim($ahead['output']) : '?',
+        $behind['exit'] === 0 ? trim($behind['output']) : '?',
+    );
 }
 
 /**

@@ -40,6 +40,14 @@ final class FloorDeclarationResolutionTest extends TestCase
         self::assertSame(0, $exit, "git {$command} failed: " . implode("\n", (array) $output));
     }
 
+    /** A git hook, as the only seam that runs inside the script's own git calls. */
+    private function hook(string $package, string $name, string $body): void
+    {
+        $path = $this->root . '/packages/' . $package . '/.git/hooks/' . $name;
+        file_put_contents($path, $body . PHP_EOL);
+        chmod($path, 0755);
+    }
+
     /**
      * A package checkout, released or not.
      *
@@ -345,10 +353,23 @@ final class FloorDeclarationResolutionTest extends TestCase
     #[Test]
     public function a_failed_push_restores_the_declaration_for_a_retry(): void
     {
-        $this->writePackage($this->declaringPackage());
+        // Tracked at the base commit, so the cleanliness check passes and the
+        // hook below has something of somebody else's to put at risk.
+        file_put_contents($this->root . '/packages/semitexa-ssr/README.md', "as committed\n");
 
-        // A remote that cannot be pushed to.
-        $this->git($this->root . '/packages/semitexa-ssr', 'remote add origin ' . escapeshellarg($this->root . '/nowhere.git'));
+        $this->writePackage($this->declaringPackage());
+        $this->withRemote();
+
+        // THE RACE, MADE DETERMINISTIC. `pre-push` is the one hook that runs
+        // after the cleanliness check and before the push succeeds, which is
+        // exactly the window in which another process can touch a tracked file.
+        // It edits README.md and fails the push; a `reset --hard` rollback would
+        // then throw that edit away while undoing the floor commit.
+        $this->hook('semitexa-ssr', 'pre-push', <<<'SH'
+            #!/bin/sh
+            printf 'edited mid-flight\n' > "$(git rev-parse --show-toplevel)/README.md"
+            exit 1
+            SH);
 
         $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
 
@@ -359,11 +380,66 @@ final class FloorDeclarationResolutionTest extends TestCase
         self::assertSame('next', $composer['extra']['semitexa']['floors']['semitexa/core'], 'still pending');
         self::assertSame('*', $composer['require']['semitexa/core'], 'and the constraint is back');
 
+        self::assertSame(
+            "edited mid-flight\n",
+            file_get_contents($this->root . '/packages/semitexa-ssr/README.md'),
+            'the rollback undoes the floor commit, not every tracked file in the repository',
+        );
+
         $log = shell_exec(sprintf(
-            'git -C %s log --oneline -1 2>/dev/null',
+            'git -C %s log --oneline 2>/dev/null',
             escapeshellarg($this->root . '/packages/semitexa-ssr'),
         ));
-        self::assertStringNotContainsString('Date the declared internal floors', (string) $log, 'the local commit is undone too');
+        self::assertIsString($log, 'without the log there is nothing to assert against');
+        self::assertNotSame('', trim($log));
+        self::assertStringNotContainsString('Date the declared internal floors', $log, 'the local commit is undone too');
+
+        $staged = shell_exec(sprintf(
+            'git -C %s diff --cached --name-only 2>/dev/null',
+            escapeshellarg($this->root . '/packages/semitexa-ssr'),
+        ));
+        self::assertSame('', trim((string) $staged), 'and it leaves nothing staged for the retry to trip over');
+    }
+
+    /**
+     * A clean master can still be the wrong master. The push is `HEAD:master`,
+     * so a local commit that never reached origin rides to master under a
+     * message about dating floors — the same "somebody else's work on master"
+     * failure as a dirty tree, wearing a clean `git status`.
+     */
+    #[Test]
+    public function commit_refuses_a_master_that_is_ahead_of_origin(): void
+    {
+        $this->writePackage($this->declaringPackage());
+        $this->withRemote();
+        $this->git($this->root . '/packages/semitexa-ssr', 'commit -q --allow-empty -m "unpushed work"');
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit']);
+        self::assertStringContainsString('is not origin/master', $result['output']);
+        self::assertStringContainsString('1 ahead', $result['output']);
+        self::assertSame(
+            'next',
+            $this->readPackage()['extra']['semitexa']['floors']['semitexa/core'],
+            'refused before the first write, so nothing is left dated locally',
+        );
+    }
+
+    /**
+     * And it will not guess when it cannot look: a repository with no origin has
+     * nowhere to push the floor, and --commit exists only to land it there.
+     */
+    #[Test]
+    public function commit_refuses_a_repository_without_an_origin(): void
+    {
+        $this->writePackage($this->declaringPackage());
+
+        $result = $this->resolve('--confirm --commit', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit']);
+        self::assertStringContainsString('no "origin" remote', $result['output']);
+        self::assertSame('*', $this->readPackage()['require']['semitexa/core']);
     }
 
     /**
