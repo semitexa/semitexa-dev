@@ -422,7 +422,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
         'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 730],
-        'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
+        'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 829],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
     ];

@@ -15,8 +15,8 @@ use Semitexa\Core\Support\ProjectRoot;
  *     line 1      header ({"kind":"header", ...})
  *     line 2..N   events ({"kind":"event", event_id:1..}, ...)
  *
- * Appends use `LOCK_EX | FILE_APPEND` so concurrent writers from different
- * commands in the same worker don't tear lines. Reads are full-file scans —
+ * Appends hold `LOCK_EX` through ID allocation, writing and flushing so
+ * concurrent commands don't tear lines. Reads are full-file scans —
  * fine for the sizes we expect (a trace per feature/task, rarely hundreds of
  * events). If traces get huge we can add an index; we don't speculate.
  *
@@ -91,7 +91,8 @@ final class TraceStore
             throw new \RuntimeException("trace '{$traceId}' does not exist — call start first");
         }
 
-        $handle = fopen($path, 'c+');
+        // Do not recreate a trace that disappeared after the existence check.
+        $handle = @fopen($path, 'r+');
         if ($handle === false) {
             throw new \RuntimeException("cannot open trace for append: {$path}");
         }
@@ -109,10 +110,23 @@ final class TraceStore
                 summary:   $summary,
                 payload:   $payload,
             );
-            $line = json_encode($event->toArray(), JSON_UNESCAPED_SLASHES) . "\n";
+            try {
+                $line = json_encode($event->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+            } catch (\JsonException $e) {
+                throw new \RuntimeException("failed to encode trace event: {$e->getMessage()}", 0, $e);
+            }
 
-            if (fseek($handle, 0, SEEK_END) !== 0 || fwrite($handle, $line) === false || !fflush($handle)) {
+            if (fseek($handle, 0, SEEK_END) !== 0 || ($offset = ftell($handle)) === false) {
                 throw new \RuntimeException("failed to append to trace: {$path}");
+            }
+
+            if (@fwrite($handle, $line) !== strlen($line) || !@fflush($handle)) {
+                // Keep later appends from joining a partial JSON line. The lock
+                // stays held until rollback completes (or its failure is reported).
+                $restored = @ftruncate($handle, $offset);
+                $flushed = @fflush($handle);
+                $detail = $restored && $flushed ? '' : ' (rollback failed; inspect the trace before retrying)';
+                throw new \RuntimeException("failed to append to trace: {$path}{$detail}");
             }
 
             flock($handle, LOCK_UN);
