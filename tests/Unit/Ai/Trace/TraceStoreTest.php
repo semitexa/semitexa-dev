@@ -242,6 +242,10 @@ class TraceStoreTest extends TestCase
         } catch (\RuntimeException $e) {
             $error = $e;
         } finally {
+            // The wrapper's fault switches are static: a filtered run that
+            // stops here would hand the next test a write budget of -1.
+            TraceWriteFaultStream::$writeLimit = null;
+            TraceWriteFaultStream::$failFlush = false;
             ProjectRoot::reset();
             stream_wrapper_unregister('tracefault');
         }
