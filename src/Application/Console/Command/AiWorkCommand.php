@@ -378,7 +378,11 @@ final class AiWorkCommand extends BaseCommand
         // the trace should not have to know which command spelling produced a
         // note, and the two must not drift into two shapes.
         if ($note !== null) {
-            $this->appendNote($updated->traceId, $id, $note);
+            try {
+                $this->appendNote($updated->traceId, $id, $note);
+            } catch (\InvalidArgumentException|\RuntimeException $e) {
+                return $this->noteError($output, $updated, true, $e->getMessage(), $jsonMode);
+            }
         }
 
         return $this->emitTask($output, $updated, 'task_updated', $jsonMode);
@@ -408,7 +412,11 @@ final class AiWorkCommand extends BaseCommand
         }
 
         if ($note !== null) {
-            $this->appendNote($task->traceId, $id, $note, $nextStep);
+            try {
+                $this->appendNote($task->traceId, $id, $note, $nextStep);
+            } catch (\InvalidArgumentException|\RuntimeException $e) {
+                return $this->noteError($output, $task, $nextStep !== null, $e->getMessage(), $jsonMode);
+            }
         } else {
             $this->safeAppend($task->traceId, TraceEventKind::NOTE, "task '{$id}' next step updated", array_filter([
                 'artifact'  => 'semitexa.ai-work.task-note/v1',
@@ -427,7 +435,9 @@ final class AiWorkCommand extends BaseCommand
      */
     private function appendNote(string $traceId, string $id, string $note, ?string $nextStep = null): void
     {
-        $this->safeAppend(
+        // An explicitly requested note is the primary action, not best-effort
+        // trace hygiene. Missing traces and failed writes must reach the caller.
+        $this->traceStore->append(
             $traceId,
             TraceEventKind::NOTE,
             "note on task '{$id}': " . $this->truncate($note, 80),
@@ -660,23 +670,28 @@ final class AiWorkCommand extends BaseCommand
 
     private function truncate(string $value, int $max): string
     {
-        return strlen($value) > $max ? substr($value, 0, $max - 1) . '…' : $value;
+        // The limit is in Unicode characters; the full note stays in payload.
+        return mb_strlen($value, 'UTF-8') > $max ? mb_substr($value, 0, $max - 1, 'UTF-8') . '…' : $value;
     }
 
-    private function error(OutputInterface $output, string $message, bool $jsonMode): int
+    private function noteError(OutputInterface $output, Task $task, bool $taskSaved, string $reason, bool $jsonMode): int
     {
-        if ($jsonMode) {
-            $output->writeln(json_encode([
-                'artifact' => 'semitexa.ai-work.task/v1',
-                'status'   => 'error',
-                'error'    => $message,
-            ], JSON_UNESCAPED_SLASHES));
-        } else {
-            $output->writeln(json_encode([
-                'kind'  => 'error',
-                'error' => $message,
-            ], JSON_UNESCAPED_SLASHES));
-        }
+        $prefix = $taskSaved ? 'Task changes were saved, but the note' : 'The note';
+
+        return $this->error($output, $prefix . ' could not be saved: ' . $reason, $jsonMode, [
+            'task_saved' => $taskSaved,
+            'note_saved' => false,
+            'task'       => $task->toArray(),
+        ]);
+    }
+
+    /** @param array<string, mixed> $details */
+    private function error(OutputInterface $output, string $message, bool $jsonMode, array $details = []): int
+    {
+        $record = $jsonMode
+            ? ['artifact' => 'semitexa.ai-work.task/v1', 'status' => 'error']
+            : ['kind' => 'error'];
+        $output->writeln(json_encode($record + ['error' => $message] + $details, JSON_UNESCAPED_SLASHES));
         return self::FAILURE;
     }
 }

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Console\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
@@ -358,5 +360,119 @@ class AiWorkCommandTest extends TestCase
         ]);
 
         return [$command, $tasks, $epics, $traces];
+    }
+
+    #[DataProvider('noteRoundTrips')]
+    public function test_note_round_trips_exactly(string $action, bool $json, string $note): void
+    {
+        [$command, $tasks, , $traces] = $this->wiredWithTask('tk-unicode', 'ep-notes');
+        $tester = new CommandTester($command);
+        $options = ['action' => $action, '--id' => 'tk-unicode', '--note' => $note, '--json' => $json];
+        if ($action === 'update') {
+            $options['--status'] = 'done';
+        }
+
+        $this->assertSame(0, $tester->execute($options));
+        $events = $traces->read('tk-unicode')->events;
+        $notes = array_values(array_filter($events, static fn($event) => isset($event->payload['note'])));
+        $this->assertCount(1, $notes, 'A successful command must persist exactly one note.');
+        $this->assertSame($note, $notes[0]->payload['note']);
+        $summary = substr($notes[0]->summary, strlen("note on task 'tk-unicode': "));
+        $this->assertLessThanOrEqual(80, mb_strlen($summary, 'UTF-8'));
+        if (mb_strlen($note, 'UTF-8') <= 80) {
+            $this->assertSame($note, $summary);
+        } else {
+            $this->assertStringEndsWith('…', $summary);
+        }
+        $this->assertSame(TraceEventKind::NOTE, $notes[0]->eventKind);
+        $this->assertSame('semitexa.ai-work.task-note/v1', $notes[0]->payload['artifact']);
+        $this->assertSame(range(1, count($events)), array_column($events, 'eventId'));
+        if ($action === 'update') {
+            $this->assertSame('done', $tasks->get('tk-unicode')->status->value);
+        }
+    }
+
+    public static function noteRoundTrips(): iterable
+    {
+        $notes = [
+            'ascii' => str_repeat('a', 120),
+            'ukrainian' => str_repeat('я', 60),
+            'emoji' => str_repeat('🦈', 25),
+            '79 bytes' => str_repeat('a', 77) . 'я',
+            '80 bytes' => str_repeat('a', 78) . 'я',
+            '81 bytes' => str_repeat('a', 77) . '🦈',
+            'long mixed' => str_repeat("Перевірка 🦈 e\u{0301}\n", 100),
+        ];
+        foreach (['note', 'update'] as $action) {
+            foreach ([true, false] as $json) {
+                foreach ($notes as $name => $note) {
+                    yield $action . '-' . ($json ? 'json' : 'ndjson') . '-' . $name => [$action, $json, $note];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('noteFailures')]
+    public function test_note_failure_is_reported_with_the_actual_task_state(string $action, bool $json, bool $missingTrace): void
+    {
+        [$command, $tasks, , $traces] = $this->wiredWithTask('tk-failure', 'ep-notes');
+        if ($missingTrace) {
+            unlink($traces->pathFor('tk-failure'));
+        }
+        $tester = new CommandTester($command);
+        $options = [
+            'action' => $action, '--id' => 'tk-failure', '--json' => $json,
+            '--note' => $missingTrace ? 'Keep my reasoning' : "Invalid UTF-8: \xB1",
+        ];
+        if ($action === 'update') {
+            $options['--status'] = 'done';
+        }
+
+        $this->assertSame(1, $tester->execute($options));
+        $result = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('error', $result[$json ? 'status' : 'kind']);
+        $this->assertFalse($result['note_saved']);
+        $this->assertSame($action === 'update', $result['task_saved']);
+        $this->assertSame($tasks->get('tk-failure')->toArray(), $result['task']);
+        if ($action === 'update') {
+            $this->assertSame('done', $result['task']['status']);
+            $this->assertStringContainsString('Task changes were saved', $result['error']);
+        }
+        if ($missingTrace) {
+            $this->assertFileDoesNotExist($traces->pathFor('tk-failure'));
+        } else {
+            $notes = array_filter($traces->read('tk-failure')->events, static fn($event) => isset($event->payload['note']));
+            $this->assertCount(0, $notes);
+            $this->assertStringNotContainsString("\n\n", file_get_contents($traces->pathFor('tk-failure')));
+        }
+    }
+
+    public static function noteFailures(): iterable
+    {
+        foreach (['note', 'update'] as $action) {
+            foreach ([true, false] as $json) {
+                foreach ([true, false] as $missingTrace) {
+                    yield [$action, $json, $missingTrace];
+                }
+            }
+        }
+    }
+
+    public function test_note_failure_reports_a_next_step_that_was_already_saved(): void
+    {
+        [$command, $tasks, , $traces] = $this->wiredWithTask('tk-next', 'ep-notes');
+        unlink($traces->pathFor('tk-next'));
+        $tester = new CommandTester($command);
+
+        $this->assertSame(1, $tester->execute([
+            'action' => 'note', '--id' => 'tk-next', '--note' => 'Do not lose this',
+            '--next-step' => 'Review the fix', '--json' => true,
+        ]));
+
+        $result = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertTrue($result['task_saved']);
+        $this->assertFalse($result['note_saved']);
+        $this->assertSame('Review the fix', $tasks->get('tk-next')->nextStep);
+        $this->assertSame($tasks->get('tk-next')->toArray(), $result['task']);
     }
 }

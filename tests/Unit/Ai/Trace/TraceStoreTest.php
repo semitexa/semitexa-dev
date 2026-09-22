@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Ai\Trace;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Tests\Support\CapturingLogger;
+use Semitexa\Dev\Tests\Support\TraceWriteFaultStream;
 use Semitexa\Testing\TestCase;
 
 /**
@@ -190,5 +193,81 @@ class TraceStoreTest extends TestCase
         [$message, $context] = $logger->warnings[0];
         $this->assertSame('Skipping unreadable trace record', $message);
         $this->assertStringContainsString('tr-bad.ndjson', (string) $context['file']);
+    }
+
+    #[DataProvider('unencodableEvents')]
+    public function test_encoding_failure_does_not_modify_the_trace(string $summary, array $payload): void
+    {
+        $store = new TraceStore();
+        $store->openOrCreate('t');
+        $store->append('t', TraceEventKind::NOTE, 'existing note');
+        $before = file_get_contents($store->pathFor('t'));
+
+        $error = null;
+        try {
+            $store->append('t', TraceEventKind::NOTE, $summary, $payload);
+        } catch (\RuntimeException $e) {
+            $error = $e;
+        }
+
+        $this->assertInstanceOf(\RuntimeException::class, $error, 'An unencodable event must fail, not append a blank line.');
+        $this->assertInstanceOf(\JsonException::class, $error->getPrevious());
+        $this->assertSame($before, file_get_contents($store->pathFor('t')));
+        $this->assertSame(2, $store->append('t', TraceEventKind::NOTE, 'retry')->eventId);
+        $this->assertSame(['existing note', 'retry'], array_column($store->read('t')->events, 'summary'));
+    }
+
+    public static function unencodableEvents(): iterable
+    {
+        yield 'summary' => ["invalid \xB1", []];
+        yield 'payload' => ['valid summary', ['note' => "invalid \xB1"]];
+        yield 'non-finite number' => ['valid summary', ['value' => INF]];
+    }
+
+    #[DataProvider('writeFailures')]
+    public function test_write_failure_is_reported_and_does_not_poison_later_appends(?int $writeLimit, bool $failFlush): void
+    {
+        $store = new TraceStore();
+        $store->openOrCreate('t');
+        $store->append('t', TraceEventKind::NOTE, 'existing note');
+        $path = $store->pathFor('t');
+        $before = file_get_contents($path);
+        $this->assertTrue(stream_wrapper_register('tracefault', TraceWriteFaultStream::class));
+        TraceWriteFaultStream::$writeLimit = $writeLimit;
+        TraceWriteFaultStream::$failFlush = $failFlush;
+        // Snapshot, not reset(): setUp() pointed ProjectRoot at a fixture root,
+        // and reset() nulls it instead of putting that back. The assertions
+        // after the finally depend on it, and only pass today because the
+        // re-derived root happens to match the directory setUp() chdir'd into.
+        $projectRoot = new \ReflectionProperty(ProjectRoot::class, 'root');
+        $previousRoot = $projectRoot->getValue();
+        $projectRoot->setValue(null, 'tracefault://' . $this->root);
+        $error = null;
+        try {
+            $store->append('t', TraceEventKind::NOTE, 'must not report success');
+        } catch (\RuntimeException $e) {
+            $error = $e;
+        } finally {
+            // The wrapper's fault switches are static: a filtered run that
+            // stops here would hand the next test a write budget of -1.
+            TraceWriteFaultStream::$writeLimit = null;
+            TraceWriteFaultStream::$failFlush = false;
+            $projectRoot->setValue(null, $previousRoot);
+            stream_wrapper_unregister('tracefault');
+        }
+
+        $this->assertInstanceOf(\RuntimeException::class, $error, 'A short write or failed flush must not return an event as saved.');
+        $this->assertStringContainsString('failed to append', $error->getMessage());
+        $this->assertSame($before, file_get_contents($path), 'A failed append must restore the previous NDJSON boundary.');
+        $this->assertSame(2, $store->append('t', TraceEventKind::NOTE, 'retry')->eventId);
+        $this->assertSame(['existing note', 'retry'], array_column($store->read('t')->events, 'summary'));
+    }
+
+    public static function writeFailures(): iterable
+    {
+        yield 'write returns false' => [-1, false];
+        yield 'zero bytes' => [0, false];
+        yield 'partial line' => [12, false];
+        yield 'flush failure' => [null, true];
     }
 }
