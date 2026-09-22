@@ -7,8 +7,6 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\LocalModuleStructureExtension;
-use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule;
-use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
 

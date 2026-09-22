@@ -6,7 +6,6 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify\Structure;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\FilePlacementRule;
-use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureRule;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpec;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
 
