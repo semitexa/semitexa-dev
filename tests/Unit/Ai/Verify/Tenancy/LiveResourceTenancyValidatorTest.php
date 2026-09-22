@@ -59,6 +59,16 @@ final class FixtureUnwatchedResource
 {
 }
 
+#[\Semitexa\Core\Attribute\WatchScopes('fixture_touched')]
+final class FixtureTouchedFeedPayload
+{
+}
+
+#[\Semitexa\Ssr\Attribute\PublishesScope('fixture_touched')]
+final class FixtureTouchingHandler
+{
+}
+
 final class LiveResourceTenancyValidatorTest extends TestCase
 {
     private LiveResourceTenancyValidator $validator;
@@ -90,6 +100,50 @@ final class LiveResourceTenancyValidatorTest extends TestCase
         );
 
         self::assertSame([], $violations);
+    }
+
+    #[Test]
+    public function a_scope_touched_from_code_is_a_live_wire_not_a_dead_one(): void
+    {
+        // platform_live_events in the showcase: no table behind it, the publish
+        // is a touch() call, and the scope reaches it as a class constant — so
+        // nothing readable joins the two halves except the declaration.
+        $violations = $this->validator->validateClasses(
+            [FixtureTouchedFeedPayload::class],
+            [],
+            [FixtureTouchingHandler::class],
+        );
+
+        self::assertSame([], $violations);
+    }
+
+    #[Test]
+    public function without_the_declaration_the_same_wire_still_reads_as_dead(): void
+    {
+        $violations = $this->validator->validateClasses(
+            [FixtureTouchedFeedPayload::class],
+            [],
+        );
+
+        self::assertCount(1, $violations);
+        self::assertSame(LiveTenancyViolation::CODE_UNBACKED, $violations[0]->code);
+        self::assertSame('fixture_touched', $violations[0]->scopeKey);
+    }
+
+    #[Test]
+    public function declaring_a_publish_says_nothing_about_a_resource_that_does_exist(): void
+    {
+        // The declaration answers the dead-wire question only. A scope that a
+        // resource publishes is still judged on that resource's tenancy, or
+        // the attribute would become a way to silence the leak check.
+        $violations = $this->validator->validateClasses(
+            [FixtureNakedFeedPayload::class],
+            [FixtureNakedResource::class],
+            [FixtureTouchingHandler::class],
+        );
+
+        self::assertCount(1, $violations);
+        self::assertSame(LiveTenancyViolation::CODE_UNTENANTED, $violations[0]->code);
     }
 
     #[Test]
