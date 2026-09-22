@@ -674,6 +674,13 @@ function undatedFloorsOf(array $candidates): array
 {
     $undated = [];
     foreach ($candidates as $index => $candidate) {
+        // Fresh, not the ref the scan left behind: master may have gained a
+        // declaration since, and this read decides what gets dated and tagged.
+        if (!fetchRemoteBranch($candidate['package_dir'], 'master')) {
+            fwrite(STDERR, "Cannot refresh origin/master for {$candidate['name']}.\n");
+            exit(1);
+        }
+
         $manifest = manifestAt($candidate['package_dir'], 'origin/master');
         if ($manifest === null) {
             fwrite(STDERR, "Cannot read composer.json at origin/master for {$candidate['name']}.\n");
@@ -726,6 +733,11 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
             if ($why !== null) {
                 $refusals[] = $why;
             }
+        }
+
+        $why = whyReleaseManifestCannotBeCommitted($candidates[$index]['package_dir'], $candidates[$index]['name']);
+        if ($why !== null) {
+            $refusals[] = $why;
         }
     }
 
@@ -927,14 +939,17 @@ function commitReleaseManifest(
     string $message,
     bool $noPush,
 ): string {
-    if (!syncLocalBranch($packageDir, 'develop') || !syncLocalBranch($packageDir, 'master')) {
-        fwrite(STDERR, "Cannot prepare release for {$name}: could not sync origin/develop and origin/master.\n");
+    // The same question dateDeclaredFloors() asks of every package before its
+    // first commit, asked again here as an assertion: ultimate's pin refresh
+    // reaches this without that pass, and the remote may have moved since.
+    $blocker = whyReleaseManifestCannotBeCommitted($packageDir, $name);
+    if ($blocker !== null) {
+        fwrite(STDERR, "Cannot prepare release for {$blocker}\n");
         exit(1);
     }
 
-    $status = runShellCommand('git -C ' . escapeshellarg($packageDir) . ' status --porcelain -u 2>/dev/null');
-    if ($status['exit_code'] !== 0 || $status['output'] !== '') {
-        fwrite(STDERR, "Cannot prepare release for {$name}: working tree is not clean.\n");
+    if (!syncLocalBranch($packageDir, 'develop') || !syncLocalBranch($packageDir, 'master')) {
+        fwrite(STDERR, "Cannot prepare release for {$name}: could not sync origin/develop and origin/master.\n");
         exit(1);
     }
 
@@ -946,47 +961,11 @@ function commitReleaseManifest(
     }
 
     runGit($packageDir, 'reset', '--hard', 'origin/develop');
-
-    $originMasterHead = trim((string) shell_exec(
-        'git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify origin/master 2>/dev/null'
-    ));
-    $developHead = trim((string) shell_exec(
-        'git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify HEAD 2>/dev/null'
-    ));
-
-    if ($originMasterHead === '' || $developHead === '') {
-        fwrite(STDERR, "Cannot prepare release for {$name}: failed to resolve develop/master heads.\n");
-        exit(1);
-    }
-
-    if ($developHead !== $originMasterHead) {
-        $baselineCheck = runShellCommand(
-            'git -C ' . escapeshellarg($packageDir) . ' merge-base --is-ancestor '
-            . escapeshellarg($developHead) . ' ' . escapeshellarg($originMasterHead) . ' 2>/dev/null'
-        );
-
-        if ($baselineCheck['exit_code'] !== 0) {
-            fwrite(
-                STDERR,
-                "Cannot prepare release for {$name}: develop contains commits that are not in origin/master. "
-                . "Sync the release baseline before the release commits to it.\n"
-            );
-            exit(1);
-        }
-
-        runGit($packageDir, 'merge', '--ff-only', 'origin/master');
-        if (!$noPush) {
-            runGit($packageDir, 'push', 'origin', 'develop');
-        }
-    }
+    runGit($packageDir, 'merge', '--ff-only', 'origin/master');
 
     $writeManifest();
     runGit($packageDir, 'add', '--', 'composer.json');
     runGit($packageDir, 'commit', '-m', $message);
-
-    if (!$noPush) {
-        runGit($packageDir, 'push', 'origin', 'develop');
-    }
 
     $commitSha = trim((string) shell_exec(
         'git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify HEAD 2>/dev/null'
@@ -1001,11 +980,61 @@ function commitReleaseManifest(
     runGit($packageDir, 'reset', '--hard', 'origin/master');
     runGit($packageDir, 'merge', '--ff-only', $commitSha);
 
+    // ONE ATOMIC PUSH, both refs or neither. Pushing develop first and master
+    // after left origin/develop carrying the release commit whenever the master
+    // push failed — and the next run then refused the package as "develop ahead
+    // of master" instead of simply retrying.
     if (!$noPush) {
-        runGit($packageDir, 'push', 'origin', 'master');
+        runGit($packageDir, 'push', '--atomic', 'origin', 'develop', 'master');
     }
 
     return $commitSha;
+}
+
+/**
+ * Why this package cannot take a release commit, or null when it can.
+ *
+ * Reads only. It fetches origin/develop and origin/master — so the answer is
+ * about the remote as it is now, not as it was at the scan — and moves no local
+ * branch and touches no file, which is what lets dateDeclaredFloors() ask it of
+ * every package BEFORE the first one is committed. Asked inside the commit loop
+ * instead, a refusal on the second package arrived after the first had already
+ * pushed a floor dated at a release that was then never cut.
+ */
+function whyReleaseManifestCannotBeCommitted(string $packageDir, string $name): ?string
+{
+    if (!fetchRemoteBranch($packageDir, 'develop') || !fetchRemoteBranch($packageDir, 'master')) {
+        return "{$name}: could not fetch origin/develop and origin/master.";
+    }
+
+    $status = runShellCommand('git -C ' . escapeshellarg($packageDir) . ' status --porcelain -u 2>/dev/null');
+    if ($status['exit_code'] !== 0 || $status['output'] !== '') {
+        return "{$name}: working tree is not clean.";
+    }
+
+    $originMaster = trim((string) shell_exec(
+        'git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify origin/master 2>/dev/null'
+    ));
+    $originDevelop = trim((string) shell_exec(
+        'git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify origin/develop 2>/dev/null'
+    ));
+
+    if ($originMaster === '' || $originDevelop === '') {
+        return "{$name}: failed to resolve origin/develop and origin/master.";
+    }
+
+    if ($originDevelop === $originMaster) {
+        return null;
+    }
+
+    $ancestor = runShellCommand(
+        'git -C ' . escapeshellarg($packageDir) . ' merge-base --is-ancestor '
+        . escapeshellarg($originDevelop) . ' ' . escapeshellarg($originMaster) . ' 2>/dev/null'
+    );
+
+    return $ancestor['exit_code'] === 0
+        ? null
+        : "{$name}: develop contains commits that are not in origin/master. Sync the release baseline before the release commits to it.";
 }
 
 function releaseUltimateManifest(array $package, bool $noPush): array

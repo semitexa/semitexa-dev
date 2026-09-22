@@ -240,6 +240,91 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         );
     }
 
+    /**
+     * Every refusal comes before the first commit. With two packages to date
+     * and the SECOND one refused, the first must not have pushed a floor dated
+     * at a release that is then never cut.
+     */
+    #[Test]
+    public function a_refusal_on_any_package_comes_before_the_first_commit(): void
+    {
+        $this->declaring();
+        $this->package('semitexa-os', [
+            'name' => 'semitexa/os',
+            'require' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ]);
+        $os = $this->dir('semitexa-os');
+        file_put_contents($os . '/README.md', "unreviewed\n");
+        $this->git($os, 'add README.md');
+        $this->git($os, 'commit -q -m unreviewed');
+        $this->git($os, 'push -q origin develop');
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-os', 'semitexa-core'], noPush: false);
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('develop contains commits that are not in origin/master', $result['output']);
+        $origin = $this->root . '/origin-semitexa-ssr.git';
+        self::assertSame('next', $this->manifestAt($origin, 'master')['extra']['semitexa']['floors']['semitexa/core']);
+        self::assertSame('next', $this->manifestAt($origin, 'develop')['extra']['semitexa']['floors']['semitexa/core']);
+    }
+
+    /**
+     * The scan's origin/master can be stale by the time floors are read. A
+     * declaration that reached master after it must still be dated — and the
+     * tag must be cut from that master, not the stale one.
+     */
+    #[Test]
+    public function a_declaration_that_reached_master_after_the_scan_is_dated(): void
+    {
+        $this->package('semitexa-ssr', ['name' => 'semitexa/ssr', 'require' => ['semitexa/core' => '*']]);
+        $this->package('semitexa-core', ['name' => 'semitexa/core']);
+
+        $other = $this->root . '/other-ssr';
+        exec(sprintf('git clone -q %s %s 2>&1', escapeshellarg($this->root . '/origin-semitexa-ssr.git'), escapeshellarg($other)));
+        $this->git($other, 'config user.email test@example.com');
+        $this->git($other, 'config user.name Test');
+        file_put_contents($other . '/composer.json', json_encode([
+            'name' => 'semitexa/ssr',
+            'require' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+        $this->git($other, 'commit -q -am declare');
+        $this->git($other, 'push -q origin HEAD:master HEAD:develop');
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertSame(
+            '>=2026.09.23.1000 || dev-master',
+            $this->manifestAt($this->root . '/origin-semitexa-ssr.git', self::VERSION)['require']['semitexa/core'],
+        );
+    }
+
+    /**
+     * develop and master go to the remote together or not at all. A push that
+     * moved develop and then failed on master left the release commit on
+     * origin/develop only, and the next run refused the package as
+     * "develop ahead of master" instead of retrying.
+     */
+    #[Test]
+    public function a_rejected_master_push_leaves_develop_unmoved_too(): void
+    {
+        $this->declaring();
+        $origin = $this->root . '/origin-semitexa-ssr.git';
+        $developBefore = $this->git($origin, 'rev-parse develop');
+        $masterBefore = $this->git($origin, 'rev-parse master');
+        $hook = $this->dir('semitexa-ssr') . '/.git/hooks/pre-push';
+        file_put_contents($hook, "#!/bin/sh\nwhile read local lsha remote rsha; do\n  [ \"\$remote\" = refs/heads/master ] && exit 1\ndone\nexit 0\n");
+        chmod($hook, 0755);
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertNotSame(0, $result['exit'], $result['output']);
+        self::assertSame($masterBefore, $this->git($origin, 'rev-parse master'));
+        self::assertSame($developBefore, $this->git($origin, 'rev-parse develop'), 'develop moved without master');
+    }
+
     /** No declaration, no commit: the tag lands on master exactly as it was. */
     #[Test]
     public function a_package_without_a_declaration_is_tagged_as_it_stands(): void

@@ -153,18 +153,22 @@ if ($problems !== []) {
     exit(1);
 }
 
+// A VALID PENDING DECLARATION IS NOT A FAILURE ANY MORE. Every declaration
+// that reaches this point names a provider this cut is tagging, and finalize
+// dates it before the first tag. Preflight runs this as a soft stage, and a soft
+// stage that exits non-zero fails the whole preflight at the end — so exiting 1
+// here stopped the release before the step that resolves the very thing being
+// reported. The refusals above (out-of-set provider, no RELEASE_VERSION) still
+// exit 1: those are the states finalize cannot fix.
 if ($check) {
-    fwrite(STDERR, "These floors still name the release rather than a version:\n");
+    echo "These floors still name the release; finalize will date them at {$releaseVersion}:\n";
     foreach ($pending as $d) {
-        fwrite(STDERR, sprintf("- %s: %s -> >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion));
+        printf("- %s: %s -> >=%s || dev-master\n", $d['package'], $d['dependency'], $releaseVersion);
     }
-    fwrite(
-        STDERR,
-        "\nThat is expected before the cut: finalize dates them itself. bump-packages.php commits each\n"
-        . "floor on develop, fast-forwards master to it and pushes both BEFORE it tags, and refuses to tag\n"
-        . "a tree that still says `next`. Run --confirm --commit by hand only for a cut you tag by hand.\n"
-    );
-    exit(1);
+    echo "\nbump-packages.php commits each floor on develop, fast-forwards master to it and pushes both\n"
+        . "BEFORE it tags, and refuses to tag a tree that still says `next`. Run --confirm --commit by hand\n"
+        . "only for a cut you tag by hand.\n";
+    exit(0);
 }
 
 // EVERY REPOSITORY IS CHECKED BEFORE ANY MANIFEST IS WRITTEN. The writes happen
@@ -573,7 +577,7 @@ function collectDeclarations(string $packagesDir): array
                 'composer_path' => $composerPath,
                 'dependency' => $dependency,
                 'declared' => $declared,
-                'require' => (string) ($json['require'][$dependency] ?? ''),
+                'require' => (string) ($json[floorSection($json, $dependency)][$dependency] ?? ''),
             ];
         }
     }

@@ -194,19 +194,55 @@ final class FloorDeclarationResolutionTest extends TestCase
     }
 
     /**
-     * Preflight's job: a cut may not proceed while a floor still says "next",
-     * because the package would ship a constraint that guards nothing.
+     * Preflight runs --check as a soft stage, and a soft stage that exits
+     * non-zero fails the whole preflight — before the finalize step that dates
+     * the floor. So a pending declaration finalize CAN date is reported, not
+     * failed.
      */
     #[Test]
-    public function check_fails_while_a_declaration_is_undated(): void
+    public function check_reports_a_pending_declaration_without_failing_preflight(): void
     {
         $this->writePackage($this->declaringPackage());
 
         $result = $this->resolve('--check', '2026.09.18.1500');
 
-        self::assertSame(1, $result['exit']);
-        self::assertStringContainsString('still name the release', $result['output']);
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringContainsString('finalize will date them', $result['output']);
         self::assertSame('*', $this->readPackage()['require']['semitexa/core'], 'check changes nothing');
+    }
+
+    /** A declaration finalize can NOT date still fails the check. */
+    #[Test]
+    public function check_still_fails_on_a_provider_outside_the_release_set(): void
+    {
+        $this->writePackage($this->declaringPackage(), providerIsBeingTagged: false);
+
+        $result = $this->resolve('--check', '2026.09.18.1500');
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('is not being tagged', $result['output']);
+    }
+
+    /**
+     * A floor on a dependency the package only needs for development stays in
+     * require-dev. Writing it into require handed every consumer a production
+     * dependency the package never had.
+     */
+    #[Test]
+    public function a_dev_only_dependency_is_floored_in_require_dev(): void
+    {
+        $this->writePackage([
+            'name' => 'semitexa/ssr',
+            'require-dev' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ]);
+
+        $result = $this->resolve('--confirm', '2026.09.18.1500');
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $package = $this->readPackage();
+        self::assertSame('>=2026.09.18.1500 || dev-master', $package['require-dev']['semitexa/core']);
+        self::assertArrayNotHasKey('require', $package, 'no production dependency was invented');
     }
 
     /**

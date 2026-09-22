@@ -76,7 +76,24 @@ function whyFloorCannotBeDated(string $package, string $dependency, array $relea
 }
 
 /**
- * Write the dated floor into `require`, and record the date in `extra` so the
+ * The Composer section a floor belongs in: wherever the dependency is already
+ * declared. A dependency only in `require-dev` stays there — writing its floor
+ * into `require` would hand every consumer a production dependency the package
+ * never had.
+ *
+ * @param array<mixed> $composer
+ */
+function floorSection(array $composer, string $dependency): string
+{
+    if (isset($composer['require'][$dependency])) {
+        return 'require';
+    }
+
+    return isset($composer['require-dev'][$dependency]) ? 'require-dev' : 'require';
+}
+
+/**
+ * Write the dated floor into the dependency's section, and record the date in `extra` so the
  * declaration stops asking. Only these two keys are touched.
  */
 function writeResolvedFloor(string $composerPath, string $dependency, string $version): void
@@ -93,7 +110,7 @@ function writeResolvedFloor(string $composerPath, string $dependency, string $ve
         exit(1);
     }
 
-    $json['require'][$dependency] = floorConstraint($version);
+    $json[floorSection($json, $dependency)][$dependency] = floorConstraint($version);
     $json['extra']['semitexa']['floors'][$dependency] = $version;
 
     $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
