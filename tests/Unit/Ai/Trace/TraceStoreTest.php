@@ -235,7 +235,13 @@ class TraceStoreTest extends TestCase
         $this->assertTrue(stream_wrapper_register('tracefault', TraceWriteFaultStream::class));
         TraceWriteFaultStream::$writeLimit = $writeLimit;
         TraceWriteFaultStream::$failFlush = $failFlush;
-        (new \ReflectionProperty(ProjectRoot::class, 'root'))->setValue(null, 'tracefault://' . $this->root);
+        // Snapshot, not reset(): setUp() pointed ProjectRoot at a fixture root,
+        // and reset() nulls it instead of putting that back. The assertions
+        // after the finally depend on it, and only pass today because the
+        // re-derived root happens to match the directory setUp() chdir'd into.
+        $projectRoot = new \ReflectionProperty(ProjectRoot::class, 'root');
+        $previousRoot = $projectRoot->getValue();
+        $projectRoot->setValue(null, 'tracefault://' . $this->root);
         $error = null;
         try {
             $store->append('t', TraceEventKind::NOTE, 'must not report success');
@@ -246,7 +252,7 @@ class TraceStoreTest extends TestCase
             // stops here would hand the next test a write budget of -1.
             TraceWriteFaultStream::$writeLimit = null;
             TraceWriteFaultStream::$failFlush = false;
-            ProjectRoot::reset();
+            $projectRoot->setValue(null, $previousRoot);
             stream_wrapper_unregister('tracefault');
         }
 
