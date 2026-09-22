@@ -35,17 +35,21 @@ Default assumptions:
 - **an internal floor is DECLARED by the author and DATED by the release.** A package that starts
   calling a new API of a sibling writes
   `"extra": { "semitexa": { "floors": { "semitexa/<provider>": "next" } } }` and leaves `require`
-  alone. Preflight's `floors-are-dated` stage fails while any declaration is still undated, and
-  `release-resolve-floors.php --confirm --commit` writes `>=$RELEASE_VERSION || dev-master` into
-  `require`, records the same version back in `extra` (so a later release finds nothing to do),
-  commits it on master and pushes.
-  ⚠️ **`--commit` is not optional at a real cut.** `bump-packages.php` tags each package after
-  `git reset --hard origin/master`, so a floor written and left uncommitted is DISCARDED before
-  the tag — the release would ship the old constraint while you watched the new one being
-  written. Without `--commit` the script says so and exits 0; with it, it refuses to commit on
-  any branch but master. Run it before the finalize step, never after.
-  The set of packages being tagged is derived the way the tagger derives it (master HEAD carries
-  no release tag), so a declaration naming a dependency that is not being released is refused. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
+  alone. **Finalize dates it — nobody runs a step for it.** Before the first tag,
+  `bump-packages.php` writes `>=$RELEASE_VERSION || dev-master` into `require`, records the same
+  version back in `extra` (so a later release finds nothing to do), commits it on **develop**,
+  fast-forwards master to that commit, pushes both, and reads the manifest back from the tree it
+  is about to tag — a tree still saying `next` is refused. Every refusal is found before the first
+  commit and every commit is made before the first tag, so a failed run leaves nothing, or
+  untagged floor commits a re-run simply tags.
+  It refuses: a declaration naming a dependency this run is not tagging (a run filtered to one
+  package included), and a package whose develop carries commits master does not (no
+  fast-forward is possible; sync the release baseline first).
+  Preflight's `floors-are-dated` stage is a soft stage and now only reports what finalize will
+  date. `release-resolve-floors.php --confirm --commit` remains for a cut tagged by hand; it
+  commits on master only, so develop has to be fast-forwarded to master afterwards.
+  ⚠️ Before 2026-09-22 the resolver was the only path, and it left develop behind: ssr and
+  webhooks were tagged with dated floors while develop still read `next`. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
   that has not happened, and it goes stale the first time a release slips (measured 2026-09-16 on
   `os` → `prompt`, which died in preflight a day later)
 - **the `new-public-api` stage is a question, not a gate.** The constraint check compares CLASS

@@ -68,11 +68,16 @@ declare(strict_types=1);
  * tagged tree is not in the release, so the resolved file has to reach
  * origin/master before tagging, and --commit is that step.
  *
+ * At a normal cut nobody runs it: bump-packages.php dates the floors of the
+ * packages it is about to tag, through the same functions (floor-declarations.php),
+ * commits them on develop, fast-forwards master and only then tags. --commit is
+ * for a cut tagged by hand.
+ *
  * RELEASE_ROOT selects the tree (default: the release clone). RELEASE_VERSION is
  * required for --confirm and for a meaningful --check.
  */
 
-const SENTINEL = 'next';
+require_once __DIR__ . '/floor-declarations.php';
 
 $args = array_slice($argv, 1);
 $confirm = in_array('--confirm', $args, true);
@@ -101,7 +106,7 @@ $releaseSet = $releaseSetRaw !== ''
     : deriveReleaseSet($packagesDir);
 
 $declarations = collectDeclarations($packagesDir);
-$pending = array_values(array_filter($declarations, static fn (array $d): bool => $d['declared'] === SENTINEL));
+$pending = array_values(array_filter($declarations, static fn (array $d): bool => $d['declared'] === FLOOR_SENTINEL));
 
 if ($pending === []) {
     echo "[OK] No floor is waiting for a version.\n";
@@ -134,15 +139,9 @@ if ($releaseSet === null) {
 }
 
 foreach ($pending as $d) {
-    if (!in_array($d['dependency'], $releaseSet, true)) {
-        $problems[] = sprintf(
-            '%s floors %s at this release, but %s is not being tagged in it. A dependency that is not '
-            . 'changing cannot have grown the API the floor is for — check whether the floor belongs on a '
-            . 'different package, or whether the dependency should be in the release set.',
-            $d['package'],
-            $d['dependency'],
-            $d['dependency'],
-        );
+    $problem = whyFloorCannotBeDated($d['package'], $d['dependency'], $releaseSet);
+    if ($problem !== null) {
+        $problems[] = $problem;
     }
 }
 
@@ -161,11 +160,9 @@ if ($check) {
     }
     fwrite(
         STDERR,
-        "\nThe sequence, and the order matters:\n"
-        . "  1. php release-resolve-floors.php --confirm --commit\n"
-        . "     (writes the floor, commits it on master and pushes — the tagger resets to origin/master,\n"
-        . "      so an uncommitted edit is discarded before the tag)\n"
-        . "  2. then tag, via the normal finalize path\n"
+        "\nThat is expected before the cut: finalize dates them itself. bump-packages.php commits each\n"
+        . "floor on develop, fast-forwards master to it and pushes both BEFORE it tags, and refuses to tag\n"
+        . "a tree that still says `next`. Run --confirm --commit by hand only for a cut you tag by hand.\n"
     );
     exit(1);
 }
@@ -600,46 +597,5 @@ function reportResolved(array $declarations): void
                 $d['require'],
             );
         }
-    }
-}
-
-function floorConstraint(string $version): string
-{
-    return '>=' . $version . ' || dev-master';
-}
-
-/**
- * Write the dated floor into `require`, and record the date in `extra` so the
- * declaration stops asking. Only these two keys are touched.
- */
-function writeResolvedFloor(string $composerPath, string $dependency, string $version): void
-{
-    $raw = file_get_contents($composerPath);
-    if ($raw === false) {
-        fwrite(STDERR, "Cannot read {$composerPath}\n");
-        exit(1);
-    }
-
-    $json = json_decode($raw, true);
-    if (!is_array($json)) {
-        fwrite(STDERR, "Invalid JSON: {$composerPath}\n");
-        exit(1);
-    }
-
-    $json['require'][$dependency] = floorConstraint($version);
-    $json['extra']['semitexa']['floors'][$dependency] = $version;
-
-    $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    if ($encoded === false) {
-        fwrite(STDERR, "Cannot encode {$composerPath}\n");
-        exit(1);
-    }
-
-    // A failed write that is reported as a dated floor is the worst outcome
-    // available here: the operator reads "[OK] Dated 1" and tags a tree that
-    // still carries the old constraint.
-    if (file_put_contents($composerPath, $encoded . PHP_EOL) === false) {
-        fwrite(STDERR, "Cannot write {$composerPath} — the floor is NOT dated.\n");
-        exit(1);
     }
 }
