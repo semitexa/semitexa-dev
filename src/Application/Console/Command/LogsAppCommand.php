@@ -23,6 +23,7 @@ final class LogsAppCommand extends BaseCommand
         'debug' => 'debug.log',
         'session-debug' => 'session-debug.log',
         'swoole' => 'swoole.log',
+        'test' => 'test.log',
     ];
 
     /** Monolog: [2026-03-29 08:25:00] channel.LEVEL: message {context} */

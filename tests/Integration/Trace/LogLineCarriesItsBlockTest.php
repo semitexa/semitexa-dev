@@ -33,6 +33,7 @@ final class LogLineCarriesItsBlockTest extends TestCase
     use BuildsContainerManagedObjects;
 
     private string $relativeLogFile = '';
+    private string|false $previousLogFile = false;
     private string $logFile = '';
 
     protected function setUp(): void
@@ -44,6 +45,7 @@ final class LogLineCarriesItsBlockTest extends TestCase
         // failed, with the logger working perfectly.
         $this->relativeLogFile = 'var/log/test-log-origin-' . bin2hex(random_bytes(6)) . '.log';
         $this->logFile = getcwd() . '/' . $this->relativeLogFile;
+        $this->previousLogFile = getenv('LOG_FILE');
         putenv('LOG_FILE=' . $this->relativeLogFile);
         putenv('LOG_LEVEL=debug');
     }
@@ -53,7 +55,9 @@ final class LogLineCarriesItsBlockTest extends TestCase
         LogOrigin::resolveWith(null);
         ObservatoryContext::reset();
         TraceContext::resetFallback();
-        putenv('LOG_FILE');
+        // Restore, not unset: the bootstrap points LOG_FILE at the test log, and an
+        // unset here would send every later test's output back into app.log.
+        putenv($this->previousLogFile === false ? 'LOG_FILE' : 'LOG_FILE=' . $this->previousLogFile);
         putenv('LOG_LEVEL');
         if (is_file($this->logFile)) {
             unlink($this->logFile);
