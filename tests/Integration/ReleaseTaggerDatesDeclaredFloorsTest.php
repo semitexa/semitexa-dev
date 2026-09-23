@@ -356,6 +356,32 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         );
     }
 
+    /**
+     * The sync fast-forwards or leaves the branch alone. An authoring checkout
+     * holding an unpushed commit used to be reset to origin, and the commit was
+     * gone from the branch although the release succeeded.
+     */
+    #[Test]
+    public function an_unpushed_authoring_commit_survives_the_sync(): void
+    {
+        $this->declaring();
+        $authoring = $this->root . '/authoring/packages/semitexa-ssr';
+        mkdir(dirname($authoring), 0777, true);
+        exec(sprintf('git clone -q -b develop %s %s 2>&1', escapeshellarg($this->root . '/origin-semitexa-ssr.git'), escapeshellarg($authoring)));
+        $this->git($authoring, 'config user.email test@example.com');
+        $this->git($authoring, 'config user.name Test');
+        file_put_contents($authoring . '/WIP.md', "unpushed\n");
+        $this->git($authoring, 'add WIP.md');
+        $this->git($authoring, 'commit -q -m wip');
+        $wip = $this->git($authoring, 'rev-parse HEAD');
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertSame($wip, $this->git($authoring, 'rev-parse develop'));
+        self::assertStringContainsString('left it as it is', $result['output']);
+    }
+
     /** No declaration, no commit: the tag lands on master exactly as it was. */
     #[Test]
     public function a_package_without_a_declaration_is_tagged_as_it_stands(): void

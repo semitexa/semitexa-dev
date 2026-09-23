@@ -497,6 +497,17 @@ function syncAuthoringRepoBranches(string $releasePackageDir, array $branches): 
     }
 
     foreach ($branches as $branch) {
+        // syncLocalBranch() resets to origin, which is right for the release
+        // clone and wrong here: an authoring checkout routinely holds commits
+        // nobody has pushed yet, and a release is no reason to drop them.
+        if (!authoringBranchCanFastForward($authoringRepoDir, $branch)) {
+            fwrite(
+                STDERR,
+                "Warning: local {$branch} in {$authoringRepoDir} is ahead of or diverged from origin/{$branch}; left it as it is.\n"
+            );
+            continue;
+        }
+
         if (syncLocalBranch($authoringRepoDir, $branch)) {
             continue;
         }
@@ -506,6 +517,35 @@ function syncAuthoringRepoBranches(string $releasePackageDir, array $branches): 
             "Warning: skipped syncing local authoring checkout {$authoringRepoDir} branch {$branch} after release.\n"
         );
     }
+}
+
+/**
+ * Whether moving the local branch to origin's loses nothing: the local tip is
+ * absent or already contained in the remote one. A failed fetch answers no.
+ */
+function authoringBranchCanFastForward(string $repoDir, string $branch): bool
+{
+    if (!fetchRemoteBranch($repoDir, $branch)) {
+        return false;
+    }
+
+    $local = runShellCommand(sprintf(
+        'git -C %s rev-parse --verify --quiet %s 2>/dev/null',
+        escapeshellarg($repoDir),
+        escapeshellarg('refs/heads/' . $branch),
+    ));
+    if ($local['exit_code'] !== 0) {
+        return true;
+    }
+
+    $ancestor = runShellCommand(sprintf(
+        'git -C %s merge-base --is-ancestor %s %s 2>/dev/null',
+        escapeshellarg($repoDir),
+        escapeshellarg('refs/heads/' . $branch),
+        escapeshellarg('refs/remotes/origin/' . $branch),
+    ));
+
+    return $ancestor['exit_code'] === 0;
 }
 
 function packageReleaseState(string $packageDir): ?array
