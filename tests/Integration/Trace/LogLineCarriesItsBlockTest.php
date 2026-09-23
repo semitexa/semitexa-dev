@@ -34,6 +34,7 @@ final class LogLineCarriesItsBlockTest extends TestCase
 
     private string $relativeLogFile = '';
     private string|false $previousLogFile = false;
+    private string|false $previousLogLevel = false;
     private string $logFile = '';
 
     protected function setUp(): void
@@ -46,6 +47,7 @@ final class LogLineCarriesItsBlockTest extends TestCase
         $this->relativeLogFile = 'var/log/test-log-origin-' . bin2hex(random_bytes(6)) . '.log';
         $this->logFile = getcwd() . '/' . $this->relativeLogFile;
         $this->previousLogFile = getenv('LOG_FILE');
+        $this->previousLogLevel = getenv('LOG_LEVEL');
         putenv('LOG_FILE=' . $this->relativeLogFile);
         putenv('LOG_LEVEL=debug');
     }
@@ -58,7 +60,7 @@ final class LogLineCarriesItsBlockTest extends TestCase
         // Restore, not unset: the bootstrap points LOG_FILE at the test log, and an
         // unset here would send every later test's output back into app.log.
         putenv($this->previousLogFile === false ? 'LOG_FILE' : 'LOG_FILE=' . $this->previousLogFile);
-        putenv('LOG_LEVEL');
+        putenv($this->previousLogLevel === false ? 'LOG_LEVEL' : 'LOG_LEVEL=' . $this->previousLogLevel);
         if (is_file($this->logFile)) {
             unlink($this->logFile);
         }

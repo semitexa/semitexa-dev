@@ -118,8 +118,12 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
             PHP);
 
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/bump-packages.php';
+        // SEMITEXA_DEV_ROOT pinned inside the fixture: the tagger syncs the
+        // matching authoring checkout after a floor commit, and an inherited
+        // value would point it at the real workspace.
         exec(sprintf(
-            'php %s %s %s 2>&1',
+            'SEMITEXA_DEV_ROOT=%s php %s %s %s 2>&1',
+            escapeshellarg($this->root . '/authoring'),
             escapeshellarg($driver),
             escapeshellarg($script),
             escapeshellarg($input),
@@ -314,8 +318,12 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         $origin = $this->root . '/origin-semitexa-ssr.git';
         $developBefore = $this->git($origin, 'rev-parse develop');
         $masterBefore = $this->git($origin, 'rev-parse master');
-        $hook = $this->dir('semitexa-ssr') . '/.git/hooks/pre-push';
-        file_put_contents($hook, "#!/bin/sh\nwhile read local lsha remote rsha; do\n  [ \"\$remote\" = refs/heads/master ] && exit 1\ndone\nexit 0\n");
+        // Server side, and master only. A client-side pre-push hook aborts the
+        // whole push before any ref is sent, --atomic or not, so it could not
+        // tell the two apart; an update hook rejects one ref and lets the rest
+        // through unless the push is atomic.
+        $hook = $origin . '/hooks/update';
+        file_put_contents($hook, "#!/bin/sh\n[ \"\$1\" = refs/heads/master ] && exit 1\nexit 0\n");
         chmod($hook, 0755);
 
         $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
@@ -323,6 +331,29 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertNotSame(0, $result['exit'], $result['output']);
         self::assertSame($masterBefore, $this->git($origin, 'rev-parse master'));
         self::assertSame($developBefore, $this->git($origin, 'rev-parse develop'), 'develop moved without master');
+    }
+
+    /**
+     * The floor commit reaches the authoring checkout too. Without the sync a
+     * clean checkout kept `"next"`, and its next push proposed the floor again.
+     */
+    #[Test]
+    public function the_authoring_checkout_receives_the_dated_floor(): void
+    {
+        $this->declaring();
+        $authoring = $this->root . '/authoring/packages/semitexa-ssr';
+        mkdir(dirname($authoring), 0777, true);
+        exec(sprintf('git clone -q -b develop %s %s 2>&1', escapeshellarg($this->root . '/origin-semitexa-ssr.git'), escapeshellarg($authoring)));
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $origin = $this->root . '/origin-semitexa-ssr.git';
+        self::assertSame($this->git($origin, 'rev-parse develop'), $this->git($authoring, 'rev-parse develop'));
+        self::assertSame(
+            '>=2026.09.23.1000 || dev-master',
+            json_decode((string) file_get_contents($authoring . '/composer.json'), true)['require']['semitexa/core'],
+        );
     }
 
     /** No declaration, no commit: the tag lands on master exactly as it was. */

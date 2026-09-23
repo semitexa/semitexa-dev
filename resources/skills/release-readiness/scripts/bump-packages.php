@@ -637,6 +637,12 @@ function releaseMasterHead(array $package, string $nextVersion, bool $noPush): a
     }
 
     runGit($packageDir, 'push', 'origin', 'refs/tags/' . $tagName . ':refs/tags/' . $tagName);
+    // dateDeclaredFloors() pushed a commit to develop and master; without this
+    // a clean authoring checkout keeps the `"next"` declaration the release
+    // just replaced, and its next push re-proposes an already-dated floor.
+    if (isset($package['tag_target'])) {
+        syncAuthoringRepoBranches($packageDir, ['develop', 'master']);
+    }
     echo "  Pushed {$name} {$tagName} for master HEAD {$package['info']['head_sha_short']}\n";
     return $package;
 }

@@ -35,7 +35,7 @@ final class LogsAppCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole', 'app')
+            ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole, test', 'app')
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'Number of lines from end', '100')
             ->addOption('grep', null, InputOption::VALUE_REQUIRED, 'Case-insensitive plain-text filter')
             ->addOption('level', null, InputOption::VALUE_REQUIRED, 'Filter by log level (ERROR, WARNING, INFO, DEBUG)')
