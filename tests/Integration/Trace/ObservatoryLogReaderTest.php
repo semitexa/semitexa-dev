@@ -19,18 +19,22 @@ use Semitexa\Dev\Application\Service\Trace\ObservatoryLogReader;
 final class ObservatoryLogReaderTest extends TestCase
 {
     private string $relative = '';
+    private string|false $previousLogFile = false;
     private string $absolute = '';
 
     protected function setUp(): void
     {
         $this->relative = 'var/log/test-reader-' . bin2hex(random_bytes(6)) . '.log';
         $this->absolute = getcwd() . '/' . $this->relative;
+        $this->previousLogFile = getenv('LOG_FILE');
         putenv('LOG_FILE=' . $this->relative);
     }
 
     protected function tearDown(): void
     {
-        putenv('LOG_FILE');
+        // Restore, not unset: the bootstrap points LOG_FILE at the test log, and an
+        // unset here would send every later test's output back into app.log.
+        putenv($this->previousLogFile === false ? 'LOG_FILE' : 'LOG_FILE=' . $this->previousLogFile);
         if (is_file($this->absolute)) {
             unlink($this->absolute);
         }

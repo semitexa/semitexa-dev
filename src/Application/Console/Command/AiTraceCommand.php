@@ -7,7 +7,6 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Dev\Application\Service\Ai\Trace\Trace;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEvent;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;

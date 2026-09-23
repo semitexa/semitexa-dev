@@ -6,7 +6,6 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
-use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveExpansion;
 use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveResolver;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
 

@@ -118,11 +118,10 @@ run_soft_stage "check-internal-constraints" php "$SCRIPT_DIR/release-check-inter
 # version, because until the tag exists the date is a guess and a guess goes
 # stale the moment a release slips. MEASURED 2026-09-16: os floored prompt at
 # the day the author expected, review ran a day past it, and preflight died on
-# "that tag is not in semitexa-prompt". This stage fails while any declaration
-# is still undated, so the resolve step cannot be forgotten on the way to a tag. The way out is
-# printed by the failure itself: --confirm --commit, which lands the floor on origin/master. The
-# commit is not optional — bump-packages.php tags after `git reset --hard origin/master`, so an
-# edit left in the working tree never reaches the tag.
+# "that tag is not in semitexa-prompt". This stage reports every declaration still
+# undated. It is a report, not the step: finalize dates them — bump-packages.php commits
+# each floor on develop, fast-forwards master and pushes both before the first tag, and
+# refuses to tag a tree that still says `next`.
 run_soft_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" --check
 # Not a gate — a question, printed where the operator is already reading. The
 # constraint check above compares CLASS declarations, so a new public METHOD on

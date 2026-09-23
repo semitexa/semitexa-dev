@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Generation\Support;
 
-use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
 
 final class LlmHintsFormatter

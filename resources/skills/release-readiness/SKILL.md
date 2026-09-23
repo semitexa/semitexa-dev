@@ -9,7 +9,7 @@ Use this skill when the user asks to prepare, verify, or validate a Semitexa rel
 
 Default assumptions:
 - operate on [`/home/taras/Documents/Projects/semitexa.rls`](/home/taras/Documents/Projects/semitexa.rls)
-- sync `master` inside the release clone repo set under `semitexa.rls` during preflight (via `release-sync-masters.sh`); `develop` is NOT touched by this skill
+- sync `master` inside the release clone repo set under `semitexa.rls` during preflight (via `release-sync-masters.sh`). Finalize touches `develop` only to commit dated internal floors and to refresh `semitexa-ultimate` pins — each a fast-forward of develop to master plus one release commit, pushed atomically with master. It never merges `develop`→`master`
 - this skill is tag-driven from `master`; merging `develop`→`master` is the operator's responsibility outside this skill (e.g. via `gh pr create`/`merge` or `/review-prep` workflow); if every master HEAD is already tagged, finalize is a no-op
 - after finalize, fast-forward matching clean authoring checkouts under `semitexa.dev/packages/` when release bookkeeping mutates them
 - after refreshing release branches, explicitly apply the updated code with a full `bin/semitexa server:stop` and `bin/semitexa server:start` cycle in the release clone before checks
@@ -35,17 +35,22 @@ Default assumptions:
 - **an internal floor is DECLARED by the author and DATED by the release.** A package that starts
   calling a new API of a sibling writes
   `"extra": { "semitexa": { "floors": { "semitexa/<provider>": "next" } } }` and leaves `require`
-  alone. Preflight's `floors-are-dated` stage fails while any declaration is still undated, and
-  `release-resolve-floors.php --confirm --commit` writes `>=$RELEASE_VERSION || dev-master` into
-  `require`, records the same version back in `extra` (so a later release finds nothing to do),
-  commits it on master and pushes.
-  ⚠️ **`--commit` is not optional at a real cut.** `bump-packages.php` tags each package after
-  `git reset --hard origin/master`, so a floor written and left uncommitted is DISCARDED before
-  the tag — the release would ship the old constraint while you watched the new one being
-  written. Without `--commit` the script says so and exits 0; with it, it refuses to commit on
-  any branch but master. Run it before the finalize step, never after.
-  The set of packages being tagged is derived the way the tagger derives it (master HEAD carries
-  no release tag), so a declaration naming a dependency that is not being released is refused. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
+  alone. **Finalize dates it — nobody runs a step for it.** Before the first tag,
+  `bump-packages.php` writes `>=$RELEASE_VERSION || dev-master` into `require`, records the same
+  version back in `extra` (so a later release finds nothing to do), commits it on **develop**,
+  fast-forwards master to that commit, pushes both in one atomic push, and reads the manifest back from the tree it
+  is about to tag — a tree still saying `next` is refused. Every refusal is found before the first
+  commit and every commit is made before the first tag, so a failed run leaves nothing, or
+  untagged floor commits a re-run simply tags.
+  It refuses: a declaration naming a dependency this run is not tagging (a run filtered to one
+  package included), and a package whose develop carries commits master does not (no
+  fast-forward is possible; sync the release baseline first).
+  Preflight's `floors-are-dated` stage passes on a pending declaration and lists what finalize
+  will date; it fails only on one finalize cannot date (a provider outside the release set, or no
+  `RELEASE_VERSION`). `release-resolve-floors.php --confirm --commit` remains for a cut tagged by hand; it
+  commits on master only, so develop has to be fast-forwarded to master afterwards.
+  ⚠️ Before 2026-09-22 the resolver was the only path, and it left develop behind: ssr and
+  webhooks were tagged with dated floors while develop still read `next`. Nobody writes a date by hand any more: a hand-written one is a guess about a cut
   that has not happened, and it goes stale the first time a release slips (measured 2026-09-16 on
   `os` → `prompt`, which died in preflight a day later)
 - **the `new-public-api` stage is a question, not a gate.** The constraint check compares CLASS
@@ -116,7 +121,7 @@ scripts/release-post-merge.sh
 ## Rules
 
 - Work only against the fixed release root unless the user explicitly changes it.
-- This skill never touches `develop`. The `release-sync-develop.sh` script in the scripts dir is a leftover and is NOT part of the active flow. `prepare-release-prs.php`, `merge-release-prs.php`, and `tag-merged-release-prs.php` are deprecated tombstones — do not invoke them.
+- This skill touches `develop` only in finalize, for dated floors and ultimate pins (see above); it never merges `develop`→`master`. The `release-sync-develop.sh` script in the scripts dir is a leftover and is NOT part of the active flow. `prepare-release-prs.php`, `merge-release-prs.php`, and `tag-merged-release-prs.php` are deprecated tombstones — do not invoke them.
 - Do not stop unrelated Docker projects; only Semitexa-related containers/stacks.
 - For repo sync, require a clean worktree before changing any local `master`.
 - Preflight must force the release clone onto isolated `*.rls.semitexa.test` local domains before `bin/semitexa server:start` so shared `semitexa.dev` domains cannot be overwritten.

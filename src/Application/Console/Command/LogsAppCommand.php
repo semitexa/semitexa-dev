@@ -23,6 +23,7 @@ final class LogsAppCommand extends BaseCommand
         'debug' => 'debug.log',
         'session-debug' => 'session-debug.log',
         'swoole' => 'swoole.log',
+        'test' => 'test.log',
     ];
 
     /** Monolog: [2026-03-29 08:25:00] channel.LEVEL: message {context} */
@@ -34,7 +35,7 @@ final class LogsAppCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole', 'app')
+            ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file: app, debug, session-debug, swoole, test', 'app')
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'Number of lines from end', '100')
             ->addOption('grep', null, InputOption::VALUE_REQUIRED, 'Case-insensitive plain-text filter')
             ->addOption('level', null, InputOption::VALUE_REQUIRED, 'Filter by log level (ERROR, WARNING, INFO, DEBUG)')

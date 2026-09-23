@@ -59,7 +59,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // also removed a fatal: casting an ARRAY value that way raises "Array
         // to string conversion" rather than yielding the default, so a
         // malformed row took the worker down. NO NEW METHODS in any of the three.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2088],
+        // 2088 -> 2093 on 2026-09-22, recorded rather than trimmed. NO new
+        // method: one injected SemitexaContainer (two imports, the attribute,
+        // the property, one comment line) handed to SseSessionCoroutines, so a
+        // spawned SSE coroutine replays the request's execution context. Without
+        // it a deferred slot handler injecting AuthContextInterface was refused
+        // and its region rendered empty on every page. The spawn point lives in
+        // SseSessionCoroutines; this class only owns the container.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2093],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
