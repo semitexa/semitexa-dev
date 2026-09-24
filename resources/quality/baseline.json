@@ -23,34 +23,155 @@
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
         "requests.query-shapes": {
-            "total": 44,
+            "total": 183,
             "breakdown": {
-                "GET /demo/api/active-version": 1,
-                "GET /demo/api/schema-discovery": 1,
-                "GET /demo/api/sunset-version": 1,
+                "GET /": 1,
+                "GET /blog": 1,
+                "GET /blog/ai-native-php-development-semitexa": 1,
+                "GET /blog/project-graph-semitexa": 1,
+                "GET /blog/server-sent-events-explained": 1,
+                "GET /blog/server-side-rendering-2-0": 1,
+                "GET /blog/streaming-sse-semitexa": 1,
+                "GET /demo/api/active-version": 2,
+                "GET /demo/api/graphql": 1,
+                "GET /demo/api/rest-api": 1,
+                "GET /demo/api/rest-graphql": 1,
+                "GET /demo/api/schema-discovery": 2,
+                "GET /demo/api/structured-errors": 1,
+                "GET /demo/api/sunset-version": 2,
                 "GET /demo/api/v1/products": 1,
-                "GET /demo/data/filtering": 1,
-                "GET /demo/data/pagination": 2,
-                "GET /demo/data/products": 1,
-                "GET /demo/data/query": 1,
-                "GET /demo/data/relations": 2,
-                "GET /demo/events/arena": 1,
-                "GET /demo/platform/tenancy-isolation": 2,
-                "GET /demo/rendering/reactive-ai": 1,
-                "GET /demo/rendering/reactive-analytics": 1,
-                "GET /demo/rendering/reactive-import": 1,
-                "GET /demo/rendering/reactive-report": 1,
+                "GET /demo/auth/google": 1,
+                "GET /demo/auth/machine": 1,
+                "GET /demo/auth/protected": 1,
+                "GET /demo/auth/rbac": 1,
+                "GET /demo/auth/requires-permission": 1,
+                "GET /demo/auth/session": 1,
+                "GET /demo/auth/session-payloads": 1,
+                "GET /demo/cli/ai-tooling": 1,
+                "GET /demo/cli/describe-commands": 1,
+                "GET /demo/cli/orm-console": 1,
+                "GET /demo/cli/runtime-maintenance": 1,
+                "GET /demo/cli/scaffolding-generators": 1,
+                "GET /demo/cli/workers-scheduling": 1,
+                "GET /demo/data/domain-models": 1,
+                "GET /demo/data/filtering": 2,
+                "GET /demo/data/n-plus-one": 1,
+                "GET /demo/data/pagination": 3,
+                "GET /demo/data/products": 2,
+                "GET /demo/data/query": 2,
+                "GET /demo/data/relations": 3,
+                "GET /demo/data/repository-workflow": 1,
+                "GET /demo/data/schema-sync": 1,
+                "GET /demo/data/table-extension": 1,
+                "GET /demo/di/contracts": 1,
+                "GET /demo/di/factory": 1,
+                "GET /demo/di/mutable": 1,
+                "GET /demo/di/overview": 1,
+                "GET /demo/di/readonly": 1,
+                "GET /demo/events/arena": 2,
+                "GET /demo/events/deferred": 1,
+                "GET /demo/events/queued": 1,
+                "GET /demo/events/sse": 1,
+                "GET /demo/events/sync": 1,
+                "GET /demo/get-started/ai-console": 1,
+                "GET /demo/get-started/base-tenant": 1,
+                "GET /demo/get-started/beyond-controllers": 1,
+                "GET /demo/get-started/installation": 1,
+                "GET /demo/get-started/local-domain": 1,
+                "GET /demo/get-started/locale-setup": 1,
+                "GET /demo/get-started/module-structure": 1,
+                "GET /demo/llm/execution-flow": 1,
+                "GET /demo/llm/overview": 1,
+                "GET /demo/llm/providers": 1,
+                "GET /demo/llm/skills": 1,
+                "GET /demo/platform/tenancy-config": 1,
+                "GET /demo/platform/tenancy-isolation": 3,
+                "GET /demo/platform/tenancy-layers": 1,
+                "GET /demo/platform/tenancy-queue": 1,
+                "GET /demo/platform/tenancy-resolution": 1,
+                "GET /demo/project-graph/impact": 1,
+                "GET /demo/project-graph/inspection": 1,
+                "GET /demo/project-graph/overview": 1,
+                "GET /demo/rendering/assets": 1,
+                "GET /demo/rendering/component-scripts": 1,
+                "GET /demo/rendering/components": 1,
+                "GET /demo/rendering/deferred": 1,
+                "GET /demo/rendering/deferred-encapsulation": 1,
+                "GET /demo/rendering/deferred-live": 1,
+                "GET /demo/rendering/deferred-scripts": 1,
+                "GET /demo/rendering/philosophy": 1,
+                "GET /demo/rendering/reactive-ai": 2,
+                "GET /demo/rendering/reactive-ai/submit": 1,
+                "GET /demo/rendering/reactive-analytics": 2,
+                "GET /demo/rendering/reactive-import": 2,
+                "GET /demo/rendering/reactive-report": 2,
+                "GET /demo/rendering/resource-dtos": 1,
+                "GET /demo/rendering/seo": 1,
+                "GET /demo/rendering/slots": 1,
+                "GET /demo/routing/basic": 1,
+                "GET /demo/routing/content-negotiation": 1,
+                "GET /demo/routing/env-route-override": 1,
+                "GET /demo/routing/payload-parts": 1,
+                "GET /demo/routing/payload-shield": 1,
+                "GET /demo/routing/public-endpoint": 1,
+                "GET /demo/testing/payload-contracts": 1,
                 "GET /graphql-demo/articles": 1,
-                "GET /install-demo": 1,
+                "GET /install-demo": 2,
+                "GET /os/login": 1,
                 "GET /os/webapps": 1,
+                "GET /pipeline-test": 1,
                 "GET /platform/calendar/events": 1,
-                "GET /playground/orm": 7,
+                "GET /playground": 1,
+                "GET /playground/auth": 1,
+                "GET /playground/auth/login": 1,
+                "GET /playground/orm": 8,
                 "GET /playground/orm/articles/feed": 8,
-                "GET /ui-playground/admin/demo-submissions": 1,
+                "GET /playground/rbac": 1,
+                "GET /playground/rbac/action/public": 1,
+                "GET /playground/tenancy": 1,
+                "GET /ssr-polygon": 1,
+                "GET /ssr-polygon/basic": 1,
+                "GET /ssr-polygon/coverage": 1,
+                "GET /ssr-polygon/deferred": 1,
+                "GET /ssr-polygon/deferred/auth-aware": 1,
+                "GET /ssr-polygon/deferred/default-skeleton": 1,
+                "GET /ssr-polygon/deferred/failure": 1,
+                "GET /ssr-polygon/deferred/inline": 1,
+                "GET /ssr-polygon/deferred/multiple": 1,
+                "GET /ssr-polygon/deferred/nested": 1,
+                "GET /ssr-polygon/deferred/public": 1,
+                "GET /ssr-polygon/deferred/slow": 1,
+                "GET /ssr-polygon/deferred/template-mode": 1,
+                "GET /ssr-polygon/dynamic": 1,
+                "GET /ssr-polygon/error-boundary": 1,
+                "GET /ssr-polygon/shell/a": 1,
+                "GET /ssr-polygon/shell/b": 1,
+                "GET /theme-demo": 1,
+                "GET /theme-demo/coverage": 1,
+                "GET /theme-demo/inventory": 1,
+                "GET /theme-demo/scenarios": 1,
+                "GET /ui-playground": 1,
+                "GET /ui-playground/admin/demo-submissions": 2,
                 "GET /ui-playground/admin/demo-submissions/feed": 1,
-                "GET /ui-playground/admin/leads": 1,
+                "GET /ui-playground/admin/leads": 2,
+                "GET /ui-playground/admin/leads-two-up": 1,
                 "GET /ui-playground/admin/leads/feed": 2,
-                "GET /ui-playground/admin/pings/feed": 2
+                "GET /ui-playground/admin/pings": 1,
+                "GET /ui-playground/admin/pings/feed": 2,
+                "GET /ui-playground/business/lead-form": 1,
+                "GET /ui-playground/components/calendar": 1,
+                "GET /ui-playground/components/collaborative-form": 1,
+                "GET /ui-playground/components/date-field": 1,
+                "GET /ui-playground/components/field": 1,
+                "GET /ui-playground/components/form": 1,
+                "GET /ui-playground/components/grid": 1,
+                "GET /ui-playground/diagnostics/transport-policy": 1,
+                "GET /ui-playground/foundation/colors": 1,
+                "GET /ui-playground/primitives/badges": 1,
+                "GET /ui-playground/primitives/buttons": 1,
+                "GET /ui-playground/primitives/inputs": 1,
+                "GET /ui-playground/transport/drain-vs-live": 1,
+                "GET /ui-playground/transport/kiss-debug": 1
             },
             "sees": "per GET route without path parameters: distinct SQL shapes (whitespace collapsed, IN lists folded) in one traced request",
             "blind": "how expensive each shape is, and how often it runs — a slow shape counts as one, and so does a shape run a hundred times"
@@ -106,6 +227,571 @@
                 }
             },
             "reason": "QualityLedgerGateTest skips in a consumer project, where no ledger exists to check; a pass there would claim a gate that never ran"
+        },
+        {
+            "at": "2026-09-24",
+            "metric": "requests.query-shapes",
+            "from": 44,
+            "to": 183,
+            "keys": {
+                "GET /": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog/ai-native-php-development-semitexa": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog/project-graph-semitexa": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog/server-sent-events-explained": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog/server-side-rendering-2-0": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /blog/streaming-sse-semitexa": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/active-version": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/api/graphql": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/rest-api": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/rest-graphql": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/schema-discovery": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/api/structured-errors": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/sunset-version": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/auth/google": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/machine": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/protected": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/rbac": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/requires-permission": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/session": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/auth/session-payloads": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/ai-tooling": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/describe-commands": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/orm-console": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/runtime-maintenance": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/scaffolding-generators": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/cli/workers-scheduling": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/data/domain-models": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/data/filtering": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/data/n-plus-one": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/data/pagination": {
+                    "from": 2,
+                    "to": 3
+                },
+                "GET /demo/data/products": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/data/query": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/data/relations": {
+                    "from": 2,
+                    "to": 3
+                },
+                "GET /demo/data/repository-workflow": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/data/schema-sync": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/data/table-extension": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/di/contracts": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/di/factory": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/di/mutable": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/di/overview": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/di/readonly": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/events/arena": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/events/deferred": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/events/queued": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/events/sse": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/events/sync": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/ai-console": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/base-tenant": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/beyond-controllers": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/installation": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/local-domain": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/locale-setup": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/get-started/module-structure": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/llm/execution-flow": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/llm/overview": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/llm/providers": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/llm/skills": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/platform/tenancy-config": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/platform/tenancy-isolation": {
+                    "from": 2,
+                    "to": 3
+                },
+                "GET /demo/platform/tenancy-layers": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/platform/tenancy-queue": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/platform/tenancy-resolution": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/project-graph/impact": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/project-graph/inspection": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/project-graph/overview": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/assets": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/component-scripts": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/components": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/deferred": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/deferred-encapsulation": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/deferred-live": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/deferred-scripts": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/philosophy": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/reactive-ai": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/rendering/reactive-ai/submit": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/reactive-analytics": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/rendering/reactive-import": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/rendering/reactive-report": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /demo/rendering/resource-dtos": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/seo": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/rendering/slots": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/basic": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/content-negotiation": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/env-route-override": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/payload-parts": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/payload-shield": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/routing/public-endpoint": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/testing/payload-contracts": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /install-demo": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /os/login": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /pipeline-test": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground/auth": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground/auth/login": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground/orm": {
+                    "from": 7,
+                    "to": 8
+                },
+                "GET /playground/rbac": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground/rbac/action/public": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /playground/tenancy": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/basic": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/coverage": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/auth-aware": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/default-skeleton": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/failure": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/inline": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/multiple": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/nested": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/public": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/slow": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/deferred/template-mode": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/dynamic": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/error-boundary": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/shell/a": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ssr-polygon/shell/b": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /theme-demo": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /theme-demo/coverage": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /theme-demo/inventory": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /theme-demo/scenarios": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/admin/demo-submissions": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /ui-playground/admin/leads": {
+                    "from": 1,
+                    "to": 2
+                },
+                "GET /ui-playground/admin/leads-two-up": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/admin/pings": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/business/lead-form": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/calendar": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/collaborative-form": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/date-field": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/field": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/form": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/components/grid": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/diagnostics/transport-policy": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/foundation/colors": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/primitives/badges": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/primitives/buttons": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/primitives/inputs": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/transport/drain-vs-live": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /ui-playground/transport/kiss-debug": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "ssr 8685814 site head: every rendered HTML page now reads the site's typed head values (platform_settings, module site_head, tenant-scoped) - one indexed SELECT, ~0.6ms, +1 shape on each of 139 HTML routes (44->183). Lazy: JSON/feed requests read nothing (verified on /demo/api/active-version with Accept: application/json). Removing it needs a per-tenant worker cache with cross-worker invalidation on site:head writes - not built; revisit if page query budgets tighten."
         }
     ]
 }
