@@ -346,6 +346,11 @@ if ($changelogsToStamp !== []) {
 
 printDevelopAheadWarning($skippedAheadOfMaster);
 
+$ultimateNotice = ultimateLeftBehindNotice($filterByName);
+if ($ultimateNotice !== null) {
+    fwrite(STDERR, $ultimateNotice);
+}
+
 if ($dryRun) {
     echo "Dry run only. No changes were made.\n";
     exit(0);
@@ -403,10 +408,40 @@ if ($updatedPackages !== [] && !$noPush) {
 
 echo "\n\033[1;32mDone.\033[0m Released " . count($updatedPackages) . " package(s).\n";
 
+// Said again after the tags, where it is read: the preview scrolled away.
+if ($ultimateNotice !== null) {
+    fwrite(STDERR, "\n" . $ultimateNotice);
+}
+
 if ($notPackages !== []) {
     echo 'Not released, and not a mistake: ' . implode(', ', $notPackages)
         . ' — directories under packages/ with no composer.json, so not Composer packages. '
         . "They ship by their own routes; see docs/workspace/ARCHITECTURE.md.\n";
+}
+
+/**
+ * What a run filtered to one package leaves undone, or null when nothing.
+ *
+ * The filter skips every other package in the scan, semitexa/ultimate
+ * included, so ultimate is neither re-pinned nor even mentioned — and a
+ * consumer installs ultimate, so a tag it does not pin reaches nobody.
+ * Measured 2026-09-22: six filtered cuts (core, ssr, showcase-kit, update,
+ * theme, dev) left ultimate pinning the 0645 set, and nothing said so.
+ * A warning rather than a refusal, naming the one recovery that works: an
+ * unfiltered cut. A run filtered to semitexa/ultimate does NOT work — the same
+ * filter skips every package ultimate pins, so assertUltimateDependenciesArePresent()
+ * throws "Release set is missing internal packages".
+ */
+function ultimateLeftBehindNotice(?string $filterByName): ?string
+{
+    if ($filterByName === null || $filterByName === 'semitexa/ultimate') {
+        return null;
+    }
+
+    return "\033[1;33msemitexa/ultimate was NOT re-pinned\033[0m — this run was filtered to {$filterByName}, "
+        . "so no consumer receives its tag until ultimate pins it. Next: an unfiltered cut\n"
+        . "  php scripts/bump-packages.php --release-version <next version>\n"
+        . "(a run filtered to semitexa/ultimate cannot do it: the filter hides the packages it pins).\n";
 }
 
 function printUsage(): void

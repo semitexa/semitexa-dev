@@ -494,4 +494,37 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
             'nothing reaches origin in a rehearsal',
         );
     }
+
+    /**
+     * A run filtered to one package leaves ultimate pinning the old set, so its
+     * tag reaches no consumer: six such cuts on 2026-09-22 said nothing. The
+     * notice names the recovery that works.
+     */
+    #[Test]
+    public function a_filtered_run_says_ultimate_was_left_behind(): void
+    {
+        $driver = $this->root . '/notice.php';
+        file_put_contents($driver, <<<'PHP'
+            <?php
+            define('BUMP_PACKAGES_LIBRARY_MODE', true);
+            require $argv[1];
+            echo json_encode([
+                'filtered' => ultimateLeftBehindNotice('semitexa/ssr'),
+                'unfiltered' => ultimateLeftBehindNotice(null),
+                'ultimate' => ultimateLeftBehindNotice('semitexa/ultimate'),
+            ]);
+            PHP);
+        $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/bump-packages.php';
+        exec(sprintf('php %s %s 2>&1', escapeshellarg($driver), escapeshellarg($script)), $output, $exit);
+
+        self::assertSame(0, $exit, implode("\n", $output));
+        $notice = json_decode(implode("\n", $output), true);
+        self::assertIsArray($notice);
+        self::assertIsString($notice['filtered']);
+        self::assertStringContainsString('semitexa/ultimate was NOT re-pinned', $notice['filtered']);
+        self::assertStringContainsString('filtered to semitexa/ssr', $notice['filtered']);
+        self::assertStringContainsString('an unfiltered cut', $notice['filtered']);
+        self::assertNull($notice['unfiltered']);
+        self::assertNull($notice['ultimate']);
+    }
 }
