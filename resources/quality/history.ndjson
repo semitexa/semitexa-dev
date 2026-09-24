@@ -10,3 +10,4 @@
 {"at":"2026-09-24T15:49:46+00:00","metric":"packages.without-tests","total":4,"event":"record"}
 {"at":"2026-09-24T15:49:46+00:00","metric":"requests.duplicate-queries","total":0,"event":"record"}
 {"at":"2026-09-24T15:49:46+00:00","metric":"requests.repeated-statements","total":2,"event":"record"}
+{"at":"2026-09-24T16:52:57+00:00","metric":"requests.query-shapes","total":184,"event":"accept"}

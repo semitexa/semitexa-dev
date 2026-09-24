@@ -19,7 +19,7 @@
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
         "requests.query-shapes": {
-            "total": 183,
+            "total": 184,
             "breakdown": {
                 "GET /": 1,
                 "GET /blog": 1,
@@ -96,7 +96,7 @@
                 "GET /demo/rendering/deferred-live": 1,
                 "GET /demo/rendering/deferred-scripts": 1,
                 "GET /demo/rendering/philosophy": 1,
-                "GET /demo/rendering/reactive-ai": 2,
+                "GET /demo/rendering/reactive-ai": 3,
                 "GET /demo/rendering/reactive-ai/submit": 1,
                 "GET /demo/rendering/reactive-analytics": 2,
                 "GET /demo/rendering/reactive-import": 2,
@@ -785,6 +785,19 @@
                 }
             },
             "reason": "ssr 8685814 site head: every rendered HTML page now reads the site's typed head values (platform_settings, module site_head, tenant-scoped) - one indexed SELECT, ~0.6ms, +1 shape on each of 139 HTML routes (44->183). Lazy: JSON/feed requests read nothing (verified on /demo/api/active-version with Accept: application/json). Removing it needs a per-tenant worker cache with cross-worker invalidation on site:head writes - not built; revisit if page query budgets tighten."
+        },
+        {
+            "at": "2026-09-24",
+            "metric": "requests.query-shapes",
+            "from": 183,
+            "to": 184,
+            "keys": {
+                "GET /demo/rendering/reactive-ai": {
+                    "from": 2,
+                    "to": 3
+                }
+            },
+            "reason": "GET /demo/rendering/reactive-ai 2 -> 3 shapes, on review of demo 1e6a81b: one whereIn over all four statuses loaded and hydrated every completed task (history only grows) on each render. Now live statuses (running/pending/failed, few by nature) in one query, and completed only as a LIMIT 1 fallback - a bounded read for one extra shape."
         }
     ]
 }
