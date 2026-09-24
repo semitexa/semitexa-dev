@@ -801,7 +801,7 @@ function unstampedChangelogsOf(array $candidates): array
     $unstamped = [];
     foreach ($candidates as $index => $candidate) {
         $changelog = changelogAt($candidate['package_dir'], 'origin/master');
-        if ($changelog !== null && changelogHasUnreleasedEntry($changelog)) {
+        if ($changelog !== null && changelogNeedsAttention($changelog)) {
             $unstamped[$index] = true;
         }
     }
@@ -868,6 +868,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
             $why = whyFloorCannotBeDated($candidates[$index]['name'], $dependency, $releaseSet);
             if ($why !== null) {
                 $refusals[] = $why;
+            }
+        }
+
+        if (isset($unstamped[$index])) {
+            $why = whyChangelogCannotBeStamped((string) changelogAt($candidates[$index]['package_dir'], 'origin/master'));
+            if ($why !== null) {
+                $refusals[] = "{$candidates[$index]['name']}: CHANGELOG.md has {$why}";
             }
         }
 

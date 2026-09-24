@@ -26,9 +26,11 @@ const CHANGELOG_FILE = 'CHANGELOG.md';
 
 /**
  * The `## Unreleased` heading line, matched the way PackageChangelogReader
- * reads headings (level two exactly, case-insensitive label).
+ * reads headings (level two exactly, case-insensitive label). `\r?` because
+ * the reader splits on \R: a CRLF file it reads as Unreleased must not be one
+ * this skips.
  */
-const CHANGELOG_UNRELEASED_HEADING = '/^##[ \t]+Unreleased[ \t]*$/mi';
+const CHANGELOG_UNRELEASED_HEADING = '/^##[ \t]+Unreleased[ \t]*(\r?)$/mi';
 
 /**
  * Whether the changelog has an Unreleased section with something in it.
@@ -36,6 +38,36 @@ const CHANGELOG_UNRELEASED_HEADING = '/^##[ \t]+Unreleased[ \t]*$/mi';
 function changelogHasUnreleasedEntry(string $markdown): bool
 {
     return unreleasedSectionBody($markdown) !== null;
+}
+
+/**
+ * Whether the release has to look at this changelog at all: an entry to stamp,
+ * or more than one Unreleased heading, which {@see whyChangelogCannotBeStamped()}
+ * refuses. The second case matters when the FIRST section is empty: only the
+ * first is read for content, so the entry under the second would ship unstamped.
+ */
+function changelogNeedsAttention(string $markdown): bool
+{
+    return changelogHasUnreleasedEntry($markdown) || unreleasedHeadingCount($markdown) > 1;
+}
+
+/**
+ * Why this changelog cannot be stamped as it stands, or null when it can.
+ * Asked before the first release commit, so a refusal leaves nothing pushed.
+ */
+function whyChangelogCannotBeStamped(string $markdown): ?string
+{
+    $headings = unreleasedHeadingCount($markdown);
+    if ($headings > 1) {
+        return sprintf('%d "## Unreleased" sections - merge them into one', $headings);
+    }
+
+    return null;
+}
+
+function unreleasedHeadingCount(string $markdown): int
+{
+    return (int) preg_match_all(CHANGELOG_UNRELEASED_HEADING, $markdown);
 }
 
 /**
@@ -53,12 +85,14 @@ function stampUnreleasedChangelog(string $markdown, string $releaseVersion): ?st
 
     $heading = '## ' . $releaseVersion . ' — ' . changelogDateOf($releaseVersion);
 
-    return (string) preg_replace(CHANGELOG_UNRELEASED_HEADING, $heading, $markdown, 1);
+    // $1 keeps the line ending the heading had.
+    return (string) preg_replace(CHANGELOG_UNRELEASED_HEADING, $heading . '$1', $markdown, 1);
 }
 
 function changelogDateOf(string $releaseVersion): string
 {
-    if (preg_match('/^(\d{4})\.(\d{2})\.(\d{2})\.\d{4}$/', $releaseVersion, $m) !== 1) {
+    // The channel suffix (`-beta`) is part of a valid release version too.
+    if (preg_match('/^v?(\d{4})\.(\d{2})\.(\d{2})\.\d{4}(?:-[A-Za-z0-9.]+)?$/', $releaseVersion, $m) !== 1) {
         throw new InvalidArgumentException("Not a release version: {$releaseVersion}");
     }
 
