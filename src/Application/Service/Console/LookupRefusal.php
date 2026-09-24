@@ -39,7 +39,7 @@ final class LookupRefusal
                 'error' => $error,
                 'candidates' => $candidates,
                 'next_command' => $nextCommand,
-            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
 
             return Command::FAILURE;
         }

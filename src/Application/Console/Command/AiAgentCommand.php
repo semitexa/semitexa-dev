@@ -32,6 +32,11 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'ai:agent', description: 'Agent presence: join with a name and intent, see who else is working and what is being edited, leave when done')]
 final class AiAgentCommand extends BaseCommand
 {
+    public function __construct()
+    {
+        parent::__construct('ai:agent');
+    }
+
     protected function configure(): void
     {
         $this
@@ -181,6 +186,10 @@ final class AiAgentCommand extends BaseCommand
             $output->writeln('  none');
         }
         foreach ($activity as $r) {
+            if (!$r['readable']) {
+                $output->writeln("  ✖ {$r['repo']}: git status failed — edits unknown, not clean");
+                continue;
+            }
             $output->writeln(sprintf(
                 '  %s %-34s %3d file(s), last edit %s — %s',
                 $r['fresh'] ? '●' : '○',

@@ -78,6 +78,13 @@ final class AiOrientCommand extends BaseCommand
         $activeEpicId  = $this->deriveActiveEpicId($inProgress, $blocked, $epics);
         $recentTraces  = $this->collectRecentTraces($traceLimit);
         $lastVerify    = $this->findLastVerify($recentTraces);
+        try {
+            $qualityNext = (new QualityAdvisor(ProjectRoot::get()))->targets(3);
+            $qualityError = null;
+        } catch (\RuntimeException $e) {
+            // A broken ledger is said, not shown as "nothing to improve".
+            [$qualityNext, $qualityError] = [[], $e->getMessage()];
+        }
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
 
         $workingNow = $this->workingNow();
@@ -112,7 +119,8 @@ final class AiOrientCommand extends BaseCommand
             'last_verify'    => $lastVerify,
             // The improvement loop's entry point: what the quality ledger says to
             // make better next. Read from the recorded baseline, measured nothing.
-            'quality_next'   => (new QualityAdvisor(ProjectRoot::get()))->targets(3),
+            'quality_next'   => $qualityNext,
+            'quality_error'  => $qualityError,
             'suggest_next'   => $hints['summary'],
             'next_command'   => $hints['commands'],
         ];
@@ -351,7 +359,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>, unreadable: list<string>}
      */
     private function workingNow(): array
     {
@@ -378,6 +386,10 @@ final class AiOrientCommand extends BaseCommand
             'unclaimed_fresh' => array_values(array_map(
                 static fn (array $r): string => $r['repo'],
                 array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
+            )),
+            'unreadable' => array_values(array_map(
+                static fn (array $r): string => $r['repo'],
+                array_filter($activity, static fn (array $r): bool => !$r['readable']),
             )),
         ];
     }
@@ -593,10 +605,16 @@ final class AiOrientCommand extends BaseCommand
         if (!$wn['activity_known']) {
             $io->writeln('  ⚠ uncommitted edits unknown: git is not available here');
         }
+        foreach ($wn['unreadable'] as $repo) {
+            $io->writeln("  ⚠ {$repo}: git status failed — its uncommitted edits are unknown, not clean");
+        }
         foreach ($wn['unclaimed_fresh'] as $repo) {
             $io->writeln("  ⚠ {$repo}: edited in the last 30 min, claimed by no agent — someone may be working there");
         }
 
+        if ($envelope['quality_error'] !== null) {
+            $io->writeln('  ⚠ ' . $envelope['quality_error']);
+        }
         if ($envelope['quality_next'] !== []) {
             $io->section('Improve next (ai:quality next)');
             foreach ($envelope['quality_next'] as $t) {

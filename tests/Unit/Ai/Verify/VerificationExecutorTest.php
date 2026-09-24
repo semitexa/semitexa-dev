@@ -351,6 +351,23 @@ class VerificationExecutorTest extends TestCase
         self::assertStringContainsString('phpstan-baseline.neon', $results[0]->signal);
     }
 
+    /**
+     * The canonical shelf exists but the script is gone: a broken workspace,
+     * not a consumer project — the copy gate must not read that as green.
+     */
+    public function test_a_copy_guard_fails_when_the_workspace_lost_its_script(): void
+    {
+        mkdir($this->root . '/packages/semitexa-dev/resources', 0755, true);
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_SKILL_COPIES, 'phpstan_copies:project', 'r', [], filePath: 'packages/semitexa-dev/resources/phpstan-sync.sh'),
+        ]));
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringContainsString('missing from the authoring workspace', $results[0]->signal);
+    }
+
     public function test_skill_copies_skips_when_the_project_has_no_sync_script(): void
     {
         // A consumer install: semitexa/dev sits in vendor/, so walking up from

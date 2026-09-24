@@ -48,6 +48,11 @@ enum TaskStatus: string
                 $statuses[] = self::parse(trim($part));
             }
         }
+        // `--status=,` is a filter that names nothing — not the same as no
+        // filter, which would silently list every status.
+        if ($statuses === [] && trim($value) !== '') {
+            throw new \InvalidArgumentException("invalid task status list '{$value}': name at least one of " . implode(', ', self::all()));
+        }
         return $statuses;
     }
 

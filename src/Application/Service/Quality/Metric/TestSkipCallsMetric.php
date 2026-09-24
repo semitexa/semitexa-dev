@@ -37,8 +37,14 @@ final class TestSkipCallsMetric implements QualityMetricInterface
         $counts = [];
         foreach ($dirs as $key => $dir) {
             foreach (PhpFiles::under($dir) as $file) {
+                // A test file it cannot read is not a file it can clear: a new
+                // skip in it would otherwise count as zero and pass the gate.
+                $source = @file_get_contents($file);
+                if ($source === false) {
+                    throw new \RuntimeException("tests.skip-calls cannot read {$file}");
+                }
                 $counts[$key] = ($counts[$key] ?? 0)
-                    + (int) preg_match_all('/(?:->|::)mark(?:TestSkipped|TestIncomplete)\s*\(/', (string) file_get_contents($file));
+                    + (int) preg_match_all('/(?:->|::)mark(?:TestSkipped|TestIncomplete)\s*\(/', $source);
             }
         }
 

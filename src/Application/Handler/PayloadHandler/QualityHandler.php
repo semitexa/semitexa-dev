@@ -27,6 +27,10 @@ final class QualityHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected QualityHtmlRenderer $renderer;
 
+    public function __construct()
+    {
+    }
+
     public function handle(QualityPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         if (!ObservatoryMode::full()) {

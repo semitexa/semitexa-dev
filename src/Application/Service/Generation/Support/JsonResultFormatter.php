@@ -15,7 +15,7 @@ final class JsonResultFormatter
             'generated_at' => date('c'),
             'result' => $result->toArray(),
             'next_command' => $this->buildNextCommands($result),
-        ], JSON_UNESCAPED_SLASHES);
+        ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -40,7 +40,7 @@ final class JsonResultFormatter
             'generated_at' => date('c'),
             'result' => $result->toArray(),
             'next_command' => $next,
-        ], JSON_UNESCAPED_SLASHES);
+        ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
     }
 
     /**

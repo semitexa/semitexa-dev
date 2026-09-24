@@ -37,6 +37,14 @@ final class PhpunitFailureHeadlineTest extends TestCase
     }
 
     #[Test]
+    public function a_data_provider_failure_keeps_its_data_set(): void
+    {
+        $output = "1) Tests\\Unit\\SumTest::testAdd with data set #3 (1, 1, 3)\nFailed for the third set\nFailed asserting that 2 is identical to 3.\n";
+
+        self::assertSame('SumTest::testAdd with data set #3 (1, 1, 3) — Failed for the third set · ', PhpunitFailureHeadline::of($output));
+    }
+
+    #[Test]
     public function a_passing_run_adds_nothing(): void
     {
         self::assertSame('', PhpunitFailureHeadline::of("OK (20 tests, 67 assertions)\n"));

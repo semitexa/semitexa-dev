@@ -26,7 +26,10 @@ final class WorkspaceActivity
     /**
      * @param list<AgentSession> $live
      *
-     * @return list<array{repo: string, dirty: int, last_edit: string, fresh: bool, sample: list<string>, claimed_by: list<string>}>
+     * A repo git could not read is listed with readable=false rather than
+     * dropped: dropping it is exactly the "clean" it cannot vouch for.
+     *
+     * @return list<array{repo: string, readable: bool, dirty: int, last_edit: string, fresh: bool, sample: list<string>, claimed_by: list<string>}>
      */
     public function dirtyRepos(array $live = [], ?int $now = null): array
     {
@@ -35,6 +38,10 @@ final class WorkspaceActivity
         foreach ($this->repos() as $repo) {
             $lines = $this->porcelain($repo);
             if ($lines === []) {
+                continue;
+            }
+            if ($lines === null) {
+                $out[] = ['repo' => $repo, 'readable' => false, 'dirty' => 0, 'last_edit' => '', 'fresh' => false, 'sample' => [], 'claimed_by' => []];
                 continue;
             }
             $newest = 0;
@@ -59,6 +66,7 @@ final class WorkspaceActivity
             }
             $out[] = [
                 'repo' => $repo,
+                'readable' => true,
                 'dirty' => count($lines),
                 'last_edit' => $newest > 0 ? gmdate('c', $newest) : '',
                 'fresh' => $newest > 0 && $now - $newest <= self::FRESH_SECONDS,
@@ -101,9 +109,9 @@ final class WorkspaceActivity
     }
 
     /**
-     * @return list<string>
+     * @return list<string>|null null when git failed for this repo
      */
-    private function porcelain(string $repo): array
+    private function porcelain(string $repo): ?array
     {
         // safe.directory: the workspace is bind-mounted and owned by the host
         // user, so git inside the container refuses it as "dubious ownership"
@@ -115,8 +123,15 @@ final class WorkspaceActivity
             escapeshellarg('*'),
             escapeshellarg($this->projectRoot . '/' . $repo),
         );
-        $output = shell_exec($command);
+        // The exit code, not the output: a failed git prints nothing, which
+        // is also what a clean repo prints.
+        $output = [];
+        $code = 1;
+        @exec($command, $output, $code);
+        if ($code !== 0) {
+            return null;
+        }
 
-        return is_string($output) ? array_values(array_filter(explode("\n", $output), static fn (string $l): bool => trim($l) !== '')) : [];
+        return array_values(array_filter($output, static fn (string $l): bool => trim($l) !== ''));
     }
 }

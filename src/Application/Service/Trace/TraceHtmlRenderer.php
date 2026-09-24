@@ -634,9 +634,11 @@ code{font-family:var(--mono);font-size:12.5px}
   border:1px solid var(--line);border-radius:4px;padding:2px 6px}
 .method.big{font-size:13px}
 .status{font-family:var(--mono);font-size:13px;font-weight:700;border-radius:4px;padding:2px 7px;margin-left:6px;vertical-align:middle}
+/* Badges meet 4.5:1 on each theme: bright hues on dark, deeper on light; 5xx red 5.9:1 under white. */
 .status.s2{color:#3ddc97;border:1px solid color-mix(in srgb,#3ddc97 45%,transparent)}
 .status.s4{color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
-.status.s5{color:#fff;background:var(--danger)}
+.status.s5{color:#fff;background:#c0262d}
+@media (prefers-color-scheme:light){.status.s2{color:#0b6e3f;border-color:#0b6e3f73}.status.s4{color:#8a4b00;border-color:#8a4b0073}}
 
 .list{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
 .row{display:grid;grid-template-columns:64px 1fr auto 92px 76px;gap:14px;align-items:center;

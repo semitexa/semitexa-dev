@@ -100,13 +100,63 @@ final class AgentPresenceTest extends TestCase
         $a = $registry->join('claude', 'holding a task it will not finish');
         $b = $registry->join('codex', 'taking that task over with consent');
         putenv(AgentRegistry::ENV . '=' . $a->id);
-        TaskClaim::claim($this->root, 'tk-x', TaskStatus::IN_PROGRESS, false);
+        self::assertNull(TaskClaim::claim($this->root, 'tk-x', TaskStatus::IN_PROGRESS, false));
+        self::assertSame('tk-x', $this->session($registry, $a->id)->task, 'A must hold the task before B can take it over');
 
         putenv(AgentRegistry::ENV . '=' . $b->id);
         self::assertNull(TaskClaim::claim($this->root, 'tk-x', TaskStatus::IN_PROGRESS, true));
 
-        self::assertNull($registry->get($a->id)?->task);
-        self::assertSame('tk-x', $registry->get($b->id)?->task);
+        self::assertNull($this->session($registry, $a->id)->task);
+        self::assertSame('tk-x', $this->session($registry, $b->id)->task);
+    }
+
+    #[Test]
+    public function any_update_to_a_held_task_is_refused_not_only_taking_it(): void
+    {
+        // A title edit (no status) or a `done` used to skip the holder check.
+        $registry = new AgentRegistry($this->root);
+        $a = $registry->join('claude', 'working tk-y');
+        $b = $registry->join('codex', 'about to touch tk-y');
+        putenv(AgentRegistry::ENV . '=' . $a->id);
+        self::assertNull(TaskClaim::claim($this->root, 'tk-y', TaskStatus::IN_PROGRESS, false));
+
+        putenv(AgentRegistry::ENV . '=' . $b->id);
+        self::assertStringContainsString($a->id, (string) TaskClaim::claim($this->root, 'tk-y', null, false));
+        self::assertStringContainsString($a->id, (string) TaskClaim::claim($this->root, 'tk-y', TaskStatus::DONE, false));
+        self::assertSame('tk-y', $this->session($registry, $a->id)->task);
+    }
+
+    #[Test]
+    public function an_ended_session_cannot_claim_and_is_not_current(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $a = $registry->join('claude', 'left already');
+        putenv(AgentRegistry::ENV . '=' . $a->id);
+        $registry->leave($a->id);
+
+        self::assertNull($registry->current());
+        self::assertStringContainsString('not a live session', (string) TaskClaim::claim($this->root, 'tk-z', TaskStatus::IN_PROGRESS, false));
+    }
+
+    #[Test]
+    public function a_repo_git_cannot_read_is_reported_not_taken_for_clean(): void
+    {
+        $repo = $this->root . '/packages/semitexa-broken';
+        mkdir($repo . '/.git', 0o755, true);  // a .git with nothing in it: git status fails
+
+        $rows = (new WorkspaceActivity($this->root))->dirtyRepos([]);
+
+        self::assertCount(1, $rows);
+        self::assertSame('packages/semitexa-broken', $rows[0]['repo']);
+        self::assertFalse($rows[0]['readable']);
+    }
+
+    private function session(AgentRegistry $registry, string $id): AgentSession
+    {
+        $session = $registry->get($id);
+        self::assertNotNull($session, "session {$id} must be readable");
+
+        return $session;
     }
 
     #[Test]

@@ -34,7 +34,7 @@ final class RequestDuplicateQueriesMetric implements QualityMetricInterface
             $seen = [];
             $duplicates = 0;
             foreach ($queries as $q) {
-                $key = SqlShape::of((string) ($q['sql'] ?? '')) . '|' . json_encode($q['bindings'] ?? $q['params'] ?? null);
+                $key = SqlShape::execution((string) ($q['sql'] ?? ''), is_array($q['bindings'] ?? $q['params'] ?? null) ? ($q['bindings'] ?? $q['params']) : null);
                 $duplicates += isset($seen[$key]) ? 1 : 0;
                 $seen[$key] = true;
             }

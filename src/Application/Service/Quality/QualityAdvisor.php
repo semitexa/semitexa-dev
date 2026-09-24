@@ -105,13 +105,23 @@ final class QualityAdvisor
     }
 
     /**
+     * Missing is "nothing recorded yet"; present but unreadable is a broken
+     * ledger, and answering "nothing to improve" for it would be a false all-clear.
+     *
      * @return array<string, mixed>
      */
     private function json(string $relative): array
     {
         $path = $this->projectRoot . '/' . $relative;
-        $data = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+        if (!is_file($path)) {
+            return [];
+        }
+        $raw = @file_get_contents($path);
+        $data = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($data)) {
+            throw new \RuntimeException("Quality ledger {$relative} exists but is unreadable or not valid JSON.");
+        }
 
-        return is_array($data) ? $data : [];
+        return $data;
     }
 }

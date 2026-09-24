@@ -643,7 +643,7 @@ final class VerificationExecutor
         $label = explode(':', $target->id)[0];
 
         if (!is_file($script)) {
-            return $this->skipped($target, "{$label}: " . basename($rel) . ' not found in this project; nothing to keep in sync', required: false);
+            return is_dir(dirname($script)) ? new VerificationResult(target: $target, status: VerificationResult::STATUS_FAIL, exitCode: 1, signal: "{$label} → " . basename($rel) . ' is missing from the authoring workspace, so the copies cannot be checked') : $this->skipped($target, "{$label}: " . basename($rel) . ' not found in this project; nothing to keep in sync', required: false);
         }
 
         // Present but not executable is a failure, never a skip. Treating it as

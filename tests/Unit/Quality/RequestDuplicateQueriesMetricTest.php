@@ -15,9 +15,18 @@ use Semitexa\Dev\Application\Service\Quality\RequestCostProbe;
  */
 final class RequestDuplicateQueriesMetricTest extends TestCase
 {
+    /** @var array{cache: ?array<string, list<array<string, mixed>>>, unmeasured: list<string>} */
+    private array $probeState;
+
+    protected function setUp(): void
+    {
+        // The probe is process-wide: put back what an earlier test left, not an empty cache.
+        $this->probeState = RequestCostProbe::snapshot();
+    }
+
     protected function tearDown(): void
     {
-        RequestCostProbe::reset();
+        RequestCostProbe::restore($this->probeState);
     }
 
     #[Test]

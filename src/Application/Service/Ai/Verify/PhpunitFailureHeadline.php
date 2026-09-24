@@ -24,10 +24,11 @@ final class PhpunitFailureHeadline
     {
         $lines = preg_split('/\R/', $output) ?: [];
         foreach ($lines as $i => $line) {
-            if (preg_match('/^1\) (\S+)$/', $line, $m) !== 1) {
+            // `1) Class::method` or `1) Class::method with data set #3 (1, 1, 3)`.
+            if (preg_match('/^1\) (\S+)(.*)$/', $line, $m) !== 1) {
                 continue;
             }
-            $test = preg_replace('/^.*\\\\/', '', $m[1]) ?? $m[1];
+            $test = (preg_replace('/^.*\\\\/', '', $m[1]) ?? $m[1]) . rtrim($m[2]);
             // The message runs until PHPUnit's own framing starts: a blank
             // line, the assertion boilerplate, or the diff.
             $parts = [];

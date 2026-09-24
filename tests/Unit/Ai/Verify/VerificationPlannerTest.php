@@ -692,6 +692,18 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(['SEMITEXA_QUALITY_SCOPE' => 'packages/semitexa-ssr'], $suite->commandInput);
     }
 
+    public function test_a_php_file_renamed_to_something_else_still_runs_the_ratchets(): void
+    {
+        mkdir($this->root . '/' . ProjectGuardTargets::RATCHET_SUITE, 0755, true);
+
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-dev/tests/Unit/OldTest.txt', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_RENAMED, 'packages/semitexa-dev/tests/Unit/OldTest.php'),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $ids = array_map(static fn (VerificationTarget $t): string => $t->id, $plan->targets);
+        $this->assertContains('phpunit:' . ProjectGuardTargets::RATCHET_SUITE, $ids);
+    }
+
     public function test_the_ratchets_stay_out_of_minimal_scope_and_out_of_a_consumer_project(): void
     {
         $change = [new ChangedFile('src/modules/Foo/src/Domain/Service/Thing.php', ChangedFile::KIND_SERVICE)];

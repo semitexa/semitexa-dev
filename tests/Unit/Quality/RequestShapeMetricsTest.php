@@ -20,9 +20,18 @@ use Semitexa\Dev\Application\Service\Quality\SqlShape;
  */
 final class RequestShapeMetricsTest extends TestCase
 {
+    /** @var array{cache: ?array<string, list<array<string, mixed>>>, unmeasured: list<string>} */
+    private array $probeState;
+
+    protected function setUp(): void
+    {
+        // The probe is process-wide: put back what an earlier test left, not an empty cache.
+        $this->probeState = RequestCostProbe::snapshot();
+    }
+
     protected function tearDown(): void
     {
-        RequestCostProbe::reset();
+        RequestCostProbe::restore($this->probeState);
     }
 
     #[Test]
@@ -32,6 +41,30 @@ final class RequestShapeMetricsTest extends TestCase
             SqlShape::of('SELECT * FROM t WHERE id IN (:in0, :in1)'),
             SqlShape::of("SELECT *\n FROM t WHERE id IN (:in0,:in1,:in2, :in3)"),
         );
+    }
+
+    #[Test]
+    public function in_without_a_space_folds_too(): void
+    {
+        self::assertSame(
+            SqlShape::of('SELECT * FROM t WHERE id IN (:in0, :in1)'),
+            SqlShape::of('SELECT * FROM t WHERE id IN(:in0,:in1,:in2)'),
+        );
+    }
+
+    #[Test]
+    public function whitespace_inside_a_literal_is_part_of_the_value(): void
+    {
+        // 'a  b' and 'a b' are different strings; formatting outside them is not.
+        self::assertNotSame(SqlShape::of("SELECT 1 WHERE x = 'a  b'"), SqlShape::of("SELECT 1 WHERE x = 'a b'"));
+        self::assertSame(SqlShape::of("SELECT  1\nWHERE x = 'a  b'"), SqlShape::of("SELECT 1 WHERE x = 'a  b'"));
+    }
+
+    #[Test]
+    public function named_bindings_in_another_order_are_the_same_execution(): void
+    {
+        self::assertSame(SqlShape::execution('SELECT 1', ['b' => 1, 'a' => 2]), SqlShape::execution('SELECT 1', ['a' => 2, 'b' => 1]));
+        self::assertNotSame(SqlShape::execution('SELECT 1', [1, 2]), SqlShape::execution('SELECT 1', [2, 1]));
     }
 
     #[Test]

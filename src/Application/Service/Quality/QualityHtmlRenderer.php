@@ -18,9 +18,18 @@ use Semitexa\Core\Attribute\AsService;
 #[AsService]
 final class QualityHtmlRenderer
 {
+    public function __construct()
+    {
+    }
+
     public function render(string $projectRoot): string
     {
-        $baseline = $this->json($projectRoot . '/' . QualityLedger::BASELINE);
+        try {
+            $baseline = $this->json($projectRoot . '/' . QualityLedger::BASELINE);
+            $next = (new QualityAdvisor($projectRoot))->targets(5);
+        } catch (\RuntimeException $e) {
+            return $this->page('<p class="empty">' . $this->e($e->getMessage()) . '</p>');
+        }
         $metrics = is_array($baseline['metrics'] ?? null) ? $baseline['metrics'] : [];
         if ($metrics === []) {
             return $this->page('<p class="empty">No quality ledger in this project yet. Run <code>bin/semitexa ai:quality record</code> to start one.</p>');
@@ -33,7 +42,7 @@ final class QualityHtmlRenderer
             . 'A regression fails <code>ai:verify</code>; an improvement fails too until <code>ai:quality record</code> locks it in; '
             . 'the only way up is <code>ai:quality accept --reason</code>, and the reason is kept below.</p></header>';
 
-        $body .= $this->nextSection((new QualityAdvisor($projectRoot))->targets(5));
+        $body .= $this->nextSection($next);
 
         $body .= '<section class="cards">';
         foreach ($metrics as $id => $m) {
@@ -194,9 +203,17 @@ final class QualityHtmlRenderer
      */
     private function json(string $path): array
     {
-        $data = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+        if (!is_file($path)) {
+            return [];
+        }
+        $raw = @file_get_contents($path);
+        $data = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($data)) {
+            // Not the "no ledger yet" page: a broken ledger must look broken.
+            throw new \RuntimeException('Quality ledger ' . QualityLedger::BASELINE . ' exists but is unreadable or not valid JSON.');
+        }
 
-        return is_array($data) ? $data : [];
+        return $data;
     }
 
     private function e(string $s): string

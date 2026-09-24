@@ -68,7 +68,10 @@ final class TraceReaderTest extends TestCase
         ]);
 
         self::assertSame(422, (new TraceReader())->read('old.json')['meta']['status'] ?? null);
-        self::assertNull((new TraceReader())->read('none.json')['meta']['status']);
+        $none = (new TraceReader())->read('none.json');
+        self::assertIsArray($none);
+        self::assertArrayHasKey('status', $none['meta'], 'no status is reported as null, not left out');
+        self::assertNull($none['meta']['status']);
     }
 
     #[Test]

@@ -262,7 +262,10 @@ final class RecipeRegistry
                 id: 'fix_template_text',
                 label: 'Fix copy in a Twig template',
                 summary: 'Edit Twig markup or copy in a template file. No code changes.',
-                keywords: ['typo', 'copy', 'text', 'twig', 'template', 'spelling', 'wording'],
+                // 'error' too: "fix the error in the template" must not tie with
+                // debug_investigate and lose on registry order. A real bug still
+                // wins there on its own nouns (bug, 500, exception, fail...).
+                keywords: ['typo', 'copy', 'text', 'twig', 'template', 'spelling', 'wording', 'error'],
                 verbs: ['fix', 'change', 'update', 'reword'],
                 generator_chain: [],
                 context_signals: ['View\\templates'],

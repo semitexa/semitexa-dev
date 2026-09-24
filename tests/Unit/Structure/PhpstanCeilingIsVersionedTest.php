@@ -35,6 +35,8 @@ final class PhpstanCeilingIsVersionedTest extends TestCase
     public function the_release_gate_takes_no_override_from_the_environment(): void
     {
         $gate = (string) file_get_contents(self::GATE);
+        // Positive first: the negative assertion below would pass on an empty read.
+        self::assertStringContainsString('phpstan_neutrality_gate()', $gate);
 
         // A DEFAULT is the override: `${VAR:-179}` means "179 unless the shell
         // says otherwise". An empty `${VAR:-}` is only how the gate detects and

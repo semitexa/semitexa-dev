@@ -68,8 +68,20 @@ final class AgentRegistry
     public function current(): ?AgentSession
     {
         $id = getenv(self::ENV);
+        $session = is_string($id) && $id !== '' ? $this->get($id) : null;
 
-        return is_string($id) && $id !== '' ? $this->get($id) : null;
+        // An ended session is not "you" any more: after `ai:agent leave` it
+        // would otherwise still answer beats and claims it can no longer hold.
+        return $session !== null && $session->endedAt === null ? $session : null;
+    }
+
+    /**
+     * Record that $session holds $task. Unlike beat() this throws: a claim
+     * that was not written must not be reported as taken.
+     */
+    public function recordTask(AgentSession $session, string $task): void
+    {
+        $this->save($session->with(task: $task, beatAt: gmdate('c')));
     }
 
     /**
@@ -80,7 +92,7 @@ final class AgentRegistry
     {
         try {
             $session = $this->current();
-            if ($session !== null && $session->endedAt === null) {
+            if ($session !== null) {
                 $this->save($session->with(task: $task, beatAt: gmdate('c')));
             }
         } catch (\Throwable) {

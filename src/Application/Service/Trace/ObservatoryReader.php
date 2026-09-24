@@ -53,7 +53,7 @@ final class ObservatoryReader
      *     generatedAt: string,
      *     live: list<array<string, mixed>>,
      *     recent: list<array<string, mixed>>,
-     *     counts: array{live: int, stale: int, workers: int, byKind: array<string, int>},
+     *     counts: array{live: int, stale: int, workers: int, byKind: array<string, int>, recentFailures: int},
      *     truncated: bool
      * }
      */
@@ -123,7 +123,9 @@ final class ObservatoryReader
             $marked = is_array($row['phases'] ?? null) ? ($row['phases']['outcome'] ?? null) : null;
             $failed = ($status !== null && $status >= 500)
                 || isset($context['exception'])
-                || ($context['status'] ?? null) === 'failed'
+                // A job's own `status` counts only where no HTTP status was
+                // recorded — the same precedence as the panel's outcomeOf().
+                || ($status === null && ($context['status'] ?? null) === 'failed')
                 || ($status === null && $marked === 'exception');
             $failures += $failed ? 1 : 0;
             $recentOut[] = array_filter([

@@ -19,31 +19,36 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 final class TaskClaim
 {
     /**
-     * @return string|null why the move is refused, or null when it may proceed
+     * Any update to a task another live agent holds is refused without
+     * --take-over — a title edit or a `done` included, not only a move to
+     * in_progress.
+     *
+     * @return string|null why the update is refused, or null when it may proceed
      */
     public static function claim(string $projectRoot, string $taskId, ?TaskStatus $to, bool $takeOver): ?string
     {
-        if ($to === null) {
-            return null;
-        }
         $registry = new AgentRegistry($projectRoot);
-        $self = $registry->current();
 
-        if ($to !== TaskStatus::IN_PROGRESS) {
-            if ($self !== null && $self->task === $taskId) {
-                $registry->release($self->id);
-            }
-
-            return null;
-        }
-
-        return $registry->locked(static function () use ($registry, $self, $taskId, $takeOver): ?string {
-            return self::claimLocked($registry, $self, $taskId, $takeOver);
+        return $registry->locked(static function () use ($registry, $taskId, $to, $takeOver): ?string {
+            return self::claimLocked($registry, $taskId, $to, $takeOver);
         });
     }
 
-    private static function claimLocked(AgentRegistry $registry, ?AgentSession $self, string $taskId, bool $takeOver): ?string
+    private static function claimLocked(AgentRegistry $registry, string $taskId, ?TaskStatus $to, bool $takeOver): ?string
     {
+        $self = $registry->current();
+        $declared = getenv(AgentRegistry::ENV);
+        if ($self === null && is_string($declared) && $declared !== '') {
+            // The agent believes it is present; a claim made now would be
+            // recorded nowhere and a second agent would get no refusal.
+            return sprintf(
+                "%s=%s is not a live session (it ended or is missing) — run ai:agent join again, or unset %s",
+                AgentRegistry::ENV,
+                $declared,
+                AgentRegistry::ENV,
+            );
+        }
+
         $holder = $registry->holderOf($taskId, $self?->id);
         if ($holder !== null && !$takeOver) {
             return sprintf(
@@ -55,10 +60,26 @@ final class TaskClaim
                 $holder->intent,
             );
         }
+        if ($to === null) {
+            return null;
+        }
         if ($holder !== null) {
             $registry->release($holder->id);
         }
-        $registry->beat($taskId);
+        if ($to !== TaskStatus::IN_PROGRESS) {
+            if ($self !== null && $self->task === $taskId) {
+                $registry->release($self->id);
+            }
+
+            return null;
+        }
+        if ($self !== null) {
+            try {
+                $registry->recordTask($self, $taskId);
+            } catch (\RuntimeException $e) {
+                return "could not record the claim on '{$taskId}': " . $e->getMessage();
+            }
+        }
 
         return null;
     }

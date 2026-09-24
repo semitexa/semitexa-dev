@@ -103,6 +103,25 @@ final class RequestCostProbe
     }
 
     /**
+     * The probe's process-wide state, for a test to put back what it found.
+     *
+     * @return array{cache: ?array<string, list<array<string, mixed>>>, unmeasured: list<string>}
+     */
+    public static function snapshot(): array
+    {
+        return ['cache' => self::$cache, 'unmeasured' => self::$unmeasured];
+    }
+
+    /**
+     * @param array{cache: ?array<string, list<array<string, mixed>>>, unmeasured: list<string>} $state
+     */
+    public static function restore(array $state): void
+    {
+        self::$cache = $state['cache'];
+        self::$unmeasured = $state['unmeasured'];
+    }
+
+    /**
      * Routes the last probe could not read — no answer, or no trace in time.
      *
      * Reported rather than dropped: a route that silently fell out of the
@@ -197,12 +216,13 @@ final class RequestCostProbe
      */
     private static function status(string $url, ?string $token, float $timeout): ?int
     {
-        // PHP fills this local on every response the http wrapper reads and
-        // leaves it untouched when the connection fails — so it is cleared
-        // first, or a dead address would inherit the previous one's answer.
-        $http_response_header = [];
+        // Cleared first: after a failed connection the last headers would
+        // otherwise still be the previous request's, and a dead address would
+        // inherit its answer. (The $http_response_header local is deprecated
+        // from PHP 8.5; these functions exist since 8.4.)
+        http_clear_last_response_headers();
         @file_get_contents($url, false, self::context($token, $timeout));
-        $first = $http_response_header[0] ?? '';
+        $first = (http_get_last_response_headers() ?? [])[0] ?? '';
 
         return preg_match('#^HTTP/\S+\s+(\d{3})#', $first, $m) === 1 ? (int) $m[1] : null;
     }

@@ -37,7 +37,7 @@ final class RequestRepeatedStatementsMetric implements QualityMetricInterface
             foreach ($queries as $q) {
                 $shape = SqlShape::of((string) ($q['sql'] ?? ''));
                 $shapes[$shape] = ($shapes[$shape] ?? 0) + 1;
-                $exact[$shape . '|' . json_encode($q['bindings'] ?? $q['params'] ?? null)] = true;
+                $exact[SqlShape::execution((string) ($q['sql'] ?? ''), is_array($q['bindings'] ?? $q['params'] ?? null) ? ($q['bindings'] ?? $q['params']) : null)] = true;
             }
             $reExecutions = count($queries) - count($shapes);
             $duplicates = count($queries) - count($exact);

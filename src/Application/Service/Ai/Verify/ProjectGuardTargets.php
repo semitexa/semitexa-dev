@@ -59,8 +59,10 @@ final class ProjectGuardTargets
             return $targets;
         }
 
+        // The old path too: a PHP file renamed to something else still changed
+        // the PHP tree (a test that vanished can shrink what a ratchet sees).
         $php = array_values(array_filter(
-            array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles),
+            array_merge(...array_map(static fn (ChangedFile $f): array => array_filter([$f->path, $f->originalPath]), $changedFiles)),
             static fn (string $path): bool => str_ends_with($path, '.php')
                 && (str_starts_with($path, 'packages/') || str_starts_with($path, 'src/modules/')),
         ));

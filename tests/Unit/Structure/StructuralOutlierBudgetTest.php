@@ -199,7 +199,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the mapped status) on the row itself. A 500 read exactly like a 200
         // before. Two small presentation helpers, statusBadge() and
         // markSays(); rendering is this class's whole job, so they belong here.
-        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [26, 822],
+        // 822 -> 824 (review, dev#107): status badges failed 4.5:1 contrast on
+        // the light theme — one CSS line of light-theme hues and its comment.
+        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [26, 824],
         // Newly recorded on 2026-09-11 at 25/713, crossing the 700-line line
         // from 684. The command now has to report a verdict that distinguishes
         // "every required target ran" from "nothing objected", so it carries
@@ -446,8 +448,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // on untraced requests too. The rule itself lives in RequestOutcome; what
         // stays here is two locals recording which exit was taken, the escaped
         // one set before mapping so a mapper that throws still ends as a failure.
-        // No new method.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 737],
+        // No new method. 737 -> 744 (review, core#147): the escape is recorded
+        // only when mapping itself throws, not for every exception the mapper
+        // answers — a try/catch around map + decorate. No new method.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 744],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

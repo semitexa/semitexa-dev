@@ -202,7 +202,12 @@ final class AiTraceCommand extends BaseCommand
         }
         $limit = (int) $limitRaw;
 
-        $headers = array_reverse($store->list());
+        // Newest first. created_at has one-second resolution, so traces started in
+        // the same second tie; the file's modification time breaks the tie (a
+        // trace is written on start), or --limit=1 could return the older one.
+        $headers = $store->list();
+        usort($headers, static fn (TraceHeader $a, TraceHeader $b): int => [strtotime($b->createdAt), (int) @filemtime($store->pathFor($b->traceId))]
+            <=> [strtotime($a->createdAt), (int) @filemtime($store->pathFor($a->traceId))]);
         $total = count($headers);
         if ($limit > 0) {
             $headers = array_slice($headers, 0, $limit);

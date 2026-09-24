@@ -45,6 +45,8 @@ final class NextCommandContractTest extends TestCase
                 self::assertTrue(defined($class . '::REQUIRED_OPTIONS'), $class . ' must declare REQUIRED_OPTIONS');
                 foreach (constant($class . '::REQUIRED_OPTIONS') as $key) {
                     self::assertArrayHasKey($key, $shared, $recipe->id . ': ' . $step . ' needs ' . $key);
+                    // Present but empty is refused by GenerationPreflight just the same.
+                    self::assertNotSame('', trim((string) $shared[$key]), $recipe->id . ': ' . $step . ' needs a non-empty ' . $key);
                 }
                 foreach (array_keys($shared) as $key) {
                     if ($definition->hasOption($key)) {
