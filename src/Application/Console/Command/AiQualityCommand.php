@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Dev\Application\Service\Quality\QualityAdvisor;
 use Semitexa\Dev\Application\Service\Quality\QualityLedger;
 use Semitexa\Dev\Application\Service\Quality\QualityMetricCatalog;
 use Semitexa\Dev\Application\Service\Quality\Verdict;
@@ -23,6 +24,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   ai:quality check                           compare every metric with its baseline
  *   ai:quality record                          lock in what improved (never raises)
  *   ai:quality accept --metric=ID --reason=…   raise one metric, deliberately
+ *   ai:quality next [--limit=5]                where to improve next, from the ledger
  *
  * `check` fails in both directions: a regression, and an improvement that has
  * not been recorded yet — unrecorded headroom is room the next change spends.
@@ -36,7 +38,8 @@ final class AiQualityCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addArgument('action', InputArgument::OPTIONAL, 'check | record | accept', 'check')
+            ->addArgument('action', InputArgument::OPTIONAL, 'check | record | accept | next', 'check')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'How many targets next lists', '5')
             ->addOption('metric', null, InputOption::VALUE_REQUIRED, 'Metric id (accept)')
             ->addOption('reason', null, InputOption::VALUE_REQUIRED, 'Why the metric has to grow (accept)')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Include release-tier metrics (slow)')
@@ -62,7 +65,8 @@ final class AiQualityCommand extends BaseCommand
                 'check' => $this->check($ledger, $tier, $input, $output),
                 'record' => $this->record($ledger, $tier, $input, $output),
                 'accept' => $this->accept($ledger, $input, $output),
-                default => throw new \InvalidArgumentException("unknown action '{$action}' (expected check | record | accept)"),
+                'next' => $this->next($input, $output),
+                default => throw new \InvalidArgumentException("unknown action '{$action}' (expected check | record | accept | next)"),
             };
         } catch (\InvalidArgumentException|\RuntimeException $e) {
             return $this->emit($output, $input, ['action' => $action, 'verdict' => 'error', 'error' => $e->getMessage()], self::FAILURE);
@@ -113,6 +117,22 @@ final class AiQualityCommand extends BaseCommand
         return $this->emit($output, $input, ['action' => 'accept', 'verdict' => 'pass', 'accepted' => (array) $verdict], self::SUCCESS);
     }
 
+    private function next(InputInterface $input, OutputInterface $output): int
+    {
+        $targets = (new QualityAdvisor($this->getProjectRoot()))->targets(max(1, (int) $input->getOption('limit')));
+
+        return $this->emit($output, $input, [
+            'action' => 'next',
+            'verdict' => $targets === [] ? 'skipped' : 'pass',
+            'reason' => $targets === [] ? 'nothing recorded in the quality ledger yet' : null,
+            'targets' => $targets,
+            'next_command' => $targets === [] ? [] : [
+                ['cmd' => 'ai:quality', 'args' => ['check', '--json'], 'why' => 'after the change: prove it moved, then record it'],
+                ['cmd' => 'ai:quality', 'args' => ['record', '--json'], 'why' => 'lock the improvement in so it cannot be given back'],
+            ],
+        ], self::SUCCESS);
+    }
+
     /**
      * @param array<string, mixed> $envelope
      */
@@ -134,6 +154,9 @@ final class AiQualityCommand extends BaseCommand
                     $v['moved'],
                 ))));
             }
+        }
+        foreach ($envelope['targets'] ?? [] as $i => $t) {
+            $output->writeln(sprintf('  %d. %s — %s: %d  (%s)', $i + 1, $t['metric'], $t['key'], $t['count'], $t['why']));
         }
         foreach (['error', 'reason', 'note'] as $key) {
             if (($envelope[$key] ?? null) !== null) {

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Quality\QualityAdvisor;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
@@ -90,6 +92,9 @@ final class AiOrientCommand extends BaseCommand
             ],
             'recent_traces'  => $recentTraces,
             'last_verify'    => $lastVerify,
+            // The improvement loop's entry point: what the quality ledger says to
+            // make better next. Read from the recorded baseline, measured nothing.
+            'quality_next'   => (new QualityAdvisor(ProjectRoot::get()))->targets(3),
             'suggest_next'   => $hints['summary'],
             'next_command'   => $hints['commands'],
         ];
@@ -504,6 +509,13 @@ final class AiOrientCommand extends BaseCommand
             $io->section('Last verify');
             $io->writeln("  trace: {$lv['trace_id']}  at: {$lv['at']}");
             $io->writeln("  verdict: " . ($lv['verdict'] ?? 'unknown') . "  — {$lv['summary']}");
+        }
+
+        if ($envelope['quality_next'] !== []) {
+            $io->section('Improve next (ai:quality next)');
+            foreach ($envelope['quality_next'] as $t) {
+                $io->writeln("  {$t['metric']} — {$t['key']}: {$t['count']}");
+            }
         }
 
         $io->section('Next');
