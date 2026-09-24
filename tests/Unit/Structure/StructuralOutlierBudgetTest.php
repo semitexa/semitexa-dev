@@ -427,6 +427,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 947 -> 948 on 2026-09-18, one line, NO new method: the SqlIdentifier
         // sweep, same as ResourceModelQuery above.
         'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 948],
+        // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
+        // task to in_progress now claims it for the agent session running the
+        // command, and refuses a task another live agent holds (--take-over
+        // otherwise) — the one place two agents in one checkout meet on the
+        // same work. The logic is TaskClaim's; what landed here is the call,
+        // its refusal, and the option. No new method.
+        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 704],
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 933],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by

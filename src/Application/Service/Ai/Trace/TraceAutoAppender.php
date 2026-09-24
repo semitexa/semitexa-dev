@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Trace;
 
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Symfony\Component\Console\Input\InputInterface;
@@ -83,6 +85,11 @@ final class TraceAutoAppender
         string $summary,
         array $payload = [],
     ): ?TraceEvent {
+        // Every command that reports to a trace is also a sign of life for the
+        // agent running it (ai:task, ai:context, ai:plan, make, ai:verify,
+        // ai:epic): the agent does not have to remember a separate heartbeat.
+        (new AgentRegistry(ProjectRoot::get()))->beat();
+
         $id = $this->resolveTraceId($input);
         if ($id === null) {
             return null;
