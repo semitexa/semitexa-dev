@@ -1,0 +1,58 @@
+{
+    "_": "Quality metrics: lower is better. Written only by `ai:quality record` (never raises) and `ai:quality accept --reason` (raises, and says why below). Do not edit by hand.",
+    "metrics": {
+        "packages.without-tests": {
+            "total": 5,
+            "breakdown": {
+                "semitexa-demo": 1,
+                "semitexa-files": 1,
+                "semitexa-music": 1,
+                "semitexa-showcase-kit": 1,
+                "semitexa-theme-sky": 1
+            },
+            "sees": "packages under packages/ that have PHP in src/ and no *Test.php under tests/",
+            "blind": "how well a package is tested: one trivial test takes a package off the list"
+        },
+        "tests.skip-calls": {
+            "total": 144,
+            "breakdown": {
+                "modules/ExceptionMapperDemo": 1,
+                "semitexa-authorization": 2,
+                "semitexa-cache": 6,
+                "semitexa-cms": 1,
+                "semitexa-core": 10,
+                "semitexa-dev": 33,
+                "semitexa-ledger": 1,
+                "semitexa-orm": 35,
+                "semitexa-os": 1,
+                "semitexa-platform-settings": 1,
+                "semitexa-platform-ui": 2,
+                "semitexa-ssr": 27,
+                "semitexa-storage": 1,
+                "semitexa-tenancy": 1,
+                "semitexa-testing": 1,
+                "semitexa-theme": 1,
+                "semitexa-ultimate": 1,
+                "semitexa-update": 4,
+                "semitexa-webhooks": 15
+            },
+            "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
+            "blind": "whether a skip actually fires at runtime, and skips expressed as #[Requires*] attributes or early returns"
+        }
+    },
+    "deliberate": [
+        {
+            "at": "2026-09-24",
+            "metric": "tests.skip-calls",
+            "from": 143,
+            "to": 144,
+            "keys": {
+                "semitexa-dev": {
+                    "from": 32,
+                    "to": 33
+                }
+            },
+            "reason": "QualityLedgerGateTest skips in a consumer project, where no ledger exists to check; a pass there would claim a gate that never ran"
+        }
+    ]
+}
