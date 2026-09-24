@@ -49,6 +49,10 @@ scripts/pr-process.sh --fail-on-warnings
 
 2. If the command reports blockers or warnings, stop before editing code or replying.
 Report the blocking repos and why they are blocked.
+`reviews-pending: <reviewers>` is the exception that is not a fault: a reviewer has
+not yet reviewed the head commit (an open review request, or a bot that re-reviews
+on push). Its findings may still arrive, so never report such a PR as done — wait a
+few minutes and re-run.
 
 3. If the queue is clean, get the actionable processing list:
 ```bash

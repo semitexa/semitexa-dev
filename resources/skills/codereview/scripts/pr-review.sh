@@ -199,7 +199,7 @@ for dir in "$PACKAGES_DIR"/*/; do
 
     while IFS= read -r pr_number; do
         echo "$prs_json" | jq ".[] | select(.number == $pr_number)" > "$TMPDIR/pr_meta.json"
-        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
+        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,headRefOid,reviewRequests 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
 
         if [[ "$INCLUDE_DIFF" -eq 1 ]]; then
             gh api "repos/$repo_slug/pulls/$pr_number" -H "Accept: application/vnd.github.v3.diff" > "$TMPDIR/diff.txt" 2>/dev/null || : > "$TMPDIR/diff.txt"
@@ -433,7 +433,27 @@ for dir in "$PACKAGES_DIR"/*/; do
             | .actionableComments = (.actionableLineComments + .actionableReviewBodies + .actionableIssueComments)
             # Backwards-compat alias: older consumers expect this field with line-only entries.
             | .actionableReviewComments = .actionableLineComments
+            # Reviewers still to be heard from on the head commit: an open
+            # review request, or a reviewer whose latest review is of an
+            # older commit (bots re-review on every push). Measured on
+            # semitexa-core #144 (2026-09-18): pushed 12:09, Copilot requested
+            # 12:13, five Copilot findings posted 12:16 - a queue run in that
+            # window found nothing, correctly, and reported the PR as done.
+            # Nothing in the comments can say a review is still coming; this can.
+            | ($extra[0].headRefOid // "") as $head
+            | .pendingReviewers = (
+                (
+                    [ ($extra[0].reviewRequests // [])[] | (.login // .name // .slug // empty) ]
+                    + (
+                        [ (.reviews // [])[] | select(.user != $author and (.commitId // "") != "") ]
+                        | group_by(.user)
+                        | map(max_by(.submittedAt // ""))
+                        | map(select($head != "" and .commitId != $head) | .user)
+                    )
+                ) | unique
+            )
             | .summary = {
+                pendingReviewers: .pendingReviewers,
                 reviewComments: (.reviewComments | length),
                 issueComments: (.issueComments | length),
                 reviews: (.reviews | length),
