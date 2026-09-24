@@ -1,5 +1,5 @@
 {
-    "_": "How many phpstan errors the release gate accepts ABOVE phpstan-baseline.neon, and the analyser both were measured with. A ratchet: the gate fails when the count goes above the ceiling AND when it drops below it, so an improvement is locked in by lowering this number in the same commit. Changes before 2026-09-24 (604 -> 179, raised twice for one named finding each) are recorded in the comments above phpstan_neutrality_gate in release-auto-checks.sh.",
+    "_": "How many phpstan errors the release gate accepts ABOVE phpstan-baseline.neon, and the analyser both were measured with. The gate fails above the ceiling and warns below it (the release clone counts differently from the workspace); lower this number to lock an improvement in. Changes before 2026-09-24 (604 -> 179, raised twice for one named finding each) are recorded in the comments above phpstan_neutrality_gate in release-auto-checks.sh.",
     "ceiling": 179,
     "analyser": "2.1.40",
     "deliberate": {}

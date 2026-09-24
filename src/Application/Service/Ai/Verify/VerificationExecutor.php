@@ -213,7 +213,7 @@ final class VerificationExecutor
         $abs = $rel !== null ? $this->projectRoot . '/' . ltrim($rel, '/') : null;
         $isDir = $abs !== null && is_dir($abs);
 
-        $command = [$binary];
+        $command = $target->commandInput === [] ? [$binary] : ['env', ...array_map(static fn (string $k, string|bool $v): string => $k . '=' . (string) $v, array_keys($target->commandInput), $target->commandInput), $binary];
         if ($filter !== null) {
             $command[] = '--filter';
             $command[] = $filter;

@@ -9,7 +9,9 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
 use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
+use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -57,7 +59,9 @@ final class AiAgentCommand extends BaseCommand
                 'leave' => $this->leave($registry, $input),
                 default => throw new \InvalidArgumentException("unknown action '{$action}' (expected join | list | beat | leave)"),
             };
-        } catch (\InvalidArgumentException $e) {
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            // RuntimeException too: a session file that cannot be written is a
+            // failure to report, not a stack trace.
             return $this->emit($output, $input, ['action' => $action, 'error' => $e->getMessage()], self::FAILURE);
         }
 
@@ -101,7 +105,16 @@ final class AiAgentCommand extends BaseCommand
             throw new \InvalidArgumentException('no session: run ai:agent join first and export ' . AgentRegistry::ENV);
         }
         $task = $input->getOption('task');
-        $registry->beat(is_string($task) && $task !== '' ? $task : null);
+        if (is_string($task) && $task !== '') {
+            // Holding a task by heartbeat goes through the same check as
+            // ai:work: another live agent's task is refused, not silently shared.
+            $refused = TaskClaim::claim($this->getProjectRoot(), $task, TaskStatus::IN_PROGRESS, false);
+            if ($refused !== null) {
+                throw new \InvalidArgumentException($refused);
+            }
+        } else {
+            $registry->beat();
+        }
 
         return ['action' => 'beat', 'session' => $registry->current()?->toArray()];
     }

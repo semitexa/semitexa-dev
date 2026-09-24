@@ -351,7 +351,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>}
      */
     private function workingNow(): array
     {
@@ -361,12 +361,15 @@ final class AiOrientCommand extends BaseCommand
         $you = $registry->current();
         $live = $registry->all(false, $now);
         $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
-        $activity = (new WorkspaceActivity(ProjectRoot::get()))->dirtyRepos($live, $now);
+        $radar = new WorkspaceActivity(ProjectRoot::get());
+        $activity = $radar->dirtyRepos($live, $now);
 
         return [
             'you' => $you?->toArray(),
             'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now)], $others),
             'activity' => $activity,
+            // false: git is not available here, so "no edits" means unknown, not clean.
+            'activity_known' => $radar->gitAvailable(),
             // Fresh edits nobody declared: another session that never joined,
             // or your own work you did not list. Either way, look before you commit.
             // The shared stack's last lifecycle events: a restart took the server
@@ -586,6 +589,9 @@ final class AiOrientCommand extends BaseCommand
         }
         if ($wn['stack'] !== []) {
             $io->writeln('  dev stack: last ' . StackEvents::describe($wn['stack'][0]));
+        }
+        if (!$wn['activity_known']) {
+            $io->writeln('  ⚠ uncommitted edits unknown: git is not available here');
         }
         foreach ($wn['unclaimed_fresh'] as $repo) {
             $io->writeln("  ⚠ {$repo}: edited in the last 30 min, claimed by no agent — someone may be working there");

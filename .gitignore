@@ -1,1 +1,2 @@
 .phpunit.cache/
+resources/quality/*.lock

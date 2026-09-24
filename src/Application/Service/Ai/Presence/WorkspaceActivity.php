@@ -40,7 +40,8 @@ final class WorkspaceActivity
             $newest = 0;
             $paths = [];
             foreach ($lines as $line) {
-                $path = trim(substr($line, 3));
+                // Paths with spaces or unusual bytes come back quoted.
+                $path = trim(trim(substr($line, 3)), '"');
                 if (str_contains($path, ' -> ')) {
                     $path = (string) substr($path, (int) strrpos($path, ' -> ') + 4);
                 }
@@ -71,6 +72,16 @@ final class WorkspaceActivity
     }
 
     /**
+     * Whether the edits above can be seen at all. Without git every repo reads
+     * as clean, which is exactly the false all-clear this class exists to end —
+     * so a caller says "unknown" instead.
+     */
+    public function gitAvailable(): bool
+    {
+        return trim((string) shell_exec('command -v git 2>/dev/null')) !== '';
+    }
+
+    /**
      * @return list<string> repos relative to the project root
      */
     private function repos(): array
@@ -97,8 +108,10 @@ final class WorkspaceActivity
         // safe.directory: the workspace is bind-mounted and owned by the host
         // user, so git inside the container refuses it as "dubious ownership"
         // and answers nothing — which would read as a clean workspace.
+        // --no-optional-locks: a read must not take index.lock, or another
+        // agent's `git add` / `git commit` in the same repo fails under it.
         $command = sprintf(
-            'git -c safe.directory=%s -C %s status --porcelain 2>/dev/null',
+            'git --no-optional-locks -c safe.directory=%s -C %s status --porcelain 2>/dev/null',
             escapeshellarg('*'),
             escapeshellarg($this->projectRoot . '/' . $repo),
         );

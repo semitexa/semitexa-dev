@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Quality;
 
+use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
 use Semitexa\Dev\Attribute\AsQualityMetric;
 
 /**
@@ -65,7 +66,16 @@ final class QualityLedger
      */
     public function record(string $tier = AsQualityMetric::TIER_VERIFY): array
     {
+        return $this->locked(fn (): array => $this->recordLocked($tier));
+    }
+
+    /**
+     * @return array{recorded: list<Verdict>, refused: list<Verdict>}
+     */
+    private function recordLocked(string $tier): array
+    {
         $data = $this->read();
+        $events = [];
         $recorded = [];
         $refused = [];
         foreach ($this->selected($tier) as $id => $entry) {
@@ -79,11 +89,16 @@ final class QualityLedger
                 continue;
             }
             $data['metrics'][$id] = $this->entry($now, $entry['meta']);
-            $this->appendHistory($id, $now, $verdict->status === Verdict::NEW ? 'new' : 'record');
+            $events[] = [$id, $now, $verdict->status === Verdict::NEW ? 'new' : 'record'];
             $recorded[] = $verdict;
         }
         if ($recorded !== []) {
+            // History only after the baseline is safely on disk: a line for a
+            // value that was never recorded would be a trend that did not happen.
             $this->write($data);
+            foreach ($events as [$id, $now, $event]) {
+                $this->appendHistory($id, $now, $event);
+            }
         }
 
         return ['recorded' => $recorded, 'refused' => $refused];
@@ -107,23 +122,50 @@ final class QualityLedger
             ));
         }
 
-        $data = $this->read();
-        $now = $this->metrics[$id]['metric']->measure($this->projectRoot);
-        $verdict = Verdict::of($id, $now, $data['metrics'][$id] ?? null);
+        return $this->locked(function () use ($id, $reason): Verdict {
+            $data = $this->read();
+            $now = $this->metrics[$id]['metric']->measure($this->projectRoot);
+            $verdict = Verdict::of($id, $now, $data['metrics'][$id] ?? null);
 
-        $data['metrics'][$id] = $this->entry($now, $this->metrics[$id]['meta']);
-        $data['deliberate'][] = [
-            'at' => gmdate('Y-m-d'),
-            'metric' => $id,
-            'from' => $verdict->from,
-            'to' => $verdict->to,
-            'keys' => $verdict->moved,
-            'reason' => $reason,
-        ];
-        $this->write($data);
-        $this->appendHistory($id, $now, 'accept');
+            $data['metrics'][$id] = $this->entry($now, $this->metrics[$id]['meta']);
+            $data['deliberate'][] = [
+                'at' => gmdate('Y-m-d'),
+                'metric' => $id,
+                'from' => $verdict->from,
+                'to' => $verdict->to,
+                'keys' => $verdict->moved,
+                'reason' => $reason,
+            ];
+            $this->write($data);
+            $this->appendHistory($id, $now, 'accept');
 
-        return $verdict;
+            return $verdict;
+        });
+    }
+
+    /**
+     * Read, measure and write as one step. Without it two agents recording at
+     * once lost an update — one could write back a HIGHER reading it measured
+     * before the other's lower one landed, raising the ledger without accept().
+     *
+     * @template T
+     * @param callable(): T $fn
+     * @return T
+     */
+    private function locked(callable $fn): mixed
+    {
+        $lockPath = $this->projectRoot . '/' . self::BASELINE . '.lock';
+        $this->ensureDirectory($lockPath);
+        $handle = fopen($lockPath, 'c');
+        if ($handle === false || !flock($handle, LOCK_EX)) {
+            throw new \RuntimeException('cannot lock the quality ledger: ' . $lockPath);
+        }
+        try {
+            return $fn();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     /**
@@ -172,9 +214,10 @@ final class QualityLedger
     {
         ksort($data['metrics']);
         $data = ['_' => 'Quality metrics: lower is better. Written only by `ai:quality record` (never raises) and `ai:quality accept --reason` (raises, and says why below). Do not edit by hand.'] + $data;
-        $path = $this->projectRoot . '/' . self::BASELINE;
-        $this->ensureDirectory($path);
-        file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
+        // Atomic (temp file + rename), so a concurrent check never reads half a
+        // ledger, and a failed write throws instead of reporting "recorded".
+        JsonFile::writeAtomic($this->projectRoot . '/' . self::BASELINE, $data);
+        @chmod($this->projectRoot . '/' . self::BASELINE, 0o666);
     }
 
     private function appendHistory(string $id, Measurement $now, string $event): void
@@ -184,7 +227,10 @@ final class QualityLedger
         // baseline is written, so the directory may not exist yet.
         $path = $this->projectRoot . '/' . self::HISTORY;
         $this->ensureDirectory($path);
-        file_put_contents($path, $line . "\n", FILE_APPEND | LOCK_EX);
+        if (file_put_contents($path, $line . "\n", FILE_APPEND | LOCK_EX) === false) {
+            throw new \RuntimeException("cannot append to {$path} (the baseline was written; its history line was not)");
+        }
+        @chmod($path, 0o666);
     }
 
     private function ensureDirectory(string $file): void

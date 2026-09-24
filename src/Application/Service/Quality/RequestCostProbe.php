@@ -29,6 +29,9 @@ final class RequestCostProbe
 {
     private const TIMEOUT_S = 5.0;
 
+    /** The whole probe's ceiling: ~200 routes, measured twice each. */
+    private const BUDGET_S = 300;
+
     /** @var array<string, list<array<string, mixed>>>|null path => query events, per probe run */
     private static ?array $cache = null;
 
@@ -53,18 +56,24 @@ final class RequestCostProbe
         $base = self::baseUrl();
         $out = [];
         $unmeasured = [];
+        $deadline = hrtime(true) + self::BUDGET_S * 1_000_000_000;
         foreach (self::corpus() as $path) {
-            $token = 'quality-' . bin2hex(random_bytes(8));
-            $before = array_flip(glob($projectRoot . '/var/trace/*.json') ?: []);
-            $trace = self::get($base . $path, $token)
-                ? self::findTrace($projectRoot . '/var/trace', $token, $before)
-                : null;
-            if ($trace === null) {
+            // Past the budget, the rest is reported unmeasured — which the
+            // ledger reads as a regression — rather than silently skipped.
+            if (hrtime(true) > $deadline) {
                 $unmeasured[] = 'GET ' . $path;
                 continue;
             }
-            $out['GET ' . $path] = self::queriesIn($trace);
-            @unlink($trace);
+            // Twice, and only the second counts. The first request pays for
+            // what happens once — a cold cache, a demo page seeding an empty
+            // table on GET — and that is not what the page costs.
+            self::measureOnce($projectRoot, $base, $path);
+            $queries = self::measureOnce($projectRoot, $base, $path);
+            if ($queries === null) {
+                $unmeasured[] = 'GET ' . $path;
+                continue;
+            }
+            $out['GET ' . $path] = $queries;
         }
         if ($out === []) {
             throw new \RuntimeException("request cost: {$base} answered but produced no trace — is it in dev mode?");
@@ -105,6 +114,31 @@ final class RequestCostProbe
     public static function unmeasured(): array
     {
         return self::$unmeasured;
+    }
+
+    /**
+     * One traced request: its query events, or null when it produced no
+     * readable, complete trace. A trace that hit the event cap keeps its LAST
+     * events, so its query count is short by an unknown amount — unmeasured,
+     * not a smaller number.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private static function measureOnce(string $projectRoot, string $base, string $path): ?array
+    {
+        $token = 'quality-' . bin2hex(random_bytes(8));
+        $before = array_flip(glob($projectRoot . '/var/trace/*.json') ?: []);
+        $trace = self::get($base . $path, $token) ? self::findTrace($projectRoot . '/var/trace', $token, $before) : null;
+        if ($trace === null) {
+            return null;
+        }
+        $data = json_decode((string) file_get_contents($trace), true);
+        @unlink($trace);
+        if (!is_array($data) || ($data['truncated'] ?? false) === true) {
+            return null;
+        }
+
+        return self::queriesInEvents(is_array($data['events'] ?? null) ? $data['events'] : []);
     }
 
     /**
@@ -223,13 +257,12 @@ final class RequestCostProbe
     }
 
     /**
+     * @param array<mixed> $events
+     *
      * @return list<array<string, mixed>>
      */
-    private static function queriesIn(string $file): array
+    private static function queriesInEvents(array $events): array
     {
-        $data = json_decode((string) file_get_contents($file), true);
-        $events = is_array($data['events'] ?? null) ? $data['events'] : [];
-
         return array_values(array_filter(
             array_map(static fn (mixed $e): array => is_array($e) && ($e['type'] ?? null) === 'query' ? (array) ($e['context'] ?? []) : [],
                 $events),

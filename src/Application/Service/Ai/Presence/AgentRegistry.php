@@ -146,9 +146,46 @@ final class AgentRegistry
         return null;
     }
 
+    /**
+     * Run a check-then-write on the registry as one step, so two agents
+     * claiming the same task at the same moment cannot both win.
+     *
+     * @template T
+     * @param callable(): T $fn
+     * @return T
+     */
+    public function locked(callable $fn): mixed
+    {
+        $dir = $this->projectRoot . '/' . self::SUBDIR;
+        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
+            throw new \RuntimeException("cannot create {$dir}");
+        }
+        $handle = @fopen($dir . '/.lock', 'c');
+        @chmod($dir . '/.lock', 0o666);
+        if ($handle === false || !flock($handle, LOCK_EX)) {
+            throw new \RuntimeException("cannot lock {$dir}");
+        }
+        try {
+            return $fn();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
     private function save(AgentSession $session): void
     {
+        // Shared by everyone who runs ai:* here — bin/semitexa enters a running
+        // container as root, a one-off container runs as the host user — so a
+        // directory created by one must stay writable by the other, or the
+        // second agent's heartbeats and claims fail silently.
+        $dir = $this->projectRoot . '/' . self::SUBDIR;
+        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
+            throw new \RuntimeException("cannot create {$dir}");
+        }
+        @chmod($dir, 0o777);
         JsonFile::writeAtomic($this->path($session->id), $session->toArray());
+        @chmod($this->path($session->id), 0o666);
     }
 
     private function path(string $id): string

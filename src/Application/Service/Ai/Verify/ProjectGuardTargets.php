@@ -70,11 +70,32 @@ final class ProjectGuardTargets
                 id: 'phpunit:' . self::RATCHET_SUITE,
                 reason: 'whole-tree ratchets — size budgets, static container access, untested packages, coroutine state — hold for every PHP change, not only a file whose name matches',
                 triggeredBy: $php,
+                // The quality ledger gate holds a verification to the repos it
+                // changed: another agent's uncommitted regression elsewhere in
+                // the shared tree must not turn this agent's run red.
+                commandInput: ['SEMITEXA_QUALITY_SCOPE' => implode(',', self::reposOf($php))],
                 filePath: self::RATCHET_SUITE,
                 testFilter: null,
             );
         }
 
         return $targets;
+    }
+
+    /**
+     * @param list<string> $paths
+     *
+     * @return list<string> packages/<name> or src/modules/<Name>
+     */
+    private static function reposOf(array $paths): array
+    {
+        $repos = [];
+        foreach ($paths as $path) {
+            if (preg_match('#^(packages/[^/]+|src/modules/[^/]+)/#', $path, $m) === 1) {
+                $repos[$m[1]] = true;
+            }
+        }
+
+        return array_keys($repos);
     }
 }

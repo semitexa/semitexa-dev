@@ -37,6 +37,13 @@ final class TaskClaim
             return null;
         }
 
+        return $registry->locked(static function () use ($registry, $self, $taskId, $takeOver): ?string {
+            return self::claimLocked($registry, $self, $taskId, $takeOver);
+        });
+    }
+
+    private static function claimLocked(AgentRegistry $registry, ?AgentSession $self, string $taskId, bool $takeOver): ?string
+    {
         $holder = $registry->holderOf($taskId, $self?->id);
         if ($holder !== null && !$takeOver) {
             return sprintf(

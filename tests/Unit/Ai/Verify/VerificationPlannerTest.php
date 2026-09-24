@@ -686,6 +686,10 @@ class VerificationPlannerTest extends TestCase
 
         $ids = array_map(static fn (VerificationTarget $t): string => $t->id, $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT));
         $this->assertContains('phpunit:' . ProjectGuardTargets::RATCHET_SUITE, $ids);
+
+        // The quality gate is held to the repos this change touched.
+        $suite = array_values(array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->id === 'phpunit:' . ProjectGuardTargets::RATCHET_SUITE))[0];
+        $this->assertSame(['SEMITEXA_QUALITY_SCOPE' => 'packages/semitexa-ssr'], $suite->commandInput);
     }
 
     public function test_the_ratchets_stay_out_of_minimal_scope_and_out_of_a_consumer_project(): void
