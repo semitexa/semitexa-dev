@@ -44,6 +44,30 @@ final class ObservatoryReaderTest extends TestCase
         file_put_contents($this->dir . '/journal-' . date('Ymd') . '.ndjson', implode("\n", $lines) . "\n");
     }
 
+    /**
+     * `ai:observe ps` listed durations only, so a 500 and a 200 read the same
+     * to an agent looking for what just went wrong.
+     */
+    #[Test]
+    public function a_finished_process_says_what_it_ended_as(): void
+    {
+        $now = date('c');
+        $this->journal([
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-1-ok', 'kind' => 'http', 'name' => 'Fine', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['http_status' => 404]],
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-1-bad', 'kind' => 'http', 'name' => 'Broken', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['http_status' => 500]],
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-1-esc', 'kind' => 'http', 'name' => 'Escaped', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['exception' => 'LogicException']],
+        ]);
+
+        $snap = (new ObservatoryReader())->snapshot();
+        $byId = array_column($snap['recent'], null, 'id');
+
+        self::assertSame(404, $byId['p-1-ok']['httpStatus']);
+        self::assertArrayNotHasKey('failed', $byId['p-1-ok'], 'a 4xx is the server answering as designed');
+        self::assertTrue($byId['p-1-bad']['failed']);
+        self::assertSame('LogicException', $byId['p-1-esc']['exception']);
+        self::assertSame(2, $snap['counts']['recentFailures']);
+    }
+
     #[Test]
     public function a_begin_without_an_end_is_live_and_a_completed_pair_is_recent(): void
     {

@@ -221,13 +221,26 @@ final class AiObserveCommand extends BaseCommand
     {
         $snapshot = $this->reader->snapshot();
 
+        $next = [
+            ['cmd' => 'ai:observe', 'args' => ['show', '--id=<process-id>'], 'why' => 'inspect one process, including its trace when it was recorded'],
+            ['cmd' => 'ai:observe', 'args' => ['tail', '--follow', '--duration=15'], 'why' => 'watch new journal rows arrive live'],
+        ];
+        // The newest failure first: it is what someone running ps is looking for.
+        foreach ($snapshot['recent'] as $row) {
+            if (($row['failed'] ?? false) === true) {
+                array_unshift($next, [
+                    'cmd' => 'ai:observe',
+                    'args' => ['show', '--id=' . $row['id']],
+                    'why' => sprintf('the newest failure: %s ended %s', $row['name'], $row['exception'] ?? ('with ' . ($row['httpStatus'] ?? 'failed'))),
+                ]);
+                break;
+            }
+        }
+
         $envelope = [
             'artifact' => 'semitexa-dev.ai-observe.ps/v1',
         ] + $snapshot + [
-            'next_command' => [
-                ['cmd' => 'ai:observe', 'args' => ['show', '--id=<process-id>'], 'why' => 'inspect one process, including its trace when it was recorded'],
-                ['cmd' => 'ai:observe', 'args' => ['tail', '--follow', '--duration=15'], 'why' => 'watch new journal rows arrive live'],
-            ],
+            'next_command' => $next,
         ];
 
         $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
