@@ -156,7 +156,10 @@ final class QualityLedger
     {
         $lockPath = $this->projectRoot . '/' . self::BASELINE . '.lock';
         $this->ensureDirectory($lockPath);
-        $handle = fopen($lockPath, 'c');
+        $handle = @fopen($lockPath, 'c');
+        // Same as the baseline and history: the container's root and the host
+        // user share this tree, and a 0644 lock would lock the other one out.
+        @chmod($lockPath, 0o666);
         if ($handle === false || !flock($handle, LOCK_EX)) {
             throw new \RuntimeException('cannot lock the quality ledger: ' . $lockPath);
         }

@@ -151,6 +151,23 @@ final class AgentPresenceTest extends TestCase
         self::assertFalse($rows[0]['readable']);
     }
 
+    #[Test]
+    public function a_claim_whose_lock_cannot_be_taken_is_a_refusal_not_an_exception(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $a = $registry->join('claude', 'claiming while the registry lock is broken');
+        putenv(AgentRegistry::ENV . '=' . $a->id);
+        $lock = $this->root . '/' . AgentRegistry::SUBDIR . '/.lock';
+        @unlink($lock);
+        mkdir($lock);  // a directory where the lock file should be: fopen fails, as root too
+
+        try {
+            self::assertStringContainsString('could not update the claim', (string) TaskClaim::claim($this->root, 'tk-w', TaskStatus::IN_PROGRESS, false));
+        } finally {
+            rmdir($lock);
+        }
+    }
+
     private function session(AgentRegistry $registry, string $id): AgentSession
     {
         $session = $registry->get($id);

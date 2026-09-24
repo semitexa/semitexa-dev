@@ -29,9 +29,15 @@ final class TaskClaim
     {
         $registry = new AgentRegistry($projectRoot);
 
-        return $registry->locked(static function () use ($registry, $taskId, $to, $takeOver): ?string {
-            return self::claimLocked($registry, $taskId, $to, $takeOver);
-        });
+        // A lock or release that cannot be written is a refusal too, not an
+        // exception past the caller's refusal branch.
+        try {
+            return $registry->locked(static function () use ($registry, $taskId, $to, $takeOver): ?string {
+                return self::claimLocked($registry, $taskId, $to, $takeOver);
+            });
+        } catch (\RuntimeException $e) {
+            return "could not update the claim on '{$taskId}': " . $e->getMessage();
+        }
     }
 
     private static function claimLocked(AgentRegistry $registry, string $taskId, ?TaskStatus $to, bool $takeOver): ?string
@@ -74,11 +80,7 @@ final class TaskClaim
             return null;
         }
         if ($self !== null) {
-            try {
-                $registry->recordTask($self, $taskId);
-            } catch (\RuntimeException $e) {
-                return "could not record the claim on '{$taskId}': " . $e->getMessage();
-            }
+            $registry->recordTask($self, $taskId);  // throws: caught in claim() as a refusal
         }
 
         return null;

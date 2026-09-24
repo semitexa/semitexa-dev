@@ -87,14 +87,19 @@ final class AgentRegistry
     /**
      * Mark the current session alive (and, when given, holding a task).
      * Never throws: presence must not break the command that reported it.
+     *
+     * Under the registry lock, like claims and leave: a beat that read the
+     * session before a take-over and saved after it would hand the task back.
      */
     public function beat(?string $task = null): void
     {
         try {
-            $session = $this->current();
-            if ($session !== null) {
-                $this->save($session->with(task: $task, beatAt: gmdate('c')));
-            }
+            $this->locked(function () use ($task): void {
+                $session = $this->current();
+                if ($session !== null) {
+                    $this->save($session->with(task: $task, beatAt: gmdate('c')));
+                }
+            });
         } catch (\Throwable) {
         }
     }
@@ -109,14 +114,16 @@ final class AgentRegistry
 
     public function leave(string $id): ?AgentSession
     {
-        $session = $this->get($id);
-        if ($session === null) {
-            return null;
-        }
-        $ended = $session->with(endedAt: gmdate('c'));
-        $this->save($ended);
+        return $this->locked(function () use ($id): ?AgentSession {
+            $session = $this->get($id);
+            if ($session === null) {
+                return null;
+            }
+            $ended = $session->with(endedAt: gmdate('c'));
+            $this->save($ended);
 
-        return $ended;
+            return $ended;
+        });
     }
 
     /**

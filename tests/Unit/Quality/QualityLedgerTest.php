@@ -32,7 +32,7 @@ final class QualityLedgerTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach ([QualityLedger::BASELINE, QualityLedger::HISTORY] as $f) {
+        foreach ([QualityLedger::BASELINE, QualityLedger::HISTORY, QualityLedger::BASELINE . '.lock'] as $f) {
             @unlink($this->root . '/' . $f);
         }
         @rmdir($this->root . '/packages/semitexa-dev/resources/quality');
@@ -53,6 +53,17 @@ final class QualityLedgerTest extends TestCase
         self::assertSame(Verdict::SAME, $this->ledger()->check()[0]->status);
         // The trend starts at the first reading, not the second.
         self::assertStringContainsString('"event":"new"', (string) file_get_contents($this->root . '/' . QualityLedger::HISTORY));
+    }
+
+    #[Test]
+    public function the_lock_is_writable_by_the_other_user_too(): void
+    {
+        // Container root and host user share the tree: a 0644 lock left by
+        // one would make every later record by the other throw.
+        $this->reading = ['a' => 1];
+        $this->ledger()->record();
+
+        self::assertSame(0o666, fileperms($this->root . '/' . QualityLedger::BASELINE . '.lock') & 0o777);
     }
 
     #[Test]
