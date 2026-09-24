@@ -73,6 +73,13 @@ parameters:
         - %currentWorkingDirectory%/packages/semitexa-showcase-kit/src
         - %currentWorkingDirectory%/packages/semitexa-theme-sky/src
 
+    # The release scripts pull their helpers in with require_once, which phpstan
+    # does not follow: bump-packages.php read as calling four undefined floor
+    # functions the first time the gate saw it (2026-09-24, when it was edited).
+    scanFiles:
+        - %currentWorkingDirectory%/packages/semitexa-dev/resources/skills/release-readiness/scripts/floor-declarations.php
+        - %currentWorkingDirectory%/packages/semitexa-dev/resources/skills/release-readiness/scripts/changelog-stamp.php
+
     excludePaths:
         - %currentWorkingDirectory%/packages/semitexa-core/src/Composer/SemitexaPlugin.php
         - %currentWorkingDirectory%/packages/semitexa-ultimate/src

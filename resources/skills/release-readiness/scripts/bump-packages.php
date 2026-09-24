@@ -33,6 +33,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/floor-declarations.php';
+require_once __DIR__ . '/changelog-stamp.php';
 
 // Refuse to execute when the script is included/required rather than invoked
 // directly via CLI. Defines may still be loaded by callers that explicitly opt
@@ -330,6 +331,15 @@ if ($floorsToDate !== []) {
     echo "\033[1mDeclared floors to date at {$releaseVersion}, committed on develop and master before tagging:\033[0m\n";
     foreach ($floorsToDate as $index => $dependencies) {
         echo "  {$candidates[$index]['name']}: " . implode(', ', $dependencies) . "\n";
+    }
+    echo "\n";
+}
+
+$changelogsToStamp = unstampedChangelogsOf($candidates);
+if ($changelogsToStamp !== []) {
+    echo "\033[1mChangelog sections to stamp as {$releaseVersion}, in the same release commit:\033[0m\n";
+    foreach (array_keys($changelogsToStamp) as $index) {
+        echo "  {$candidates[$index]['name']}: ## Unreleased → ## {$releaseVersion} — " . changelogDateOf($releaseVersion) . "\n";
     }
     echo "\n";
 }
@@ -743,6 +753,42 @@ function undatedFloorsOf(array $candidates): array
 }
 
 /**
+ * The candidates whose CHANGELOG.md on origin/master has an Unreleased section
+ * with content, keyed by candidate index.
+ *
+ * Reads the ref undatedFloorsOf() has just fetched, so call it after that.
+ *
+ * @param list<array<string, mixed>> $candidates
+ * @return array<int, true>
+ */
+function unstampedChangelogsOf(array $candidates): array
+{
+    $unstamped = [];
+    foreach ($candidates as $index => $candidate) {
+        $changelog = changelogAt($candidate['package_dir'], 'origin/master');
+        if ($changelog !== null && changelogHasUnreleasedEntry($changelog)) {
+            $unstamped[$index] = true;
+        }
+    }
+
+    return $unstamped;
+}
+
+/**
+ * CHANGELOG.md as it stands at a revision, or null when the package has none there.
+ */
+function changelogAt(string $packageDir, string $revision): ?string
+{
+    $result = runShellCommand(sprintf(
+        'git -C %s show %s 2>/dev/null',
+        escapeshellarg($packageDir),
+        escapeshellarg($revision . ':' . CHANGELOG_FILE),
+    ));
+
+    return $result['exit_code'] === 0 ? $result['output'] : null;
+}
+
+/**
  * Date every declared floor into the tree its tag will be cut from, before any
  * tag exists.
  *
@@ -760,21 +806,30 @@ function undatedFloorsOf(array $candidates): array
  * The release set is exactly the candidates of THIS run, so a run filtered to
  * one package cannot date a floor against a provider it is not tagging.
  *
+ * The same commit stamps the changelog: a package whose CHANGELOG.md carries an
+ * Unreleased entry gets that heading renamed to this release (changelog-stamp.php),
+ * so the notes a consumer reads on upgrade are in the tree the tag names. One
+ * commit per package, floors and changelog together, under the same
+ * refuse-before-the-first-commit ordering.
+ *
  * @param list<array<string, mixed>> $candidates
  * @return list<array<string, mixed>> the candidates, with `tag_target` on each that got a floor commit
  */
 function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noPush): array
 {
     $undated = undatedFloorsOf($candidates);
-    if ($undated === []) {
+    $unstamped = unstampedChangelogsOf($candidates);
+    if ($undated === [] && $unstamped === []) {
         return $candidates;
     }
 
     $releaseSet = array_values(array_map(static fn (array $c): string => $c['name'], $candidates));
+    $toCommit = array_keys($undated + $unstamped);
+    sort($toCommit);
 
     $refusals = [];
-    foreach ($undated as $index => $dependencies) {
-        foreach ($dependencies as $dependency) {
+    foreach ($toCommit as $index) {
+        foreach ($undated[$index] ?? [] as $dependency) {
             $why = whyFloorCannotBeDated($candidates[$index]['name'], $dependency, $releaseSet);
             if ($why !== null) {
                 $refusals[] = $why;
@@ -788,25 +843,46 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
     }
 
     if ($refusals !== []) {
-        fwrite(STDERR, "Refusing to tag anything — these floor declarations cannot be dated in this release:\n");
+        fwrite(STDERR, "Refusing to tag anything — these release commits cannot be made in this release:\n");
         foreach ($refusals as $refusal) {
             fwrite(STDERR, "- {$refusal}\n");
         }
         exit(1);
     }
 
-    echo "\033[1m--- Dating declared floors ---\033[0m\n";
+    echo "\033[1m--- Dating declared floors, stamping changelogs ---\033[0m\n";
 
-    $message = 'Date the declared internal floors at ' . $releaseVersion;
-    foreach ($undated as $index => $dependencies) {
+    foreach ($toCommit as $index) {
         $candidate = $candidates[$index];
+        $dependencies = $undated[$index] ?? [];
+        $stamp = isset($unstamped[$index]);
+        $message = match (true) {
+            $dependencies !== [] && $stamp => 'Date the declared internal floors and stamp the changelog at ' . $releaseVersion,
+            $stamp => 'Stamp the changelog at ' . $releaseVersion,
+            default => 'Date the declared internal floors at ' . $releaseVersion,
+        };
+
         $candidates[$index]['tag_target'] = commitReleaseManifest(
             $candidate['package_dir'],
             $candidate['name'],
-            static function () use ($candidate, $dependencies, $releaseVersion): void {
+            static function () use ($candidate, $dependencies, $stamp, $releaseVersion): array {
+                $paths = [];
                 foreach ($dependencies as $dependency) {
                     writeResolvedFloor($candidate['composer_path'], $dependency, $releaseVersion);
+                    $paths = ['composer.json'];
                 }
+                if ($stamp) {
+                    $path = $candidate['package_dir'] . '/' . CHANGELOG_FILE;
+                    $stamped = stampUnreleasedChangelog((string) file_get_contents($path), $releaseVersion);
+                    if ($stamped === null) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: its Unreleased entry is gone from develop.\n");
+                        exit(1);
+                    }
+                    file_put_contents($path, $stamped);
+                    $paths[] = CHANGELOG_FILE;
+                }
+
+                return $paths;
             },
             $message,
             $noPush,
@@ -814,6 +890,9 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
 
         foreach ($dependencies as $dependency) {
             echo "  {$candidate['name']}: {$dependency} " . floorConstraint($releaseVersion) . "\n";
+        }
+        if ($stamp) {
+            echo "  {$candidate['name']}: CHANGELOG ## Unreleased → ## {$releaseVersion}\n";
         }
     }
 
@@ -826,6 +905,14 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
             fwrite(
                 STDERR,
                 "Refusing to tag {$candidate['name']}: the tree at {$target} still carries an undated floor declaration.\n"
+            );
+            exit(1);
+        }
+        $changelog = changelogAt($candidate['package_dir'], $target);
+        if ($changelog !== null && changelogHasUnreleasedEntry($changelog)) {
+            fwrite(
+                STDERR,
+                "Refusing to tag {$candidate['name']}: the tree at {$target} still carries an Unreleased changelog entry.\n"
             );
             exit(1);
         }
@@ -1009,8 +1096,10 @@ function commitReleaseManifest(
     runGit($packageDir, 'reset', '--hard', 'origin/develop');
     runGit($packageDir, 'merge', '--ff-only', 'origin/master');
 
-    $writeManifest();
-    runGit($packageDir, 'add', '--', 'composer.json');
+    // The writer names the files it changed; one that returns nothing is the
+    // manifest-only writer ultimate's pin refresh still uses.
+    $paths = $writeManifest();
+    runGit($packageDir, 'add', '--', ...(is_array($paths) && $paths !== [] ? $paths : ['composer.json']));
     runGit($packageDir, 'commit', '-m', $message);
 
     $commitSha = trim((string) shell_exec(
