@@ -172,6 +172,32 @@ final class TraceHtmlRendererWaterfallTest extends TestCase
         self::assertStringContainsString('<b style="left:100%"><span>200.0 ms</span></b>', $html);
     }
 
+    #[Test]
+    public function the_status_the_request_answered_heads_the_page(): void
+    {
+        $html = (new TraceHtmlRenderer())->renderTrace([
+            'meta' => ['file' => 't.json', 'recordedAt' => '2026-09-24T00:00:00+00:00', 'path' => '/x', 'method' => 'POST', 'route' => 'x', 'totalMs' => 1.0, 'status' => 500],
+            'spans' => [$this->span('request', 0.0, 1.0, 0)],
+            'marks' => [],
+            'queries' => [],
+        ]);
+
+        self::assertStringContainsString('<span class="status s5"', $html);
+        self::assertStringContainsString('>500</span>', $html);
+    }
+
+    #[Test]
+    public function a_mark_shows_what_it_carries_on_its_row(): void
+    {
+        $html = $this->render([$this->span('request', 0.0, 2.0, 0)], [
+            ['name' => 'request.exception', 'atMs' => 1.0, 'depth' => 1, 'cid' => 1, 'pcid' => 0, 'context' => ['class' => 'App\\Domain\\PaymentDeclined']],
+            ['name' => 'request.exception.mapped', 'atMs' => 1.5, 'depth' => 1, 'cid' => 1, 'pcid' => 0, 'context' => ['status' => 402]],
+        ]);
+
+        self::assertStringContainsString('request.exception <span class="who">PaymentDeclined</span>', $html);
+        self::assertStringContainsString('request.exception.mapped <span class="who">status: 402</span>', $html);
+    }
+
     /**
      * @param list<array<string, mixed>> $spans
      * @param list<array<string, mixed>> $marks

@@ -34,7 +34,7 @@ final class TraceHtmlRenderer
     ];
 
     /**
-     * @param list<array{file: string, recordedAt: string, path: string, method: string, totalMs: float, queries: int}> $traces
+     * @param list<array{file: string, recordedAt: string, path: string, method: string, totalMs: float, queries: int, status?: int|null}> $traces
      */
     public function renderList(array $traces, string $dir): string
     {
@@ -47,7 +47,7 @@ final class TraceHtmlRenderer
             $rows .= sprintf(
                 '<a class="row" href="/__trace?file=%s">
                    <span class="method">%s</span>
-                   <span class="path">%s</span>
+                   <span class="path">%s%s</span>
                    <span class="chip">%s</span>
                    <span class="num">%s ms</span>
                    <span class="when">%s</span>
@@ -55,6 +55,7 @@ final class TraceHtmlRenderer
                 rawurlencode($t['file']),
                 $this->e($t['method']),
                 $this->e($t['path']),
+                $this->statusBadge($t['status'] ?? null),
                 $t['queries'] > 0 ? $t['queries'] . ' queries' : 'no queries',
                 $this->ms($t['totalMs']),
                 $this->e(substr($t['recordedAt'], 11, 8)),
@@ -66,7 +67,7 @@ final class TraceHtmlRenderer
 
     /**
      * @param array{
-     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated?: bool},
+     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, status?: int|null, truncated?: bool},
      *     spans: list<array{name: string, depth: int, startMs: float, durationMs: float|null, context: array<string, mixed>}>,
      *     marks: list<array{name: string, atMs: float, context: array<string, mixed>}>,
      *     queries: list<array{sql: string, durationMs: float, params: int, atMs?: float|null}>
@@ -80,11 +81,12 @@ final class TraceHtmlRenderer
         $body = sprintf(
             '<div class="head">
                <a class="back" href="/__trace">&larr; all traces</a>
-               <h1><span class="method big">%s</span> %s</h1>
+               <h1><span class="method big">%s</span> %s%s</h1>
                <div class="meta">%s &middot; %s ms &middot; %d queries &middot; %s</div>
              </div>',
             $this->e($meta['method']),
             $this->e($meta['path']),
+            $this->statusBadge($meta['status'] ?? null),
             $this->e($meta['route'] !== '' ? $meta['route'] : 'no route name'),
             $this->ms($meta['totalMs']),
             count($trace['queries']),
@@ -351,7 +353,9 @@ final class TraceHtmlRenderer
             $cid !== $rootCid ? '<em class="cid" title="coroutine ' . $cid . '">c' . $cid . '</em>' : '',
             // Eight rows named pipeline.listener say nothing until each says WHICH
             // listener; the class rides on the row, not only in the tooltip.
-            $this->e($name) . ($class === null ? '' : ' <span class="who">' . $this->e($this->shortClass($class)) . '</span>'),
+            $this->e($name) . ($class === null
+                ? ($isMark && $this->markSays($context) !== '' ? ' <span class="who">' . $this->e($this->markSays($context)) . '</span>' : '')
+                : ' <span class="who">' . $this->e($this->shortClass($class)) . '</span>'),
             $bar,
             $dur === null ? ($isMark ? '' : '<span class="warn">open</span>') : $this->ms($dur) . ' ms',
             $tag,
@@ -629,6 +633,10 @@ code{font-family:var(--mono);font-size:12.5px}
 .method{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);
   border:1px solid var(--line);border-radius:4px;padding:2px 6px}
 .method.big{font-size:13px}
+.status{font-family:var(--mono);font-size:13px;font-weight:700;border-radius:4px;padding:2px 7px;margin-left:6px;vertical-align:middle}
+.status.s2{color:#3ddc97;border:1px solid color-mix(in srgb,#3ddc97 45%,transparent)}
+.status.s4{color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
+.status.s5{color:#fff;background:var(--danger)}
 
 .list{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
 .row{display:grid;grid-template-columns:64px 1fr auto 92px 76px;gap:14px;align-items:center;
@@ -727,6 +735,41 @@ a.node:hover .who{color:var(--text)}
 .empty h1{margin-bottom:12px}
 .empty p{color:var(--dim);max-width:520px;margin:8px auto}
 CSS;
+    }
+
+    /**
+     * What a request answered, where the reader looks first. A 500 used to read
+     * exactly like a 200 here: the status was in the file and never on the page.
+     */
+    private function statusBadge(mixed $status): string
+    {
+        if (!is_int($status)) {
+            return '';
+        }
+        $class = $status >= 500 ? 's5' : ($status >= 400 ? 's4' : 's2');
+
+        return sprintf(' <span class="status %s" title="HTTP status the request answered">%d</span>', $class, $status);
+    }
+
+    /**
+     * A mark's payload on its row — "RuntimeException", "status: 500". A mark
+     * exists to say what happened at that instant, and a bare
+     * `request.exception` with the class hidden in a tooltip does not.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function markSays(array $context): string
+    {
+        $parts = [];
+        foreach ($context as $k => $v) {
+            if ($k === 'marker' || $v === null || $v === '' || $v === false || is_array($v)) {
+                continue;
+            }
+            $value = $this->shortClass((string) $this->stringify($v));
+            $parts[] = $k === 'class' ? $value : $k . ': ' . $value;
+        }
+
+        return implode(' · ', array_slice($parts, 0, 3));
     }
 
     private function hue(string $name): int

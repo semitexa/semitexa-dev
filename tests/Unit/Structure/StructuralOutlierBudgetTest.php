@@ -193,7 +193,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the file rather than guessed from the first surviving span. No new
         // method; the class is no more tangled than it was, just eight lines
         // longer for two things it previously got wrong.
-        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 779],
+        // 24/779 -> 26/822 on 2026-09-24, recorded deliberately: the waterfall
+        // now says what the request ANSWERED (a status badge in the header and
+        // on each list row) and what each mark carries (the exception class,
+        // the mapped status) on the row itself. A 500 read exactly like a 200
+        // before. Two small presentation helpers, statusBadge() and
+        // markSays(); rendering is this class's whole job, so they belong here.
+        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [26, 822],
         // Newly recorded on 2026-09-11 at 25/713, crossing the 700-line line
         // from 684. The command now has to report a verdict that distinguishes
         // "every required target ran" from "nothing objected", so it carries
@@ -428,7 +434,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // statement, one local to hold the response that was previously mapped
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 730],
+        // 730 -> 735 on 2026-09-24: the root span's end now carries the status
+        // the request answered, so the observatory can count a 500 as an error
+        // on untraced requests too. The rule itself lives in RequestOutcome; what
+        // stays here is two locals recording which exit was taken. No new method.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 735],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
