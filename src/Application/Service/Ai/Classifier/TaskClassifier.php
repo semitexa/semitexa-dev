@@ -44,7 +44,7 @@ final class TaskClassifier
 
     public function classify(string $description, ?string $hintModule = null): ClassificationResult
     {
-        $normalized = strtolower(trim($description));
+        $normalized = mb_strtolower(trim($description));
         $tokens = $this->tokenize($normalized);
         $bigrams = $this->bigrams($tokens);
 
@@ -172,12 +172,62 @@ final class TaskClassifier
     }
 
     /**
+     * Ukrainian stems → the English tokens the recipes are written in.
+     *
+     * The operator writes in Ukrainian, and the tokenizer used to split on
+     * anything outside [a-z0-9], so a Ukrainian request produced no tokens and
+     * always came back unknown_task. A stem matches as a word prefix, which
+     * covers the case endings (сторінку, сторінці, сторінка). Short or
+     * ambiguous words are listed whole instead.
+     */
+    private const UKRAINIAN_STEMS = [
+        'дода' => ['add'], 'створ' => ['create'], 'виправ' => ['fix'], 'полагод' => ['fix'],
+        'сторінк' => ['page'], 'шаблон' => ['template'], 'текст' => ['text'], 'одрук' => ['typo'],
+        'помилк' => ['error'], 'падає' => ['failing'], 'зламан' => ['broken'],
+        'чому' => ['why'], 'дослід' => ['investigate'], 'розслід' => ['investigate'],
+        'команд' => ['command'], 'консол' => ['console'], 'консольн' => ['console'],
+        'слухач' => ['listener'], 'підпиш' => ['subscribe'],
+        'переймен' => ['rename'], 'рефактор' => ['refactor'], 'винес' => ['extract'], 'почист' => ['clean'],
+        'сервіс' => ['service'], 'модул' => ['module'], 'контракт' => ['contract'], 'інтерфейс' => ['interface'],
+        'ендпоінт' => ['endpoint'], 'ендпойнт' => ['endpoint'], 'маршрут' => ['route'],
+        'повільн' => ['slow'], 'оптиміз' => ['optimize'], 'пришвидш' => ['speed'], 'кеш' => ['cache'],
+        'аудит' => ['audit'], 'перевір' => ['check'], 'документ' => ['document'], 'поясн' => ['explain'],
+        'мігр' => ['migrate'], 'міграц' => ['migration'],
+    ];
+
+    private const UKRAINIAN_WORDS = [
+        // As prefixes these would also catch багато ("many") and подивись ("look").
+        'баг' => ['bug'], 'баги' => ['bug'], 'багу' => ['bug'], 'бага' => ['bug'],
+        'подія' => ['event'], 'події' => ['event'], 'подію' => ['event'], 'подій' => ['event'],
+        'поле' => ['field'], 'поля' => ['field'], 'пейлоад' => ['payload'],
+    ];
+
+    /**
      * @return list<string>
      */
     private function tokenize(string $text): array
     {
-        $parts = preg_split('/[^a-z0-9]+/i', strtolower($text)) ?: [];
-        return array_values(array_filter($parts, static fn(string $p): bool => $p !== ''));
+        $parts = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text)) ?: [];
+        $tokens = [];
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+            $tokens[] = $part;
+            // "lists invoices" must reach the same recipes as "list invoice".
+            if (strlen($part) > 3 && str_ends_with($part, 's') && !str_ends_with($part, 'ss')) {
+                $tokens[] = substr($part, 0, -1);
+            }
+            foreach (self::UKRAINIAN_WORDS[$part] ?? [] as $english) {
+                $tokens[] = $english;
+            }
+            foreach (self::UKRAINIAN_STEMS as $stem => $english) {
+                if (str_starts_with($part, $stem)) {
+                    array_push($tokens, ...$english);
+                }
+            }
+        }
+        return array_values(array_unique($tokens));
     }
 
     /**
