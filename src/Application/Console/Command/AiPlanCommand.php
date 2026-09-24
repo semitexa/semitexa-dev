@@ -31,7 +31,7 @@ final class AiPlanCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addArgument('recipe', InputArgument::REQUIRED, 'Recipe id (see: ai:task)')
+            ->addArgument('recipe', InputArgument::OPTIONAL, 'Recipe id (see: ai:task); defaults to the recipe of the active trace')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope containing the NDJSON records, including trace outcomes')
             ->addOption('module', null, InputOption::VALUE_OPTIONAL, 'Module the change targets')
             ->addOption('files', null, InputOption::VALUE_OPTIONAL, 'Comma-separated repo-relative paths the agent intends to touch')
@@ -61,7 +61,22 @@ final class AiPlanCommand extends BaseCommand
 
     private function executeStream(InputInterface $input, OutputInterface $output): int
     {
-        $recipeId = (string) $input->getArgument('recipe');
+        // AGENTS.md's pipeline writes this step as `ai:plan --files`: inside a
+        // task the recipe is already known, recorded on the trace by
+        // `ai:work start --recipe`. Requiring it again made the documented
+        // form a usage error — and a plain-text one, even under --json.
+        $recipeId = (string) ($input->getArgument('recipe') ?? '');
+        if ($recipeId === '') {
+            $recipeId = (string) $this->traceAppender->activeRecipe($input);
+        }
+        if ($recipeId === '') {
+            $output->writeln(json_encode([
+                'kind'  => 'error',
+                'error' => 'no recipe: pass one (see ai:task), or run inside a task started with'
+                    . ' `ai:work start --recipe=...` and export SEMITEXA_AI_TRACE_ID=<task-id> (or pass --trace)',
+            ], JSON_UNESCAPED_SLASHES));
+            return self::FAILURE;
+        }
         $module = $input->getOption('module');
         $filesRaw = (string) ($input->getOption('files') ?? '');
 

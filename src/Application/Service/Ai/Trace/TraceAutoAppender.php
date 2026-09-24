@@ -47,6 +47,28 @@ final class TraceAutoAppender
     }
 
     /**
+     * The recipe the active trace was started for, if any.
+     *
+     * `ai:work start --recipe=...` records it on the trace header, so a command
+     * run inside that task can take it from there instead of being told again.
+     */
+    public function activeRecipe(InputInterface $input): ?string
+    {
+        $traceId = $this->resolveTraceId($input);
+        if ($traceId === null || !$this->store->exists($traceId)) {
+            return null;
+        }
+
+        try {
+            $recipe = $this->store->read($traceId)->header->recipe;
+        } catch (\RuntimeException) {
+            return null;
+        }
+
+        return $recipe !== null && $recipe !== '' ? $recipe : null;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     public function appendIfActive(
