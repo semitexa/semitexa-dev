@@ -38,6 +38,42 @@ final class TraceReaderTest extends TestCase
         self::assertFalse((new TraceReader())->isEnabled());
     }
 
+    /**
+     * A 500 read exactly like a 200 on the waterfall: the status was in the
+     * file and nowhere on the page.
+     */
+    #[Test]
+    public function the_status_the_request_answered_is_read_from_the_root_end(): void
+    {
+        $this->write('s.json', [
+            ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'context' => ['path' => '/x', 'method' => 'POST']],
+            ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'durationMs' => 1.0, 'context' => ['http_status' => 500]],
+        ]);
+
+        self::assertSame(500, (new TraceReader())->read('s.json')['meta']['status'] ?? null);
+        self::assertSame(500, (new TraceReader())->list()[0]['status'] ?? null);
+    }
+
+    #[Test]
+    public function an_older_trace_falls_back_to_the_mapped_status_and_otherwise_admits_none(): void
+    {
+        $this->write('old.json', [
+            ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'context' => ['path' => '/x']],
+            ['type' => 'mark', 'name' => 'request.exception.mapped', 'depth' => 1, 'atMs' => 0.5, 'context' => ['status' => 422]],
+            ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'durationMs' => 1.0, 'context' => []],
+        ]);
+        $this->write('none.json', [
+            ['type' => 'begin', 'name' => 'request', 'depth' => 0, 'atMs' => 0.0, 'context' => ['path' => '/y']],
+            ['type' => 'end', 'name' => 'request', 'depth' => 0, 'atMs' => 1.0, 'durationMs' => 1.0, 'context' => []],
+        ]);
+
+        self::assertSame(422, (new TraceReader())->read('old.json')['meta']['status'] ?? null);
+        $none = (new TraceReader())->read('none.json');
+        self::assertIsArray($none);
+        self::assertArrayHasKey('status', $none['meta'], 'no status is reported as null, not left out');
+        self::assertNull($none['meta']['status']);
+    }
+
     #[Test]
     public function begin_and_end_events_are_paired_into_spans(): void
     {

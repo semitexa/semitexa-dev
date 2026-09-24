@@ -328,6 +328,46 @@ class VerificationExecutorTest extends TestCase
         self::assertSame('--check', $runner->calls[0]['command'][1]);
     }
 
+    /**
+     * The release gates on the ROOT phpstan baseline. phpstan-sync.sh --check
+     * was written to catch a root copy that drifted from the versioned one, and
+     * nothing ran it.
+     */
+    public function test_phpstan_copies_runs_its_own_script_and_fails_on_drift(): void
+    {
+        $dir = $this->root . '/packages/semitexa-dev/resources';
+        mkdir($dir, 0755, true);
+        file_put_contents($dir . '/phpstan-sync.sh', "#!/usr/bin/env bash\nexit 0\n");
+        chmod($dir . '/phpstan-sync.sh', 0755);
+        $runner = new RecordingProcessRunner(['exit' => 1, 'output' => "DRIFT  phpstan-baseline.neon\n"]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_SKILL_COPIES, 'phpstan_copies:project', 'r', [], filePath: 'packages/semitexa-dev/resources/phpstan-sync.sh'),
+        ]));
+
+        self::assertSame($dir . '/phpstan-sync.sh', $runner->calls[0]['command'][0]);
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringStartsWith('phpstan_copies → ', $results[0]->signal);
+        self::assertStringContainsString('phpstan-baseline.neon', $results[0]->signal);
+    }
+
+    /**
+     * The canonical shelf exists but the script is gone: a broken workspace,
+     * not a consumer project — the copy gate must not read that as green.
+     */
+    public function test_a_copy_guard_fails_when_the_workspace_lost_its_script(): void
+    {
+        mkdir($this->root . '/packages/semitexa-dev/resources', 0755, true);
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($this->planWith([
+            new VerificationTarget(VerificationTarget::TYPE_SKILL_COPIES, 'phpstan_copies:project', 'r', [], filePath: 'packages/semitexa-dev/resources/phpstan-sync.sh'),
+        ]));
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        self::assertStringContainsString('missing from the authoring workspace', $results[0]->signal);
+    }
+
     public function test_skill_copies_skips_when_the_project_has_no_sync_script(): void
     {
         // A consumer install: semitexa/dev sits in vendor/, so walking up from

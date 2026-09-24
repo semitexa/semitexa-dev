@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\HandlerPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
@@ -30,6 +31,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:handler', description: 'Scaffold a new Handler class')]
 final class MakeHandlerCommand extends BaseCommand
 {
+    /**
+     * Options execute() refuses to run without. Symfony's VALUE_REQUIRED only
+     * requires a value when the option is given; presence is checked by
+     * {@see GenerationPreflight}, and NextCommandContractTest reads this list.
+     */
+    public const REQUIRED_OPTIONS = ['module', 'name', 'payload', 'resource'];
+
     protected function configure(): void
     {
         $this
@@ -49,11 +57,9 @@ final class MakeHandlerCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (['module', 'name', 'payload', 'resource'] as $required) {
-            if (!$input->getOption($required)) {
-                $io->error("Missing required option: --{$required}");
-                return self::FAILURE;
-            }
+        $rejected = GenerationPreflight::check($input, $output, 'make:handler', self::REQUIRED_OPTIONS, $this->getProjectRoot());
+        if ($rejected !== null) {
+            return $rejected;
         }
 
         $inflector = new NameInflector();

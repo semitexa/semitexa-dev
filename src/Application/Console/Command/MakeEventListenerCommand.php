@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\EventListenerPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
@@ -29,6 +30,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:event-listener', description: 'Scaffold a new event listener with #[AsEventListener]')]
 final class MakeEventListenerCommand extends BaseCommand
 {
+    /**
+     * Options execute() refuses to run without. Symfony's VALUE_REQUIRED only
+     * requires a value when the option is given; presence is checked by
+     * {@see GenerationPreflight}, and NextCommandContractTest reads this list.
+     */
+    public const REQUIRED_OPTIONS = ['module', 'name', 'event', 'execution'];
+
     protected function configure(): void
     {
         $this
@@ -48,17 +56,14 @@ final class MakeEventListenerCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (['module', 'name', 'event', 'execution'] as $required) {
-            if (!$input->getOption($required)) {
-                $io->error("Missing required option: --{$required}");
-                return self::FAILURE;
-            }
+        $rejected = GenerationPreflight::check($input, $output, 'make:event-listener', self::REQUIRED_OPTIONS, $this->getProjectRoot());
+        if ($rejected !== null) {
+            return $rejected;
         }
 
         $execution = ucfirst(strtolower($input->getOption('execution')));
         if (!in_array($execution, ['Sync', 'Async', 'Queued'], true)) {
-            $io->error('--execution must be one of: Sync, Async, Queued');
-            return self::FAILURE;
+            return GenerationPreflight::reject($input, $output, 'make:event-listener', GenerationPreflight::REASON_INVALID_OPTION, '--execution must be one of: Sync, Async, Queued');
         }
 
         $inflector = new NameInflector();

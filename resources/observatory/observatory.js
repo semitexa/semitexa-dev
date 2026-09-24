@@ -180,7 +180,7 @@ function ingest(rows, reset, live) {
     const ctx = r.context || {};
     const fin = {id: r.id, kind: r.kind || (open && open.kind) || 'http', name: shortName(r.kind, r.name || (open && open.name) || '?'), worker: r.worker || (open && open.worker),
       durationMs: typeof r.durationMs === 'number' ? r.durationMs : null, phases: r.phases || null, trace: r.trace || null, endedAt: at, ts,
-      outcome: (r.phases && r.phases.outcome) || (ctx.status === 'failed' ? 'failed' : 'ok'),
+      outcome: outcomeOf(r.phases, ctx), httpStatus: typeof ctx.http_status === 'number' ? ctx.http_status : null,
       error: ctx.error || null, retry: ctx.retry === true, attempt: ctx.attempt || (open && open.attempt) || 1, schedule: ctx.schedule || null,
       client: open ? open.client : 'api', route: (open && open.route) || r.name};
     S.finished.push(fin); touchWorker(fin.worker, fin, 'close', open); accountPhases(fin);
@@ -714,6 +714,7 @@ function drawRiver(t) {
   }
   // particles
   const labels = S.particles.filter(p => p.state !== 'orbit').length <= 18;
+  const pendingLabels = [];
   for (let i = S.particles.length - 1; i >= 0; i--) {
     const p = S.particles[i]; const at = pos.get(p);
     if (p.dead) { S.particles.splice(i, 1); if (p.state !== 'gone') onExit(p); continue; }
@@ -744,13 +745,12 @@ function drawRiver(t) {
     if (S.cinematic && p.state !== 'orbit') { ctx.strokeStyle = p.color; ctx.globalAlpha = alpha * .35; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(at.x, at.y, p.size + 6 + Math.sin(t / 180 + p.angle) * 2, 0, 7); ctx.stroke(); }
     if (at.held) { const k = (t % 1000) / 1000; ctx.strokeStyle = p.color; ctx.globalAlpha = alpha * (1 - k); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(at.x, at.y, p.size + k * 14, 0, 7); ctx.stroke(); }
     if (labels && p.state !== 'orbit' && !at.returning) {
-      ctx.globalAlpha = alpha * 0.9; ctx.font = '600 10px ' + theme.mono; ctx.fillStyle = theme.text; ctx.textAlign = 'left';
-      const lbl = p.name.length > 26 ? p.name.slice(0, 25) + '…' : p.name;
       const onRiver = Math.abs(at.y - y) < 30;
-      ctx.fillText(lbl, at.x + 9, onRiver ? at.y - 30 : at.y - 12);
+      pendingLabels.push({p, alpha, x: at.x + 9, y: onRiver ? at.y - 30 : at.y - 12});
     }
     ctx.globalAlpha = 1;
   }
+  drawLabels(ctx, pendingLabels);
   ctx.restore();
   drawScrollbars(ctx);
 }
@@ -842,6 +842,26 @@ function drawSource(ctx, n, occ, t) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '700 9px ' + theme.mono; ctx.fillStyle = theme.dim;
   ctx.fillText(kind === 'human' ? 'PEOPLE' : kind === 'bot' ? 'BOTS' : 'PROGRAMS', x, y + r + 9);
   ctx.font = '500 9.5px ' + theme.mono; ctx.fillStyle = w60 ? theme.text : theme.faint; ctx.fillText(String(w60), x - r - 12, y);
+}
+// Particle names, without the pile-up. Requests travelling together sit on the
+// same few pixels of the river, and their names used to be drawn over each
+// other into an unreadable smear ("DemoHomePayloadListCustomersPayload…").
+// A label that would overlap one already placed this frame is skipped; the
+// spotlit process is placed first, then the oldest, so the name you are
+// following never loses to a newcomer.
+function drawLabels(ctx, pending) {
+  if (!pending.length) return;
+  ctx.font = '600 10px ' + theme.mono; ctx.fillStyle = theme.text; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  pending.sort((a, b) => (b.p.id === S.heroId) - (a.p.id === S.heroId) || a.p.born - b.p.born);
+  const placed = [];
+  for (const l of pending) {
+    const text = l.p.name.length > 26 ? l.p.name.slice(0, 25) + '…' : l.p.name;
+    const box = {x0: l.x - 2, x1: l.x + ctx.measureText(text).width + 2, y0: l.y - 7, y1: l.y + 7};
+    if (placed.some(b => box.x0 < b.x1 && b.x0 < box.x1 && box.y0 < b.y1 && b.y0 < box.y1)) continue;
+    placed.push(box);
+    ctx.globalAlpha = l.alpha * 0.9; ctx.fillText(text, l.x, l.y);
+  }
+  ctx.globalAlpha = 1;
 }
 function wrap(ctx, text, x, y, maxW, lh) { const words = text.split(' '); let line = ''; for (const w of words) { const test = line ? line + ' ' + w : w; if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, y); y += lh; line = w; } else line = test; } if (line) ctx.fillText(line, x, y); }
 function drawScrollbars(ctx) {
@@ -1019,6 +1039,24 @@ function renderTiles() {
   badge('#tb-workers', String(workers), false); badge('#tb-coro', String(hung), hung > 0); badge('#tb-cron', String(S.schedules.length), false);
   badge('#tb-system', String(S.particles.filter(p => p.state === 'orbit' && p.ring === 'failed').length), true);
 }
+// What a finished process ended as. The trace marks say it best, but only a
+// traced request has them; every other one used to fall through to 'ok', so a
+// 500 counted as a success and ERRORS read 0.0% while the server was failing.
+// Core now puts the response status (or the exception that escaped) on the end
+// line of every request, and that decides whenever the marks are silent.
+// A 4xx stays 'ok' here on purpose: the server answered as designed. The row
+// still shows its code.
+// When the status is known it decides, so a request counts the same whether or
+// not it was traced (a traced 404 used to be an error, an untraced one not).
+// The marks only add what a status cannot say: refused, or handed to a queue.
+// ObservatoryReader::snapshot() applies the same rule for `ai:observe ps`.
+function outcomeOf(phases, ctx) {
+  const marked = phases && phases.outcome, status = ctx.http_status;
+  if (ctx.exception || (typeof status === 'number' && status >= 500)) return 'exception';
+  if (typeof status === 'number') return marked === 'rejected' || marked === 'queued' ? marked : 'ok';
+  if (ctx.status === 'failed') return 'failed';
+  return marked || 'ok';
+}
 function addTicker(fin, historic) {
   const box = $('#tlist');
   if (box.firstElementChild && box.firstElementChild.classList.contains('empty')) box.innerHTML = '';
@@ -1045,7 +1083,7 @@ function addTicker(fin, historic) {
     '<div class="kind">' + esc(fin.kind) + '</div>' +
     '<div class="name" title="' + esc(fin.name) + (fin.error ? ' — ' + esc(fin.error) : '') + '">' + esc(fin.name) + (sub ? '<small>' + esc(sub) + '</small>' : '') + ph + '</div>' +
     '<div class="w">' + (fin.worker ? 'w' + fin.worker : '') + '</div>' +
-    '<div class="ms' + (slow ? ' slow' : hot ? ' hot' : session ? ' session' : '') + '">' + fmtMs(fin.durationMs) + (fin.outcome !== 'ok' ? '<small>' + esc(fin.outcome) + '</small>' : session ? '<small>session</small>' : (fin.trace ? '<small>trace →</small>' : '')) + '</div>';
+    '<div class="ms' + (slow ? ' slow' : hot ? ' hot' : session ? ' session' : '') + '">' + fmtMs(fin.durationMs) + (fin.outcome !== 'ok' ? '<small>' + esc(fin.httpStatus || fin.outcome) + '</small>' : fin.httpStatus >= 400 ? '<small class="code">' + fin.httpStatus + '</small>' : session ? '<small>session</small>' : (fin.trace ? '<small>trace →</small>' : '')) + '</div>';
   box.prepend(el);
   while (box.children.length > 60) box.lastElementChild.remove();
 }
@@ -1087,8 +1125,13 @@ function renderSpotlight(t) {
   const at = hero.lastPosition, fin = hero.fin, ph = fin && fin.phases;
   box.className = 'spotlight ' + hero.kind; $('#spot-status').textContent = fin ? 'process journey' : 'live process';
   $('#spot-stage').textContent = spotlightStage(hero, at);
-  $('#spot-title').textContent = hero.path ? ((hero.method || 'GET') + ' ' + hero.path) : hero.name;
-  $('#spot-route').textContent = hero.path && hero.name !== hero.path ? hero.name : (hero.route || 'journal process');
+  // Only a request has a method and a path. A scheduler run carries its run id
+  // in `path`, and the card used to announce a cron job as "GET 01a0d1fe-…".
+  const isRequest = hero.kind === 'http' || hero.kind === 'sse';
+  $('#spot-title').textContent = isRequest && hero.path ? ((hero.method || 'GET') + ' ' + hero.path) : hero.name;
+  $('#spot-route').textContent = isRequest
+    ? (hero.path && hero.name !== hero.path ? hero.name : (hero.route || 'journal process'))
+    : (hero.path ? 'run ' + String(hero.path).slice(0, 8) : (hero.route || 'journal process'));
   $('#spot-kind').textContent = hero.kind; $('#spot-worker').textContent = hero.worker ? 'worker ' + hero.worker : 'worker —';
   $('#spot-time').textContent = fin ? fmtMs(fin.durationMs) : fmtMs(Math.max(0, t - hero.born));
   if (!ph) { $('#spot-ph').innerHTML = ''; return; }

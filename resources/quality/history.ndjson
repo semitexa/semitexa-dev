@@ -1,0 +1,8 @@
+{"at":"2026-09-24T08:02:38+00:00","metric":"packages.without-tests","total":5,"event":"new"}
+{"at":"2026-09-24T08:02:38+00:00","metric":"tests.skip-calls","total":143,"event":"new"}
+{"at":"2026-09-24T08:03:16+00:00","metric":"tests.skip-calls","total":144,"event":"accept"}
+{"at":"2026-09-24T08:14:21+00:00","metric":"requests.duplicate-queries","total":5,"event":"new"}
+{"at":"2026-09-24T08:26:04+00:00","metric":"requests.duplicate-queries","total":2,"event":"record"}
+{"at":"2026-09-24T08:35:18+00:00","metric":"requests.query-shapes","total":44,"event":"new"}
+{"at":"2026-09-24T08:35:18+00:00","metric":"requests.repeated-statements","total":19,"event":"new"}
+{"at":"2026-09-24T08:36:45+00:00","metric":"requests.repeated-statements","total":9,"event":"record"}

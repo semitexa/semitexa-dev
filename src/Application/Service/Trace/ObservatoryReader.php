@@ -53,7 +53,7 @@ final class ObservatoryReader
      *     generatedAt: string,
      *     live: list<array<string, mixed>>,
      *     recent: list<array<string, mixed>>,
-     *     counts: array{live: int, stale: int, workers: int, byKind: array<string, int>},
+     *     counts: array{live: int, stale: int, workers: int, byKind: array<string, int>, recentFailures: int},
      *     truncated: bool
      * }
      */
@@ -112,8 +112,23 @@ final class ObservatoryReader
 
         $recent = array_slice(array_reverse($recent), 0, self::RECENT_LIMIT);
         $recentOut = [];
+        $failures = 0;
         foreach ($recent as $row) {
-            $recentOut[] = [
+            // What it ended as, not only how long it took: a list of durations
+            // reads the same whether the server answered 200 or 500.
+            $context = is_array($row['context'] ?? null) ? $row['context'] : [];
+            $status = is_int($context['http_status'] ?? null) ? $context['http_status'] : null;
+            // The panel's outcomeOf() rule: a known status decides; the trace
+            // mark counts only where no status was recorded.
+            $marked = is_array($row['phases'] ?? null) ? ($row['phases']['outcome'] ?? null) : null;
+            $failed = ($status !== null && $status >= 500)
+                || isset($context['exception'])
+                // A job's own `status` counts only where no HTTP status was
+                // recorded — the same precedence as the panel's outcomeOf().
+                || ($status === null && ($context['status'] ?? null) === 'failed')
+                || ($status === null && $marked === 'exception');
+            $failures += $failed ? 1 : 0;
+            $recentOut[] = array_filter([
                 'id' => $row['id'],
                 'kind' => $row['kind'] ?? '?',
                 'name' => $row['name'] ?? '?',
@@ -121,7 +136,10 @@ final class ObservatoryReader
                 'endedTs' => $row['ts'] ?? null,
                 'durationMs' => $row['durationMs'] ?? null,
                 'trace' => $row['trace'] ?? null,
-            ];
+                'httpStatus' => $status,
+                'exception' => is_string($context['exception'] ?? null) ? $context['exception'] : null,
+                'failed' => $failed ?: null,
+            ], static fn (mixed $v, string $k): bool => $v !== null || in_array($k, ['worker', 'endedTs', 'durationMs', 'trace'], true), ARRAY_FILTER_USE_BOTH);
         }
 
         $byKind = [];
@@ -138,6 +156,7 @@ final class ObservatoryReader
                 'stale' => $staleCount,
                 'workers' => count(array_unique(array_filter(array_column($live, 'worker')))),
                 'byKind' => $byKind,
+                'recentFailures' => $failures,
             ],
             'truncated' => $truncated,
         ];

@@ -193,6 +193,42 @@ class WorkflowTraceTest extends TestCase
         }
     }
 
+    /**
+     * AGENTS.md writes the plan step as `ai:plan --files`. Inside a task the
+     * recipe is on the trace already; asking for it again made the manual's
+     * own form a usage error.
+     */
+    public function testPlanTakesTheRecipeFromTheActiveTrace(): void
+    {
+        $app = $this->buildApplication();
+        $this->runCommand($app, 'ai:trace', ['action' => 'start', '--id' => 'tk-planned', '--recipe' => 'add_cli_command']);
+
+        $tester = $this->runCommand($app, 'ai:plan', ['--files' => 'src/modules/X/Foo.php', '--trace' => 'tk-planned', '--json' => true]);
+
+        self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('add_cli_command', $payload['records'][0]['recipe']);
+    }
+
+    public function testPlanWithoutAnyRecipeIsOneJsonError(): void
+    {
+        $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['--files' => 'a.php', '--json' => true]);
+
+        self::assertSame(1, $tester->getStatusCode());
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('error', $payload['status']);
+        self::assertStringContainsString('no recipe', $payload['records'][0]['error']);
+    }
+
+    public function testPlanWithAMalformedTraceIdIsStillOneJsonError(): void
+    {
+        $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['--files' => 'a.php', '--trace' => 'bad id!', '--json' => true]);
+
+        self::assertSame(1, $tester->getStatusCode());
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('error', $payload['status']);
+    }
+
     public function testPlanStillEmitsNdjsonByDefault(): void
     {
         $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['recipe' => 'refactor_existing_code']);

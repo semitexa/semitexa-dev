@@ -36,14 +36,17 @@ final class NextCommandContractTest extends TestCase
                 $suffix = str_replace(' ', '', ucwords(str_replace('-', ' ', substr($step, 5))));
                 $class = 'Semitexa\\Dev\\Application\\Console\\Command\\Make' . $suffix . 'Command';
                 $definition = (new $class())->getDefinition();
-                // Required option presence is currently enforced in execute(),
-                // not Symfony's VALUE_REQUIRED (which only requires a value).
-                $source = file_get_contents((new \ReflectionClass($class))->getFileName());
-                if (preg_match('/foreach \(\[([^\]]+)\] as \$required\)/', $source, $match)) {
-                    preg_match_all("/'([^']+)'/", $match[1], $required);
-                    foreach ($required[1] as $key) {
-                        self::assertArrayHasKey($key, $shared, $recipe->id . ': ' . $step . ' needs ' . $key);
-                    }
+                // Required option presence is enforced in execute(), not by
+                // Symfony's VALUE_REQUIRED (which only requires a value). This
+                // used to be found by a regex over the source, which matched
+                // nothing once the check moved into GenerationPreflight — and
+                // the assertion silently stopped running. A declared constant
+                // cannot drift out from under it that way.
+                self::assertTrue(defined($class . '::REQUIRED_OPTIONS'), $class . ' must declare REQUIRED_OPTIONS');
+                foreach (constant($class . '::REQUIRED_OPTIONS') as $key) {
+                    self::assertArrayHasKey($key, $shared, $recipe->id . ': ' . $step . ' needs ' . $key);
+                    // Present but empty is refused by GenerationPreflight just the same.
+                    self::assertNotSame('', trim((string) $shared[$key]), $recipe->id . ': ' . $step . ' needs a non-empty ' . $key);
                 }
                 foreach (array_keys($shared) as $key) {
                     if ($definition->hasOption($key)) {

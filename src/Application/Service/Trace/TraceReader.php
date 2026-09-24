@@ -24,7 +24,7 @@ final class TraceReader
      * Newest first — a developer opens the viewer right after making the request
      * they care about.
      *
-     * @return list<array{file: string, recordedAt: string, path: string, method: string, totalMs: float, queries: int}>
+     * @return list<array{file: string, recordedAt: string, path: string, method: string, totalMs: float, queries: int, status: int|null}>
      */
     public function list(int $limit = 50): array
     {
@@ -47,6 +47,9 @@ final class TraceReader
                 'method' => $this->str($this->arr($root, 'context'), 'method', $this->str($root, 'name') === 'sse' ? 'SSE' : ''),
                 'totalMs' => $close !== [] ? $this->float($close, 'durationMs') : $this->float($trace, 'totalMs'),
                 'queries' => $this->int($this->arr($summary, 'context'), 'queries'),
+                'status' => $this->answeredStatus($close, array_filter([
+                    $this->firstEvent($events, 'request.exception.mapped', 'mark'),
+                ])),
             ];
 
             if (count($out) >= $limit) {
@@ -61,7 +64,7 @@ final class TraceReader
      * One trace, resolved into spans, marks and queries.
      *
      * @return array{
-     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, truncated: bool},
+     *     meta: array{file: string, recordedAt: string, path: string, method: string, route: string, totalMs: float, status: int|null, truncated: bool},
      *     spans: list<array<string, mixed>>,
      *     marks: list<array<string, mixed>>,
      *     queries: list<array{sql: string, durationMs: float, params: int, atMs: float|null}>
@@ -168,6 +171,10 @@ final class TraceReader
                 // cap can drop it. The recorder writes elapsed time outside the
                 // capped list for exactly that case.
                 'totalMs' => $close !== [] ? $this->float($close, 'durationMs') : $this->float($trace, 'totalMs'),
+                // What the request answered. The root end carries it since core
+                // started reporting it; older files have only the mapped mark,
+                // and a request that died before either has no status at all.
+                'status' => $this->answeredStatus($close, $marks),
                 'truncated' => ($trace['truncated'] ?? false) === true,
                 // Which end the cap removed. Files written before the buffer
                 // became a ring carry no such key and were cut at the tail.
@@ -182,6 +189,26 @@ final class TraceReader
             'marks' => $marks,
             'queries' => $queries,
         ];
+    }
+
+    /**
+     * @param array<string, mixed>             $close
+     * @param list<array<string, mixed>>       $marks
+     */
+    private function answeredStatus(array $close, array $marks): ?int
+    {
+        $status = $this->arr($close, 'context')['http_status'] ?? null;
+        if (is_int($status)) {
+            return $status;
+        }
+        foreach ($marks as $mark) {
+            $mapped = ($mark['name'] ?? null) === 'request.exception.mapped' ? ($mark['context']['status'] ?? null) : null;
+            if (is_int($mapped)) {
+                return $mapped;
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $a */

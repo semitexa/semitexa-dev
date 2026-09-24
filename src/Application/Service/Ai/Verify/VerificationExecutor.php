@@ -213,7 +213,7 @@ final class VerificationExecutor
         $abs = $rel !== null ? $this->projectRoot . '/' . ltrim($rel, '/') : null;
         $isDir = $abs !== null && is_dir($abs);
 
-        $command = [$binary];
+        $command = $target->commandInput === [] ? [$binary] : ['env', ...array_map(static fn (string $k, string|bool $v): string => $k . '=' . (string) $v, array_keys($target->commandInput), $target->commandInput), $binary];
         if ($filter !== null) {
             $command[] = '--filter';
             $command[] = $filter;
@@ -234,7 +234,7 @@ final class VerificationExecutor
         $noTestsExecuted = str_contains($r['output'], 'No tests executed!');
 
         $describe = $filter !== null ? "--filter {$filter}" : "<{$rel}>";
-        $signal = $this->lastSignalLine($r['output']);
+        $signal = PhpunitFailureHeadline::of($r['output']) . $this->lastSignalLine($r['output']);
         if ($signal === '') {
             $signal = "phpunit {$describe} → exit {$r['exit']}";
         }
@@ -631,16 +631,19 @@ final class VerificationExecutor
         );
     }
 
+    /**
+     * A copy guard: run a canonical sync script with --check. The target names
+     * the script (skills-sync.sh when it does not), so every "versioned
+     * original, unversioned copies" pair is guarded by the same code.
+     */
     private function runSkillCopies(VerificationTarget $target): VerificationResult
     {
-        $script = $this->skillsSyncScript();
+        $rel = $target->filePath ?? 'packages/semitexa-dev/resources/skills-sync.sh';
+        $script = $this->projectRoot . '/' . $rel;
+        $label = explode(':', $target->id)[0];
 
-        if ($script === null) {
-            return $this->skipped(
-                $target,
-                'skill_copies: skills-sync.sh not found in this project; nothing to keep in sync',
-                required: false,
-            );
+        if (!is_file($script)) {
+            return is_dir(dirname($script)) ? new VerificationResult(target: $target, status: VerificationResult::STATUS_FAIL, exitCode: 1, signal: "{$label} → " . basename($rel) . ' is missing from the authoring workspace, so the copies cannot be checked') : $this->skipped($target, "{$label}: " . basename($rel) . ' not found in this project; nothing to keep in sync', required: false);
         }
 
         // Present but not executable is a failure, never a skip. Treating it as
@@ -652,8 +655,8 @@ final class VerificationExecutor
                 target:   $target,
                 status:   VerificationResult::STATUS_FAIL,
                 exitCode: 1,
-                signal:   'skill_copies → the canonical skills-sync.sh is not executable, so the copies cannot be checked'
-                    . ' — restore it with: chmod +x packages/semitexa-dev/resources/skills-sync.sh',
+                signal:   "{$label} → the canonical " . basename($rel) . ' is not executable, so the copies cannot be checked'
+                    . " — restore it with: chmod +x {$rel}",
             );
         }
 
@@ -664,7 +667,7 @@ final class VerificationExecutor
                 target:   $target,
                 status:   VerificationResult::STATUS_PASS,
                 exitCode: 0,
-                signal:   'skill_copies → every copy matches the canonical scripts',
+                signal:   "{$label} → every copy matches the canonical " . ($label === 'skill_copies' ? 'scripts' : 'files'),
             );
         }
 
@@ -672,8 +675,8 @@ final class VerificationExecutor
             target:   $target,
             status:   VerificationResult::STATUS_FAIL,
             exitCode: $r['exit'],
-            signal:   'skill_copies → ' . $this->compress($r['output'])
-                . ' — edit packages/semitexa-dev/resources/skills/, then run bin/skills-sync.sh',
+            signal:   "{$label} → " . $this->compress($r['output'])
+                . ($label === 'skill_copies' ? ' — edit packages/semitexa-dev/resources/skills/, then run bin/skills-sync.sh' : ''),
         );
     }
 
@@ -701,16 +704,6 @@ final class VerificationExecutor
         $candidate = $this->projectRoot . '/packages/semitexa-installer/scaffold';
 
         return is_dir($candidate) ? $candidate : null;
-    }
-
-    private function skillsSyncScript(): ?string
-    {
-        // Existence only. Whether it is executable is runSkillCopies()'s call,
-        // because a present-but-unrunnable script is a broken gate rather than an
-        // absent one, and the two must not report the same way.
-        $candidate = $this->projectRoot . '/packages/semitexa-dev/resources/skills-sync.sh';
-
-        return is_file($candidate) ? $candidate : null;
     }
 
     private function skipped(VerificationTarget $target, string $reason, bool $required = true): VerificationResult

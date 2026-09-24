@@ -472,24 +472,46 @@ run_playwright_smoke
 # two SqlIdentifier::quote(string|null) call sites in the ORM relation loader
 # (a ManyToMany missing its pivot metadata quoted null into an empty
 # identifier) and an always-true instanceof in ResponseRenderer.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-179}"
+#
+# 2026-09-24: the number moved into a versioned file,
+# packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json, beside the
+# semantic-rule snapshot. It used to be a shell default of 179 here, so an
+# environment variable on one machine could raise the release's bar without a
+# commit anyone reviewed. The file is read from the release clone, like
+# everything this gate judges.
+PHPSTAN_CEILING_FILE="packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json"
 
 # The analyser this ceiling and this baseline were measured with. Not a
 # preference — a precondition: every number in this gate is meaningless when
 # the clone analyses with a different version than the workspace does.
-PHPSTAN_EXPECTED_ANALYSER="${PHPSTAN_EXPECTED_ANALYSER:-2.1.40}"
+# It lives in the same file as the ceiling, for the same reason.
 
 phpstan_neutrality_gate() {
-    # An override that is empty or not a number would make every comparison
-    # below a shell error, and `set -e` would end the run somewhere unrelated.
-    # Refuse it by name: the same rule this gate applies to an unreadable
-    # report — something it cannot judge is not something it passes.
+    # The old overrides are refused by name rather than ignored: someone who
+    # sets one expects it to take effect, and a gate that silently disagrees
+    # with its operator is how a release ships with the wrong bar.
+    if [ -n "${PHPSTAN_CEILING:-}" ] || [ -n "${PHPSTAN_EXPECTED_ANALYSER:-}" ]; then
+        fail "PHPSTAN_CEILING / PHPSTAN_EXPECTED_ANALYSER are no longer read from the environment."
+        fail "Change ${PHPSTAN_CEILING_FILE} in a reviewed commit instead."
+        exit 1
+    fi
+
+    local PHPSTAN_CEILING PHPSTAN_EXPECTED_ANALYSER
+    PHPSTAN_CEILING="$(php -r '$d = json_decode((string) @file_get_contents($argv[1]), true); echo is_int($d["ceiling"] ?? null) ? $d["ceiling"] : "";' "$RELEASE_ROOT/$PHPSTAN_CEILING_FILE" 2>/dev/null)"
+    PHPSTAN_EXPECTED_ANALYSER="$(php -r '$d = json_decode((string) @file_get_contents($argv[1]), true); echo is_string($d["analyser"] ?? null) ? $d["analyser"] : "";' "$RELEASE_ROOT/$PHPSTAN_CEILING_FILE" 2>/dev/null)"
+
+    # Unreadable, missing or not a number: the same rule this gate applies to an
+    # unreadable report — something it cannot judge is not something it passes.
     case "$PHPSTAN_CEILING" in
         ''|*[!0-9]*)
-            fail "PHPSTAN_CEILING must be a whole number; got '${PHPSTAN_CEILING}'."
+            fail "phpstan ceiling unreadable in ${PHPSTAN_CEILING_FILE} (need an integer \"ceiling\")."
             exit 1
             ;;
     esac
+    if [ -z "$PHPSTAN_EXPECTED_ANALYSER" ]; then
+        fail "phpstan analyser version missing from ${PHPSTAN_CEILING_FILE} (need a string \"analyser\")."
+        exit 1
+    fi
 
     local analyser
     analyser="$(cd "$RELEASE_ROOT" && docker compose \
@@ -622,12 +644,18 @@ phpstan_neutrality_gate() {
 
     if [ "$count" -gt "$PHPSTAN_CEILING" ]; then
         fail "phpstan: ${count} errors above baseline, ceiling is ${PHPSTAN_CEILING}."
-        fail "This release adds $((count - PHPSTAN_CEILING)). Fix them, or raise PHPSTAN_CEILING deliberately."
+        fail "This release adds $((count - PHPSTAN_CEILING)). Fix them, or raise \"ceiling\" in ${PHPSTAN_CEILING_FILE} with a \"deliberate\" entry saying what grew."
         exit 1
     fi
 
+    # Below the ceiling WARNS, it does not fail. The clone's strict analysis is
+    # known to count differently from the workspace, so failing here would
+    # demand a lower number the workspace cannot reproduce — a develop commit,
+    # a merge and a re-run for a release that got better. The warning names the
+    # exact edit; the ceiling file is where a lower number is locked in.
     if [ "$count" -lt "$PHPSTAN_CEILING" ]; then
-        ok "phpstan: ${count} above baseline — ${PHPSTAN_CEILING} was the ceiling; lower it."
+        warn "phpstan: ${count} above baseline, below the ceiling of ${PHPSTAN_CEILING} — an improvement."
+        warn "Lock it in: set \"ceiling\": ${count} in ${PHPSTAN_CEILING_FILE}, so the next release cannot spend it."
     else
         ok "phpstan: ${count} above baseline, unchanged."
     fi
@@ -732,7 +760,67 @@ semantic_rule_ratchet_gate() {
     exit 1
 }
 
+# ── quality ledger ─────────────────────────────────────────────────────────
+#
+# `ai:quality check --all`: every #[AsQualityMetric] against the versioned
+# baseline in packages/semitexa-dev/resources/quality/. The cheap ones already
+# run on every ai:verify; `--all` adds the release tier, which needs what only a
+# release has — the clone's server up — for the per-route request cost.
+#
+# ONE-way here, unlike the gates above. The baseline is recorded in the
+# workspace, and the clone installs a different set of packages with different
+# data (demo, showcase-kit): a page can legitimately cost less here. Failing on
+# that would demand a `record` in the workspace, which measures the workspace
+# again, not the clone — a loop with no exit. So a regression fails, and so does
+# anything it cannot judge (no ledger, no server, an unrecorded metric, an
+# unreadable report); an improvement is reported. The two-way ratchet lives in
+# the workspace, where QualityLedgerGateTest runs on every ai:verify.
+quality_ledger_gate() {
+    local report
+    report="$(cd "$RELEASE_ROOT" && "$RELEASE_ROOT/bin/semitexa" ai:quality check --all --json 2>/dev/null)" || true
+
+    local verdict
+    verdict="$(printf '%s' "$report" | php -r '
+        $d = json_decode(stream_get_contents(STDIN), true);
+        if (!is_array($d) || !isset($d["verdict"])) { echo "UNREADABLE\n"; exit; }
+        // One-way: the command fails on BETTER too; the release only on what it
+        // cannot accept. An error or a skip is never a pass.
+        $blocking = array_filter($d["metrics"] ?? [], static fn ($m) => in_array($m["status"], ["worse", "new"], true));
+        echo match (true) {
+            $d["verdict"] === "pass" => "PASS",
+            $d["verdict"] === "fail" && $blocking === [] => "IMPROVED",
+            default => strtoupper((string) $d["verdict"]),
+        }, "\n";
+        if (isset($d["error"])) { echo "  ", $d["error"], "\n"; }
+        if (isset($d["reason"])) { echo "  ", $d["reason"], "\n"; }
+        foreach ($d["metrics"] ?? [] as $m) {
+            if ($m["status"] === "same") { continue; }
+            echo "  ", $m["status"], " ", $m["metric"], " ", $m["from"], " -> ", $m["to"], "\n";
+            foreach ($m["moved"] ?? [] as $key => $mv) { echo "      ", $key, " ", $mv["from"], " -> ", $mv["to"], "\n"; }
+        }
+    ' 2>/dev/null)"
+
+    case "$(printf '%s' "$verdict" | head -1)" in
+        PASS)
+            ok "quality ledger: every metric matches its baseline."
+            return 0
+            ;;
+        IMPROVED)
+            warn "quality ledger: lower than the workspace baseline here (not blocking — see the note above the gate):"
+            printf '%s\n' "$verdict" | tail -n +2 >&2
+            return 0
+            ;;
+    esac
+
+    fail "quality ledger: $(printf '%s' "$verdict" | head -1 | tr '[:upper:]' '[:lower:]')"
+    printf '%s\n' "$verdict" | tail -n +2 >&2
+    fail "A regression: fix it, or bin/semitexa ai:quality accept --metric=<id> --reason=\"...\" in the workspace."
+    fail "An improvement: bin/semitexa ai:quality record --all in the workspace, and commit the baseline."
+    exit 1
+}
+
 phpstan_neutrality_gate
 semantic_rule_ratchet_gate
+quality_ledger_gate
 
 ok "Automated release checks passed"

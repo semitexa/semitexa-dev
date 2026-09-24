@@ -22,7 +22,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   bin/semitexa ai:trace start  --id=ship-feature-x [--topic=...] [--recipe=...]
  *   bin/semitexa ai:trace append --id=ship-feature-x --kind=verify_result --summary="..." [--payload=<json>]
  *   bin/semitexa ai:trace show   --id=ship-feature-x [--json]
- *   bin/semitexa ai:trace list   [--json]
+ *   bin/semitexa ai:trace list   [--limit=20] [--json]   (newest first; --limit=0 for all)
  *
  * NDJSON is the default output (one JSON object per line); `--json` flips to
  * a single `semitexa-dev.ai-trace-report/v1` envelope. The on-disk format is
@@ -36,6 +36,14 @@ final class AiTraceCommand extends BaseCommand
     private const ACTION_APPEND = 'append';
     private const ACTION_SHOW   = 'show';
     private const ACTION_LIST   = 'list';
+
+    /**
+     * A long-lived project keeps every trace it ever started: this workspace
+     * holds 1,300, and an unbounded list printed 320 KB of headers, oldest
+     * first — the opposite of what anyone listing traces is looking for, and
+     * more context than the rest of a cold start put together.
+     */
+    private const DEFAULT_LIST_LIMIT = 20;
 
     #[InjectAsReadonly]
     protected TraceStore $traceStore;
@@ -55,6 +63,7 @@ final class AiTraceCommand extends BaseCommand
             ->addOption('kind', null, InputOption::VALUE_REQUIRED, 'Event kind — see TraceEventKind (append only)')
             ->addOption('summary', null, InputOption::VALUE_REQUIRED, 'One-line summary (append only)')
             ->addOption('payload', null, InputOption::VALUE_REQUIRED, 'JSON-encoded payload (append only)')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'How many traces list returns, newest first (0 = all)', (string) self::DEFAULT_LIST_LIMIT)
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit a single JSON envelope instead of NDJSON');
     }
 
@@ -68,7 +77,7 @@ final class AiTraceCommand extends BaseCommand
             self::ACTION_START  => $this->start($input, $output, $store, $jsonMode),
             self::ACTION_APPEND => $this->append($input, $output, $store, $jsonMode),
             self::ACTION_SHOW   => $this->show($input, $output, $store, $jsonMode),
-            self::ACTION_LIST   => $this->list($output, $store, $jsonMode),
+            self::ACTION_LIST   => $this->list($input, $output, $store, $jsonMode),
             default             => $this->error($output, "unknown action: '{$action}' (expected start | append | show | list)", $jsonMode),
         };
     }
@@ -185,24 +194,45 @@ final class AiTraceCommand extends BaseCommand
         return self::SUCCESS;
     }
 
-    private function list(OutputInterface $output, TraceStore $store, bool $jsonMode): int
+    private function list(InputInterface $input, OutputInterface $output, TraceStore $store, bool $jsonMode): int
     {
+        $limitRaw = $this->stringOption($input, 'limit');
+        if (preg_match('/^\d+$/', $limitRaw) !== 1) {
+            return $this->error($output, "--limit must be a non-negative integer, got '{$limitRaw}'", $jsonMode);
+        }
+        $limit = (int) $limitRaw;
+
+        // Newest first. created_at has one-second resolution, so traces started in
+        // the same second tie; the file's modification time breaks the tie (a
+        // trace is written on start), or --limit=1 could return the older one.
         $headers = $store->list();
+        usort($headers, static fn (TraceHeader $a, TraceHeader $b): int => [strtotime($b->createdAt), (int) @filemtime($store->pathFor($b->traceId))]
+            <=> [strtotime($a->createdAt), (int) @filemtime($store->pathFor($a->traceId))]);
+        $total = count($headers);
+        if ($limit > 0) {
+            $headers = array_slice($headers, 0, $limit);
+        }
         $rows = array_map(static fn(TraceHeader $h) => $h->toArray(), $headers);
 
         if ($jsonMode) {
             $this->writeJson($output, [
                 'artifact'    => 'semitexa-dev.ai-trace-list/v1',
                 'action'      => self::ACTION_LIST,
+                'order'       => 'newest_first',
                 'traces'      => $rows,
                 'trace_count' => count($rows),
+                'total'       => $total,
+                'limit'       => $limit,
             ]);
             return self::SUCCESS;
         }
 
         $this->writeJson($output, [
             'kind'        => 'summary',
+            'order'       => 'newest_first',
             'trace_count' => count($rows),
+            'total'       => $total,
+            'limit'       => $limit,
         ]);
         foreach ($rows as $row) {
             $this->writeJson($output, ['kind' => 'trace'] + $row);

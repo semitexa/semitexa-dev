@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
@@ -28,7 +30,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Work item (task) CLI — the main surface for agent decomposition and resume.
  *
  *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--trace=...] [--context-ref=...]* [--next-step=...]
- *   bin/semitexa ai:work list   [--epic=...] [--status=new|in_progress|blocked|done] [--json]
+ *   bin/semitexa ai:work list   [--epic=...] [--status=new|in_progress|blocked|done[,...]] [--json]
  *   bin/semitexa ai:work show   --id=tk-fix-wm [--json]
  *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--next-step=...] [--context-ref=...]* [--epic=...]
  *   bin/semitexa ai:work note   --id=tk-fix-wm --note="..." [--next-step=...]
@@ -79,8 +81,9 @@ final class AiWorkCommand extends BaseCommand
             ->addOption('title', null, InputOption::VALUE_REQUIRED, 'Task title')
             ->addOption('recipe', null, InputOption::VALUE_REQUIRED, 'Recipe id (see ai:task)')
             ->addOption('risk', null, InputOption::VALUE_REQUIRED, 'Risk: ' . implode('|', self::ALLOWED_RISK))
-            ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Status: ' . implode('|', TaskStatus::all()))
+            ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Status: ' . implode('|', TaskStatus::all()) . ' (list accepts a comma list)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'List filter: ' . implode('|', BacklogScope::all()) . ' (default: active)')
+            ->addOption('take-over', null, InputOption::VALUE_NONE, 'Take an in_progress task another live agent holds (update)')
             ->addOption('context-ref', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Path or symbol the task is anchored to (repeatable)')
             ->addOption('next-step', null, InputOption::VALUE_REQUIRED, 'One-line next step for the resuming agent')
             ->addOption('note', null, InputOption::VALUE_REQUIRED, 'Free-form note (appended to the linked trace)')
@@ -180,15 +183,12 @@ final class AiWorkCommand extends BaseCommand
     private function list(InputInterface $input, OutputInterface $output, bool $jsonMode): int
     {
         $epicId = $input->getOption('epic') !== null ? (string) $input->getOption('epic') : null;
-        $statusRaw = $input->getOption('status');
-        $status = null;
-        if ($statusRaw !== null && $statusRaw !== '') {
-            try {
-                $status = TaskStatus::parse((string) $statusRaw);
-            } catch (\InvalidArgumentException $e) {
-                return $this->error($output, $e->getMessage(), $jsonMode);
-            }
+        try {
+            $statuses = TaskStatus::parseList((string) ($input->getOption('status') ?? ''));
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($output, $e->getMessage(), $jsonMode);
         }
+        $statusLabel = $statuses === [] ? null : implode(',', array_map(static fn(TaskStatus $s): string => $s->value, $statuses));
         if ($epicId !== null) {
             try {
                 WorkId::assertValid($epicId, 'epic id');
@@ -204,7 +204,10 @@ final class AiWorkCommand extends BaseCommand
             return $this->error($output, $e->getMessage(), $jsonMode);
         }
 
-        $all = $this->taskStore->list($epicId, $status);
+        $all = array_values(array_filter(
+            $this->taskStore->list($epicId),
+            static fn(Task $task): bool => $statuses === [] || in_array($task->status, $statuses, true),
+        ));
         $rows = [];
         $hiddenByScope = 0;
         foreach ($all as $task) {
@@ -225,7 +228,7 @@ final class AiWorkCommand extends BaseCommand
             $output->writeln(json_encode([
                 'artifact'        => 'semitexa.ai-work.task-list/v1',
                 'epic'            => $epicId,
-                'status'          => $status?->value,
+                'status'          => $statusLabel,
                 'scope'           => $scope->value,
                 'tasks'           => $rows,
                 'task_count'      => count($rows),
@@ -238,7 +241,7 @@ final class AiWorkCommand extends BaseCommand
         $output->writeln(json_encode([
             'kind'            => 'summary',
             'epic'            => $epicId,
-            'status'          => $status?->value,
+            'status'          => $statusLabel,
             'scope'           => $scope->value,
             'task_count'      => count($rows),
             'hidden_by_scope' => $hiddenByScope,
@@ -335,6 +338,9 @@ final class AiWorkCommand extends BaseCommand
             return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref, --note, --epic', $jsonMode);
         }
 
+        if (($refused = TaskClaim::claim(ProjectRoot::get(), $id, $status, (bool) $input->getOption('take-over'))) !== null) {
+            return $this->error($output, $refused, $jsonMode);
+        }
         $updated = $task->with(
             title:       $title,
             status:      $status,

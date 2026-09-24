@@ -53,8 +53,13 @@ final class RecipeRegistry
                 id: 'debug_investigate',
                 label: 'Debug or investigate a problem',
                 summary: 'Diagnose failing behavior, trace a bug, or understand why something works the way it does. Use ai:ask, logs:app, and ai:review-graph:impact before editing.',
-                keywords: ['debug', 'diagnose', 'bug', 'broken', 'failing', 'error', 'trace', 'investigate', 'why', 'reproduce', 'crash', 'hang', 'leak', 'regression'],
-                verbs: ['debug', 'diagnose', 'investigate', 'trace', 'reproduce', 'find', 'understand', 'analyze'],
+                // "fix" lives here as well as on fix_template_text: it was only
+                // there, so "fix the 500 error on /login" was routed to editing
+                // template copy. A template fix still wins on its own nouns —
+                // which is why vague words (wrong, issue, problem) and 404 (also
+                // "add a 404 page") are not failure nouns here.
+                keywords: ['debug', 'diagnose', 'bug', 'broken', 'failing', 'error', 'trace', 'investigate', 'why', 'reproduce', 'crash', 'hang', 'leak', 'regression', 'exception', 'fatal', 'fail', 'failure', '500'],
+                verbs: ['debug', 'diagnose', 'investigate', 'trace', 'reproduce', 'find', 'understand', 'analyze', 'fix', 'repair', 'resolve'],
                 generator_chain: [],
                 context_signals: [],
                 arg_hints: [],
@@ -257,7 +262,10 @@ final class RecipeRegistry
                 id: 'fix_template_text',
                 label: 'Fix copy in a Twig template',
                 summary: 'Edit Twig markup or copy in a template file. No code changes.',
-                keywords: ['typo', 'copy', 'text', 'twig', 'template', 'spelling', 'wording'],
+                // 'error' too: "fix the error in the template" must not tie with
+                // debug_investigate and lose on registry order. A real bug still
+                // wins there on its own nouns (bug, 500, exception, fail...).
+                keywords: ['typo', 'copy', 'text', 'twig', 'template', 'spelling', 'wording', 'error'],
                 verbs: ['fix', 'change', 'update', 'reword'],
                 generator_chain: [],
                 context_signals: ['View\\templates'],

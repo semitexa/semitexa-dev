@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
+use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Quality\QualityAdvisor;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
@@ -72,10 +78,29 @@ final class AiOrientCommand extends BaseCommand
         $activeEpicId  = $this->deriveActiveEpicId($inProgress, $blocked, $epics);
         $recentTraces  = $this->collectRecentTraces($traceLimit);
         $lastVerify    = $this->findLastVerify($recentTraces);
+        try {
+            $qualityNext = (new QualityAdvisor(ProjectRoot::get()))->targets(3);
+            $qualityError = null;
+        } catch (\RuntimeException $e) {
+            // A broken ledger is said, not shown as "nothing to improve".
+            [$qualityNext, $qualityError] = [[], $e->getMessage()];
+        }
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
+
+        $workingNow = $this->workingNow();
+        if ($workingNow['you'] === null) {
+            // Joining is how the others see you; it is first because an agent
+            // that skips it is the one the others have to guess about.
+            array_unshift($hints['commands'], [
+                'cmd'  => 'ai:agent',
+                'args' => ['join', '--name=<claude|codex|…>', '--intent="<what you are about to do>"', '--repo=<repo you will edit>', '--json'],
+                'why'  => 'other agents see who you are and what you touch; then export SEMITEXA_AGENT_SESSION',
+            ]);
+        }
 
         $envelope = [
             'artifact'     => 'semitexa.ai-orient/v1',
+            'working_now'  => $workingNow,
             'generated_at' => gmdate('c'),
             'cwd'          => getcwd() ?: '',
             'git'          => $git,
@@ -83,13 +108,19 @@ final class AiOrientCommand extends BaseCommand
                 'total_epics'           => count($epics),
                 'active_epic_id'        => $activeEpicId,
                 'active_epic'           => $activeEpicId !== null ? $this->epicBrief($epics, $activeEpicId) : null,
-                'in_progress_tasks'     => array_map(fn(Task $t) => $this->taskBrief($t), $inProgress),
+                // held_by: the live agent working it, or null — an in_progress
+                // task nobody live holds is one somebody walked away from.
+                'in_progress_tasks'     => array_map(fn(Task $t) => $this->taskBrief($t) + ['held_by' => $this->holderOf($t->id, $workingNow)], $inProgress),
                 'in_progress_count'     => count($inProgress),
                 'blocked_tasks'         => array_map(fn(Task $t) => $this->taskBrief($t), $blocked),
                 'blocked_count'         => count($blocked),
             ],
             'recent_traces'  => $recentTraces,
             'last_verify'    => $lastVerify,
+            // The improvement loop's entry point: what the quality ledger says to
+            // make better next. Read from the recorded baseline, measured nothing.
+            'quality_next'   => $qualityNext,
+            'quality_error'  => $qualityError,
             'suggest_next'   => $hints['summary'],
             'next_command'   => $hints['commands'],
         ];
@@ -324,6 +355,59 @@ final class AiOrientCommand extends BaseCommand
      * @param list<Epic> $epics
      * @return array{summary: string, commands: list<array{cmd: string, args: list<string>, why: string}>}
      */
+    /**
+     * Every other live agent, and what is uncommitted in the workspace — the
+     * two things an agent otherwise finds out by colliding with them.
+     *
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>, unreadable: list<string>}
+     */
+    private function workingNow(): array
+    {
+        $now = time();
+        $registry = new AgentRegistry(ProjectRoot::get());
+        $registry->beat();
+        $you = $registry->current();
+        $live = $registry->all(false, $now);
+        $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
+        $radar = new WorkspaceActivity(ProjectRoot::get());
+        $activity = $radar->dirtyRepos($live, $now);
+
+        return [
+            'you' => $you?->toArray(),
+            'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now)], $others),
+            'activity' => $activity,
+            // false: git is not available here, so "no edits" means unknown, not clean.
+            'activity_known' => $radar->gitAvailable(),
+            // Fresh edits nobody declared: another session that never joined,
+            // or your own work you did not list. Either way, look before you commit.
+            // The shared stack's last lifecycle events: a restart took the server
+            // and everyone's one-off containers down, and this says whose it was.
+            'stack' => (new StackEvents(ProjectRoot::get()))->recent(3, $now),
+            'unclaimed_fresh' => array_values(array_map(
+                static fn (array $r): string => $r['repo'],
+                array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
+            )),
+            'unreadable' => array_values(array_map(
+                static fn (array $r): string => $r['repo'],
+                array_filter($activity, static fn (array $r): bool => !$r['readable']),
+            )),
+        ];
+    }
+
+    /**
+     * @param array{agents: list<array<string, mixed>>, you: ?array<string, mixed>} $workingNow
+     */
+    private function holderOf(string $taskId, array $workingNow): ?string
+    {
+        foreach ([...$workingNow['agents'], ...($workingNow['you'] !== null ? [$workingNow['you']] : [])] as $agent) {
+            if (($agent['task'] ?? null) === $taskId) {
+                return (string) $agent['id'];
+            }
+        }
+
+        return null;
+    }
+
     private function suggestNext(array $git, ?string $activeEpicId, array $inProgress, array $blocked, array $epics): array
     {
         $cmds = [];
@@ -504,6 +588,38 @@ final class AiOrientCommand extends BaseCommand
             $io->section('Last verify');
             $io->writeln("  trace: {$lv['trace_id']}  at: {$lv['at']}");
             $io->writeln("  verdict: " . ($lv['verdict'] ?? 'unknown') . "  — {$lv['summary']}");
+        }
+
+        $wn = $envelope['working_now'];
+        $io->section('Working now');
+        $io->writeln('  you: ' . ($wn['you'] !== null ? $wn['you']['id'] . ' — ' . $wn['you']['intent'] : 'not joined — run ai:agent join so the others can see you'));
+        foreach ($wn['agents'] as $a) {
+            $io->writeln(sprintf('  %s (%s, %d min ago): %s%s', $a['id'], $a['agent'], intdiv((int) $a['silent_s'], 60), $a['intent'], $a['task'] !== null ? '  [task ' . $a['task'] . ']' : ''));
+        }
+        if ($wn['agents'] === []) {
+            $io->writeln('  no other agent has joined');
+        }
+        if ($wn['stack'] !== []) {
+            $io->writeln('  dev stack: last ' . StackEvents::describe($wn['stack'][0]));
+        }
+        if (!$wn['activity_known']) {
+            $io->writeln('  ⚠ uncommitted edits unknown: git is not available here');
+        }
+        foreach ($wn['unreadable'] as $repo) {
+            $io->writeln("  ⚠ {$repo}: git status failed — its uncommitted edits are unknown, not clean");
+        }
+        foreach ($wn['unclaimed_fresh'] as $repo) {
+            $io->writeln("  ⚠ {$repo}: edited in the last 30 min, claimed by no agent — someone may be working there");
+        }
+
+        if ($envelope['quality_error'] !== null) {
+            $io->writeln('  ⚠ ' . $envelope['quality_error']);
+        }
+        if ($envelope['quality_next'] !== []) {
+            $io->section('Improve next (ai:quality next)');
+            foreach ($envelope['quality_next'] as $t) {
+                $io->writeln("  {$t['metric']} — {$t['key']}: {$t['count']}");
+            }
         }
 
         $io->section('Next');

@@ -136,6 +136,39 @@ class AiTraceCommandTest extends TestCase
         $this->assertSame(2, $decoded['trace_count']);
     }
 
+    /**
+     * A project keeps every trace it ever started. Listing them all, oldest
+     * first, printed 320 KB in this workspace and put last April on top.
+     */
+    public function test_list_is_bounded_and_newest_first(): void
+    {
+        mkdir($this->tmpRoot . '/var/ai-traces', 0755, true);
+        foreach (['old' => '2026-01-01', 'mid' => '2026-05-01', 'new' => '2026-09-01'] as $id => $day) {
+            file_put_contents(
+                $this->tmpRoot . '/var/ai-traces/' . $id . '.ndjson',
+                json_encode([
+                    'kind' => 'header', 'schema_version' => 'semitexa-dev.ai-trace/v1', 'trace_id' => $id,
+                    'created_at' => $day . 'T00:00:00+00:00', 'topic' => $id, 'recipe' => null,
+                ]) . "\n",
+            );
+        }
+
+        $tester = $this->newTester();
+        $tester->execute(['action' => 'list', '--limit' => '2', '--json' => true]);
+
+        $decoded = $this->decodeJson($tester->getDisplay());
+        $this->assertSame(['new', 'mid'], array_column($this->listValue($decoded, 'traces'), 'trace_id'));
+        $this->assertSame(2, $decoded['trace_count']);
+        $this->assertSame(3, $decoded['total']);
+
+        $all = $this->newTester();
+        $all->execute(['action' => 'list', '--limit' => '0', '--json' => true]);
+        $this->assertSame(3, $this->decodeJson($all->getDisplay())['trace_count']);
+
+        $bad = $this->newTester();
+        $this->assertSame(1, $bad->execute(['action' => 'list', '--limit' => 'lots', '--json' => true]));
+    }
+
     public function test_append_on_missing_trace_errors(): void
     {
         $tester = $this->newTester();

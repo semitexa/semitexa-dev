@@ -193,7 +193,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the file rather than guessed from the first surviving span. No new
         // method; the class is no more tangled than it was, just eight lines
         // longer for two things it previously got wrong.
-        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [24, 779],
+        // 24/779 -> 26/822 on 2026-09-24, recorded deliberately: the waterfall
+        // now says what the request ANSWERED (a status badge in the header and
+        // on each list row) and what each mark carries (the exception class,
+        // the mapped status) on the row itself. A 500 read exactly like a 200
+        // before. Two small presentation helpers, statusBadge() and
+        // markSays(); rendering is this class's whole job, so they belong here.
+        // 822 -> 824 (review, dev#107): status badges failed 4.5:1 contrast on
+        // the light theme — one CSS line of light-theme hues and its comment.
+        'semitexa-dev/src/Application/Service/Trace/TraceHtmlRenderer.php' => [26, 824],
         // Newly recorded on 2026-09-11 at 25/713, crossing the 700-line line
         // from 684. The command now has to report a verdict that distinguishes
         // "every required target ran" from "nothing objected", so it carries
@@ -335,7 +343,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 22/759 -> 22/760 on 2026-09-13: one line, carrying that same
         // `accepted` block through to the result so the command has something
         // to report. NO NEW METHOD.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [22, 760],
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 753],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new
@@ -421,14 +429,29 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 947 -> 948 on 2026-09-18, one line, NO new method: the SqlIdentifier
         // sweep, same as ResourceModelQuery above.
         'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 948],
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 939],
+        // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
+        // task to in_progress now claims it for the agent session running the
+        // command, and refuses a task another live agent holds (--take-over
+        // otherwise) — the one place two agents in one checkout meet on the
+        // same work. The logic is TaskClaim's; what landed here is the call,
+        // its refusal, and the option. No new method.
+        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 704],
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 933],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One
         // statement, one local to hold the response that was previously mapped
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 730],
+        // 730 -> 737 on 2026-09-24: the root span's end now carries the status
+        // the request answered, so the observatory can count a 500 as an error
+        // on untraced requests too. The rule itself lives in RequestOutcome; what
+        // stays here is two locals recording which exit was taken, the escaped
+        // one set before mapping so a mapper that throws still ends as a failure.
+        // No new method. 737 -> 744 (review, core#147): the escape is recorded
+        // only when mapping itself throws, not for every exception the mapper
+        // answers — a try/catch around map + decorate. No new method.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 744],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

@@ -260,6 +260,7 @@ html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rg
 .t .ms.hot{color:var(--warn)} .t .ms.slow{color:var(--danger)} .t .ms.session{color:var(--dim);font-weight:500}
 .t .ms small{display:block;font-weight:500;color:var(--faint);font-size:9px;margin-top:3px;text-transform:uppercase}
 .t.exception .name{color:var(--danger)} .t.rejected .name{color:var(--warn)}
+.t .ms small.code{color:var(--warn)}
 
 /* ---- timeline ---- */
 .time{grid-area:time;height:150px;overflow:hidden}

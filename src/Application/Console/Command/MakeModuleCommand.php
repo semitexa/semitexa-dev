@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\ModulePlanBuilder;
@@ -23,6 +24,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:module', description: 'Scaffold a new module with the standard directory structure')]
 final class MakeModuleCommand extends BaseCommand
 {
+    /** @see MakePageCommand::REQUIRED_OPTIONS */
+    public const REQUIRED_OPTIONS = ['name'];
+
     private const TARGET_CUSTOM = ModulePlanBuilder::TARGET_CUSTOM;
     private const TARGET_PACKAGE = ModulePlanBuilder::TARGET_PACKAGE;
 
@@ -44,16 +48,16 @@ final class MakeModuleCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        if (!$input->getOption('name')) {
-            $io->error('Missing required option: --name');
-            return self::FAILURE;
+        $rejected = GenerationPreflight::check($input, $output, 'make:module', self::REQUIRED_OPTIONS, $this->getProjectRoot());
+        if ($rejected !== null) {
+            return $rejected;
         }
 
         $this->inflector = new NameInflector();
         $builder = new ModulePlanBuilder($this->inflector);
         $target = $this->resolveTarget($input, $io);
         if ($target === null) {
-            return self::FAILURE;
+            return GenerationPreflight::reject($input, $output, 'make:module', GenerationPreflight::REASON_INVALID_OPTION, 'Invalid --target. Allowed values: custom, package.');
         }
         $replayArgs = $this->buildReplayArgs($input, $target);
         $module = $this->inflector->toStudly($input->getOption('name'));
@@ -133,7 +137,6 @@ final class MakeModuleCommand extends BaseCommand
         $target = $input->getOption('target');
         if (is_string($target)) {
             if ($target === '') {
-                $io->error('Invalid --target. Allowed values: custom, package.');
                 return null;
             }
 
@@ -141,7 +144,6 @@ final class MakeModuleCommand extends BaseCommand
                 return $target;
             }
 
-            $io->error('Invalid --target. Allowed values: custom, package.');
             return null;
         }
 

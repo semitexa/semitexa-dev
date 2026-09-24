@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\ServicePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
@@ -25,6 +26,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make:service', description: 'Scaffold a new service class with #[AsService]')]
 final class MakeServiceCommand extends BaseCommand
 {
+    /**
+     * Options execute() refuses to run without. Symfony's VALUE_REQUIRED only
+     * requires a value when the option is given; presence is checked by
+     * {@see GenerationPreflight}, and NextCommandContractTest reads this list.
+     */
+    public const REQUIRED_OPTIONS = ['module', 'name'];
+
     protected function configure(): void
     {
         $this
@@ -41,11 +49,9 @@ final class MakeServiceCommand extends BaseCommand
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (['module', 'name'] as $required) {
-            if (!$input->getOption($required)) {
-                $io->error("Missing required option: --{$required}");
-                return self::FAILURE;
-            }
+        $rejected = GenerationPreflight::check($input, $output, 'make:service', self::REQUIRED_OPTIONS, $this->getProjectRoot());
+        if ($rejected !== null) {
+            return $rejected;
         }
 
         $inflector = new NameInflector();

@@ -238,6 +238,49 @@ class AiWorkCommandTest extends TestCase
     }
 
     /**
+     * AGENTS.md answers "what are we working on" with
+     * `ai:work list --status=in_progress,blocked`. The command parsed the whole
+     * string as one status and refused it, so the manual's own query failed.
+     */
+    public function test_list_accepts_the_comma_status_list_the_manual_documents(): void
+    {
+        $now = '2026-09-24T00:00:00+00:00';
+        $tasks = new TaskStore();
+        $epics = $this->newEpicStore($tasks);
+        $traces = new TraceStore();
+        $epics->save(new Epic('ep-s', 'T', 'G', EpicStatus::NEW, $now, $now));
+        $command = $this->buildWiredCommand($tasks, $epics, $traces, $this->newResumeService($tasks, $traces));
+
+        foreach (['tk-busy' => 'in_progress', 'tk-stuck' => 'blocked', 'tk-later' => null] as $id => $status) {
+            (new CommandTester($command))->execute([
+                'action' => 'start', '--id' => $id, '--epic' => 'ep-s', '--title' => 'Task ' . $id, '--json' => true,
+            ]);
+            if ($status !== null) {
+                (new CommandTester($command))->execute([
+                    'action' => 'update', '--id' => $id, '--status' => $status, '--json' => true,
+                ]);
+            }
+        }
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            'action' => 'list', '--status' => 'in_progress, blocked', '--scope' => 'all', '--json' => true,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+        $result = json_decode($tester->getDisplay(), true);
+        $ids = array_column($result['tasks'], 'id');
+        sort($ids);
+        $this->assertSame(['tk-busy', 'tk-stuck'], $ids);
+        $this->assertSame('in_progress,blocked', $result['status']);
+
+        $bad = new CommandTester($command);
+        $bad->execute(['action' => 'list', '--status' => 'in_progress,sleeping', '--json' => true]);
+        $this->assertSame(1, $bad->getStatusCode());
+        $this->assertStringContainsString("'sleeping'", $bad->getDisplay());
+    }
+
+    /**
      * And the note alone is enough. Requiring another field to accompany it
      * turned "record why" into "record why AND change something", which is not
      * what a closing note is.
