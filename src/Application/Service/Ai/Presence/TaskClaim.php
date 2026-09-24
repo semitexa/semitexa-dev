@@ -69,18 +69,24 @@ final class TaskClaim
         if ($to === null) {
             return null;
         }
-        if ($holder !== null) {
-            $registry->release($holder->id);
-        }
-        if ($to !== TaskStatus::IN_PROGRESS) {
-            if ($self !== null && $self->task === $taskId) {
-                $registry->release($self->id);
+        if ($to === TaskStatus::IN_PROGRESS) {
+            // The new holder is written BEFORE the old one is released: if a
+            // write fails, the task is left held twice (visible, and the old
+            // holder's next beat drops it), never held by nobody.
+            if ($self !== null) {
+                $registry->recordTask($self, $taskId);  // throws: caught in claim() as a refusal
+            }
+            if ($holder !== null) {
+                $registry->release($holder->id);
             }
 
             return null;
         }
-        if ($self !== null) {
-            $registry->recordTask($self, $taskId);  // throws: caught in claim() as a refusal
+        if ($holder !== null) {
+            $registry->release($holder->id);
+        }
+        if ($self !== null && $self->task === $taskId) {
+            $registry->release($self->id);
         }
 
         return null;

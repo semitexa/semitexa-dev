@@ -96,9 +96,16 @@ final class AgentRegistry
         try {
             $this->locked(function () use ($task): void {
                 $session = $this->current();
-                if ($session !== null) {
-                    $this->save($session->with(task: $task, beatAt: gmdate('c')));
+                if ($session === null) {
+                    return;
                 }
+                // A session that went quiet may have had its task taken over
+                // meanwhile; beating again must not make it a second holder.
+                $held = $task ?? $session->task;
+                $lost = $held !== null && $this->holderOf($held, $session->id) !== null;
+                $this->save($lost
+                    ? $session->with(clearTask: true, beatAt: gmdate('c'))
+                    : $session->with(task: $task, beatAt: gmdate('c')));
             });
         } catch (\Throwable) {
         }

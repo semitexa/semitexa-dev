@@ -168,6 +168,29 @@ final class AgentPresenceTest extends TestCase
         }
     }
 
+    #[Test]
+    public function a_heartbeat_after_a_take_over_does_not_revive_the_old_claim(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $a = $registry->join('claude', 'went quiet holding tk-q');
+        $b = $registry->join('codex', 'took tk-q over');
+        putenv(AgentRegistry::ENV . '=' . $a->id);
+        self::assertNull(TaskClaim::claim($this->root, 'tk-q', TaskStatus::IN_PROGRESS, false));
+        putenv(AgentRegistry::ENV . '=' . $b->id);
+        self::assertNull(TaskClaim::claim($this->root, 'tk-q', TaskStatus::IN_PROGRESS, true));
+
+        // A's stale copy still says tk-q (as if the release had been lost), then A beats.
+        $path = $this->root . '/' . AgentRegistry::SUBDIR . '/' . $a->id . '.json';
+        $row = json_decode((string) file_get_contents($path), true);
+        $row['task'] = 'tk-q';
+        file_put_contents($path, json_encode($row));
+        putenv(AgentRegistry::ENV . '=' . $a->id);
+        $registry->beat();
+
+        self::assertNull($this->session($registry, $a->id)->task);
+        self::assertSame('tk-q', $this->session($registry, $b->id)->task);
+    }
+
     private function session(AgentRegistry $registry, string $id): AgentSession
     {
         $session = $registry->get($id);
