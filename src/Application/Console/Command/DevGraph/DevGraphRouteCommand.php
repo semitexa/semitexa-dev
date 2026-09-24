@@ -10,6 +10,7 @@ use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Application\Service\Console\LookupRefusal;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -19,16 +20,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'dev:graph:route', description: 'Show the full chain for a route: payload → handler → resource → template → auth')]
 final class DevGraphRouteCommand extends BaseCommand
 {
-    private ?AttributeDiscovery $attributeDiscovery;
-    private ?ModuleRegistry $moduleRegistry;
+    /** Built lazily below; see DevGraphEventCommand. */
+    private ?AttributeDiscovery $attributeDiscovery = null;
+    private ?ModuleRegistry $moduleRegistry = null;
     private ?ClassDiscovery $classDiscovery = null;
 
-    public function __construct(
-        ?AttributeDiscovery $attributeDiscovery = null,
-        ?ModuleRegistry $moduleRegistry = null,
-    ) {
-        $this->attributeDiscovery = $attributeDiscovery;
-        $this->moduleRegistry = $moduleRegistry;
+    public function __construct()
+    {
         parent::__construct('dev:graph:route');
     }
 
@@ -45,8 +43,7 @@ final class DevGraphRouteCommand extends BaseCommand
         $io = new SymfonyStyle($input, $output);
 
         if (!$input->getOption('path')) {
-            $io->error('Missing required option: --path');
-            return Command::FAILURE;
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.route-description/v1', 'Missing required option: --path');
         }
 
         $this->attributeDiscovery()->initialize();
@@ -68,8 +65,10 @@ final class DevGraphRouteCommand extends BaseCommand
         }
 
         if ($route === null) {
-            $io->error("Route not found: {$method} {$path}");
-            return Command::FAILURE;
+            $paths = array_map(static fn(array $r): string => (string) ($r['path'] ?? ''), $this->attributeDiscovery()->getRoutes());
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.route-description/v1', "Route not found: {$method} {$path}", 'Closest routes', LookupRefusal::closest((string) $path, $paths), [
+                ['cmd' => 'routes:list', 'args' => ['--json'], 'why' => 'every route with its methods'],
+            ]);
         }
 
         $description = $this->buildDescription($route);

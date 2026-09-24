@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Application\Service\Console\LookupRefusal;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -15,11 +16,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'dev:graph:module', description: 'Show module structure: routes, handlers, services, contracts, listeners')]
 final class DevGraphModuleCommand extends BaseCommand
 {
-    private ?ModuleRegistry $moduleRegistry;
+    /** Built lazily by moduleRegistry(); see DevGraphEventCommand. */
+    private ?ModuleRegistry $moduleRegistry = null;
 
-    public function __construct(?ModuleRegistry $moduleRegistry = null)
+    public function __construct()
     {
-        $this->moduleRegistry = $moduleRegistry;
         parent::__construct('dev:graph:module');
     }
 
@@ -36,16 +37,12 @@ final class DevGraphModuleCommand extends BaseCommand
 
         $requested = (string) ($input->getOption('name') ?? '');
         if ($requested === '') {
-            $io->error('Missing required option: --name');
-            return self::FAILURE;
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.module-description/v1', 'Missing required option: --name', 'Known modules', $this->knownModuleNames());
         }
 
         $module = $this->resolveModule($requested);
         if ($module === null) {
-            $available = $this->knownModuleNames();
-            $io->error("Module not found: {$requested}");
-            $io->text('Known modules: ' . ($available === [] ? '(none)' : implode(', ', $available)));
-            return self::FAILURE;
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.module-description/v1', "Module not found: {$requested}", 'Closest modules', LookupRefusal::closest($requested, $this->knownModuleNames()));
         }
 
         $sourceRoots = $this->resolveSourceRoots($module);

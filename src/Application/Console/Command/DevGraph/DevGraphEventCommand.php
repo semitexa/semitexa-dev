@@ -11,6 +11,7 @@ use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\Event\EventListenerRegistry;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Dev\Application\Service\Console\LookupRefusal;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -20,19 +21,16 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'dev:graph:event', description: 'Show all listeners for a given event, or list all events with their listener count')]
 final class DevGraphEventCommand extends BaseCommand
 {
-    private ?AttributeDiscovery $attributeDiscovery;
-    private ?EventListenerRegistry $eventListenerRegistry;
-    private ?ModuleRegistry $moduleRegistry;
+    // Built lazily below. The constructor used to accept these as optional
+    // parameters, but nothing ever passed them and the container never calls
+    // a constructor, so they were a seam that could not be used.
+    private ?AttributeDiscovery $attributeDiscovery = null;
+    private ?EventListenerRegistry $eventListenerRegistry = null;
+    private ?ModuleRegistry $moduleRegistry = null;
     private ?ClassDiscovery $classDiscovery = null;
 
-    public function __construct(
-        ?AttributeDiscovery $attributeDiscovery = null,
-        ?EventListenerRegistry $eventListenerRegistry = null,
-        ?ModuleRegistry $moduleRegistry = null,
-    ) {
-        $this->attributeDiscovery = $attributeDiscovery;
-        $this->eventListenerRegistry = $eventListenerRegistry;
-        $this->moduleRegistry = $moduleRegistry;
+    public function __construct()
+    {
         parent::__construct('dev:graph:event');
     }
 
@@ -62,15 +60,12 @@ final class DevGraphEventCommand extends BaseCommand
 
         $eventClasses = $this->resolveEventClasses($eventName);
         if ($eventClasses === []) {
-            $io->error("Event not found: {$eventName}");
-            $io->note('Use `ai:ask event` (without --name) to see all registered events.');
-            return Command::FAILURE;
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.event-description/v1', "Event not found: {$eventName}", nextCommand: [
+                ['cmd' => 'ai:ask', 'args' => ['event', '--json'], 'why' => 'list every registered event, then pass its full class or short name'],
+            ]);
         }
         if (count($eventClasses) > 1) {
-            $io->error("Ambiguous event name: {$eventName}");
-            $io->listing(array_values($eventClasses));
-            $io->note('Use the full event class name with --name.');
-            return Command::FAILURE;
+            return LookupRefusal::refuse($input, $output, 'semitexa-dev.event-description/v1', "Ambiguous event name: {$eventName} — pass the full class name with --name", 'Matching events', array_values($eventClasses));
         }
 
         $eventClass = $eventClasses[0];
