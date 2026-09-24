@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Service\Quality\Metric;
 use Semitexa\Dev\Application\Service\Quality\Measurement;
 use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
 use Semitexa\Dev\Application\Service\Quality\RequestCostProbe;
+use Semitexa\Dev\Application\Service\Quality\SqlShape;
 use Semitexa\Dev\Attribute\AsQualityMetric;
 
 /**
@@ -33,7 +34,7 @@ final class RequestDuplicateQueriesMetric implements QualityMetricInterface
             $seen = [];
             $duplicates = 0;
             foreach ($queries as $q) {
-                $key = preg_replace('/\s+/', ' ', trim((string) ($q['sql'] ?? ''))) . '|' . json_encode($q['bindings'] ?? $q['params'] ?? null);
+                $key = SqlShape::of((string) ($q['sql'] ?? '')) . '|' . json_encode($q['bindings'] ?? $q['params'] ?? null);
                 $duplicates += isset($seen[$key]) ? 1 : 0;
                 $seen[$key] = true;
             }

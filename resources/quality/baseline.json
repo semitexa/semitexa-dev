@@ -22,6 +22,50 @@
             "sees": "per GET route without path parameters: SQL statements repeated with identical SQL and bindings within one request, read from a real traced request to the running server",
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
+        "requests.query-shapes": {
+            "total": 44,
+            "breakdown": {
+                "GET /demo/api/active-version": 1,
+                "GET /demo/api/schema-discovery": 1,
+                "GET /demo/api/sunset-version": 1,
+                "GET /demo/api/v1/products": 1,
+                "GET /demo/data/filtering": 1,
+                "GET /demo/data/pagination": 2,
+                "GET /demo/data/products": 1,
+                "GET /demo/data/query": 1,
+                "GET /demo/data/relations": 2,
+                "GET /demo/events/arena": 1,
+                "GET /demo/platform/tenancy-isolation": 2,
+                "GET /demo/rendering/reactive-ai": 1,
+                "GET /demo/rendering/reactive-analytics": 1,
+                "GET /demo/rendering/reactive-import": 1,
+                "GET /demo/rendering/reactive-report": 1,
+                "GET /graphql-demo/articles": 1,
+                "GET /install-demo": 1,
+                "GET /os/webapps": 1,
+                "GET /platform/calendar/events": 1,
+                "GET /playground/orm": 7,
+                "GET /playground/orm/articles/feed": 8,
+                "GET /ui-playground/admin/demo-submissions": 1,
+                "GET /ui-playground/admin/demo-submissions/feed": 1,
+                "GET /ui-playground/admin/leads": 1,
+                "GET /ui-playground/admin/leads/feed": 2,
+                "GET /ui-playground/admin/pings/feed": 2
+            },
+            "sees": "per GET route without path parameters: distinct SQL shapes (whitespace collapsed, IN lists folded) in one traced request",
+            "blind": "how expensive each shape is, and how often it runs — a slow shape counts as one, and so does a shape run a hundred times"
+        },
+        "requests.repeated-statements": {
+            "total": 9,
+            "breakdown": {
+                "GET /demo/events/arena": 2,
+                "GET /demo/platform/tenancy-isolation": 2,
+                "GET /demo/rendering/reactive-ai": 3,
+                "GET /demo/rendering/reactive-analytics": 2
+            },
+            "sees": "per GET route without path parameters: re-executions of one SQL shape with different bindings in a single request (the N+1 pattern), read from a real traced request",
+            "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
+        },
         "tests.skip-calls": {
             "total": 144,
             "breakdown": {
