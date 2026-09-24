@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Integration;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\ContainerFactory;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\MakeModuleCommand;
 use Semitexa\Dev\Application\Console\Command\MakePageCommand;
@@ -314,7 +315,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         // container. Verifies the framework's CLI wiring builds the
         // service singleton end-to-end without the operator having to
         // hand-construct dependencies.
-        $tester = new CommandTester(new WebhookCleanupCommand());
+        $tester = new CommandTester($this->injectedCleanupCommand());
         $exit = $tester->execute(['--dry-run' => true]);
 
         self::assertSame(0, $exit, 'webhook:cleanup --dry-run must exit 0; display: ' . $tester->getDisplay());
@@ -331,7 +332,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         }
         $this->skipIfNoSyncedWebhookSchema();
 
-        $tester = new CommandTester(new WebhookCleanupCommand());
+        $tester = new CommandTester($this->injectedCleanupCommand());
         $exit = $tester->execute([
             '--dry-run' => true,
             '--tenant' => 'fresh-install-smoke',
@@ -528,34 +529,53 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         }
         try {
             $orm = ContainerFactory::get()->get(OrmManager::class);
-            $adapter = $orm->getAdapter();
-            $adapter->execute('SELECT 1');
-
-            $requiredTables = [
-                'webhook_inbox',
-                'webhook_outbox',
-                'webhook_attempts',
-            ];
-            if (class_exists(MySqlWebhookReplayStore::class)) {
-                $requiredTables[] = MySqlWebhookReplayStore::TABLE;
-            }
-
-            foreach ($requiredTables as $table) {
-                if (!$this->tableExists($orm, $table)) {
-                    self::markTestSkipped(
-                        sprintf('Webhook cleanup schema is not synced: missing table %s.', $table),
-                    );
-                }
-            }
+            $orm->getAdapter()->execute('SELECT 1');
         } catch (\Throwable $e) {
-            self::markTestSkipped('MySQL or webhook schema unavailable: ' . $e->getMessage());
+            self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
         }
+
+        // Past this point MySQL answered, so a query that throws is a defect
+        // and must fail the test rather than be reported as a skip.
+        $requiredTables = [
+            'webhook_inbox',
+            'webhook_outbox',
+            'webhook_attempts',
+        ];
+        if (class_exists(MySqlWebhookReplayStore::class)) {
+            $requiredTables[] = MySqlWebhookReplayStore::TABLE;
+        }
+
+        foreach ($requiredTables as $table) {
+            if (!$this->tableExists($orm, $table)) {
+                self::markTestSkipped(
+                    sprintf('Webhook cleanup schema is not synced: missing table %s.', $table),
+                );
+            }
+        }
+    }
+
+    /**
+     * The command takes its container through #[InjectAsReadonly], which console
+     * boot fills; a bare `new` leaves it uninitialized. Inject the real container
+     * the same way so the probe still exercises the framework's wiring.
+     */
+    private function injectedCleanupCommand(): WebhookCleanupCommand
+    {
+        $command = new WebhookCleanupCommand();
+        PropertyInjector::inject($command, ContainerFactory::get());
+
+        return $command;
     }
 
     private function tableExists(OrmManager $orm, string $table): bool
     {
         $adapter = $orm->getAdapter();
-        $result = $adapter->execute('SHOW TABLES LIKE :table', ['table' => $table]);
+        // SHOW TABLES LIKE ? cannot be server-side prepared (MySQL 1064 near '?');
+        // information_schema can.
+        $result = $adapter->execute(
+            'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table',
+            ['table' => $table],
+        );
         return $result->fetchOne() !== null;
     }
 
