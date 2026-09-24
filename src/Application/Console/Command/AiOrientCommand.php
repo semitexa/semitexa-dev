@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
@@ -350,7 +351,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, unclaimed_fresh: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>}
      */
     private function workingNow(): array
     {
@@ -368,6 +369,9 @@ final class AiOrientCommand extends BaseCommand
             'activity' => $activity,
             // Fresh edits nobody declared: another session that never joined,
             // or your own work you did not list. Either way, look before you commit.
+            // The shared stack's last lifecycle events: a restart took the server
+            // and everyone's one-off containers down, and this says whose it was.
+            'stack' => (new StackEvents(ProjectRoot::get()))->recent(3, $now),
             'unclaimed_fresh' => array_values(array_map(
                 static fn (array $r): string => $r['repo'],
                 array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
@@ -579,6 +583,9 @@ final class AiOrientCommand extends BaseCommand
         }
         if ($wn['agents'] === []) {
             $io->writeln('  no other agent has joined');
+        }
+        if ($wn['stack'] !== []) {
+            $io->writeln('  dev stack: last ' . StackEvents::describe($wn['stack'][0]));
         }
         foreach ($wn['unclaimed_fresh'] as $repo) {
             $io->writeln("  ⚠ {$repo}: edited in the last 30 min, claimed by no agent — someone may be working there");

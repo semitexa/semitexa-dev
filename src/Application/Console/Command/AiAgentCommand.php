@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
+use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -68,6 +69,7 @@ final class AiAgentCommand extends BaseCommand
             (bool) $input->getOption('all') ? $registry->all(true, $now) : $live,
         );
         $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now);
+        $envelope['stack'] = (new StackEvents($root))->recent(5, $now);
 
         return $this->emit($output, $input, $envelope, self::SUCCESS);
     }
@@ -153,6 +155,13 @@ final class AiAgentCommand extends BaseCommand
             ));
         }
         $output->writeln('');
+        if (($envelope['stack'] ?? []) !== []) {
+            $output->writeln('Dev stack (who started / stopped / restarted it):');
+            foreach ($envelope['stack'] as $e) {
+                $output->writeln('  ' . StackEvents::describe($e));
+            }
+            $output->writeln('');
+        }
         $output->writeln('Uncommitted edits in the workspace:');
         $activity = $envelope['activity'] ?? [];
         if ($activity === []) {
