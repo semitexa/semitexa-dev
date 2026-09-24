@@ -2,9 +2,8 @@
     "_": "Quality metrics: lower is better. Written only by `ai:quality record` (never raises) and `ai:quality accept --reason` (raises, and says why below). Do not edit by hand.",
     "metrics": {
         "packages.without-tests": {
-            "total": 5,
+            "total": 4,
             "breakdown": {
-                "semitexa-demo": 1,
                 "semitexa-files": 1,
                 "semitexa-music": 1,
                 "semitexa-showcase-kit": 1,
@@ -14,11 +13,8 @@
             "blind": "how well a package is tested: one trivial test takes a package off the list"
         },
         "requests.duplicate-queries": {
-            "total": 2,
-            "breakdown": {
-                "GET /demo/api/schema-discovery": 1,
-                "GET /demo/platform/tenancy-isolation": 1
-            },
+            "total": 0,
+            "breakdown": [],
             "sees": "per GET route without path parameters: SQL statements repeated with identical SQL and bindings within one request, read from a real traced request to the running server",
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
@@ -177,11 +173,8 @@
             "blind": "how expensive each shape is, and how often it runs — a slow shape counts as one, and so does a shape run a hundred times"
         },
         "requests.repeated-statements": {
-            "total": 9,
+            "total": 2,
             "breakdown": {
-                "GET /demo/events/arena": 2,
-                "GET /demo/platform/tenancy-isolation": 2,
-                "GET /demo/rendering/reactive-ai": 3,
                 "GET /demo/rendering/reactive-analytics": 2
             },
             "sees": "per GET route without path parameters: re-executions of one SQL shape with different bindings in a single request (the N+1 pattern), read from a real traced request",

@@ -7,3 +7,6 @@
 {"at":"2026-09-24T08:35:18+00:00","metric":"requests.repeated-statements","total":19,"event":"new"}
 {"at":"2026-09-24T08:36:45+00:00","metric":"requests.repeated-statements","total":9,"event":"record"}
 {"at":"2026-09-24T15:44:26+00:00","metric":"requests.query-shapes","total":183,"event":"accept"}
+{"at":"2026-09-24T15:49:46+00:00","metric":"packages.without-tests","total":4,"event":"record"}
+{"at":"2026-09-24T15:49:46+00:00","metric":"requests.duplicate-queries","total":0,"event":"record"}
+{"at":"2026-09-24T15:49:46+00:00","metric":"requests.repeated-statements","total":2,"event":"record"}
