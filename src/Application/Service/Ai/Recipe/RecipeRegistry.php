@@ -55,8 +55,10 @@ final class RecipeRegistry
                 summary: 'Diagnose failing behavior, trace a bug, or understand why something works the way it does. Use ai:ask, logs:app, and ai:review-graph:impact before editing.',
                 // "fix" lives here as well as on fix_template_text: it was only
                 // there, so "fix the 500 error on /login" was routed to editing
-                // template copy. A template fix still wins on its own nouns.
-                keywords: ['debug', 'diagnose', 'bug', 'broken', 'failing', 'error', 'trace', 'investigate', 'why', 'reproduce', 'crash', 'hang', 'leak', 'regression', 'exception', 'fatal', 'fail', 'failure', 'wrong', 'issue', 'problem', '500', '404'],
+                // template copy. A template fix still wins on its own nouns —
+                // which is why vague words (wrong, issue, problem) and 404 (also
+                // "add a 404 page") are not failure nouns here.
+                keywords: ['debug', 'diagnose', 'bug', 'broken', 'failing', 'error', 'trace', 'investigate', 'why', 'reproduce', 'crash', 'hang', 'leak', 'regression', 'exception', 'fatal', 'fail', 'failure', '500'],
                 verbs: ['debug', 'diagnose', 'investigate', 'trace', 'reproduce', 'find', 'understand', 'analyze', 'fix', 'repair', 'resolve'],
                 generator_chain: [],
                 context_signals: [],

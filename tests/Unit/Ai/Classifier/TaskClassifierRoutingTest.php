@@ -26,6 +26,9 @@ final class TaskClassifierRoutingTest extends TestCase
     {
         yield 'a bug is investigated, not re-worded' => ['fix the 500 error on /login', 'debug_investigate'];
         yield 'a template typo is still a template fix' => ['fix a typo in the login template', 'fix_template_text'];
+        yield 'a vague "wrong" does not steal a template fix' => ['fix wrong label in the header template', 'fix_template_text'];
+        yield 'a vague "issue" does not steal a copy fix' => ['fix issue with the page title text', 'fix_template_text'];
+        yield 'a 404 page is still a page' => ['add a 404 page', 'add_html_page'];
         yield 'plural nouns still match' => ['add pages that list invoices', 'add_html_page'];
         yield 'uk: add a page' => ['додай сторінку зі списком рахунків', 'add_html_page'];
         yield 'uk: fix an error' => ['виправ помилку 500 на логіні', 'debug_investigate'];

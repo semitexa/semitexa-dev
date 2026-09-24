@@ -220,6 +220,15 @@ class WorkflowTraceTest extends TestCase
         self::assertStringContainsString('no recipe', $payload['records'][0]['error']);
     }
 
+    public function testPlanWithAMalformedTraceIdIsStillOneJsonError(): void
+    {
+        $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['--files' => 'a.php', '--trace' => 'bad id!', '--json' => true]);
+
+        self::assertSame(1, $tester->getStatusCode());
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('error', $payload['status']);
+    }
+
     public function testPlanStillEmitsNdjsonByDefault(): void
     {
         $tester = $this->runCommand($this->buildApplication(), 'ai:plan', ['recipe' => 'refactor_existing_code']);

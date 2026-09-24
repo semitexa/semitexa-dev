@@ -1046,10 +1046,14 @@ function renderTiles() {
 // line of every request, and that decides whenever the marks are silent.
 // A 4xx stays 'ok' here on purpose: the server answered as designed. The row
 // still shows its code.
+// When the status is known it decides, so a request counts the same whether or
+// not it was traced (a traced 404 used to be an error, an untraced one not).
+// The marks only add what a status cannot say: refused, or handed to a queue.
+// ObservatoryReader::snapshot() applies the same rule for `ai:observe ps`.
 function outcomeOf(phases, ctx) {
-  const marked = phases && phases.outcome;
-  if (marked && marked !== 'ok') return marked;
-  if (ctx.exception || (typeof ctx.http_status === 'number' && ctx.http_status >= 500)) return 'exception';
+  const marked = phases && phases.outcome, status = ctx.http_status;
+  if (ctx.exception || (typeof status === 'number' && status >= 500)) return 'exception';
+  if (typeof status === 'number') return marked === 'rejected' || marked === 'queued' ? marked : 'ok';
   if (ctx.status === 'failed') return 'failed';
   return marked || 'ok';
 }

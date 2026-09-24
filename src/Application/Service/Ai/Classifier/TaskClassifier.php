@@ -195,6 +195,9 @@ final class TaskClassifier
         'мігр' => ['migrate'], 'міграц' => ['migration'],
     ];
 
+    /** Words ending in "s" that are not a plural of anything the recipes use. */
+    private const NOT_PLURALS = ['news', 'https', 'does', 'was', 'has', 'its'];
+
     private const UKRAINIAN_WORDS = [
         // As prefixes these would also catch багато ("many") and подивись ("look").
         'баг' => ['bug'], 'баги' => ['bug'], 'багу' => ['bug'], 'бага' => ['bug'],
@@ -215,7 +218,7 @@ final class TaskClassifier
             }
             $tokens[] = $part;
             // "lists invoices" must reach the same recipes as "list invoice".
-            if (strlen($part) > 3 && str_ends_with($part, 's') && !str_ends_with($part, 'ss')) {
+            if (strlen($part) > 3 && str_ends_with($part, 's') && !preg_match('/(ss|us|is)$/', $part) && !in_array($part, self::NOT_PLURALS, true)) {
                 $tokens[] = substr($part, 0, -1);
             }
             foreach (self::UKRAINIAN_WORDS[$part] ?? [] as $english) {

@@ -434,11 +434,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // statement, one local to hold the response that was previously mapped
         // inline, and the six lines saying why. No new method; the file is no
         // more tangled than it was.
-        // 730 -> 735 on 2026-09-24: the root span's end now carries the status
+        // 730 -> 737 on 2026-09-24: the root span's end now carries the status
         // the request answered, so the observatory can count a 500 as an error
         // on untraced requests too. The rule itself lives in RequestOutcome; what
-        // stays here is two locals recording which exit was taken. No new method.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 735],
+        // stays here is two locals recording which exit was taken, the escaped
+        // one set before mapping so a mapper that throws still ends as a failure.
+        // No new method.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 737],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

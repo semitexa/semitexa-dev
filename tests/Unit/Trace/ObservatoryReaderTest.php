@@ -56,6 +56,10 @@ final class ObservatoryReaderTest extends TestCase
             ['ts' => $now, 'event' => 'end', 'id' => 'p-1-ok', 'kind' => 'http', 'name' => 'Fine', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['http_status' => 404]],
             ['ts' => $now, 'event' => 'end', 'id' => 'p-1-bad', 'kind' => 'http', 'name' => 'Broken', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['http_status' => 500]],
             ['ts' => $now, 'event' => 'end', 'id' => 'p-1-esc', 'kind' => 'http', 'name' => 'Escaped', 'worker' => 1, 'durationMs' => 1.0, 'context' => ['exception' => 'LogicException']],
+            // Traced: the mark says exception, but the answered 404 decides.
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-1-t404', 'kind' => 'http', 'name' => 'Traced404', 'worker' => 1, 'durationMs' => 1.0, 'phases' => ['outcome' => 'exception'], 'context' => ['http_status' => 404]],
+            // Recorded before core reported a status: only the mark can say.
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-1-old', 'kind' => 'http', 'name' => 'OldTraced', 'worker' => 1, 'durationMs' => 1.0, 'phases' => ['outcome' => 'exception']],
         ]);
 
         $snap = (new ObservatoryReader())->snapshot();
@@ -65,7 +69,9 @@ final class ObservatoryReaderTest extends TestCase
         self::assertArrayNotHasKey('failed', $byId['p-1-ok'], 'a 4xx is the server answering as designed');
         self::assertTrue($byId['p-1-bad']['failed']);
         self::assertSame('LogicException', $byId['p-1-esc']['exception']);
-        self::assertSame(2, $snap['counts']['recentFailures']);
+        self::assertArrayNotHasKey('failed', $byId['p-1-t404'], 'a traced 404 counts the same as an untraced one');
+        self::assertTrue($byId['p-1-old']['failed']);
+        self::assertSame(3, $snap['counts']['recentFailures']);
     }
 
     #[Test]

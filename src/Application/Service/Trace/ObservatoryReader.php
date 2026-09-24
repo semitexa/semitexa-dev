@@ -118,9 +118,13 @@ final class ObservatoryReader
             // reads the same whether the server answered 200 or 500.
             $context = is_array($row['context'] ?? null) ? $row['context'] : [];
             $status = is_int($context['http_status'] ?? null) ? $context['http_status'] : null;
+            // The panel's outcomeOf() rule: a known status decides; the trace
+            // mark counts only where no status was recorded.
+            $marked = is_array($row['phases'] ?? null) ? ($row['phases']['outcome'] ?? null) : null;
             $failed = ($status !== null && $status >= 500)
                 || isset($context['exception'])
-                || ($context['status'] ?? null) === 'failed';
+                || ($context['status'] ?? null) === 'failed'
+                || ($status === null && $marked === 'exception');
             $failures += $failed ? 1 : 0;
             $recentOut[] = array_filter([
                 'id' => $row['id'],

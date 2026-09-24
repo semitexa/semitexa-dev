@@ -55,13 +55,18 @@ final class TraceAutoAppender
     public function activeRecipe(InputInterface $input): ?string
     {
         $traceId = $this->resolveTraceId($input);
-        if ($traceId === null || !$this->store->exists($traceId)) {
+        if ($traceId === null) {
             return null;
         }
 
+        // An id the store refuses (`--trace='bad id!'`) throws from exists(),
+        // not read(); either way there is no recipe to take from it.
         try {
+            if (!$this->store->exists($traceId)) {
+                return null;
+            }
             $recipe = $this->store->read($traceId)->header->recipe;
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException|\InvalidArgumentException) {
             return null;
         }
 
