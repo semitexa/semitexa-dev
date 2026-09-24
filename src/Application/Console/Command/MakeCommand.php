@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Ai\Recipe\Recipe;
 use Semitexa\Dev\Application\Service\Ai\Recipe\RecipeRegistry;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
@@ -65,18 +66,15 @@ final class MakeCommand extends BaseCommand
         $io = new SymfonyStyle($input, $output);
         $recipeId = (string) $input->getOption('recipe');
         if ($recipeId === '') {
-            $io->error('Missing required option: --recipe');
-            return self::FAILURE;
+            return GenerationPreflight::reject($input, $output, 'make', GenerationPreflight::REASON_MISSING_OPTION, 'Missing required option: --recipe');
         }
 
         $recipe = RecipeRegistry::find($recipeId);
         if ($recipe === null) {
-            $io->error("Unknown recipe: {$recipeId}");
-            return self::FAILURE;
+            return GenerationPreflight::reject($input, $output, 'make', GenerationPreflight::REASON_INVALID_OPTION, "Unknown recipe: {$recipeId}");
         }
         if ($recipe->generator_chain === []) {
-            $io->error("Recipe '{$recipeId}' has no generator_chain — nothing to scaffold.");
-            return self::FAILURE;
+            return GenerationPreflight::reject($input, $output, 'make', GenerationPreflight::REASON_INVALID_OPTION, "Recipe '{$recipeId}' has no generator_chain — nothing to scaffold.");
         }
 
         $sharedArgs = $this->parseArgs((array) $input->getOption('arg'));

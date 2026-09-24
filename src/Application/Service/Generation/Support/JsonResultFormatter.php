@@ -19,6 +19,31 @@ final class JsonResultFormatter
     }
 
     /**
+     * A rejected input, in the same envelope a generation uses, so a caller
+     * parsing --json output always has something to parse.
+     */
+    public function formatRejection(GenerationResult $result, ?string $suggestedModule, ?string $newModule): string
+    {
+        $next = [];
+        if ($newModule !== null) {
+            $next[] = [
+                'cmd'  => 'make:module',
+                'args' => ['--name=' . $newModule, '--json'],
+                'why'  => $suggestedModule !== null
+                    ? "only if '{$newModule}' is meant to be new — otherwise re-run with --module={$suggestedModule}"
+                    : "only if '{$newModule}' is meant to be a new module",
+            ];
+        }
+
+        return json_encode([
+            'artifact' => 'semitexa-dev.generation-result/v1',
+            'generated_at' => date('c'),
+            'result' => $result->toArray(),
+            'next_command' => $next,
+        ], JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
      * @return list<array{cmd: string, args: list<string>, why: string}>
      */
     private function buildNextCommands(GenerationResult $result): array
