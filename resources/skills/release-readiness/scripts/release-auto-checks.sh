@@ -760,7 +760,67 @@ semantic_rule_ratchet_gate() {
     exit 1
 }
 
+# ── quality ledger ─────────────────────────────────────────────────────────
+#
+# `ai:quality check --all`: every #[AsQualityMetric] against the versioned
+# baseline in packages/semitexa-dev/resources/quality/. The cheap ones already
+# run on every ai:verify; `--all` adds the release tier, which needs what only a
+# release has — the clone's server up — for the per-route request cost.
+#
+# ONE-way here, unlike the gates above. The baseline is recorded in the
+# workspace, and the clone installs a different set of packages with different
+# data (demo, showcase-kit): a page can legitimately cost less here. Failing on
+# that would demand a `record` in the workspace, which measures the workspace
+# again, not the clone — a loop with no exit. So a regression fails, and so does
+# anything it cannot judge (no ledger, no server, an unrecorded metric, an
+# unreadable report); an improvement is reported. The two-way ratchet lives in
+# the workspace, where QualityLedgerGateTest runs on every ai:verify.
+quality_ledger_gate() {
+    local report
+    report="$(cd "$RELEASE_ROOT" && "$RELEASE_ROOT/bin/semitexa" ai:quality check --all --json 2>/dev/null)" || true
+
+    local verdict
+    verdict="$(printf '%s' "$report" | php -r '
+        $d = json_decode(stream_get_contents(STDIN), true);
+        if (!is_array($d) || !isset($d["verdict"])) { echo "UNREADABLE\n"; exit; }
+        // One-way: the command fails on BETTER too; the release only on what it
+        // cannot accept. An error or a skip is never a pass.
+        $blocking = array_filter($d["metrics"] ?? [], static fn ($m) => in_array($m["status"], ["worse", "new"], true));
+        echo match (true) {
+            $d["verdict"] === "pass" => "PASS",
+            $d["verdict"] === "fail" && $blocking === [] => "IMPROVED",
+            default => strtoupper((string) $d["verdict"]),
+        }, "\n";
+        if (isset($d["error"])) { echo "  ", $d["error"], "\n"; }
+        if (isset($d["reason"])) { echo "  ", $d["reason"], "\n"; }
+        foreach ($d["metrics"] ?? [] as $m) {
+            if ($m["status"] === "same") { continue; }
+            echo "  ", $m["status"], " ", $m["metric"], " ", $m["from"], " -> ", $m["to"], "\n";
+            foreach ($m["moved"] ?? [] as $key => $mv) { echo "      ", $key, " ", $mv["from"], " -> ", $mv["to"], "\n"; }
+        }
+    ' 2>/dev/null)"
+
+    case "$(printf '%s' "$verdict" | head -1)" in
+        PASS)
+            ok "quality ledger: every metric matches its baseline."
+            return 0
+            ;;
+        IMPROVED)
+            warn "quality ledger: lower than the workspace baseline here (not blocking — see the note above the gate):"
+            printf '%s\n' "$verdict" | tail -n +2 >&2
+            return 0
+            ;;
+    esac
+
+    fail "quality ledger: $(printf '%s' "$verdict" | head -1 | tr '[:upper:]' '[:lower:]')"
+    printf '%s\n' "$verdict" | tail -n +2 >&2
+    fail "A regression: fix it, or bin/semitexa ai:quality accept --metric=<id> --reason=\"...\" in the workspace."
+    fail "An improvement: bin/semitexa ai:quality record --all in the workspace, and commit the baseline."
+    exit 1
+}
+
 phpstan_neutrality_gate
 semantic_rule_ratchet_gate
+quality_ledger_gate
 
 ok "Automated release checks passed"

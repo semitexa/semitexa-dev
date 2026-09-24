@@ -13,6 +13,18 @@
             "sees": "packages under packages/ that have PHP in src/ and no *Test.php under tests/",
             "blind": "how well a package is tested: one trivial test takes a package off the list"
         },
+        "requests.duplicate-queries": {
+            "total": 5,
+            "breakdown": {
+                "GET /demo/api/schema-discovery": 1,
+                "GET /demo/platform/tenancy-isolation": 1,
+                "GET /playground/orm": 1,
+                "GET /playground/orm/articles/feed": 1,
+                "GET /ui-playground/admin/pings/feed": 1
+            },
+            "sees": "per GET route without path parameters: SQL statements repeated with identical SQL and bindings within one request, read from a real traced request to the running server",
+            "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
+        },
         "tests.skip-calls": {
             "total": 144,
             "breakdown": {
