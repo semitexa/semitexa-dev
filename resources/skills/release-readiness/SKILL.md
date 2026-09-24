@@ -18,7 +18,7 @@ Default assumptions:
   overwrite the clone's own `.env` and `composer.json`
 - stop on the first failed automated gate
 - a green automated run includes route smoke checks, SSR helper checks, Playwright browser smoke tests, logs, `system:doctor`, `composer audit`, phpstan neutrality, and phpunit
-- the phpstan gate checks NEUTRALITY, not cleanliness: the project sits above its own baseline, so the bar is that a release does not raise the count. `PHPSTAN_CEILING` records it; raise it only deliberately, with a note saying what grew
+- the phpstan gate checks NEUTRALITY, not cleanliness: the project sits above its own baseline, so the bar is that a release does not raise the count. `packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json` records it (no environment override). It is a ratchet: the gate also fails when the count drops below the ceiling, so lower `ceiling` to the new count in the same commit; raise it only deliberately, with a `deliberate` entry saying what grew
 - before starting `semitexa.rls`, rewrite its local tenant domains to an isolated release namespace under `*.rls.semitexa.test`; it must never register `semitexa.test`, `framework.semitexa.test`, `os.semitexa.test`, or `platform.semitexa.test` in the shared router
 - browser smoke scope is Semitexa Demo only on `demo.rls.semitexa.test`
 - Semitexa Site, Semitexa OS, and Semitexa Platform are explicitly out of release smoke scope

@@ -472,24 +472,47 @@ run_playwright_smoke
 # two SqlIdentifier::quote(string|null) call sites in the ORM relation loader
 # (a ManyToMany missing its pivot metadata quoted null into an empty
 # identifier) and an always-true instanceof in ResponseRenderer.
-PHPSTAN_CEILING="${PHPSTAN_CEILING:-179}"
+#
+# 2026-09-24: the number moved into a versioned file,
+# packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json, beside the
+# semantic-rule snapshot. It used to be a shell default of 179 here, so an
+# environment variable on one machine could raise the release's bar without a
+# commit anyone reviewed; and a count below the ceiling only printed "lower it",
+# so an improvement was one forgotten edit away from being given back. The file
+# is read from the release clone, like everything this gate judges.
+PHPSTAN_CEILING_FILE="packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json"
 
 # The analyser this ceiling and this baseline were measured with. Not a
 # preference — a precondition: every number in this gate is meaningless when
 # the clone analyses with a different version than the workspace does.
-PHPSTAN_EXPECTED_ANALYSER="${PHPSTAN_EXPECTED_ANALYSER:-2.1.40}"
+# It lives in the same file as the ceiling, for the same reason.
 
 phpstan_neutrality_gate() {
-    # An override that is empty or not a number would make every comparison
-    # below a shell error, and `set -e` would end the run somewhere unrelated.
-    # Refuse it by name: the same rule this gate applies to an unreadable
-    # report — something it cannot judge is not something it passes.
+    # The old overrides are refused by name rather than ignored: someone who
+    # sets one expects it to take effect, and a gate that silently disagrees
+    # with its operator is how a release ships with the wrong bar.
+    if [ -n "${PHPSTAN_CEILING:-}" ] || [ -n "${PHPSTAN_EXPECTED_ANALYSER:-}" ]; then
+        fail "PHPSTAN_CEILING / PHPSTAN_EXPECTED_ANALYSER are no longer read from the environment."
+        fail "Change ${PHPSTAN_CEILING_FILE} in a reviewed commit instead."
+        exit 1
+    fi
+
+    local PHPSTAN_CEILING PHPSTAN_EXPECTED_ANALYSER
+    PHPSTAN_CEILING="$(php -r '$d = json_decode((string) @file_get_contents($argv[1]), true); echo is_int($d["ceiling"] ?? null) ? $d["ceiling"] : "";' "$RELEASE_ROOT/$PHPSTAN_CEILING_FILE" 2>/dev/null)"
+    PHPSTAN_EXPECTED_ANALYSER="$(php -r '$d = json_decode((string) @file_get_contents($argv[1]), true); echo is_string($d["analyser"] ?? null) ? $d["analyser"] : "";' "$RELEASE_ROOT/$PHPSTAN_CEILING_FILE" 2>/dev/null)"
+
+    # Unreadable, missing or not a number: the same rule this gate applies to an
+    # unreadable report — something it cannot judge is not something it passes.
     case "$PHPSTAN_CEILING" in
         ''|*[!0-9]*)
-            fail "PHPSTAN_CEILING must be a whole number; got '${PHPSTAN_CEILING}'."
+            fail "phpstan ceiling unreadable in ${PHPSTAN_CEILING_FILE} (need an integer \"ceiling\")."
             exit 1
             ;;
     esac
+    if [ -z "$PHPSTAN_EXPECTED_ANALYSER" ]; then
+        fail "phpstan analyser version missing from ${PHPSTAN_CEILING_FILE} (need a string \"analyser\")."
+        exit 1
+    fi
 
     local analyser
     analyser="$(cd "$RELEASE_ROOT" && docker compose \
@@ -622,12 +645,17 @@ phpstan_neutrality_gate() {
 
     if [ "$count" -gt "$PHPSTAN_CEILING" ]; then
         fail "phpstan: ${count} errors above baseline, ceiling is ${PHPSTAN_CEILING}."
-        fail "This release adds $((count - PHPSTAN_CEILING)). Fix them, or raise PHPSTAN_CEILING deliberately."
+        fail "This release adds $((count - PHPSTAN_CEILING)). Fix them, or raise \"ceiling\" in ${PHPSTAN_CEILING_FILE} with a \"deliberate\" entry saying what grew."
         exit 1
     fi
 
+    # Below the ceiling fails too. Printing "lower it" did not lower it, and a
+    # ceiling left above the real count hands the next release that much room
+    # to get worse without anyone deciding it should.
     if [ "$count" -lt "$PHPSTAN_CEILING" ]; then
-        ok "phpstan: ${count} above baseline — ${PHPSTAN_CEILING} was the ceiling; lower it."
+        fail "phpstan: ${count} above baseline, below the ceiling of ${PHPSTAN_CEILING} — an improvement."
+        fail "Lock it in: set \"ceiling\": ${count} in ${PHPSTAN_CEILING_FILE} in the same commit."
+        exit 1
     else
         ok "phpstan: ${count} above baseline, unchanged."
     fi
