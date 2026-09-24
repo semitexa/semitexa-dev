@@ -34,6 +34,23 @@ enum TaskStatus: string
         return $status;
     }
 
+    /**
+     * A comma list — "what are we working on" is two statuses, and AGENTS.md
+     * documents it as `--status=in_progress,blocked`.
+     *
+     * @return list<self>
+     */
+    public static function parseList(string $value): array
+    {
+        $statuses = [];
+        foreach (explode(',', $value) as $part) {
+            if (trim($part) !== '') {
+                $statuses[] = self::parse(trim($part));
+            }
+        }
+        return $statuses;
+    }
+
     public function isTerminal(): bool
     {
         return $this === self::DONE;
