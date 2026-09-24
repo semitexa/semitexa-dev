@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveExpansion;
 use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveResolver;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 
@@ -668,6 +669,40 @@ class VerificationPlannerTest extends TestCase
         ], VerificationPlan::SCOPE_BROAD);
 
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_CAPABILITY_COVERAGE));
+    }
+
+    /**
+     * A ratchet guards the tree, not the file that was touched, so name
+     * matching never selected one: growing SseServer.php did not run the budget
+     * test that names it, and the regression surfaced at release.
+     */
+    public function test_any_php_change_runs_the_whole_tree_ratchets(): void
+    {
+        mkdir($this->root . '/' . ProjectGuardTargets::RATCHET_SUITE, 0755, true);
+
+        $plan = $this->planner()->plan([
+            new ChangedFile('packages/semitexa-ssr/src/Application/Service/SseServer.php', ChangedFile::KIND_SERVICE),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $ids = array_map(static fn (VerificationTarget $t): string => $t->id, $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT));
+        $this->assertContains('phpunit:' . ProjectGuardTargets::RATCHET_SUITE, $ids);
+    }
+
+    public function test_the_ratchets_stay_out_of_minimal_scope_and_out_of_a_consumer_project(): void
+    {
+        $change = [new ChangedFile('src/modules/Foo/src/Domain/Service/Thing.php', ChangedFile::KIND_SERVICE)];
+
+        // No workspace suite on disk: a consumer project has nothing to ratchet.
+        $consumer = $this->planner()->plan($change, VerificationPlan::SCOPE_STANDARD);
+        mkdir($this->root . '/' . ProjectGuardTargets::RATCHET_SUITE, 0755, true);
+        $minimal = $this->planner()->plan($change, VerificationPlan::SCOPE_MINIMAL);
+        $markdownOnly = $this->planner()->plan([new ChangedFile('README.md', ChangedFile::KIND_NON_PHP)], VerificationPlan::SCOPE_STANDARD);
+
+        foreach ([$consumer, $minimal, $markdownOnly] as $plan) {
+            $ids = array_map(static fn (VerificationTarget $t): string => $t->id, $plan->targets);
+            $this->assertNotContains('phpunit:' . ProjectGuardTargets::RATCHET_SUITE, $ids);
+            $this->assertContains('skill_copies:project', $ids, 'the skill-copy guard still runs everywhere');
+        }
     }
 
     private function planner(?ContractMoveResolver $contractMoveResolver = null): VerificationPlanner
