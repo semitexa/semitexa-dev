@@ -50,9 +50,9 @@ scripts/pr-process.sh --fail-on-warnings
 2. If the command reports blockers or warnings, stop before editing code or replying.
 Report the blocking repos and why they are blocked.
 `reviews-pending: <reviewers>` is the exception that is not a fault: an open review
-request, or CodeRabbit within 15 minutes of a push it has not reviewed yet. Findings
-may still arrive, so never report such a PR as done — wait a few minutes and re-run.
-It clears by itself: a request drops when the reviewer submits, the window expires.
+request, or CodeRabbit's commit status still pending on the head. Findings may still
+arrive, so never report such a PR as done — wait a few minutes and re-run. It clears
+by itself: a request drops when the reviewer submits, the status turns success.
 
 3. If the queue is clean, get the actionable processing list:
 ```bash

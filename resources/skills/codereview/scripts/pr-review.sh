@@ -199,7 +199,7 @@ for dir in "$PACKAGES_DIR"/*/; do
 
     while IFS= read -r pr_number; do
         echo "$prs_json" | jq ".[] | select(.number == $pr_number)" > "$TMPDIR/pr_meta.json"
-        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,headRefOid,reviewRequests,commits 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
+        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,reviewRequests,statusCheckRollup 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
 
         if [[ "$INCLUDE_DIFF" -eq 1 ]]; then
             gh api "repos/$repo_slug/pulls/$pr_number" -H "Accept: application/vnd.github.v3.diff" > "$TMPDIR/diff.txt" 2>/dev/null || : > "$TMPDIR/diff.txt"
@@ -436,30 +436,25 @@ for dir in "$PACKAGES_DIR"/*/; do
             # Reviewers still to be heard from. Measured on semitexa-core #144
             # (2026-09-18): pushed 12:09, Copilot requested 12:13, five Copilot
             # findings posted 12:16 - a queue run in that window found nothing,
-            # correctly, and reported the PR as done.
-            #   - An OPEN review request is definitive: GitHub drops it the
-            #     moment the reviewer submits, so it cannot stick.
-            #   - A reviewer whose latest review is of an older commit counts
-            #     only if it re-reviews every push by itself (CodeRabbit) and
-            #     only for 15 minutes after the head commit. Copilot reviews
-            #     once per request, CodeRabbit skips pushes past its hourly
-            #     limit, humans may never come back: without both limits the
-            #     warning never cleared and looped the skill.
-            | ($extra[0].headRefOid // "") as $head
-            | ((($extra[0].commits // []) | last | .committedDate) // "") as $headAt
-            | ["coderabbitai[bot]"] as $rereviewsOnPush
+            # correctly, and reported the PR as done. Two signals, both set by
+            # GitHub or the reviewer itself, both clearing on their own:
+            #   - an OPEN review request (GitHub drops it when the reviewer
+            #     submits);
+            #   - the commit status CodeRabbit sets on the head, while pending
+            #     (it goes pending on the push it reviews - the first review
+            #     of a new PR included - and success when it is done).
+            # An earlier guess from review commits and committedDate could not
+            # tell a push from a commit and never saw the first review.
             | .pendingReviewers = (
                 (
                     [ ($extra[0].reviewRequests // [])[] | (.login // .name // .slug // empty) ]
-                    + (
-                        if $head == "" or $headAt == "" or (now - ($headAt | fromdateiso8601)) > 900 then []
-                        else
-                            [ (.reviews // [])[] | select(.user != $author and (.commitId // "") != "") ]
-                            | group_by(.user)
-                            | map(max_by(.submittedAt // ""))
-                            | map(select(.commitId != $head and (.user as $u | $rereviewsOnPush | index($u))) | .user)
-                        end
-                    )
+                    + [
+                        ($extra[0].statusCheckRollup // [])[]
+                        | select(((.context // .name // "") | ascii_downcase) == "coderabbit")
+                        | select(((.state // .status // "") | ascii_upcase) as $s
+                            | ["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS"] | index($s))
+                        | "coderabbitai[bot]"
+                    ]
                 ) | unique
             )
             | .summary = {

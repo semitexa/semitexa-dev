@@ -811,16 +811,39 @@ function unstampedChangelogsOf(array $candidates): array
 
 /**
  * CHANGELOG.md as it stands at a revision, or null when the package has none there.
+ *
+ * Null means ABSENT, established by a successful tree listing that does not
+ * name the file - never "the read failed". A failed `git show` used to read as
+ * absence, which skipped the stamp and the tagged-tree check alike: a gate
+ * that cannot look must not pass. Any failure to list or read stops the run.
  */
 function changelogAt(string $packageDir, string $revision): ?string
 {
+    $listing = runShellCommand(sprintf(
+        'git -C %s ls-tree --name-only %s -- %s 2>&1',
+        escapeshellarg($packageDir),
+        escapeshellarg($revision),
+        escapeshellarg(CHANGELOG_FILE),
+    ));
+    if ($listing['exit_code'] !== 0) {
+        fwrite(STDERR, "Cannot list {$revision} in {$packageDir} to look for " . CHANGELOG_FILE . ": {$listing['output']}\n");
+        exit(1);
+    }
+    if ($listing['output'] === '') {
+        return null;
+    }
+
     $result = runShellCommand(sprintf(
-        'git -C %s show %s 2>/dev/null',
+        'git -C %s show %s 2>&1',
         escapeshellarg($packageDir),
         escapeshellarg($revision . ':' . CHANGELOG_FILE),
     ));
+    if ($result['exit_code'] !== 0) {
+        fwrite(STDERR, "Cannot read " . CHANGELOG_FILE . " at {$revision} in {$packageDir}: {$result['output']}\n");
+        exit(1);
+    }
 
-    return $result['exit_code'] === 0 ? $result['output'] : null;
+    return $result['output'];
 }
 
 /**
@@ -915,12 +938,22 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
                 }
                 if ($stamp) {
                     $path = $candidate['package_dir'] . '/' . CHANGELOG_FILE;
-                    $stamped = stampUnreleasedChangelog((string) file_get_contents($path), $releaseVersion);
+                    $current = @file_get_contents($path);
+                    if ($current === false) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: {$path} cannot be read.\n");
+                        exit(1);
+                    }
+                    $stamped = stampUnreleasedChangelog($current, $releaseVersion);
                     if ($stamped === null) {
                         fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: its Unreleased entry is gone from develop.\n");
                         exit(1);
                     }
-                    file_put_contents($path, $stamped);
+                    // Checked like writeResolvedFloor(): an unwritten stamp would
+                    // otherwise commit a message that claims one.
+                    if (@file_put_contents($path, $stamped) !== strlen($stamped)) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: {$path} could not be written.\n");
+                        exit(1);
+                    }
                     $paths[] = CHANGELOG_FILE;
                 }
 

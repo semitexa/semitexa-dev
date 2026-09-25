@@ -272,8 +272,11 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if ($host === false || $host === '') {
             self::markTestSkipped('DB_HOST not configured — orm:sync probe requires real MySQL');
         }
+        // Resolved outside the catch: a missing ORM binding is a fresh-install
+        // wiring failure, not "MySQL not reachable".
+        $orm = ContainerFactory::get()->get(OrmManager::class);
         try {
-            ContainerFactory::get()->get(OrmManager::class)->getAdapter()->execute('SELECT 1');
+            $orm->getAdapter()->execute('SELECT 1');
         } catch (\Throwable $e) {
             self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
         }
@@ -375,14 +378,14 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if ($host === false || $host === '') {
             self::markTestSkipped('DB_HOST not configured — MySQL backing not exercised');
         }
-        $orm = null;
+        // Resolved outside the catch: a missing ORM binding is a fresh-install
+        // wiring failure, not "MySQL not reachable".
+        $orm = ContainerFactory::get()->get(OrmManager::class);
         try {
-            $orm = ContainerFactory::get()->get(OrmManager::class);
             $orm->getAdapter()->execute('SELECT 1');
         } catch (\Throwable $e) {
             self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
         }
-        assert($orm instanceof OrmManager);
 
         $orm->getAdapter()->execute(sprintf(
             'CREATE TABLE IF NOT EXISTS `%s` (
@@ -527,8 +530,10 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if ($host === false || $host === '') {
             self::markTestSkipped('DB_HOST not configured — webhook:cleanup probe requires real MySQL');
         }
+        // Resolved outside the catch: a missing ORM binding is a fresh-install
+        // wiring failure this smoke exists to catch, not "MySQL not reachable".
+        $orm = ContainerFactory::get()->get(OrmManager::class);
         try {
-            $orm = ContainerFactory::get()->get(OrmManager::class);
             $orm->getAdapter()->execute('SELECT 1');
         } catch (\Throwable $e) {
             self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());

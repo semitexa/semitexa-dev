@@ -456,7 +456,10 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertSame($before, $this->git($origin, 'rev-parse ' . self::VERSION . '~1'), 'exactly one release commit');
         self::assertSame(self::VERSION, $this->manifestAt($origin, self::VERSION)['extra']['semitexa']['floors']['semitexa/core']);
-        self::assertStringNotContainsString('## Unreleased', $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md')));
+        $tagged = $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md'));
+        self::assertStringNotContainsString('## Unreleased', $tagged);
+        // Positive too: an empty or truncated file would satisfy the line above.
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\n\n### Changed\n- **A consumer can see this.**", $tagged);
     }
 
     /** An empty Unreleased section is not an entry: no commit, tag as it stands. */
@@ -484,10 +487,9 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         $result = $this->release(['semitexa-core'], noPush: true);
 
         self::assertSame(0, $result['exit'], $result['output']);
-        self::assertStringNotContainsString(
-            '## Unreleased',
-            $this->git($this->dir('semitexa-core'), 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md')),
-        );
+        $local = $this->git($this->dir('semitexa-core'), 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md'));
+        self::assertStringNotContainsString('## Unreleased', $local);
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\n\n### Changed\n- **A consumer can see this.**", $local);
         self::assertStringContainsString(
             '## Unreleased',
             $this->git($this->root . '/origin-semitexa-core.git', 'show master:CHANGELOG.md'),
