@@ -65,9 +65,20 @@ test.describe('Dev toolbar', () => {
         // `style-src 'self'` policy does not govern — only style ATTRIBUTES and
         // setAttribute('style') are. Pinned so a refactor to setAttribute fails here.
         await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+        // Identify the toolbar's own violations by WHOSE element they are on,
+        // not by message text: the browser's message need not name anything.
+        // The injected policy refuses the host page's own inline styles too —
+        // those are not this spec's business.
+        await page.addInitScript(() => {
+            (window as unknown as { __toolbarCsp: string[] }).__toolbarCsp = [];
+            document.addEventListener('securitypolicyviolation', (e) => {
+                const target = e.target as Element | null;
+                const ours = !!target && typeof target.closest === 'function'
+                    && target.closest('.page-spacer, [data-semitexa-devbar]') !== null;
+                if (ours) (window as unknown as { __toolbarCsp: string[] }).__toolbarCsp.push(`${e.effectiveDirective} on ${target!.className || target!.tagName}`);
+            }, true);
+        });
         const path = await htmlPage(request);
-        const violations: string[] = [];
-        page.on('console', (m) => { if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) violations.push(m.text()); });
         await page.route((url) => url.pathname === path || url.pathname.endsWith(path), async (route) => {
             const res = await route.fetch();
             await route.fulfill({ response: res, headers: { ...res.headers(), 'content-security-policy': "style-src 'self' https://fonts.googleapis.com" } });
@@ -78,7 +89,7 @@ test.describe('Dev toolbar', () => {
         const spacer = page.locator('body > .page-spacer');
         await expect(spacer).toHaveCount(1);
         expect(await spacer.evaluate((el) => el.getBoundingClientRect().height)).toBe(38);
-        expect(violations.filter((v) => /toolbar|page-spacer/i.test(v))).toEqual([]);
+        expect(await page.evaluate(() => (window as unknown as { __toolbarCsp: string[] }).__toolbarCsp)).toEqual([]);
     });
 
     test('collapses to a pill and remembers it', async ({ page, request }) => {
