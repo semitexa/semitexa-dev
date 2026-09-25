@@ -17,6 +17,7 @@
   const $ = (id) => document.getElementById(id);
 
   const BODYLESS = new Set(['GET', 'HEAD', 'DELETE']);
+  const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
   const HISTORY_KEY = 'semitexa.explorer.history';
   const HISTORY_MAX = 15;
   const ACCESS_NOTES = {
@@ -262,7 +263,8 @@
     const req = currentRequest(ctx);
     const marker = token();
     const headers = { ...req.headers, 'X-Semitexa-Trace': marker };
-    if (!BODYLESS.has(req.method)) {
+    // Every unsafe method carries the token — DELETE included, though it has no body.
+    if (!SAFE.has(req.method)) {
       const t = csrfToken();
       if (t && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = t;
     }
