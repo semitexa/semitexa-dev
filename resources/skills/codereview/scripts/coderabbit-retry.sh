@@ -14,21 +14,22 @@
 # again for free — retrying costs nothing.
 #
 # A head is re-triggered at most once per CODERABBIT_RETRY_MIN_GAP_SECONDS
-# (default 3600); among eligible heads the least recently triggered goes first.
+# (default 1500 — just under the 30-minute timer, so every run may retry);
+# among eligible heads the least recently triggered goes first.
 # A new push is a new head, so it starts fresh.
 #
 # Environment:
 #   CODERABBIT_RETRY_OWNER            GitHub org/user to scan (default: semitexa)
 #   CODERABBIT_RETRY_MATCH            status text that means "skipped, wake me"
 #                                     (case-insensitive ERE, default: rate limited)
-#   CODERABBIT_RETRY_MIN_GAP_SECONDS  per-head back-off (default: 3600)
+#   CODERABBIT_RETRY_MIN_GAP_SECONDS  per-head back-off (default: 1500)
 #   CODERABBIT_RETRY_STATE_DIR        where trigger times are kept
 #                                     (default: $XDG_STATE_HOME/semitexa/coderabbit-retry)
 set -euo pipefail
 
 OWNER="${CODERABBIT_RETRY_OWNER:-semitexa}"
 MATCH="${CODERABBIT_RETRY_MATCH:-rate limited}"
-MIN_GAP="${CODERABBIT_RETRY_MIN_GAP_SECONDS:-3600}"
+MIN_GAP="${CODERABBIT_RETRY_MIN_GAP_SECONDS:-1500}"
 STATE_DIR="${CODERABBIT_RETRY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/semitexa/coderabbit-retry}"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
