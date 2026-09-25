@@ -98,6 +98,7 @@ final class ObservatoryHtmlRenderer
       <button class="btn" id="b-explain" type="button">explain <kbd>E</kbd></button>
       <button class="btn" id="b-pause" type="button"><span>pause</span> <kbd>␣</kbd></button>
       <button class="btn" id="b-full" type="button">⛶ <kbd>F</kbd></button>
+      <button class="btn" id="b-explorer" type="button" title="find any route and call it">API explorer <kbd>A</kbd></button>
       <a class="link" href="/__trace">history →</a>
     </div>
   </header>
@@ -159,6 +160,15 @@ final class ObservatoryHtmlRenderer
     <canvas id="tl-canvas"></canvas>
   </section>
 </div>
+<dialog class="explorer-dialog" id="explorer-dialog" aria-label="API Explorer">
+  <header>
+    <b>API Explorer</b>
+    <span class="sub">calls are real — watch them land here</span>
+    <a class="link" id="explorer-detach" href="/__explorer" target="_blank" rel="noopener">open in new tab ↗</a>
+    <button class="btn" id="explorer-close" type="button" aria-label="Close">✕</button>
+  </header>
+  <iframe id="explorer-frame" title="API Explorer"></iframe>
+</dialog>
 <script src="/__observatory/asset/observatory.js"></script>
 </body>
 </html>

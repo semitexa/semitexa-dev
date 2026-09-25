@@ -503,3 +503,12 @@ html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rg
 .l98{left:98%}
 .l99{left:99%}
 .l100{left:100%}
+
+/* ---- API Explorer dialog ---- */
+.explorer-dialog{width:min(1180px,calc(100vw - 32px));height:calc(100dvh - 48px);padding:0;border:1px solid var(--line-2);border-radius:14px;
+  background:var(--bg);color:var(--text);box-shadow:0 30px 90px rgba(0,0,0,.55);overflow:hidden}
+.explorer-dialog[open]{display:flex;flex-direction:column}
+.explorer-dialog::backdrop{background:rgba(3,5,10,.62);backdrop-filter:blur(3px)}
+.explorer-dialog header{display:flex;align-items:center;gap:12px;padding:8px 10px 8px 16px;border-bottom:1px solid var(--line)}
+.explorer-dialog header .sub{flex:1;color:var(--faint);font-size:11.5px}
+.explorer-dialog iframe{flex:1;width:100%;border:0;background:var(--bg)}
