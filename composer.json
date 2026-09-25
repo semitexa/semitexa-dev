@@ -13,7 +13,8 @@
         "php": "^8.4",
         "semitexa/core": ">=2026.09.13.1915 || dev-master",
         "semitexa/orm": "*",
-        "semitexa/project-graph": "*"
+        "semitexa/project-graph": "*",
+        "semitexa/ssr": "*"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.95",
@@ -28,6 +29,13 @@
     "autoload-dev": {
         "psr-4": {
             "Semitexa\\Dev\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "semitexa": {
+            "floors": {
+                "semitexa/ssr": "next"
+            }
         }
     },
     "keywords": [
