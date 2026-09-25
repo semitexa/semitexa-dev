@@ -454,40 +454,12 @@ final class ReplayRunner
     }
 
     /**
-     * The `{name}` values a concrete path carries for a route pattern, the way
-     * PayloadHydrator reads them: each placeholder matches its requirement
-     * (default one segment), and only the captured values are URL-decoded, so
-     * an encoded slash inside a segment cannot move a segment boundary.
-     *
      * @param  array<array-key, mixed> $requirements
      * @return array<string, string>
      */
     public static function pathParams(string $pattern, array $requirements, string $path): array
     {
-        if (!preg_match_all('/\{([^}:]+)(?::[^}]*)?\}/', $pattern, $names)) {
-            return [];
-        }
-        $regex = preg_replace_callback(
-            '/\\\{([^}:]+)(?:\\:[^}]*)?\\\}/',
-            static function (array $m) use ($requirements): string {
-                $requirement = $requirements[$m[1]] ?? null;
-
-                return '(' . (is_string($requirement) && $requirement !== '' ? $requirement : '[^/]+') . ')';
-            },
-            preg_quote($pattern, '#'),
-        );
-        if (!is_string($regex) || @preg_match('#^' . $regex . '$#', $path, $matches) !== 1) {
-            return [];
-        }
-
-        $params = [];
-        foreach ($names[1] as $i => $name) {
-            if (isset($matches[$i + 1])) {
-                $params[$name] = rawurldecode($matches[$i + 1]);
-            }
-        }
-
-        return $params;
+        return RoutePath::params($pattern, $requirements, $path);
     }
 
     private function stubQueueTransports(): CapturingQueueTransport

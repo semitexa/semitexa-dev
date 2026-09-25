@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Trace;
 
-use Semitexa\Core\Lifecycle\CurrentRequestStore;
 use Semitexa\Dev\Application\Service\Trace\Otlp\OtlpTraceExporter;
 
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
@@ -290,36 +289,18 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         $identity = TraceContext::identity();
 
         // Deep-context convention: a caller that wants an object's STATE in
-        // the trace (not just its class name) passes it under this key. The
-        // snapshot is redacted and size-bounded at ingestion — scrub() below
-        // would reduce it to a class name, which is why it is lifted out first.
-        $snapshot = null;
-        $input = null;
-        $requestPath = null;
+        // the trace (not just its class name) passes it under this key. It is
+        // redacted and size-bounded at ingestion (HydrationCapture) — scrub()
+        // below would reduce it to a class name, which is why it is lifted out first.
+        $captured = [];
         if (isset($context['payload_snapshot'])) {
             if (is_object($context['payload_snapshot'])) {
-                $snapshot = ContextRedactor::snapshot($context['payload_snapshot']);
-                // Beside the payload's state, the input that produced it: the
-                // one of the two a replay can feed back through the setters.
-                $raw = LiveRequestInput::current();
-                $input = $raw !== null ? ContextRedactor::redact($raw) : null;
-                // The root span records the route PATTERN (`/items/{id}`); the
-                // concrete path is where `{id}`'s value is, and a replay needs it.
-                $requestPath = CurrentRequestStore::get()?->getPath();
+                $captured = HydrationCapture::of($context['payload_snapshot'], $buffer);
             }
             unset($context['payload_snapshot']);
         }
 
-        $scrubbed = $this->scrub($context);
-        if ($snapshot !== null) {
-            $scrubbed['snapshot'] = $snapshot;
-        }
-        if ($input !== null) {
-            $scrubbed['input'] = $input;
-        }
-        if (is_string($requestPath) && $requestPath !== '') {
-            $scrubbed['request_path'] = $requestPath;
-        }
+        $scrubbed = $this->scrub($context) + $captured;
 
         return [
             'type' => $type,

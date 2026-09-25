@@ -56,6 +56,11 @@ final class RecordedInputs
             if (isset($envelope['error']) || !$envelope['hydrated'] || in_array($row['status'], [400, 422], true)) {
                 continue;
             }
+            // A trace from before `request_path` knows only the pattern; `{id}`
+            // is not a value anyone called the route with.
+            if (str_contains($envelope['path'], '{')) {
+                continue;
+            }
             $input = $envelope['payload'];
             $key = $method . ' ' . $envelope['path'] . ' ' . json_encode($input);
             if (isset($seen[$key])) {

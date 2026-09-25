@@ -17,13 +17,17 @@ async function catalog(request: APIRequestContext): Promise<Route[]> {
     return (await res.json()).routes as Route[];
 }
 
-/** A public GET route of this kind that needs no path parameter. */
-async function simpleGet(request: APIRequestContext, kind: string): Promise<Route> {
-    const route = (await catalog(request)).find(
-        (r) => r.kind === kind && r.access === 'public' && r.methods.includes('GET') && r.path_params.length === 0,
+/**
+ * The route the real-call specs aim at: the Explorer's own catalog. It exists
+ * wherever semitexa/dev does, so these specs need nothing from the host app.
+ */
+const OWN_ROUTE = { id: 'GET /__explorer/catalog', kind: 'internal', path: '/__explorer/catalog' };
+
+/** A public parameterless GET API route of the host app, if it has one. */
+async function appApiGet(request: APIRequestContext): Promise<Route | undefined> {
+    return (await catalog(request)).find(
+        (r) => r.kind === 'api' && r.access === 'public' && r.methods.includes('GET') && r.path_params.length === 0,
     );
-    expect(route, `the app must have a public parameterless GET ${kind} route`).toBeTruthy();
-    return route!;
 }
 
 test.describe('API Explorer', () => {
@@ -43,8 +47,8 @@ test.describe('API Explorer', () => {
     });
 
     test('a real call reports status, the expectation and a working trace link', async ({ page, request }) => {
-        const route = await simpleGet(request, 'api');
-        await page.goto('/__explorer#kind=api&route=' + encodeURIComponent(route.id));
+        const route = OWN_ROUTE;
+        await page.goto(`/__explorer#kind=${route.kind}&route=` + encodeURIComponent(route.id));
 
         await expect(page.locator('#ex-route-title')).toHaveText(route.path);
         await page.locator('.ex-send').click();
@@ -60,9 +64,13 @@ test.describe('API Explorer', () => {
         expect(traced.ok(), 'the trace the call produced must open').toBeTruthy();
     });
 
-    test('a sandbox run rolls its writes back and says so', async ({ page, request }) => {
-        const route = await simpleGet(request, 'api');
-        await page.goto('/__explorer#kind=api&route=' + encodeURIComponent(route.id));
+    // The sandbox refuses the dev panels' own /__ routes by design, so this one
+    // needs a route of the host app. That the write is really rolled back is
+    // proven against stored state by the app-level explorer-sandbox-rollback spec.
+    test('a sandbox run reports its guards', async ({ page, request }) => {
+        const route = await appApiGet(request);
+        test.skip(!route, 'the host app has no public parameterless GET API route to run in the sandbox');
+        await page.goto('/__explorer#kind=api&route=' + encodeURIComponent(route!.id));
 
         await page.locator('.ex-mode [data-mode="sandbox"]').click();
         await expect(page.locator('.ex-note.sandbox')).toBeVisible();
@@ -72,9 +80,9 @@ test.describe('API Explorer', () => {
         await expect(page.locator('.ex-guards')).toContainText('transaction-rolled-back');
     });
 
-    test('Ctrl+Enter while a call is in flight sends it once', async ({ page, request }) => {
-        const route = await simpleGet(request, 'api');
-        await page.goto('/__explorer#kind=api&route=' + encodeURIComponent(route.id));
+    test('Ctrl+Enter while a call is in flight sends it once', async ({ page }) => {
+        const route = OWN_ROUTE;
+        await page.goto(`/__explorer#kind=${route.kind}&route=` + encodeURIComponent(route.id));
         await expect(page.locator('.ex-send')).toBeVisible();
 
         // Hold the answer back, so every press lands while the first call is
@@ -145,6 +153,14 @@ test.describe('API Explorer', () => {
             }
         }
         expect(new Set(ids).size, 'operationIds are unique').toBe(ids.length);
-        expect(Object.keys(doc.paths).length).toBeGreaterThanOrEqual(new Set(api.map((r) => r.path.replace(/\{([A-Za-z_]\w*)[^}]*\}/g, '{$1}'))).size);
+        // Every catalog API route, with every one of its methods — a count
+        // would pass with one route missing and an unrelated one extra.
+        for (const r of api) {
+            const path = r.path.replace(/\{([A-Za-z_]\w*)[^}]*\}/g, '{$1}');
+            expect(doc.paths[path], `${path} is exported`).toBeTruthy();
+            for (const m of r.methods) {
+                expect(doc.paths[path][m.toLowerCase()], `${m} ${path} is exported`).toBeTruthy();
+            }
+        }
     });
 });
