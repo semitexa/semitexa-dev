@@ -36,6 +36,7 @@ final class ExplorerHtmlRenderer
     <nav class="ex-links">
       <a href="/__observatory" target="_blank" rel="noopener">Observatory ↗</a>
       <a href="/__trace" target="_blank" rel="noopener">Traces ↗</a>
+      <a href="/__explorer/openapi.json?download=1" title="OpenAPI 3.1 for every API route — import into Postman or Insomnia. Add pages=1 for HTML pages too.">OpenAPI ↓</a>
       <a href="/__explorer" target="_blank" rel="noopener" id="ex-detach" hidden>Open in new tab ↗</a>
     </nav>
   </header>
