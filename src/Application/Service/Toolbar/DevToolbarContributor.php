@@ -11,7 +11,6 @@ use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\Environment;
 use Semitexa\Core\Lifecycle\CurrentRequestStore;
 use Semitexa\Dev\Application\Service\Explorer\RouteCatalog;
-use Semitexa\Dev\Application\Service\Trace\ObservatoryContext;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
 use Semitexa\Dev\Application\Service\Trace\TraceContext;
 use Semitexa\Ssr\Domain\Contract\PageDocumentContributorInterface;
@@ -20,10 +19,12 @@ use Semitexa\Ssr\Domain\Contract\PageDocumentContributorInterface;
  * The dev toolbar at the bottom of every page, Symfony-style.
  *
  * Only a placeholder and a script tag go into the page. The placeholder
- * carries what is known while the page is still rendering — which route
- * answered, the Observatory process id — as data attributes; the script
- * asks `/__toolbar/process/{id}` for the rest (status, time, queries) once the
- * response has gone and the journal holds its end line. So the page pays a
+ * carries what is known while the page is still rendering and is the same on
+ * every load — which route answered — as data attributes. The Observatory
+ * process id changes per request, so it travels in a `Server-Timing` header
+ * ({@see ExposeProcessIdListener}) and the page body stays deterministic; the
+ * script asks `/__toolbar/process/{id}` for the rest (status, time, queries)
+ * once the response has gone and the journal holds its end line. So the page pays a
  * few hundred bytes, and nothing inline for a CSP to refuse.
  *
  * Dev only: APP_ENV=dev, not the production monitor mode. Off with
@@ -53,7 +54,6 @@ final class DevToolbarContributor implements PageDocumentContributorInterface
         $method = strtoupper($request->getMethod());
 
         $attributes = [
-            'data-process' => ObservatoryContext::currentId() ?? '',
             'data-method' => $method,
             'data-path' => $path,
             'data-traced' => TraceContext::current() !== null ? '1' : '0',

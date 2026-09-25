@@ -15,6 +15,13 @@
   if (navigator.webdriver) return;
   seed.dataset.drawn = '1';
   const d = seed.dataset;
+  // The per-request process id rides a Server-Timing header, not the HTML, so
+  // the page body stays the same on every load.
+  const processId = (() => {
+    const nav = performance.getEntriesByType('navigation')[0];
+    const entry = nav && (nav.serverTiming || []).find((t) => t.name === 'sx-process');
+    return entry ? entry.description : '';
+  })();
   const COLLAPSED_KEY = 'semitexa.devbar.collapsed';
 
   const store = {
@@ -67,7 +74,7 @@
   addMeta('Module', d.module);
   addMeta('Payload', d.payload);
   addMeta('Handler', d.handler);
-  addMeta('Process', d.process);
+  addMeta('Process', processId);
   const phases = el('div', { class: 'phases' });
   details.append(meta, phases);
   routeBtn.addEventListener('click', () => { details.hidden = !details.hidden; });
@@ -150,7 +157,7 @@
 
   /* ---------- journal ---------- */
   async function load(attempt) {
-    if (!d.process) {
+    if (!processId) {
       status.textContent = '—';
       time.firstChild.textContent = '—';
       renderTrace(null);
@@ -158,7 +165,7 @@
     }
     let data = null;
     try {
-      const res = await fetch('/__toolbar/process/' + encodeURIComponent(d.process), { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+      const res = await fetch('/__toolbar/process/' + encodeURIComponent(processId), { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
       data = res.ok ? await res.json() : null;
     } catch { /* retried below */ }
 
