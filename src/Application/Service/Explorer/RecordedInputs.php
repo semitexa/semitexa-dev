@@ -57,7 +57,7 @@ final class RecordedInputs
                 continue;
             }
             $input = $envelope['payload'];
-            $key = $method . ' ' . $row['path'] . ' ' . json_encode($input);
+            $key = $method . ' ' . $envelope['path'] . ' ' . json_encode($input);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -67,7 +67,8 @@ final class RecordedInputs
                 'file' => $row['file'],
                 'recordedAt' => $row['recordedAt'],
                 'method' => $method,
-                'path' => $row['path'],
+                // The concrete path the call used; the trace list shows the pattern.
+                'path' => $envelope['path'],
                 'status' => $row['status'],
                 'input' => $input,
             ];

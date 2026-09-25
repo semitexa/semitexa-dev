@@ -52,6 +52,34 @@ final class SandboxTest extends TestCase
     }
 
     #[Test]
+    public function the_envelope_replays_the_concrete_path_not_the_route_pattern(): void
+    {
+        $envelope = ReplayRunner::envelopeOf(['events' => [
+            ['type' => 'begin', 'name' => 'request', 'context' => ['path' => '/items/{id}', 'method' => 'GET']],
+            ['type' => 'end', 'name' => 'payload.hydrate_and_validate', 'context' => ['input' => [], 'request_path' => '/items/7']],
+        ]]);
+        $older = ReplayRunner::envelopeOf(['events' => [
+            ['type' => 'begin', 'name' => 'request', 'context' => ['path' => '/items/{id}', 'method' => 'GET']],
+        ]]);
+
+        self::assertSame('/items/7', $envelope['path'], 'the pattern carries no value for {id}');
+        self::assertSame('/items/{id}', $older['path'], 'a trace from before request_path still resolves its route');
+    }
+
+    #[Test]
+    public function path_params_are_read_off_the_path_like_the_hydrator_reads_them(): void
+    {
+        self::assertSame(['id' => '7'], ReplayRunner::pathParams('/items/{id}', [], '/items/7'));
+        self::assertSame(
+            ['id' => '42', 'slug' => 'a/b'],
+            ReplayRunner::pathParams('/items/{id}/tags/{slug}', ['id' => '\\d+'], '/items/42/tags/a%2Fb'),
+            'an encoded slash is decoded after matching, never used to split segments',
+        );
+        self::assertSame([], ReplayRunner::pathParams('/items/{id}', ['id' => '\\d+'], '/items/x'), 'a requirement that fails matches nothing');
+        self::assertSame([], ReplayRunner::pathParams('/about', [], '/about'));
+    }
+
+    #[Test]
     public function the_child_answer_is_its_last_json_object_line(): void
     {
         $output = "PHP Warning: something noisy\n{\"artifact\":\"x\",\"verdict\":\"ok\"}\n";

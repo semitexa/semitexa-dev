@@ -581,6 +581,9 @@
       b.addEventListener('click', () => {
         ctx.activePreset = p;
         [...presetBar.children].forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        // A recorded call on a GET+POST route must go back out as what it was:
+        // under the wrong method its body would be sent as a query string.
+        if (p.method && [...ui.method.options].some((o) => o.value === p.method)) ui.method.value = p.method;
         if (p.path) applyPath(ctx, p.path);
         if (ctx.rawMode) ui.raw.value = JSON.stringify(p.values, null, 2);
         applyValues(ctx, p.values);
@@ -601,6 +604,7 @@
           presetBar.append(presetButton({
             id: 'recorded-' + i,
             recorded: true,
+            method: r.method,
             label: `● ${r.method} ${r.path} · ${when}`,
             expect: r.status ? String(r.status) : null,
             note: `Recorded ${r.recordedAt} (${r.file}). Redacted values come back as the mask — replace them before sending.`,

@@ -183,13 +183,16 @@ final class ReplayRunner
         );
 
         try {
-            [$handlerClass, $payloadClass, $resourceClass] = $this->resolveRouteTarget(
+            [$handlerClass, $payloadClass, $resourceClass, $pathParams] = $this->resolveRouteTarget(
                 (string) $envelope['path'],
                 (string) $envelope['method'],
             );
         } catch (\Throwable $e) {
             return ['error' => 'target-unresolvable', 'detail' => $e->getMessage()];
         }
+        // The recorded input is body + query; `{id}` in `/items/{id}` comes from
+        // the path, and over HTTP it overrides both — PayloadHydrator's order.
+        $input = array_merge($input, $pathParams);
 
         $queueCaptor = $this->stubQueueTransports();
 
@@ -379,6 +382,7 @@ final class ReplayRunner
         $root = null;
         $snapshot = [];
         $hydrated = false;
+        $requestPath = null;
         foreach ($raw['events'] as $event) {
             if ($root === null && $event['type'] === 'begin' && in_array($event['name'], ['request', 'sse'], true)) {
                 $root = $event;
@@ -389,6 +393,7 @@ final class ReplayRunner
                 // snapshot is the fallback for traces recorded before it.
                 $snapshot = $event['context']['input'] ?? $event['context']['snapshot'] ?? [];
                 $hydrated = isset($event['context']['input']) || isset($event['context']['snapshot']);
+                $requestPath = is_string($event['context']['request_path'] ?? null) ? $event['context']['request_path'] : null;
             }
         }
 
@@ -399,7 +404,9 @@ final class ReplayRunner
             return ['error' => 'not-replayable', 'detail' => 'an SSE session is a live connection, not a request to re-run'];
         }
 
-        $path = (string) ($root['context']['path'] ?? '');
+        // The concrete path when the trace has it; the root span only knows
+        // the route pattern, which carries no `{id}` value.
+        $path = $requestPath ?? (string) ($root['context']['path'] ?? '');
         if ($path === '') {
             return ['error' => 'no-route-in-trace'];
         }
@@ -415,7 +422,7 @@ final class ReplayRunner
         ];
     }
 
-    /** @return array{0: string, 1: string, 2: string} */
+    /** @return array{0: string, 1: string, 2: string, 3: array<string, string>} */
     private function resolveRouteTarget(string $path, string $method): array
     {
         $this->attributeDiscovery->initialize();
@@ -440,7 +447,47 @@ final class ReplayRunner
             throw new \RuntimeException("route {$method} {$path} is incompletely wired");
         }
 
-        return [$handler, $payload, $resource];
+        $pattern = is_string($route['path'] ?? null) ? $route['path'] : '';
+        $requirements = is_array($route['requirements'] ?? null) ? $route['requirements'] : [];
+
+        return [$handler, $payload, $resource, self::pathParams($pattern, $requirements, $path)];
+    }
+
+    /**
+     * The `{name}` values a concrete path carries for a route pattern, the way
+     * PayloadHydrator reads them: each placeholder matches its requirement
+     * (default one segment), and only the captured values are URL-decoded, so
+     * an encoded slash inside a segment cannot move a segment boundary.
+     *
+     * @param  array<array-key, mixed> $requirements
+     * @return array<string, string>
+     */
+    public static function pathParams(string $pattern, array $requirements, string $path): array
+    {
+        if (!preg_match_all('/\{([^}:]+)(?::[^}]*)?\}/', $pattern, $names)) {
+            return [];
+        }
+        $regex = preg_replace_callback(
+            '/\\\{([^}:]+)(?:\\:[^}]*)?\\\}/',
+            static function (array $m) use ($requirements): string {
+                $requirement = $requirements[$m[1]] ?? null;
+
+                return '(' . (is_string($requirement) && $requirement !== '' ? $requirement : '[^/]+') . ')';
+            },
+            preg_quote($pattern, '#'),
+        );
+        if (!is_string($regex) || @preg_match('#^' . $regex . '$#', $path, $matches) !== 1) {
+            return [];
+        }
+
+        $params = [];
+        foreach ($names[1] as $i => $name) {
+            if (isset($matches[$i + 1])) {
+                $params[$name] = rawurldecode($matches[$i + 1]);
+            }
+        }
+
+        return $params;
     }
 
     private function stubQueueTransports(): CapturingQueueTransport
