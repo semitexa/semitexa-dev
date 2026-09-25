@@ -1369,6 +1369,23 @@ function boot() {
     else if (e.key === '+' || e.key === '=') zoomAt(world.W / 2, world.H / 2, 1.2); else if (e.key === '-') zoomAt(world.W / 2, world.H / 2, 1 / 1.2);
     else if (e.key.startsWith('Arrow')) { e.preventDefault(); const d = 80; S.view.x += e.key === 'ArrowLeft' ? d : e.key === 'ArrowRight' ? -d : 0; S.view.y += e.key === 'ArrowUp' ? d : e.key === 'ArrowDown' ? -d : 0; clampView(); }
   });
+  // API Explorer in a dialog. The frame loads on first open only, and the
+  // "new tab" link carries the Explorer's current hash (group, search, open
+  // route), so the dialog hands its exact state to a tab of its own.
+  const obsRoot = document.querySelector('.obs');
+  const exDialog = obsRoot.querySelector('.explorer-dialog'), exFrame = exDialog.querySelector('iframe');
+  const openExplorer = () => { if (!exFrame.src) exFrame.src = '/__explorer'; if (!exDialog.open) exDialog.showModal(); };
+  obsRoot.querySelector('[data-action="explorer"]').addEventListener('click', openExplorer);
+  exDialog.querySelector('[data-action="explorer-close"]').addEventListener('click', () => exDialog.close());
+  exDialog.querySelector('[data-action="explorer-detach"]').addEventListener('click', e => {
+    // Until the frame has loaded it sits on about:blank; hand over where it is going instead.
+    let href = '/__explorer';
+    try { const current = exFrame.contentWindow.location.href; if (current.startsWith(location.origin + '/')) href = current; } catch { /* keep the destination */ }
+    e.currentTarget.href = href;
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'a' && !exDialog.open && !(e.target && /input|textarea|select/i.test(e.target.tagName))) openExplorer();
+  });
   refreshStage(); setInterval(refreshStage, 15000);
   loadSchedules(); setInterval(loadSchedules, 60000);
   schedule(0);

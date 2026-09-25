@@ -289,21 +289,18 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         $identity = TraceContext::identity();
 
         // Deep-context convention: a caller that wants an object's STATE in
-        // the trace (not just its class name) passes it under this key. The
-        // snapshot is redacted and size-bounded at ingestion — scrub() below
-        // would reduce it to a class name, which is why it is lifted out first.
-        $snapshot = null;
+        // the trace (not just its class name) passes it under this key. It is
+        // redacted and size-bounded at ingestion (HydrationCapture) — scrub()
+        // below would reduce it to a class name, which is why it is lifted out first.
+        $captured = [];
         if (isset($context['payload_snapshot'])) {
             if (is_object($context['payload_snapshot'])) {
-                $snapshot = ContextRedactor::snapshot($context['payload_snapshot']);
+                $captured = HydrationCapture::of($context['payload_snapshot'], $buffer);
             }
             unset($context['payload_snapshot']);
         }
 
-        $scrubbed = $this->scrub($context);
-        if ($snapshot !== null) {
-            $scrubbed['snapshot'] = $snapshot;
-        }
+        $scrubbed = $this->scrub($context) + $captured;
 
         return [
             'type' => $type,
@@ -632,9 +629,6 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
     private function client(): array
     {
         try {
-            if (!class_exists(\Semitexa\Core\Server\SwooleBootstrap::class)) {
-                return [];
-            }
             $pair = \Semitexa\Core\Server\SwooleBootstrap::getCurrentSwooleRequestResponse();
             $headers = is_array($pair) && isset($pair[0]) && is_array($pair[0]->header ?? null) ? $pair[0]->header : null;
             if ($headers === null) {

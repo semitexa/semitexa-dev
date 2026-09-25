@@ -184,9 +184,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // stack matched by name cannot survive that. The increase is the
         // paragraph saying so, at the one place a later reader would otherwise
         // "restore" the pair.
-        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 701],
+        // 701 -> 709 on 2026-09-24, recorded deliberately: each of its seven
+        // catch-alls now lets a coroutine cancellation keep unwinding (one line
+        // each, SseSessionCoroutines::rethrowIfCancellation) instead of logging
+        // it as a failed slot and carrying on in a cancelled coroutine.
+        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 709],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
-        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 765],
+        // 765 -> 764 on 2026-09-24: page finalization moved to PageDocumentFinalizer.
+        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 764],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
         // became a ring that keeps the LAST events, so the capped-trace notice
         // now has to say WHICH end was cut, and the root coroutine is read from

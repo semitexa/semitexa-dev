@@ -123,7 +123,12 @@ jq '
             # instead of letting it read as silence.
             if (($pr.summary.reviewComments // 0) > 0
                 and ($pr.summary.actionableLineComments // 0) == 0)
-            then "all-line-comments-classified-as-noise" else empty end
+            then "all-line-comments-classified-as-noise" else empty end,
+            # A reviewer who has not yet reviewed the head commit may still
+            # post. Without this, a run in the minutes after a push reports
+            # "0 open" and the operator reads it as done (core #144).
+            if ((($pr.summary.pendingReviewers // []) | length) > 0)
+            then "reviews-pending: " + (($pr.summary.pendingReviewers // []) | join(", ")) else empty end
         ];
     .repos |= map(
         . as $repo

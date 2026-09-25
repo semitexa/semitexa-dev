@@ -199,7 +199,15 @@ for dir in "$PACKAGES_DIR"/*/; do
 
     while IFS= read -r pr_number; do
         echo "$prs_json" | jq ".[] | select(.number == $pr_number)" > "$TMPDIR/pr_meta.json"
-        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
+        # A failure here stops the run like every other fetch below. It used to
+        # be replaced by {}, which read as "mergeability unknown, nobody still
+        # reviewing" - dropping an open review request or a pending CodeRabbit
+        # status without a word.
+        if ! gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,reviewRequests,statusCheckRollup 2>"$TMPDIR/gh-err.txt" > "$TMPDIR/pr_extra.json"; then
+            printf 'ERROR: could not fetch PR metadata for %s#%s: %s\n' \
+                "$repo_slug" "$pr_number" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+            exit 1
+        fi
 
         if [[ "$INCLUDE_DIFF" -eq 1 ]]; then
             gh api "repos/$repo_slug/pulls/$pr_number" -H "Accept: application/vnd.github.v3.diff" > "$TMPDIR/diff.txt" 2>/dev/null || : > "$TMPDIR/diff.txt"
@@ -433,7 +441,32 @@ for dir in "$PACKAGES_DIR"/*/; do
             | .actionableComments = (.actionableLineComments + .actionableReviewBodies + .actionableIssueComments)
             # Backwards-compat alias: older consumers expect this field with line-only entries.
             | .actionableReviewComments = .actionableLineComments
+            # Reviewers still to be heard from. Measured on semitexa-core #144
+            # (2026-09-18): pushed 12:09, Copilot requested 12:13, five Copilot
+            # findings posted 12:16 - a queue run in that window found nothing,
+            # correctly, and reported the PR as done. Two signals, both set by
+            # GitHub or the reviewer itself, both clearing on their own:
+            #   - an OPEN review request (GitHub drops it when the reviewer
+            #     submits);
+            #   - the commit status CodeRabbit sets on the head, while pending
+            #     (it goes pending on the push it reviews - the first review
+            #     of a new PR included - and success when it is done).
+            # An earlier guess from review commits and committedDate could not
+            # tell a push from a commit and never saw the first review.
+            | .pendingReviewers = (
+                (
+                    [ ($extra[0].reviewRequests // [])[] | (.login // .name // .slug // empty) ]
+                    + [
+                        ($extra[0].statusCheckRollup // [])[]
+                        | select(((.context // .name // "") | ascii_downcase) == "coderabbit")
+                        | select(((.state // .status // "") | ascii_upcase) as $s
+                            | ["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS"] | index($s))
+                        | "coderabbitai[bot]"
+                    ]
+                ) | unique
+            )
             | .summary = {
+                pendingReviewers: .pendingReviewers,
                 reviewComments: (.reviewComments | length),
                 issueComments: (.issueComments | length),
                 reviews: (.reviews | length),

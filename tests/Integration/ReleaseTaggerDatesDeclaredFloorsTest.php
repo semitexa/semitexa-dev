@@ -55,12 +55,16 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
      * on develop so the tagger has to move it.
      *
      * @param array<string, mixed> $composer
+     * @param array<string, string> $files further files in the first commit, by name
      */
-    private function package(string $package, array $composer): void
+    private function package(string $package, array $composer, array $files = []): void
     {
         $dir = $this->dir($package);
         mkdir($dir, 0777, true);
         file_put_contents($dir . '/composer.json', json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+        foreach ($files as $name => $contents) {
+            file_put_contents($dir . '/' . $name, $contents);
+        }
 
         $this->git($dir, 'init -q -b master');
         $this->git($dir, 'config user.email test@example.com');
@@ -90,18 +94,18 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
      * @param list<string> $packages the candidates of this run, by directory
      * @return array{exit: int, output: string}
      */
-    private function release(array $packages, bool $noPush, bool $tag = true): array
+    private function release(array $packages, bool $noPush, bool $tag = true, string $version = self::VERSION): array
     {
         $candidates = array_map(fn (string $package): array => [
             'name' => 'semitexa/' . substr($package, strlen('semitexa-')),
-            'version' => self::VERSION,
+            'version' => $version,
             'package_dir' => $this->dir($package),
             'composer_path' => $this->dir($package) . '/composer.json',
             'info' => [],
         ], $packages);
 
         $input = $this->root . '/input.json';
-        file_put_contents($input, json_encode(['candidates' => $candidates, 'noPush' => $noPush, 'tag' => $tag]));
+        file_put_contents($input, json_encode(['candidates' => $candidates, 'noPush' => $noPush, 'tag' => $tag, 'version' => $version]));
 
         $driver = $this->root . '/driver.php';
         file_put_contents($driver, <<<'PHP'
@@ -109,10 +113,10 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
             define('BUMP_PACKAGES_LIBRARY_MODE', true);
             require $argv[1];
             $in = json_decode((string) file_get_contents($argv[2]), true);
-            $candidates = dateDeclaredFloors($in['candidates'], '2026.09.23.1000', $in['noPush']);
+            $candidates = dateDeclaredFloors($in['candidates'], $in['version'], $in['noPush']);
             if ($in['tag']) {
                 foreach ($candidates as $candidate) {
-                    releaseMasterHead($candidate, '2026.09.23.1000', $in['noPush']);
+                    releaseMasterHead($candidate, $in['version'], $in['noPush']);
                 }
             }
             PHP);
@@ -395,5 +399,193 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertSame(0, $result['exit'], $result['output']);
         self::assertSame($before, $this->git($origin, 'rev-parse master'));
         self::assertSame($before, $this->git($origin, 'rev-list -n 1 ' . self::VERSION));
+    }
+
+    private const CHANGELOG = <<<'MD'
+        # Changelog
+
+        ## Unreleased
+
+        ### Changed
+        - **A consumer can see this.**
+
+        ## 2026.09.22.1020 — 2026-09-22
+
+        ### Added
+        - Older entry.
+
+        MD;
+
+    /**
+     * The Unreleased entry is renamed to the release in the tree the tag names —
+     * core's Content-Type note shipped twice labelled Unreleased, and the update
+     * flow skips that label, so nobody upgrading was shown it.
+     */
+    #[Test]
+    public function the_tag_carries_the_changelog_stamped_with_its_version(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core'], ['CHANGELOG.md' => self::CHANGELOG]);
+        $origin = $this->root . '/origin-semitexa-core.git';
+
+        $result = $this->release(['semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $tagged = $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md'));
+        self::assertStringNotContainsString('## Unreleased', $tagged);
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\n\n### Changed\n- **A consumer can see this.**", $tagged);
+        self::assertStringContainsString('## 2026.09.22.1020 — 2026-09-22', $tagged, 'older sections are untouched');
+        self::assertSame($this->git($origin, 'rev-parse master'), $this->git($origin, 'rev-parse develop'));
+        self::assertSame('Stamp the changelog at ' . self::VERSION, $this->git($origin, 'log -1 --format=%s master'));
+    }
+
+    /** Floors and changelog land in ONE release commit, so the tag names both. */
+    #[Test]
+    public function floors_and_changelog_share_one_release_commit(): void
+    {
+        $this->package('semitexa-ssr', [
+            'name' => 'semitexa/ssr',
+            'require' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ], ['CHANGELOG.md' => self::CHANGELOG]);
+        $this->package('semitexa-core', ['name' => 'semitexa/core']);
+        $origin = $this->root . '/origin-semitexa-ssr.git';
+        $before = $this->git($origin, 'rev-parse master');
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertSame($before, $this->git($origin, 'rev-parse ' . self::VERSION . '~1'), 'exactly one release commit');
+        self::assertSame(self::VERSION, $this->manifestAt($origin, self::VERSION)['extra']['semitexa']['floors']['semitexa/core']);
+        $tagged = $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md'));
+        self::assertStringNotContainsString('## Unreleased', $tagged);
+        // Positive too: an empty or truncated file would satisfy the line above.
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\n\n### Changed\n- **A consumer can see this.**", $tagged);
+    }
+
+    /** An empty Unreleased section is not an entry: no commit, tag as it stands. */
+    #[Test]
+    public function an_empty_unreleased_section_is_not_stamped(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core'], [
+            'CHANGELOG.md' => "# Changelog\n\n## Unreleased\n\n## 2026.09.22.1020 — 2026-09-22\n\n- Older.\n",
+        ]);
+        $origin = $this->root . '/origin-semitexa-core.git';
+        $before = $this->git($origin, 'rev-parse master');
+
+        $result = $this->release(['semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertSame($before, $this->git($origin, 'rev-list -n 1 ' . self::VERSION));
+    }
+
+    /** A rehearsal stamps the local commit it tags and publishes nothing. */
+    #[Test]
+    public function a_rehearsal_stamps_locally_and_publishes_nothing(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core'], ['CHANGELOG.md' => self::CHANGELOG]);
+
+        $result = $this->release(['semitexa-core'], noPush: true);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $local = $this->git($this->dir('semitexa-core'), 'show ' . escapeshellarg(self::VERSION . ':CHANGELOG.md'));
+        self::assertStringNotContainsString('## Unreleased', $local);
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\n\n### Changed\n- **A consumer can see this.**", $local);
+        self::assertStringContainsString(
+            '## Unreleased',
+            $this->git($this->root . '/origin-semitexa-core.git', 'show master:CHANGELOG.md'),
+            'nothing reaches origin in a rehearsal',
+        );
+    }
+
+    /**
+     * A run filtered to one package leaves ultimate pinning the old set, so its
+     * tag reaches no consumer: six such cuts on 2026-09-22 said nothing. The
+     * notice names the recovery that works.
+     */
+    #[Test]
+    public function a_filtered_run_says_ultimate_was_left_behind(): void
+    {
+        $driver = $this->root . '/notice.php';
+        file_put_contents($driver, <<<'PHP'
+            <?php
+            define('BUMP_PACKAGES_LIBRARY_MODE', true);
+            require $argv[1];
+            echo json_encode([
+                'filtered' => ultimateLeftBehindNotice('semitexa/ssr'),
+                'unfiltered' => ultimateLeftBehindNotice(null),
+                'ultimate' => ultimateLeftBehindNotice('semitexa/ultimate'),
+            ]);
+            PHP);
+        $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/bump-packages.php';
+        exec(sprintf('php %s %s 2>&1', escapeshellarg($driver), escapeshellarg($script)), $output, $exit);
+
+        self::assertSame(0, $exit, implode("\n", $output));
+        $notice = json_decode(implode("\n", $output), true);
+        self::assertIsArray($notice);
+        self::assertIsString($notice['filtered']);
+        self::assertStringContainsString('semitexa/ultimate was NOT re-pinned', $notice['filtered']);
+        self::assertStringContainsString('filtered to semitexa/ssr', $notice['filtered']);
+        self::assertStringContainsString('an unfiltered cut', $notice['filtered']);
+        self::assertNull($notice['unfiltered']);
+        self::assertNull($notice['ultimate']);
+    }
+
+    /** A beta cut carries a channel suffix; the stamp must accept it, not crash the preview. */
+    #[Test]
+    public function a_beta_cut_stamps_the_changelog_too(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core'], ['CHANGELOG.md' => self::CHANGELOG]);
+
+        $result = $this->release(['semitexa-core'], noPush: false, version: '2026.09.23.1000-beta');
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        self::assertStringContainsString(
+            '## 2026.09.23.1000-beta — 2026-09-23',
+            $this->git($this->root . '/origin-semitexa-core.git', 'show ' . escapeshellarg('2026.09.23.1000-beta:CHANGELOG.md')),
+        );
+    }
+
+    /** PackageChangelogReader splits on \R, so a CRLF file must be stamped, not skipped. */
+    #[Test]
+    public function a_crlf_changelog_is_stamped(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core'], [
+            'CHANGELOG.md' => str_replace("\n", "\r\n", self::CHANGELOG),
+        ]);
+
+        $result = $this->release(['semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        // shell_exec, not the git() helper: exec() drops each line's trailing \r.
+        $tagged = (string) shell_exec(sprintf(
+            'git -C %s show %s',
+            escapeshellarg($this->root . '/origin-semitexa-core.git'),
+            escapeshellarg(self::VERSION . ':CHANGELOG.md'),
+        ));
+        self::assertStringNotContainsString('## Unreleased', $tagged);
+        self::assertStringContainsString("## 2026.09.23.1000 — 2026-09-23\r\n", $tagged);
+    }
+
+    /**
+     * Two Unreleased sections cannot be stamped as one, and the refusal must
+     * come before ANY package is committed — here the other package has a
+     * floor to date, and origin must not move.
+     */
+    #[Test]
+    public function two_unreleased_sections_are_refused_before_any_commit(): void
+    {
+        $this->declaring();
+        file_put_contents($this->dir('semitexa-core') . '/CHANGELOG.md', "# Changelog\n\n## Unreleased\n\n## Unreleased\n\n- b\n");
+        $this->git($this->dir('semitexa-core'), 'add CHANGELOG.md');
+        $this->git($this->dir('semitexa-core'), 'commit -q -m changelog');
+        $this->git($this->dir('semitexa-core'), 'push -q origin develop');
+        $this->git($this->dir('semitexa-core'), 'push -q origin develop:master');
+        $ssrBefore = $this->git($this->root . '/origin-semitexa-ssr.git', 'rev-parse master');
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core'], noPush: false);
+
+        self::assertSame(1, $result['exit'], $result['output']);
+        self::assertStringContainsString('2 "## Unreleased" sections', $result['output']);
+        self::assertSame($ssrBefore, $this->git($this->root . '/origin-semitexa-ssr.git', 'rev-parse master'), 'no floor pushed');
     }
 }

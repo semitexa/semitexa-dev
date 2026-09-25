@@ -43,7 +43,9 @@ bin/pr-process.sh --fail-on-warnings
 ```
 
 - `--ready-only` hides PRs that are blocked or already fully processed
-- `--fail-on-warnings` exits non-zero on branch mismatch or unknown mergeability
+- `--fail-on-warnings` exits non-zero on branch mismatch, unknown mergeability, or
+  `reviews-pending` — a reviewer that has not reviewed the head commit yet, so
+  "0 open comments" does not mean done
 
 2. For each PR in the queue:
 - Confirm `mergeable` is not `CONFLICTING`

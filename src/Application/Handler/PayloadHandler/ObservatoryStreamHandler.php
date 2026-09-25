@@ -19,8 +19,10 @@ use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
  *
  * ## Why this is not the ssr SSE server
  *
- * dev must not depend on ssr, and the panel must work on a stack where only
- * core and dev are installed. So this handler takes the raw Swoole response
+ * dev requires ssr only for the page-contributor seam the dev toolbar uses;
+ * the panels stay off ssr's SSE server, rendering and asset pipeline on
+ * purpose, so a broken page stack does not take down the tools used to debug
+ * it. So this handler takes the raw Swoole response
  * pair the way the GraphQL streamer does (through core's SwooleBootstrap),
  * writes `text/event-stream` frames itself, and runs its own small tick loop.
  * It has none of the multiplexing, auth refresh or cross-worker delivery the
@@ -152,7 +154,7 @@ final class ObservatoryStreamHandler implements TypedHandlerInterface
 
     private function mustStop(): bool
     {
-        if (class_exists(\Semitexa\Core\Lifecycle\WorkerDrainSignal::class) && \Semitexa\Core\Lifecycle\WorkerDrainSignal::isDraining()) {
+        if (\Semitexa\Core\Lifecycle\WorkerDrainSignal::isDraining()) {
             return true;
         }
         if (method_exists(\Swoole\Coroutine::class, 'isCanceled') && \Swoole\Coroutine::isCanceled()) {
@@ -168,7 +170,7 @@ final class ObservatoryStreamHandler implements TypedHandlerInterface
     /** @return array{0: object, 1: object, 2: object}|null */
     private function swoolePair(): ?array
     {
-        if (!class_exists(\Semitexa\Core\Server\SwooleBootstrap::class) || !class_exists(\Swoole\Coroutine::class, false)) {
+        if (!class_exists(\Swoole\Coroutine::class, false)) {
             return null;
         }
         try {

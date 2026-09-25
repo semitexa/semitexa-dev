@@ -33,6 +33,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/floor-declarations.php';
+require_once __DIR__ . '/changelog-stamp.php';
 
 // Refuse to execute when the script is included/required rather than invoked
 // directly via CLI. Defines may still be loaded by callers that explicitly opt
@@ -334,7 +335,21 @@ if ($floorsToDate !== []) {
     echo "\n";
 }
 
+$changelogsToStamp = unstampedChangelogsOf($candidates);
+if ($changelogsToStamp !== []) {
+    echo "\033[1mChangelog sections to stamp as {$releaseVersion}, in the same release commit:\033[0m\n";
+    foreach (array_keys($changelogsToStamp) as $index) {
+        echo "  {$candidates[$index]['name']}: ## Unreleased → ## {$releaseVersion} — " . changelogDateOf($releaseVersion) . "\n";
+    }
+    echo "\n";
+}
+
 printDevelopAheadWarning($skippedAheadOfMaster);
+
+$ultimateNotice = ultimateLeftBehindNotice($filterByName);
+if ($ultimateNotice !== null) {
+    fwrite(STDERR, $ultimateNotice);
+}
 
 if ($dryRun) {
     echo "Dry run only. No changes were made.\n";
@@ -393,10 +408,40 @@ if ($updatedPackages !== [] && !$noPush) {
 
 echo "\n\033[1;32mDone.\033[0m Released " . count($updatedPackages) . " package(s).\n";
 
+// Said again after the tags, where it is read: the preview scrolled away.
+if ($ultimateNotice !== null) {
+    fwrite(STDERR, "\n" . $ultimateNotice);
+}
+
 if ($notPackages !== []) {
     echo 'Not released, and not a mistake: ' . implode(', ', $notPackages)
         . ' — directories under packages/ with no composer.json, so not Composer packages. '
         . "They ship by their own routes; see docs/workspace/ARCHITECTURE.md.\n";
+}
+
+/**
+ * What a run filtered to one package leaves undone, or null when nothing.
+ *
+ * The filter skips every other package in the scan, semitexa/ultimate
+ * included, so ultimate is neither re-pinned nor even mentioned — and a
+ * consumer installs ultimate, so a tag it does not pin reaches nobody.
+ * Measured 2026-09-22: six filtered cuts (core, ssr, showcase-kit, update,
+ * theme, dev) left ultimate pinning the 0645 set, and nothing said so.
+ * A warning rather than a refusal, naming the one recovery that works: an
+ * unfiltered cut. A run filtered to semitexa/ultimate does NOT work — the same
+ * filter skips every package ultimate pins, so assertUltimateDependenciesArePresent()
+ * throws "Release set is missing internal packages".
+ */
+function ultimateLeftBehindNotice(?string $filterByName): ?string
+{
+    if ($filterByName === null || $filterByName === 'semitexa/ultimate') {
+        return null;
+    }
+
+    return "\033[1;33msemitexa/ultimate was NOT re-pinned\033[0m — this run was filtered to {$filterByName}, "
+        . "so no consumer receives its tag until ultimate pins it. Next: an unfiltered cut\n"
+        . "  php scripts/bump-packages.php --release-version <next version>\n"
+        . "(a run filtered to semitexa/ultimate cannot do it: the filter hides the packages it pins).\n";
 }
 
 function printUsage(): void
@@ -743,6 +788,65 @@ function undatedFloorsOf(array $candidates): array
 }
 
 /**
+ * The candidates whose CHANGELOG.md on origin/master has an Unreleased section
+ * with content, keyed by candidate index.
+ *
+ * Reads the ref undatedFloorsOf() has just fetched, so call it after that.
+ *
+ * @param list<array<string, mixed>> $candidates
+ * @return array<int, true>
+ */
+function unstampedChangelogsOf(array $candidates): array
+{
+    $unstamped = [];
+    foreach ($candidates as $index => $candidate) {
+        $changelog = changelogAt($candidate['package_dir'], 'origin/master');
+        if ($changelog !== null && changelogNeedsAttention($changelog)) {
+            $unstamped[$index] = true;
+        }
+    }
+
+    return $unstamped;
+}
+
+/**
+ * CHANGELOG.md as it stands at a revision, or null when the package has none there.
+ *
+ * Null means ABSENT, established by a successful tree listing that does not
+ * name the file - never "the read failed". A failed `git show` used to read as
+ * absence, which skipped the stamp and the tagged-tree check alike: a gate
+ * that cannot look must not pass. Any failure to list or read stops the run.
+ */
+function changelogAt(string $packageDir, string $revision): ?string
+{
+    $listing = runShellCommand(sprintf(
+        'git -C %s ls-tree --name-only %s -- %s 2>&1',
+        escapeshellarg($packageDir),
+        escapeshellarg($revision),
+        escapeshellarg(CHANGELOG_FILE),
+    ));
+    if ($listing['exit_code'] !== 0) {
+        fwrite(STDERR, "Cannot list {$revision} in {$packageDir} to look for " . CHANGELOG_FILE . ": {$listing['output']}\n");
+        exit(1);
+    }
+    if ($listing['output'] === '') {
+        return null;
+    }
+
+    $result = runShellCommand(sprintf(
+        'git -C %s show %s 2>&1',
+        escapeshellarg($packageDir),
+        escapeshellarg($revision . ':' . CHANGELOG_FILE),
+    ));
+    if ($result['exit_code'] !== 0) {
+        fwrite(STDERR, "Cannot read " . CHANGELOG_FILE . " at {$revision} in {$packageDir}: {$result['output']}\n");
+        exit(1);
+    }
+
+    return $result['output'];
+}
+
+/**
  * Date every declared floor into the tree its tag will be cut from, before any
  * tag exists.
  *
@@ -760,24 +864,40 @@ function undatedFloorsOf(array $candidates): array
  * The release set is exactly the candidates of THIS run, so a run filtered to
  * one package cannot date a floor against a provider it is not tagging.
  *
+ * The same commit stamps the changelog: a package whose CHANGELOG.md carries an
+ * Unreleased entry gets that heading renamed to this release (changelog-stamp.php),
+ * so the notes a consumer reads on upgrade are in the tree the tag names. One
+ * commit per package, floors and changelog together, under the same
+ * refuse-before-the-first-commit ordering.
+ *
  * @param list<array<string, mixed>> $candidates
  * @return list<array<string, mixed>> the candidates, with `tag_target` on each that got a floor commit
  */
 function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noPush): array
 {
     $undated = undatedFloorsOf($candidates);
-    if ($undated === []) {
+    $unstamped = unstampedChangelogsOf($candidates);
+    if ($undated === [] && $unstamped === []) {
         return $candidates;
     }
 
     $releaseSet = array_values(array_map(static fn (array $c): string => $c['name'], $candidates));
+    $toCommit = array_keys($undated + $unstamped);
+    sort($toCommit);
 
     $refusals = [];
-    foreach ($undated as $index => $dependencies) {
-        foreach ($dependencies as $dependency) {
+    foreach ($toCommit as $index) {
+        foreach ($undated[$index] ?? [] as $dependency) {
             $why = whyFloorCannotBeDated($candidates[$index]['name'], $dependency, $releaseSet);
             if ($why !== null) {
                 $refusals[] = $why;
+            }
+        }
+
+        if (isset($unstamped[$index])) {
+            $why = whyChangelogCannotBeStamped((string) changelogAt($candidates[$index]['package_dir'], 'origin/master'));
+            if ($why !== null) {
+                $refusals[] = "{$candidates[$index]['name']}: CHANGELOG.md has {$why}";
             }
         }
 
@@ -788,25 +908,56 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
     }
 
     if ($refusals !== []) {
-        fwrite(STDERR, "Refusing to tag anything — these floor declarations cannot be dated in this release:\n");
+        fwrite(STDERR, "Refusing to tag anything — these release commits cannot be made in this release:\n");
         foreach ($refusals as $refusal) {
             fwrite(STDERR, "- {$refusal}\n");
         }
         exit(1);
     }
 
-    echo "\033[1m--- Dating declared floors ---\033[0m\n";
+    echo "\033[1m--- Dating declared floors, stamping changelogs ---\033[0m\n";
 
-    $message = 'Date the declared internal floors at ' . $releaseVersion;
-    foreach ($undated as $index => $dependencies) {
+    foreach ($toCommit as $index) {
         $candidate = $candidates[$index];
+        $dependencies = $undated[$index] ?? [];
+        $stamp = isset($unstamped[$index]);
+        $message = match (true) {
+            $dependencies !== [] && $stamp => 'Date the declared internal floors and stamp the changelog at ' . $releaseVersion,
+            $stamp => 'Stamp the changelog at ' . $releaseVersion,
+            default => 'Date the declared internal floors at ' . $releaseVersion,
+        };
+
         $candidates[$index]['tag_target'] = commitReleaseManifest(
             $candidate['package_dir'],
             $candidate['name'],
-            static function () use ($candidate, $dependencies, $releaseVersion): void {
+            static function () use ($candidate, $dependencies, $stamp, $releaseVersion): array {
+                $paths = [];
                 foreach ($dependencies as $dependency) {
                     writeResolvedFloor($candidate['composer_path'], $dependency, $releaseVersion);
+                    $paths = ['composer.json'];
                 }
+                if ($stamp) {
+                    $path = $candidate['package_dir'] . '/' . CHANGELOG_FILE;
+                    $current = @file_get_contents($path);
+                    if ($current === false) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: {$path} cannot be read.\n");
+                        exit(1);
+                    }
+                    $stamped = stampUnreleasedChangelog($current, $releaseVersion);
+                    if ($stamped === null) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: its Unreleased entry is gone from develop.\n");
+                        exit(1);
+                    }
+                    // Checked like writeResolvedFloor(): an unwritten stamp would
+                    // otherwise commit a message that claims one.
+                    if (@file_put_contents($path, $stamped) !== strlen($stamped)) {
+                        fwrite(STDERR, "Cannot stamp the changelog of {$candidate['name']}: {$path} could not be written.\n");
+                        exit(1);
+                    }
+                    $paths[] = CHANGELOG_FILE;
+                }
+
+                return $paths;
             },
             $message,
             $noPush,
@@ -814,6 +965,9 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
 
         foreach ($dependencies as $dependency) {
             echo "  {$candidate['name']}: {$dependency} " . floorConstraint($releaseVersion) . "\n";
+        }
+        if ($stamp) {
+            echo "  {$candidate['name']}: CHANGELOG ## Unreleased → ## {$releaseVersion}\n";
         }
     }
 
@@ -826,6 +980,14 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
             fwrite(
                 STDERR,
                 "Refusing to tag {$candidate['name']}: the tree at {$target} still carries an undated floor declaration.\n"
+            );
+            exit(1);
+        }
+        $changelog = changelogAt($candidate['package_dir'], $target);
+        if ($changelog !== null && changelogHasUnreleasedEntry($changelog)) {
+            fwrite(
+                STDERR,
+                "Refusing to tag {$candidate['name']}: the tree at {$target} still carries an Unreleased changelog entry.\n"
             );
             exit(1);
         }
@@ -1009,8 +1171,10 @@ function commitReleaseManifest(
     runGit($packageDir, 'reset', '--hard', 'origin/develop');
     runGit($packageDir, 'merge', '--ff-only', 'origin/master');
 
-    $writeManifest();
-    runGit($packageDir, 'add', '--', 'composer.json');
+    // The writer names the files it changed; one that returns nothing is the
+    // manifest-only writer ultimate's pin refresh still uses.
+    $paths = $writeManifest();
+    runGit($packageDir, 'add', '--', ...(is_array($paths) && $paths !== [] ? $paths : ['composer.json']));
     runGit($packageDir, 'commit', '-m', $message);
 
     $commitSha = trim((string) shell_exec(

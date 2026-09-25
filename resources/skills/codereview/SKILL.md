@@ -49,6 +49,13 @@ scripts/pr-process.sh --fail-on-warnings
 
 2. If the command reports blockers or warnings, stop before editing code or replying.
 Report the blocking repos and why they are blocked.
+`reviews-pending: <reviewers>` is the exception, and it does NOT stop the queue: it
+makes `--fail-on-warnings` exit non-zero, but it is not a fault. It means an open
+review request, or CodeRabbit's commit status still pending on the head. Carry on
+with step 3 for every PR; process the comments that PR already has too. What it
+forbids is reporting that PR as done: findings may still arrive, so re-run once
+the reviewer finishes. It clears by itself: a request drops when the reviewer
+submits, the status turns success.
 
 3. If the queue is clean, get the actionable processing list:
 ```bash
@@ -86,6 +93,16 @@ scripts/pr-reply.sh <repo-slug> <pr-number> <id> "<reply body>" --kind=review
 scripts/pr-reply.sh <repo-slug> <pr-number> <id> "<reply body>" --kind=issue
 ```
 - Do not send review replies in a tight burst. Add a small random pause between replies and slow down further if GitHub starts returning abuse or secondary rate-limit responses.
+
+## Skipped reviews wake themselves
+
+CodeRabbit skips, and never queues, a review that hits its rate limit: the head gets
+a "Review rate limited" status. `scripts/coderabbit-retry.sh` posts `@coderabbitai review`
+on ONE such PR per run (least recently triggered first; a head is re-triggered at most
+once per run). On the operator's workstation a systemd user timer runs it every 30 minutes:
+`systemctl --user list-timers semitexa-coderabbit-retry.timer`, log in
+`~/.local/state/semitexa/coderabbit-retry.log`. So a "Review rate limited" head is
+not a reason to trigger by hand. Check the log first; `--dry-run` shows what it would do.
 
 ## Rules
 
