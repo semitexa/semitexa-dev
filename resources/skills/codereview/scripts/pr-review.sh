@@ -199,7 +199,15 @@ for dir in "$PACKAGES_DIR"/*/; do
 
     while IFS= read -r pr_number; do
         echo "$prs_json" | jq ".[] | select(.number == $pr_number)" > "$TMPDIR/pr_meta.json"
-        gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,reviewRequests,statusCheckRollup 2>/dev/null > "$TMPDIR/pr_extra.json" || echo '{}' > "$TMPDIR/pr_extra.json"
+        # A failure here stops the run like every other fetch below. It used to
+        # be replaced by {}, which read as "mergeability unknown, nobody still
+        # reviewing" - dropping an open review request or a pending CodeRabbit
+        # status without a word.
+        if ! gh pr view "$pr_number" --repo "$repo_slug" --json mergeable,isDraft,reviewRequests,statusCheckRollup 2>"$TMPDIR/gh-err.txt" > "$TMPDIR/pr_extra.json"; then
+            printf 'ERROR: could not fetch PR metadata for %s#%s: %s\n' \
+                "$repo_slug" "$pr_number" "$(tr '\n' ' ' < "$TMPDIR/gh-err.txt" | cut -c1-200)" >&2
+            exit 1
+        fi
 
         if [[ "$INCLUDE_DIFF" -eq 1 ]]; then
             gh api "repos/$repo_slug/pulls/$pr_number" -H "Accept: application/vnd.github.v3.diff" > "$TMPDIR/diff.txt" 2>/dev/null || : > "$TMPDIR/diff.txt"

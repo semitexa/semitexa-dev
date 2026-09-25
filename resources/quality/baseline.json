@@ -181,7 +181,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 144,
+            "total": 145,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 2,
@@ -194,7 +194,7 @@
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 1,
                 "semitexa-platform-ui": 2,
-                "semitexa-ssr": 27,
+                "semitexa-ssr": 28,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
                 "semitexa-testing": 1,
@@ -798,6 +798,19 @@
                 }
             },
             "reason": "GET /demo/rendering/reactive-ai 2 -> 3 shapes, on review of demo 1e6a81b: one whereIn over all four statuses loaded and hydrated every completed task (history only grows) on each render. Now live statuses (running/pending/failed, few by nature) in one query, and completed only as a LIMIT 1 fallback - a bounded read for one extra shape."
+        },
+        {
+            "at": "2026-09-25",
+            "metric": "tests.skip-calls",
+            "from": 144,
+            "to": 145,
+            "keys": {
+                "semitexa-ssr": {
+                    "from": 27,
+                    "to": 28
+                }
+            },
+            "reason": "semitexa-ssr 27 -> 28: SlotHandlerPipelineTest's cancellation test now skips when Swoole is not loaded (review on ssr #131). ssr does not require ext-swoole in composer.json and already guards Swoole-dependent tests the same way in 23 places; without the guard the test errors on the environment instead of checking cancellation."
         }
     ]
 }
