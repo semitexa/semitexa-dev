@@ -161,6 +161,29 @@
     return out;
   }
 
+  /** Path params a recorded call used: from its input, else read off its path. */
+  function pathValuesFrom(route, input, recordedPath) {
+    const out = {};
+    const names = route.path_params;
+    let fromPath = [];
+    if (recordedPath) {
+      const re = new RegExp('^' + route.path.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\\\{[^}]*\}|\{[^}]*\}/g, '([^/]+)') + '$');
+      const m = recordedPath.match(re);
+      if (m) fromPath = m.slice(1).map(decodeURIComponent);
+    }
+    names.forEach((n, i) => {
+      if (input && input[n] !== undefined && input[n] !== null) out[n] = String(input[n]);
+      else if (fromPath[i] !== undefined) out[n] = fromPath[i];
+    });
+    return out;
+  }
+
+  function applyPath(ctx, values) {
+    for (const [name, value] of Object.entries(values)) {
+      if (ctx.ui.pathInputs[name]) ctx.ui.pathInputs[name].value = value;
+    }
+  }
+
   function applyValues(ctx, values) {
     for (const f of ctx.fields) {
       const row = ctx.ui.rows[f.name];
@@ -242,7 +265,7 @@
     const items = loadHistory()[ctx.route.id] || [];
     ctx.ui.history.replaceChildren(...(items.length ? items.map((h) => {
       const b = el('button', { type: 'button', class: 'ex-hist' },
-        el('span', { class: 'ex-pill ' + statusClass(h.status), text: String(h.status || 'ERR') }),
+        el('span', { class: 'ex-pill ' + (h.sandbox ? 'redir' : statusClass(h.status)), text: h.sandbox ? 'SBX' : String(h.status || 'ERR') }),
         el('span', { class: 'mono', text: h.method + ' ' + h.url }),
         el('span', { class: 'ex-dim', text: new Date(h.at).toLocaleTimeString() + ' · ' + h.ms + ' ms' }));
       b.addEventListener('click', () => { ctx.ui.method.value = h.method; applyValues(ctx, h.values || {}); });
@@ -259,7 +282,82 @@
   }
   const token = () => 'explorer-' + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
 
+  const SANDBOX_NOTE = 'Sandbox: the handler runs directly in a separate process — no authentication, middleware or rendering. '
+    + 'Database writes are rolled back, queue messages are captured, mail is withheld.';
+
+  async function sendSandbox(ctx) {
+    if (ctx.ui.send.disabled) return;
+    const req = currentRequest(ctx);
+    const path = req.url.split('?')[0];
+    const input = { ...readValues(ctx) };
+    for (const [name, el] of Object.entries(ctx.ui.pathInputs)) input[name] = el.value;
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    const t = csrfToken();
+    if (t) headers['X-CSRF-Token'] = t;
+
+    ctx.ui.send.disabled = true;
+    ctx.ui.result.replaceChildren(el('p', { class: 'ex-empty', text: `Running ${req.method} ${path} in the sandbox…` }));
+    const started = performance.now();
+    let data = null, status = 0, error = null;
+    try {
+      const res = await fetch('/__explorer/sandbox', { method: 'POST', headers, credentials: 'same-origin', body: JSON.stringify({ method: req.method, path, input }) });
+      status = res.status;
+      data = await res.json();
+    } catch (e) {
+      error = e;
+    }
+    const ms = Math.round(performance.now() - started);
+    ctx.ui.send.disabled = false;
+    saveHistory(ctx.route.id, { at: Date.now(), method: req.method, url: path, status: data && data.verdict === 'ok' ? 'SBX' : 0, ms, values: req.values, sandbox: true });
+    renderHistory(ctx);
+    renderSandbox(ctx, { data, status, error });
+  }
+
+  const sandboxStatusPill = (data) => {
+    const code = data.resource && data.resource.statusCode;
+    return code ? el('span', { class: 'ex-pill ' + statusClass(code), title: 'Status the handler set on its resource', text: String(code) }) : null;
+  };
+
+  function renderSandbox(ctx, { data, status, error }) {
+    if (error || !data) {
+      ctx.ui.result.replaceChildren(el('p', { class: 'ex-error', text: 'Sandbox unreachable: ' + (error ? error.message : 'HTTP ' + status) }));
+      return;
+    }
+    if (data.error) {
+      ctx.ui.result.replaceChildren(el('p', { class: 'ex-error', text: `Sandbox refused: ${data.error}` + (data.detail ? ' — ' + data.detail : '') }),
+        data.output ? el('pre', { class: 'ex-body', text: data.output }) : null);
+      return;
+    }
+    const verdictTone = data.verdict === 'ok' ? 'ok' : data.verdict === 'null_result' ? 'warn' : 'err';
+    const g = data.guards || {};
+    const captured = (g.queue_captured || []).length;
+    const withheld = data.withheld_outbound || [];
+    const summary = el('div', { class: 'ex-summary' },
+      el('span', { class: 'ex-pill ' + verdictTone, text: 'SANDBOX · ' + data.verdict }),
+      sandboxStatusPill(data),
+      el('span', { class: 'ex-dim', text: `${data.duration_ms} ms in the handler · ${short(data.resource_class || '') || 'no resource'}` }),
+      el('span', { class: 'ex-spacer' }),
+      data.replay_trace ? el('a', { href: '/__trace?file=' + encodeURIComponent(data.replay_trace), target: '_blank', rel: 'noopener', text: 'Trace ↗' }) : null);
+    const guards = el('ul', { class: 'ex-guards' },
+      el('li', { class: String(g.db || '').startsWith('transaction-rolled-back') ? 'ok' : 'warn', text: 'Database: ' + (g.db || 'unknown') }),
+      el('li', { class: captured ? 'warn' : 'ok', text: captured ? `Queue: ${captured} message(s) captured, not sent` : 'Queue: nothing published' }),
+      el('li', { class: withheld.length ? 'warn' : 'ok', text: withheld.length ? `Outbound withheld: ${withheld.length} call(s)` : 'Outbound: nothing attempted' }));
+    // The handler's resource, as the client would have received it: its body
+    // (parsed when it is JSON) first, the whole serialized object second.
+    const resource = data.resource || {};
+    // `body` is the full response; the resource's own `content` is redacted and cut at 200 characters.
+    const body = typeof data.body === 'string' ? data.body : typeof resource.content === 'string' ? resource.content : null;
+    const bodyType = resource.headers && (resource.headers['Content-Type'] || resource.headers['content-type']) || '';
+    const tabs = [];
+    if (body !== null) tabs.push(['Body', bodyView(body, bodyType.includes('json') || /^[[{]/.test(body.trim()) ? 'json' : bodyType)]);
+    tabs.push(['Resource', bodyView(JSON.stringify(resource, null, 2) || '', 'json')]);
+    if (data.handler_error) tabs.unshift(['Error', el('pre', { class: 'ex-body', text: `${data.handler_error.class}: ${data.handler_error.message}\n${data.handler_error.file}:${data.handler_error.line}` })]);
+    if (captured || withheld.length) tabs.push(['Captured', bodyView(JSON.stringify({ queue: g.queue_captured, withheld_outbound: withheld }, null, 2), 'json')]);
+    ctx.ui.result.replaceChildren(summary, guards, tabbed(tabs));
+  }
+
   async function send(ctx) {
+    if (ctx.sandbox) return sendSandbox(ctx);
     // One call in flight per dialog: Ctrl+Enter (or a held key repeating)
     // reaches here without going through the disabled button, and every
     // call is real — a second press would repeat the write.
@@ -430,6 +528,18 @@
     ui.method = el('select', { class: 'ex-method', 'aria-label': 'Method' }, route.methods.map((m) => el('option', { value: m, text: m })));
     ui.url = el('code', { class: 'ex-url' });
     ui.send = el('button', { type: 'button', class: 'ex-send', text: 'Send', title: 'Ctrl+Enter' });
+    ui.mode = el('span', { class: 'ex-mode', role: 'group', 'aria-label': 'Call mode' },
+      el('button', { type: 'button', 'aria-pressed': 'true', 'data-mode': 'real', title: 'A real HTTP call: real auth, real writes', text: 'Real' }),
+      el('button', { type: 'button', 'aria-pressed': 'false', 'data-mode': 'sandbox', title: SANDBOX_NOTE, text: 'Sandbox' }));
+    ui.modeNote = el('p', { class: 'ex-note sandbox', hidden: true, text: SANDBOX_NOTE });
+    ui.mode.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      ctx.sandbox = b.dataset.mode === 'sandbox';
+      [...ui.mode.children].forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      ui.modeNote.hidden = !ctx.sandbox;
+      ui.send.textContent = ctx.sandbox ? 'Run in sandbox' : 'Send';
+    });
     ui.accept = el('select', { 'aria-label': 'Accept' },
       ['text/html', 'application/json', '*/*', 'text/event-stream'].map((a) => el('option', { value: a, text: a })));
     ui.accept.value = route.kind === 'page' ? 'text/html' : route.kind === 'stream' ? 'text/event-stream' : 'application/json';
@@ -464,17 +574,48 @@
     ui.raw.addEventListener('input', () => refreshUrl(ctx));
 
     const presets = buildPresets(ctx);
-    const presetBar = el('div', { class: 'ex-presets' }, presets.map((p) => {
-      const b = el('button', { type: 'button', class: 'ex-preset', title: p.note, 'data-id': p.id },
-        p.label, el('span', { class: 'ex-expect-tag', text: p.expect }));
+    const presetBar = el('div', { class: 'ex-presets' });
+    const presetButton = (p) => {
+      const b = el('button', { type: 'button', class: 'ex-preset' + (p.recorded ? ' recorded' : ''), title: p.note, 'data-id': p.id },
+        p.label, p.expect ? el('span', { class: 'ex-expect-tag', text: p.expect }) : null);
       b.addEventListener('click', () => {
         ctx.activePreset = p;
         [...presetBar.children].forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        if (p.path) applyPath(ctx, p.path);
         if (ctx.rawMode) ui.raw.value = JSON.stringify(p.values, null, 2);
         applyValues(ctx, p.values);
       });
       return b;
-    }));
+    };
+    presets.forEach((p) => presetBar.append(presetButton(p)));
+
+    // Inputs this route was really called with — loaded after the dialog is
+    // drawn, because reading the recorded traces is the slow part.
+    fetch('/__explorer/catalog?recorded=1&id=' + encodeURIComponent(route.id), { headers: { Accept: 'application/json' } })
+      .then((res) => (res.ok ? res.json() : { recorded: [] }))
+      .then(({ recorded }) => {
+        if (!host.isConnected || !recorded || !recorded.length) return;
+        recorded.forEach((r, i) => {
+          const values = Object.fromEntries(Object.entries(r.input || {}).filter(([k]) => !route.path_params.includes(k)));
+          const when = new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          presetBar.append(presetButton({
+            id: 'recorded-' + i,
+            recorded: true,
+            label: `● ${r.method} ${r.path} · ${when}`,
+            expect: r.status ? String(r.status) : null,
+            note: `Recorded ${r.recordedAt} (${r.file}). Redacted values come back as the mask — replace them before sending.`,
+            values,
+            path: pathValuesFrom(route, r.input, r.path),
+          }));
+        });
+        // A route with no input fields drew no variations block; recorded calls still earn one.
+        if (!variationsBlock.isConnected) host.insertBefore(variationsBlock, host.querySelector(':scope > details'));
+      })
+      .catch(() => { /* recorded variations are a convenience */ });
+
+    const variationsBlock = el('div', { class: 'ex-block' },
+      el('div', { class: 'ex-block-head' }, el('h3', { text: 'Variations' }), el('span', { class: 'ex-dim', text: 'from the contract, and ● recorded calls — click to fill' })),
+      presetBar);
 
     ui.method.addEventListener('change', () => refreshUrl(ctx));
     ui.encoding.addEventListener('change', () => refreshUrl(ctx));
@@ -483,12 +624,11 @@
 
     const isStream = route.kind === 'stream';
     host.replaceChildren(...[
-      el('div', { class: 'ex-bar' }, ui.method, ui.url, isStream ? null : ui.send),
+      el('div', { class: 'ex-bar' }, ui.method, ui.url, isStream ? null : ui.mode, isStream ? null : ui.send),
+      ui.modeNote,
       ACCESS_NOTES[route.access] ? el('p', { class: 'ex-note', text: ACCESS_NOTES[route.access] }) : null,
       pathBox ? el('div', { class: 'ex-block' }, el('h3', { text: 'Path' }), pathBox) : null,
-      fields.length ? el('div', { class: 'ex-block' },
-        el('div', { class: 'ex-block-head' }, el('h3', { text: 'Variations' }), el('span', { class: 'ex-dim', text: 'prepared from the contract — click to fill' })),
-        presetBar) : null,
+      fields.length ? variationsBlock : null,
       fields.length ? el('div', { class: 'ex-block' },
         el('div', { class: 'ex-block-head' }, el('h3', { text: 'Input' }), ui.where, el('span', { class: 'ex-spacer' }), ui.encodingWrap, rawToggle),
         form, ui.raw) : null,

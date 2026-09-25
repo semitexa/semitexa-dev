@@ -12,6 +12,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ExplorerCatalogPayload;
 use Semitexa\Dev\Application\Service\Explorer\CatalogEntry;
 use Semitexa\Dev\Application\Service\Explorer\FieldHintReflector;
+use Semitexa\Dev\Application\Service\Explorer\RecordedInputs;
 use Semitexa\Dev\Application\Service\Explorer\RouteCatalog;
 use Semitexa\Dev\Application\Service\Explorer\RouteKind;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
@@ -29,6 +30,9 @@ final class ExplorerCatalogHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected RouteCatalog $catalog;
 
+    #[InjectAsReadonly]
+    protected RecordedInputs $recorded;
+
     public function handle(ExplorerCatalogPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         if (!$this->gate->allows()) {
@@ -39,6 +43,10 @@ final class ExplorerCatalogHandler implements TypedHandlerInterface
             $entry = $this->catalog->find($payload->getId());
             if ($entry === null) {
                 return $this->notFound($resource);
+            }
+
+            if ($payload->wantsRecorded()) {
+                return $this->json($resource, ['recorded' => $this->recorded->forRoute($entry)]);
             }
 
             return $this->json($resource, [

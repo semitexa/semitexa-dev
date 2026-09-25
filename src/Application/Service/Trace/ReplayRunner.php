@@ -7,9 +7,16 @@ namespace Semitexa\Dev\Application\Service\Trace;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Container\ContainerFactory;
+use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Cookie\CookieJar;
 use Semitexa\Core\Cookie\CookieJarInterface;
 use Semitexa\Core\Discovery\AttributeDiscovery;
+use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Core\Environment;
+use Semitexa\Core\Resource\Metadata\ResourceMetadataCacheFile;
+use Semitexa\Core\Resource\Metadata\ResourceMetadataRegistry;
+use Semitexa\Core\Resource\Metadata\ResourceMetadataSourceFingerprint;
+use Semitexa\Core\Http\PayloadFactory;
 use Semitexa\Core\Queue\QueueConfig;
 use Semitexa\Core\Request;
 use Semitexa\Core\Queue\QueueTransportFactoryInterface;
@@ -62,11 +69,29 @@ use Semitexa\Orm\OrmManager;
 #[AsService]
 final class ReplayRunner
 {
+    /** Characters of response body a sandbox run hands back. */
+    private const BODY_LIMIT = 1_000_000;
+
     #[InjectAsReadonly]
     protected AttributeDiscovery $attributeDiscovery;
 
     #[InjectAsReadonly]
     protected TraceReader $traces;
+
+    #[InjectAsReadonly]
+    protected ResourceMetadataRegistry $resourceMetadata;
+
+    #[InjectAsReadonly]
+    protected ResourceMetadataCacheFile $resourceMetadataCache;
+
+    #[InjectAsReadonly]
+    protected ClassDiscovery $classDiscovery;
+
+    #[InjectAsReadonly]
+    protected Environment $environment;
+
+    #[InjectAsReadonly]
+    protected ResourceMetadataSourceFingerprint $resourceMetadataFingerprint;
 
     /**
      * @param  array<string, mixed> $mutations
@@ -87,13 +112,75 @@ final class ReplayRunner
             return ['error' => 'trace-unreadable', 'trace' => $traceFile];
         }
 
-        $envelope = $this->extractEnvelope($raw);
+        $envelope = self::envelopeOf($raw);
         if (isset($envelope['error'])) {
             return $envelope;
         }
 
         /** @var array<string, mixed> $input */
         $input = array_merge($envelope['payload'], $mutations);
+
+        $result = $this->execute($traceFile, $envelope, $input, $mutations, 'ai:trace replay — re-running a recorded process for inspection');
+        unset($result['_body']);
+
+        return $result;
+    }
+
+    /**
+     * One request run through the sandbox without a recording behind it: the
+     * API Explorer's "sandbox" mode. Same guards as a replay — the handler
+     * runs inside a rolled-back transaction, queue handoffs are captured, mail
+     * is withheld — and the same honest boundary: the handler is called
+     * directly, so authentication, middleware and rendering do not run.
+     *
+     * The registries it arms are process-global, so this must run in a
+     * process of its own (the Explorer spawns `ai:observe sandbox`), never
+     * inside a worker that is serving other requests.
+     *
+     * @param  array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function sandbox(string $method, string $path, array $input): array
+    {
+        if (!ObservatoryMode::full()) {
+            return ['error' => 'sandbox-requires-dev'];
+        }
+
+        $envelope = ['path' => $path, 'method' => strtoupper($method), 'route' => null, 'payload' => []];
+
+        $result = $this->execute(null, $envelope, $input, [], 'API Explorer sandbox — one request with writes rolled back');
+
+        // The response body in full, beside the redacted resource: a real call
+        // hands the same bytes to the same developer's browser, and a body cut
+        // at the redactor's 200 characters is not JSON any more. Replay output
+        // (read by agents, pasted into chats) stays redacted.
+        $body = $result['_body'] ?? null;
+        unset($result['_body']);
+        if (is_string($body)) {
+            $result['body'] = mb_strlen($body) > self::BODY_LIMIT ? mb_substr($body, 0, self::BODY_LIMIT) : $body;
+            $result['body_truncated'] = mb_strlen($body) > self::BODY_LIMIT;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array{path: string, method: string, route: ?string, payload: array<string, mixed>} $envelope
+     * @param  array<string, mixed> $input
+     * @param  array<string, mixed> $mutations
+     * @return array<string, mixed>
+     */
+    private function execute(?string $traceFile, array $envelope, array $input, array $mutations, string $reason): array
+    {
+        // A worker warms this at WorkerStartFinalize; a CLI process (ai:observe)
+        // never boots a worker, and a resource-backed handler then fails on
+        // "No ResourceObjectMetadata registered". Same call the worker makes.
+        $this->resourceMetadata->ensureWarmed(
+            discovery: $this->classDiscovery,
+            cache: $this->resourceMetadataCache,
+            production: $this->environment->appEnv === 'prod',
+            fingerprint: $this->resourceMetadataFingerprint,
+        );
 
         try {
             [$handlerClass, $payloadClass, $resourceClass] = $this->resolveRouteTarget(
@@ -114,7 +201,7 @@ final class ReplayRunner
         // `semitexa.explicitOptionalDependency` forbids. The flag lives in
         // core, which everything already requires, and a port honours it
         // without either side naming the other.
-        SandboxGuard::enter('ai:trace replay — re-running a recorded process for inspection');
+        SandboxGuard::enter($reason);
 
         try {
             $result = $this->runSandboxed($traceFile, $envelope, $input, $mutations, $handlerClass, $payloadClass, $resourceClass, $queueCaptor);
@@ -146,7 +233,7 @@ final class ReplayRunner
      * @return array<string, mixed>
      */
     private function runSandboxed(
-        string $traceFile,
+        ?string $traceFile,
         array $envelope,
         array $input,
         array $mutations,
@@ -164,12 +251,19 @@ final class ReplayRunner
             'marker' => 'replay',
         ]);
 
-        $run = static function () use ($handlerClass, $payloadClass, $resourceClass, $input, $envelope): array {
+        // Built the way RouteExecutor builds it: with the resource's parts, and
+        // its #[Inject*] properties filled. A bare instance left a resource that
+        // renders through an injected service failing on an uninitialized
+        // property before the handler's result could be read.
+        $resourceParts = $this->attributeDiscovery->getPayloadPartRegistry()->getResourcePartsForClass($resourceClass);
+
+        $run = static function () use ($handlerClass, $payloadClass, $resourceClass, $resourceParts, $input, $envelope): array {
             $payload = PayloadSerializer::hydrate(self::instantiate($payloadClass), $input);
-            $resource = self::instantiate($resourceClass);
 
             $container = ContainerFactory::createRequestScoped();
             self::primeRequestContext($container, (string) $envelope['path'], (string) $envelope['method'], $input);
+            $resource = PayloadFactory::createInstance($resourceClass, $resourceParts);
+            PropertyInjector::inject($resource, $container);
             $handler = $container->get($handlerClass);
             if (!method_exists($handler, 'handle')) {
                 throw new \RuntimeException("handler {$handlerClass} has no handle() method");
@@ -231,6 +325,8 @@ final class ReplayRunner
                 'db' => $dbGuard,
                 'queue_captured' => $this->redactCaptured($queueCaptor->drain()),
             ],
+            // Unredacted; sandbox() hands it on, replay() drops it.
+            '_body' => is_object($result) && method_exists($result, 'getContent') && is_string($result->getContent()) ? $result->getContent() : null,
         ];
     }
 
@@ -267,17 +363,32 @@ final class ReplayRunner
         return is_array($decoded) && isset($decoded['events']) ? $decoded : null;
     }
 
-    /** @return array{path: string, method: string, route: ?string, payload: array<string, mixed>}|array{error: string, detail?: string} */
-    private function extractEnvelope(array $raw): array
+    /**
+     * What a recorded trace can re-run: route, method and the REDACTED
+     * hydrated-payload snapshot. Public so the API Explorer can offer the
+     * same snapshots as "recorded" variations.
+     *
+     * @param  array<string, mixed> $raw a decoded trace file
+     * `hydrated` tells an empty input from a request stopped before
+     * hydration (an auth refusal, say), which carries no snapshot at all.
+     *
+     * @return array{path: string, method: string, route: ?string, payload: array<string, mixed>, hydrated: bool}|array{error: string, detail?: string}
+     */
+    public static function envelopeOf(array $raw): array
     {
         $root = null;
         $snapshot = [];
+        $hydrated = false;
         foreach ($raw['events'] as $event) {
             if ($root === null && $event['type'] === 'begin' && in_array($event['name'], ['request', 'sse'], true)) {
                 $root = $event;
             }
             if ($event['type'] === 'end' && $event['name'] === 'payload.hydrate_and_validate') {
-                $snapshot = $event['context']['snapshot'] ?? [];
+                // The raw input when the trace has it (LiveRequestInput): it goes
+                // back through the setters as the request did. The payload
+                // snapshot is the fallback for traces recorded before it.
+                $snapshot = $event['context']['input'] ?? $event['context']['snapshot'] ?? [];
+                $hydrated = isset($event['context']['input']) || isset($event['context']['snapshot']);
             }
         }
 
@@ -300,6 +411,7 @@ final class ReplayRunner
             'method' => strtoupper((string) ($root['context']['method'] ?? 'GET')),
             'route' => $root['context']['route'] ?? null,
             'payload' => is_array($snapshot) ? $snapshot : [],
+            'hydrated' => $hydrated,
         ];
     }
 

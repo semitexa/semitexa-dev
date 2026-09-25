@@ -92,6 +92,29 @@ final class ContextRedactorTest extends TestCase
     }
 
     #[Test]
+    public function a_snapshot_reads_the_private_fields_the_hydrator_writes_through_setters(): void
+    {
+        $dto = new class {
+            private int $perPage = 3;
+            private string $apiToken = 'sk-live-123';
+            private string $cache = 'derived';
+            private ?string $note;
+
+            public function setPerPage(int $perPage): void { $this->perPage = $perPage; }
+            public function setApiToken(string $apiToken): void { $this->apiToken = $apiToken; }
+            public function setNote(?string $note): void { $this->note = $note; }
+            public static function setCache(string $cache): void {}
+        };
+
+        $snap = ContextRedactor::snapshot($dto);
+
+        self::assertSame(3, $snap['perPage'], 'the canonical payload shape — private property + setter — is input');
+        self::assertSame(ContextRedactor::MASK, $snap['apiToken'], 'a setter does not exempt a secret from redaction');
+        self::assertArrayNotHasKey('cache', $snap, 'a static setX() is not a hydrator entry point');
+        self::assertArrayNotHasKey('note', $snap, 'uninitialized stays out');
+    }
+
+    #[Test]
     public function positional_query_bindings_survive_as_bounded_scalars(): void
     {
         $out = ContextRedactor::redact([0 => 'w-123', 1 => 42, 2 => str_repeat('b', 300)]);

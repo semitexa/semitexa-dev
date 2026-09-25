@@ -293,9 +293,14 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // snapshot is redacted and size-bounded at ingestion — scrub() below
         // would reduce it to a class name, which is why it is lifted out first.
         $snapshot = null;
+        $input = null;
         if (isset($context['payload_snapshot'])) {
             if (is_object($context['payload_snapshot'])) {
                 $snapshot = ContextRedactor::snapshot($context['payload_snapshot']);
+                // Beside the payload's state, the input that produced it: the
+                // one of the two a replay can feed back through the setters.
+                $raw = LiveRequestInput::current();
+                $input = $raw !== null ? ContextRedactor::redact($raw) : null;
             }
             unset($context['payload_snapshot']);
         }
@@ -303,6 +308,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         $scrubbed = $this->scrub($context);
         if ($snapshot !== null) {
             $scrubbed['snapshot'] = $snapshot;
+        }
+        if ($input !== null) {
+            $scrubbed['input'] = $input;
         }
 
         return [
@@ -632,9 +640,6 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
     private function client(): array
     {
         try {
-            if (!class_exists(\Semitexa\Core\Server\SwooleBootstrap::class)) {
-                return [];
-            }
             $pair = \Semitexa\Core\Server\SwooleBootstrap::getCurrentSwooleRequestResponse();
             $headers = is_array($pair) && isset($pair[0]) && is_array($pair[0]->header ?? null) ? $pair[0]->header : null;
             if ($headers === null) {

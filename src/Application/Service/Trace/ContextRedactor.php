@@ -36,25 +36,45 @@ final class ContextRedactor
     private const MAX_STRING = 200;
 
     /**
-     * A redacted, size-bounded view of an object's public state — what the
-     * hydrated-payload snapshot uses. Only initialized public properties:
-     * that is the payload contract surface, and reaching further (private
-     * state, getters with side effects) would turn observation into
-     * interference.
+     * A redacted, size-bounded view of an object's input state — what the
+     * hydrated-payload snapshot uses: initialized public properties, and the
+     * non-public properties the hydrator writes through a public `set{Name}()`.
+     *
+     * The setter pair is the payload contract surface in Semitexa — the
+     * canonical payload is a private property with a setter, and a snapshot of
+     * public properties alone came back EMPTY for it, so a replay re-ran the
+     * handler with no input at all. Values are read straight off the
+     * property: no getter runs, so observing still cannot interfere. State
+     * without a setter (caches, derived fields) stays out.
      *
      * @return array<string, mixed>
      */
     public static function snapshot(object $subject): array
     {
         $out = [];
-        foreach ((new \ReflectionObject($subject))->getProperties(\ReflectionProperty::IS_PUBLIC) as $prop) {
+        $class = new \ReflectionObject($subject);
+        foreach ($class->getProperties() as $prop) {
             if ($prop->isStatic() || !$prop->isInitialized($subject)) {
+                continue;
+            }
+            if (!$prop->isPublic() && !self::hasInputSetter($class, $prop->getName())) {
                 continue;
             }
             $out[$prop->getName()] = self::value($prop->getName(), $prop->getValue($subject), 1);
         }
 
         return $out;
+    }
+
+    private static function hasInputSetter(\ReflectionClass $class, string $property): bool
+    {
+        $setter = 'set' . ucfirst($property);
+        if (!$class->hasMethod($setter)) {
+            return false;
+        }
+        $method = $class->getMethod($setter);
+
+        return $method->isPublic() && !$method->isStatic() && $method->getNumberOfRequiredParameters() === 1;
     }
 
     /**

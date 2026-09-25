@@ -60,9 +60,12 @@ final class AiObserveCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addArgument('action', InputArgument::REQUIRED, 'ps | tail | show | replay')
+            ->addArgument('action', InputArgument::REQUIRED, 'ps | tail | show | replay | sandbox')
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Process id (show, replay)')
             ->addOption('mutate', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Override an input field, k=v; v parsed as JSON when it parses (replay, repeatable)')
+            ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method of the route to run (sandbox)', 'GET')
+            ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Concrete request path, e.g. /items/7 (sandbox)')
+            ->addOption('input', null, InputOption::VALUE_REQUIRED, 'Payload input as a JSON object, path params included (sandbox)', '{}')
             ->addOption('kind', null, InputOption::VALUE_REQUIRED, 'Filter: process kind (tail)')
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Filter: name substring (tail)')
             ->addOption('lines', null, InputOption::VALUE_REQUIRED, 'How many rows (tail, default 50, max 500)')
@@ -89,6 +92,7 @@ final class AiObserveCommand extends BaseCommand
             'tail' => $this->tail($input, $output),
             'show' => $this->show($input, $output),
             'replay' => $this->replay($input, $output),
+            'sandbox' => $this->sandbox($input, $output),
             default => $this->unknown($output),
         };
     }
@@ -148,6 +152,41 @@ final class AiObserveCommand extends BaseCommand
         }
 
         $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+        return $result['verdict'] === 'handler_threw' ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * One request through the replay sandbox with no recording behind it —
+     * what the API Explorer runs in a process of its own, because the sandbox
+     * arms process-global registries a serving worker must never see.
+     */
+    private function sandbox(InputInterface $input, OutputInterface $output): int
+    {
+        if (!ObservatoryMode::full()) {
+            return $this->fail($output, 'sandbox-requires-dev', 'The sandbox executes handlers and is dev-only.');
+        }
+
+        $path = $this->strOption($input, 'path');
+        if ($path === null || !str_starts_with($path, '/')) {
+            return $this->fail($output, 'missing-path', 'ai:observe sandbox --method=POST --path=/items/7 --input=\'{"name":"x"}\'');
+        }
+        $data = json_decode((string) $input->getOption('input'), true);
+        if (!is_array($data) || ($data !== [] && array_is_list($data))) {
+            return $this->fail($output, 'bad-input', '--input must be a JSON object');
+        }
+
+        $result = $this->replayRunner->sandbox((string) ($this->strOption($input, 'method') ?? 'GET'), $path, $data);
+        if (isset($result['error'])) {
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.ai-observe.error/v1'] + $result));
+
+            return self::FAILURE;
+        }
+
+        $output->writeln((string) json_encode(
+            ['artifact' => 'semitexa-dev.ai-observe.sandbox/v1'] + $result,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
 
         return $result['verdict'] === 'handler_threw' ? self::FAILURE : self::SUCCESS;
     }
