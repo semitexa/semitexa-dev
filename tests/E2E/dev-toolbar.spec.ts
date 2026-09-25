@@ -60,6 +60,27 @@ test.describe('Dev toolbar', () => {
         await expect(frame.locator('#ex-route-title')).toHaveText(routeId!.split(' ').slice(1).join(' '));
     });
 
+    test('under a strict style-src the bar still keeps the page footer clear', async ({ page, request }) => {
+        // The spacer is sized through CSSOM (element.style.height), which a
+        // `style-src 'self'` policy does not govern — only style ATTRIBUTES and
+        // setAttribute('style') are. Pinned so a refactor to setAttribute fails here.
+        await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+        const path = await htmlPage(request);
+        const violations: string[] = [];
+        page.on('console', (m) => { if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) violations.push(m.text()); });
+        await page.route((url) => url.pathname === path || url.pathname.endsWith(path), async (route) => {
+            const res = await route.fetch();
+            await route.fulfill({ response: res, headers: { ...res.headers(), 'content-security-policy': "style-src 'self' https://fonts.googleapis.com" } });
+        });
+        await page.goto(path);
+
+        await expect(page.locator('[data-semitexa-devbar] .bar')).toBeVisible();
+        const spacer = page.locator('body > .page-spacer');
+        await expect(spacer).toHaveCount(1);
+        expect(await spacer.evaluate((el) => el.getBoundingClientRect().height)).toBe(38);
+        expect(violations.filter((v) => /toolbar|page-spacer/i.test(v))).toEqual([]);
+    });
+
     test('collapses to a pill and remembers it', async ({ page, request }) => {
         await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
         const path = await htmlPage(request);

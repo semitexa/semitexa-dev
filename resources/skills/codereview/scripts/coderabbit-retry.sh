@@ -48,6 +48,18 @@ now=$(date +%s)
 candidates=()
 checked=0
 
+mark_for() { printf '%s/%s-%s-%s' "$STATE_DIR" "$(printf '%s' "$1" | tr '/' '_')" "$2" "$3"; }
+
+# Captured BEFORE the loop: fed through process substitution, a failed search
+# left the loop empty and the run logged "none waiting" with exit 0 — the
+# silent failure this script exists to prevent. 1000 is the search API's own
+# ceiling on results, far above what this org keeps open.
+if ! prs=$(gh search prs --owner="$OWNER" --state=open --limit 1000 \
+    --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"'); then
+    log "ERROR gh search prs failed for owner '$OWNER'; nothing checked"
+    exit 1
+fi
+
 while read -r repo number; do
     [ -n "$repo" ] || continue
     head=$(gh api "repos/$repo/pulls/$number" --jq 'if .draft then "" else .head.sha end' 2>/dev/null) || continue
@@ -57,12 +69,10 @@ while read -r repo number; do
         --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | .description][0] // ""' 2>/dev/null) || continue
     printf '%s' "$status" | grep -qiE "$MATCH" || continue
 
-    mark="$STATE_DIR/$(printf '%s' "$repo" | tr '/' '_')-$number-$head"
-    last=$(cat "$mark" 2>/dev/null || echo 0)
+    last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)
     [ $((now - last)) -ge "$MIN_GAP" ] || continue
     candidates+=("$last $repo $number $head")
-done < <(gh search prs --owner="$OWNER" --state=open --limit 100 \
-    --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"')
+done <<< "$prs"
 
 if [ "${#candidates[@]}" -eq 0 ]; then
     log "checked $checked open PR(s); none waiting on a skipped review"
@@ -77,5 +87,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 gh pr comment "$number" -R "$repo" --body "@coderabbitai review" >/dev/null
-printf '%s\n' "$now" > "$mark"
+# The mark of the PR that was PICKED — not whichever the loop scanned last,
+# which recorded the retry against the wrong PR.
+printf '%s\n' "$now" > "$(mark_for "$repo" "$number" "$head")"
 log "triggered $repo#$number at ${head:0:7} (${#candidates[@]} waiting)"

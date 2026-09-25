@@ -22,6 +22,13 @@ final class RoutePathTest extends TestCase
     }
 
     #[Test]
+    public function a_placeholder_name_with_regex_metacharacters_keeps_its_own_name(): void
+    {
+        self::assertSame(['user-id' => '42'], RoutePath::params('/users/{user-id}', [], '/users/42'));
+        self::assertSame('/users/42', RoutePath::redact('/users/{user-id}', '/users/42'));
+    }
+
+    #[Test]
     public function the_path_is_masked_where_a_placeholder_names_a_secret(): void
     {
         self::assertSame('/reset/' . ContextRedactor::MASK . '/7', RoutePath::redact('/reset/{token}/{id}', '/reset/abc123/7'));

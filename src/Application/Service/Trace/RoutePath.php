@@ -26,9 +26,12 @@ final class RoutePath
         $regex = preg_replace_callback(
             '/\\\\\{([^}:]+)(?:\\\\:[^}]*)?\\\\\}/',
             static function (array $m) use ($requirements, &$names): string {
+                // The callback sees the preg_quote()d pattern: `{user-id}` arrives
+                // as `user\-id`. The key must be the name the route declares.
+                $name = stripslashes($m[1]);
                 $group = 'p' . count($names);
-                $names[$group] = $m[1];
-                $requirement = $requirements[$m[1]] ?? null;
+                $names[$group] = $name;
+                $requirement = $requirements[$name] ?? null;
 
                 return '(?P<' . $group . '>' . (is_string($requirement) && $requirement !== '' ? $requirement : '[^/]+') . ')';
             },

@@ -148,9 +148,29 @@
     return { method, url, headers, body, values };
   }
 
+  /** The raw editor's object, or an error to show — never a silent `{}`. */
+  function parseRaw(ctx) {
+    try {
+      const value = JSON.parse(ctx.ui.raw.value || '{}');
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return { error: 'Raw input must be a JSON object' };
+      return { value };
+    } catch (e) {
+      return { error: 'Raw input is not valid JSON: ' + e.message };
+    }
+  }
+
+  /** Blocks a send while the raw editor holds unparseable input, keeping the text. */
+  function rawInputError(ctx) {
+    const parsed = ctx.rawMode ? parseRaw(ctx) : {};
+    if (!parsed.error) return false;
+    ctx.ui.result.replaceChildren(el('p', { class: 'ex-error', text: parsed.error + ' — nothing was sent.' }));
+    return true;
+  }
+
   function readValues(ctx) {
     if (ctx.rawMode) {
-      try { return JSON.parse(ctx.ui.raw.value || '{}'); } catch { return {}; }
+      // Only the URL preview reaches here with bad JSON; both senders stop first.
+      return parseRaw(ctx).value || {};
     }
     const out = {};
     for (const f of ctx.fields) {
@@ -286,7 +306,7 @@
     + 'Database writes are rolled back, queue messages are captured, mail is withheld.';
 
   async function sendSandbox(ctx) {
-    if (ctx.ui.send.disabled) return;
+    if (ctx.ui.send.disabled || rawInputError(ctx)) return;
     const req = currentRequest(ctx);
     const path = req.url.split('?')[0];
     const input = { ...readValues(ctx) };
@@ -361,7 +381,7 @@
     // One call in flight per dialog: Ctrl+Enter (or a held key repeating)
     // reaches here without going through the disabled button, and every
     // call is real — a second press would repeat the write.
-    if (ctx.ui.send.disabled) return;
+    if (ctx.ui.send.disabled || rawInputError(ctx)) return;
     const req = currentRequest(ctx);
     const marker = token();
     const headers = { ...req.headers, 'X-Semitexa-Trace': marker };
@@ -423,7 +443,7 @@
       return { tone: 'blocked', text: `⚠ ${status}: stopped by auth — ${expect} not tested`,
         why: 'The request never reached the handler, so this variation proved nothing. Authenticate and send again.' };
     }
-    const met = expect === '2xx' ? status >= 200 && status < 400
+    const met = expect === '2xx' ? status >= 200 && status < 300
       : expect === '4xx' ? status >= 400 && status < 500
       : String(status) === expect;
     return met
@@ -514,7 +534,12 @@
   }
 
   /* ---------- draw ---------- */
+  // Bumped by every draw: a recorded-inputs answer for a route the dialog has
+  // since left must not land in the next route's dialog (same #ex-invoke host).
+  let drawTicket = 0;
+
   document.addEventListener('explorer:route', (e) => {
+    const ticket = ++drawTicket;
     const { route, contract } = e.detail;
     const host = $('ex-invoke');
     if (!host) return;
@@ -597,7 +622,7 @@
     fetch('/__explorer/catalog?recorded=1&id=' + encodeURIComponent(route.id), { headers: { Accept: 'application/json' } })
       .then((res) => (res.ok ? res.json() : { recorded: [] }))
       .then(({ recorded }) => {
-        if (!host.isConnected || !recorded || !recorded.length) return;
+        if (ticket !== drawTicket || !host.isConnected || !recorded || !recorded.length) return;
         recorded.forEach((r, i) => {
           const values = Object.fromEntries(Object.entries(r.input || {}).filter(([k]) => !route.path_params.includes(k)));
           const when = new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

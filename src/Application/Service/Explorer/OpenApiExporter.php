@@ -128,7 +128,9 @@ final class OpenApiExporter
             if ($required !== []) {
                 $body['required'] = $required;
             }
-            $operation['requestBody'] = ['content' => [
+            // Without `required`, OpenAPI reads the whole body as optional and a
+            // generated client may omit one the route will reject.
+            $operation['requestBody'] = ['required' => $required !== [], 'content' => [
                 'application/json' => ['schema' => $body],
                 'application/x-www-form-urlencoded' => ['schema' => $body],
             ]];
