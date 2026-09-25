@@ -20,7 +20,8 @@ use Semitexa\Core\Environment;
  *
  * Where semitexa/api is installed, its richer answer wins for the routes it
  * knows: its response schemas and collection parameters are laid over these
- * operations. Looked up by name, never imported — dev does not require api.
+ * operations. Asked of the container by name, never imported — dev does not
+ * require api, and an uninstalled api is simply not bound.
  */
 #[AsService]
 final class OpenApiExporter
@@ -194,7 +195,7 @@ final class OpenApiExporter
      */
     private function overlayApiPackage(array $document): array
     {
-        if (!class_exists(self::API_BUILDER) || !$this->container->has(self::API_BUILDER)) {
+        if (!$this->container->has(self::API_BUILDER)) {
             return $document;
         }
         try {

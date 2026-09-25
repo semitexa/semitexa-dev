@@ -8,7 +8,7 @@ namespace Semitexa\Dev\Application\Service\Trace;
  * PHP source to per-line HTML, coloured by token class.
  *
  * Server-side on purpose: the trace viewer ships no JavaScript library and no
- * asset pipeline (dev must not depend on ssr), so the only place a highlighter
+ * asset pipeline (the panels stay off ssr's rendering), so the only place a highlighter
  * can run is here. `highlight_string()` was the obvious shortcut and was
  * rejected — it emits inline colours from php.ini, cannot be themed against
  * the page's dark/light tokens, and returns one blob that cannot be numbered

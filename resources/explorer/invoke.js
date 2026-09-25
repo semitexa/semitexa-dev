@@ -260,6 +260,10 @@
   const token = () => 'explorer-' + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
 
   async function send(ctx) {
+    // One call in flight per dialog: Ctrl+Enter (or a held key repeating)
+    // reaches here without going through the disabled button, and every
+    // call is real — a second press would repeat the write.
+    if (ctx.ui.send.disabled) return;
     const req = currentRequest(ctx);
     const marker = token();
     const headers = { ...req.headers, 'X-Semitexa-Trace': marker };

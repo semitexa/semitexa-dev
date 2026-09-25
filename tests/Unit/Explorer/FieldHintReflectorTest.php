@@ -60,6 +60,27 @@ final class FieldHintReflectorTest extends TestCase
         self::assertTrue(TraceLocator::isToken('explorer-0123456789abcdef'));
         self::assertFalse(TraceLocator::isToken('../../etc/passwd'));
         self::assertFalse(TraceLocator::isToken('quality-0123456789abcdef'));
-        self::assertNull(TraceLocator::find('explorer-"}'));
+    }
+
+    #[Test]
+    public function the_trace_locator_refuses_a_malformed_token_before_reading_any_trace(): void
+    {
+        $dir = sys_get_temp_dir() . '/explorer-trace-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $saved = getenv('SEMITEXA_TRACE_DIR');
+        putenv('SEMITEXA_TRACE_DIR=' . $dir);
+        try {
+            // A trace that DOES carry each marker, so only the token guard can say null.
+            foreach (['20260101-000000-aaaa.json' => 'explorer-"}', '20260101-000001-bbbb.json' => 'explorer-0123456789abcdef'] as $file => $marker) {
+                file_put_contents($dir . '/' . $file, json_encode(['events' => [['context' => ['marker' => $marker]]]]));
+            }
+
+            self::assertSame('20260101-000001-bbbb.json', TraceLocator::find('explorer-0123456789abcdef'), 'the fixture is readable');
+            self::assertNull(TraceLocator::find('explorer-"}'));
+        } finally {
+            putenv($saved === false ? 'SEMITEXA_TRACE_DIR' : 'SEMITEXA_TRACE_DIR=' . $saved);
+            array_map('unlink', glob($dir . '/*') ?: []);
+            rmdir($dir);
+        }
     }
 }

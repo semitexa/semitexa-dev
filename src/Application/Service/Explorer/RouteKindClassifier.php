@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Explorer;
 
+use Semitexa\Ssr\Application\Service\Http\Response\HtmlResponse;
+
 /**
  * Sorts one raw discovered route into a {@see RouteKind}.
  *
@@ -12,13 +14,10 @@ namespace Semitexa\Dev\Application\Service\Explorer;
  * keeps strings only — every enum-declared SSE route would read as plain HTTP.
  *
  * The declared render profile wins; legacy routes without one fall back to
- * `produces` and then to the response class. HtmlResponse lives in
- * semitexa/ssr, which dev does not require, so it is compared by name.
+ * `produces` and then to the response class.
  */
 final class RouteKindClassifier
 {
-    private const HTML_RESPONSE = 'Semitexa\\Ssr\\Application\\Service\\Http\\Response\\HtmlResponse';
-
     /** @param array<string, mixed> $route */
     public static function classify(array $route): RouteKind
     {
@@ -44,7 +43,7 @@ final class RouteKindClassifier
             return RouteKind::Page;
         }
         $response = $route['responseClass'] ?? null;
-        if (is_string($response) && $response !== '' && is_a($response, self::HTML_RESPONSE, true)) {
+        if (is_string($response) && $response !== '' && is_a($response, HtmlResponse::class, true)) {
             return RouteKind::Page;
         }
 

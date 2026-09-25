@@ -115,7 +115,12 @@
   /* ---------- route dialog ---------- */
   const dialog = $('ex-route');
 
+  // Bumped by every openRoute(): a response for a route the user has since
+  // left must not draw into the dialog that now shows another one.
+  let routeRequest = 0;
+
   async function openRoute(id) {
+    const ticket = ++routeRequest;
     const summary = state.routes.find((r) => r.id === id);
     $('ex-route-title').textContent = summary ? summary.path : id;
     $('ex-route-methods').replaceChildren(summary ? methodBadges(summary.methods) : '');
@@ -128,10 +133,12 @@
       const res = await fetch('/__explorer/catalog?id=' + encodeURIComponent(id), { headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const detail = await res.json();
+      if (ticket !== routeRequest) return;
       renderRoute(detail);
       // explorer-invoke.js fills the #ex-invoke section renderRoute just drew.
       document.dispatchEvent(new CustomEvent('explorer:route', { detail }));
     } catch (e) {
+      if (ticket !== routeRequest) return;
       $('ex-route-body').replaceChildren(el('p', { class: 'ex-empty', text: 'Could not load this route: ' + e.message }));
     }
   }
@@ -171,7 +178,7 @@
   function closeRoute() {
     if (dialog.open) dialog.close();
   }
-  dialog.addEventListener('close', () => { writeHash(); $('ex-q').focus(); });
+  dialog.addEventListener('close', () => { routeRequest++; writeHash(); $('ex-q').focus(); });
   $('ex-route-close').addEventListener('click', closeRoute);
   dialog.addEventListener('click', (e) => { if (e.target === dialog) closeRoute(); });
 

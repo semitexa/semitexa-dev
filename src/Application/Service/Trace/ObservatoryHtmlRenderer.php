@@ -15,8 +15,10 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
  * stages, dwelling at each for the share of time that stage took. Workers on
  * the left, the ticker on the right, sixty seconds of history underneath.
  *
- * HTML from PHP, same discipline as the trace viewer: dev must not depend on
- * ssr, so no Twig, no asset pipeline, no external fonts. The stylesheet and the
+ * HTML from PHP, same discipline as the trace viewer: no Twig, no asset
+ * pipeline, no external fonts. dev requires ssr only for the page-contributor
+ * seam; the panels stay off its rendering on purpose, so a broken page stack
+ * does not take down the tools used to debug it. The stylesheet and the
  * script live as plain files under the package's `resources/observatory/`
  * (assets, not code — the module-structure validator does not walk them).
  *
@@ -35,7 +37,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
  * Transport is the journal followed as a delta stream (`/__observatory/feed
  * ?stream=1&after=<cursor>`) polled at 250 ms while anything moves, 1 s when
  * idle, not at all while the tab is hidden. A KISS/SSE push is NOT the
- * upgrade path: SSE lives in semitexa/ssr, and dev must not depend on it. At
+ * upgrade path: the panels stay off ssr's SSE server, for the reason above. At
  * that cadence the eye cannot tell the difference, and the file stays the
  * one honest cross-worker medium.
  */
@@ -98,7 +100,7 @@ final class ObservatoryHtmlRenderer
       <button class="btn" id="b-explain" type="button">explain <kbd>E</kbd></button>
       <button class="btn" id="b-pause" type="button"><span>pause</span> <kbd>␣</kbd></button>
       <button class="btn" id="b-full" type="button">⛶ <kbd>F</kbd></button>
-      <button class="btn" id="b-explorer" type="button" title="find any route and call it">API explorer <kbd>A</kbd></button>
+      <button class="btn" data-action="explorer" type="button" title="find any route and call it">API explorer <kbd>A</kbd></button>
       <a class="link" href="/__trace">history →</a>
     </div>
   </header>
@@ -159,16 +161,16 @@ final class ObservatoryHtmlRenderer
     <h2>Last 60 seconds <span class="sub">duration · log scale · bars = finished per second</span></h2>
     <canvas id="tl-canvas"></canvas>
   </section>
+  <dialog class="explorer-dialog" aria-label="API Explorer">
+    <header>
+      <b>API Explorer</b>
+      <span class="sub">calls are real — watch them land here</span>
+      <a class="link" data-action="explorer-detach" href="/__explorer" target="_blank" rel="noopener">open in new tab ↗</a>
+      <button class="btn" data-action="explorer-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <iframe title="API Explorer"></iframe>
+  </dialog>
 </div>
-<dialog class="explorer-dialog" id="explorer-dialog" aria-label="API Explorer">
-  <header>
-    <b>API Explorer</b>
-    <span class="sub">calls are real — watch them land here</span>
-    <a class="link" id="explorer-detach" href="/__explorer" target="_blank" rel="noopener">open in new tab ↗</a>
-    <button class="btn" id="explorer-close" type="button" aria-label="Close">✕</button>
-  </header>
-  <iframe id="explorer-frame" title="API Explorer"></iframe>
-</dialog>
 <script src="/__observatory/asset/observatory.js"></script>
 </body>
 </html>

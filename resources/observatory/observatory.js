@@ -1372,12 +1372,16 @@ function boot() {
   // API Explorer in a dialog. The frame loads on first open only, and the
   // "new tab" link carries the Explorer's current hash (group, search, open
   // route), so the dialog hands its exact state to a tab of its own.
-  const exDialog = $('#explorer-dialog'), exFrame = $('#explorer-frame');
+  const obsRoot = document.querySelector('.obs');
+  const exDialog = obsRoot.querySelector('.explorer-dialog'), exFrame = exDialog.querySelector('iframe');
   const openExplorer = () => { if (!exFrame.src) exFrame.src = '/__explorer'; if (!exDialog.open) exDialog.showModal(); };
-  $('#b-explorer').addEventListener('click', openExplorer);
-  $('#explorer-close').addEventListener('click', () => exDialog.close());
-  $('#explorer-detach').addEventListener('click', e => {
-    try { e.currentTarget.href = exFrame.contentWindow.location.href; } catch { e.currentTarget.href = '/__explorer'; }
+  obsRoot.querySelector('[data-action="explorer"]').addEventListener('click', openExplorer);
+  exDialog.querySelector('[data-action="explorer-close"]').addEventListener('click', () => exDialog.close());
+  exDialog.querySelector('[data-action="explorer-detach"]').addEventListener('click', e => {
+    // Until the frame has loaded it sits on about:blank; hand over where it is going instead.
+    let href = '/__explorer';
+    try { const current = exFrame.contentWindow.location.href; if (current.startsWith(location.origin + '/')) href = current; } catch { /* keep the destination */ }
+    e.currentTarget.href = href;
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'a' && !exDialog.open && !(e.target && /input|textarea|select/i.test(e.target.tagName))) openExplorer();

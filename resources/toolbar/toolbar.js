@@ -103,7 +103,13 @@
   });
   closeDialog.addEventListener('click', () => dialog.close());
   detach.addEventListener('click', () => {
-    try { detach.href = frame.contentWindow.location.href; } catch { detach.href = explorerUrl(); }
+    // Until the frame has loaded it sits on about:blank; hand over where it is going instead.
+    let href = explorerUrl();
+    try {
+      const current = frame.contentWindow.location.href;
+      if (current.startsWith(location.origin + '/')) href = current;
+    } catch { /* keep the destination */ }
+    detach.href = href;
   });
 
   /* ---------- collapse ---------- */
