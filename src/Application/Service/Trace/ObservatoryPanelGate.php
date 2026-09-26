@@ -36,6 +36,18 @@ final class ObservatoryPanelGate
 {
     private const TOKEN_HEADER = 'X-Observatory-Token';
 
+    /**
+     * The Explorer family: a full route map with handler and payload classes,
+     * the OpenAPI document and a request sandbox. Those read the application's
+     * internals, which monitor mode — the production mode — deliberately does
+     * not expose (see ObservatoryMode::full()); the shared monitor token was
+     * only ever meant to unlock the measurement panel. Dev mode only.
+     */
+    public function allowsDevTools(): bool
+    {
+        return ObservatoryMode::full() && $this->allows();
+    }
+
     public function allows(): bool
     {
         $mode = ObservatoryMode::resolve();

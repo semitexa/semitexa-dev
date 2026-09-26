@@ -35,7 +35,7 @@ final class ExplorerAssetHandler implements TypedHandlerInterface
         $name = $payload->getName();
         $type = self::SERVED[$name] ?? null;
 
-        if ($type === null || !$this->gate->allows()) {
+        if ($type === null || !$this->gate->allowsDevTools()) {
             return $this->notFound($resource);
         }
 

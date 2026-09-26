@@ -74,13 +74,13 @@ class SafeFileWriterTest extends TestCase
         $writer = new SafeFileWriter($this->tmpDir, 'test');
         $files = [
             new PlannedFile('dir/existing.php', 'new', FileType::PhpClass),
-            new PlannedFile('dir/new.php', 'content', FileType::PhpClass),
+            new PlannedFile('dir/fresh.php', 'content', FileType::PhpClass),
         ];
 
         $result = $writer->write($files);
 
         $this->assertSame('partial', $result->status);
-        $this->assertSame(['dir/new.php'], $result->created);
+        $this->assertSame(['dir/fresh.php'], $result->created);
         $this->assertSame(['dir/existing.php'], $result->conflicts);
     }
 

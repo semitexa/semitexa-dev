@@ -17,12 +17,25 @@ use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
  */
 final class ObservatoryPanelGateTest extends TestCase
 {
+    private const ENV_KEYS = ['APP_ENV', 'SEMITEXA_OBSERVATORY_MODE', 'SEMITEXA_OBSERVATORY_TOKEN'];
+
+    /** @var array<string, string|false> */
+    private array $envSnapshot = [];
+
+    protected function setUp(): void
+    {
+        foreach (self::ENV_KEYS as $key) {
+            $this->envSnapshot[$key] = getenv($key);
+        }
+    }
+
     protected function tearDown(): void
     {
         CurrentRequestStore::clear();
-        putenv('APP_ENV');
-        putenv('SEMITEXA_OBSERVATORY_MODE');
-        putenv('SEMITEXA_OBSERVATORY_TOKEN');
+        // Restore what the process started with; a variable that was unset stays unset.
+        foreach ($this->envSnapshot as $key => $value) {
+            putenv($value === false ? $key : "{$key}={$value}");
+        }
     }
 
     /** @param array<string, string> $headers */
@@ -66,6 +79,25 @@ final class ObservatoryPanelGateTest extends TestCase
 
         $this->request([], '127.0.0.1');
         self::assertFalse($gate->allows(), 'a missing token must not fall through to the loopback rule');
+    }
+
+    #[Test]
+    public function the_monitor_token_does_not_open_the_explorer(): void
+    {
+        // Monitor is the production mode: the token unlocks the measurement
+        // panel, not the route map, OpenAPI document and sandbox.
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        putenv('SEMITEXA_OBSERVATORY_TOKEN=s3cret');
+        $gate = new ObservatoryPanelGate();
+
+        $this->request(['X-Observatory-Token' => 's3cret'], '203.0.113.9');
+        self::assertTrue($gate->allows());
+        self::assertFalse($gate->allowsDevTools());
+
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+        self::assertTrue($gate->allowsDevTools(), 'dev mode keeps the explorer');
     }
 
     #[Test]

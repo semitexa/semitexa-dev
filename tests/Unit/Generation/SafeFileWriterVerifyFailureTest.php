@@ -49,6 +49,49 @@ final class SafeFileWriterVerifyFailureTest extends TestCase
     }
 
     #[Test]
+    public function a_written_file_that_fails_verify_is_not_reported_as_success(): void
+    {
+        // An agent branches on the envelope's status; "success" beside a
+        // failed php -l sent it on to build on a file that does not parse.
+        $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([
+            ['exit' => 255, 'output' => 'PHP Parse error: syntax error in First.php on line 1'],
+        ]));
+
+        $result = $writer->write([$this->file('First.php')]);
+
+        self::assertSame('fail', $result->verify['status']);
+        self::assertSame('error', $result->status);
+    }
+
+    #[Test]
+    public function a_partial_result_with_a_failed_verify_keeps_its_status_and_gets_the_guidance(): void
+    {
+        file_put_contents($this->root . '/Existing.php', '<?php // already there');
+        $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([
+            ['exit' => 255, 'output' => 'PHP Parse error: syntax error in First.php on line 1'],
+        ]));
+
+        $result = $writer->write([$this->file('First.php'), $this->file('Existing.php')]);
+
+        self::assertSame('fail', $result->verify['status']);
+        self::assertSame('partial', $result->status, 'the conflict still stands beside the created file');
+        self::assertSame(['Existing.php'], $result->conflicts);
+        self::assertContains('Fix the files listed under verify: they were written but do not parse', $result->next_steps);
+    }
+
+    #[Test]
+    public function a_class_file_named_after_a_reserved_word_is_refused_before_writing(): void
+    {
+        $writer = new SafeFileWriter($this->root, 'make:service', new ScriptedRunner());
+
+        $result = $writer->write([$this->file('src/Domain/Service/List.php')]);
+
+        self::assertSame('rejected', $result->status);
+        self::assertSame('reserved', $result->errors[0]['reason'] ?? null);
+        self::assertFileDoesNotExist($this->root . '/src/Domain/Service/List.php');
+    }
+
+    #[Test]
     public function a_parse_error_found_before_a_runner_failure_is_not_thrown_away(): void
     {
         $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([

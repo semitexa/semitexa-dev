@@ -35,7 +35,7 @@ final class ExplorerCatalogHandler implements TypedHandlerInterface
 
     public function handle(ExplorerCatalogPayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!$this->gate->allows()) {
+        if (!$this->gate->allowsDevTools()) {
             return $this->notFound($resource);
         }
 
