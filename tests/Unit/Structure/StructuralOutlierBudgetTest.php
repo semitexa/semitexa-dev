@@ -86,8 +86,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the one door in the ORM an injection can still arrive through, and it
         // arrives from the caller. An Aikido finding was refuted on exactly
         // this distinction and the method said nothing about it either way.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1147],
-        'semitexa-orm/src/OrmManager.php' => [41, 917],
+        // 59/1147 -> 56/1062 on 2026-09-26: the WHERE builders moved into
+        // WhereTrait so UPDATE/DELETE group OR conditions the same way SELECT
+        // does (orm aadea92). Lowered, not left as room to regrow into.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [56, 1062],
+        // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
+        // (fail fast while the database is down) is wired through here, and
+        // shutdown() now resets it so the next connect is a real attempt.
+        'semitexa-orm/src/OrmManager.php' => [41, 934],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
         // UI skill came from instead of discarding it. Methods are unchanged —
@@ -355,7 +361,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // method; the class is no more tangled than it was.
         'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 915],
         'semitexa-update/src/Application/Service/Composer/ComposerUpdateRunner.php' => [20, 751],
-        'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 742],
+        // 742 -> 747 on 2026-09-26, NO NEW METHOD: worker-wide statics now
+        // declare their lifetime (core 30e2b35).
+        'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 747],
+        // NEW on 2026-09-26, at 735 -> 781 lines, recorded rather than trimmed.
+        // #[InjectAsFactory] now injects the generated Factory* class chosen by
+        // the property's declared type, and a worker-scoped service runs
+        // initialize() only AFTER its factories are injected (core #167 review).
+        // Both are ordering rules of the build graph and belong where it is built.
+        'semitexa-core/src/Container/GraphBuilder.php' => [21, 781],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
         // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
         // when the prompt.catalog detector landed, and the four lines are the
