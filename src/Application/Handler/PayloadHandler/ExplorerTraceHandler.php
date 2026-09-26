@@ -25,7 +25,7 @@ final class ExplorerTraceHandler implements TypedHandlerInterface
 
     public function handle(ExplorerTracePayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!$this->gate->allows()) {
+        if (!$this->gate->allowsDevTools()) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

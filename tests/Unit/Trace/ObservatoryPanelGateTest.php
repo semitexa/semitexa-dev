@@ -69,6 +69,25 @@ final class ObservatoryPanelGateTest extends TestCase
     }
 
     #[Test]
+    public function the_monitor_token_does_not_open_the_explorer(): void
+    {
+        // Monitor is the production mode: the token unlocks the measurement
+        // panel, not the route map, OpenAPI document and sandbox.
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        putenv('SEMITEXA_OBSERVATORY_TOKEN=s3cret');
+        $gate = new ObservatoryPanelGate();
+
+        $this->request(['X-Observatory-Token' => 's3cret'], '203.0.113.9');
+        self::assertTrue($gate->allows());
+        self::assertFalse($gate->allowsDevTools());
+
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+        self::assertTrue($gate->allowsDevTools(), 'dev mode keeps the explorer');
+    }
+
+    #[Test]
     public function without_a_token_only_a_direct_loopback_peer_walks_in(): void
     {
         putenv('APP_ENV=prod');
