@@ -7,7 +7,9 @@ namespace Semitexa\Dev\Application\Service\Generation\Writer;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner;
 use Semitexa\Dev\Application\Service\Generation\Contract\FileWriterInterface;
+use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
+use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 
 /**
  * Writes generated files into a project.
@@ -47,6 +49,18 @@ final class SafeFileWriter implements FileWriterInterface
         $this->processRunner = $processRunner ?? new ShellProcessRunner(timeoutSeconds: 30.0, maxOutputBytes: 262144);
     }
 
+    /** PHP keywords and reserved type names: none can be the name of a class. */
+    private const RESERVED_CLASS_NAMES = [
+        'abstract', 'and', 'array', 'as', 'bool', 'break', 'callable', 'case', 'catch', 'class', 'clone',
+        'const', 'continue', 'declare', 'default', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare',
+        'endfor', 'endforeach', 'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit', 'extends', 'false',
+        'final', 'finally', 'float', 'fn', 'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements',
+        'include', 'include_once', 'instanceof', 'insteadof', 'int', 'interface', 'isset', 'iterable', 'list',
+        'match', 'mixed', 'namespace', 'never', 'new', 'null', 'object', 'or', 'parent', 'print', 'private',
+        'protected', 'public', 'readonly', 'require', 'require_once', 'return', 'self', 'static', 'string',
+        'switch', 'throw', 'trait', 'true', 'try', 'unset', 'use', 'var', 'void', 'while', 'xor', 'yield',
+    ];
+
     public function write(array $files, bool $force = false): GenerationResult
     {
         $plans = [];
@@ -55,7 +69,7 @@ final class SafeFileWriter implements FileWriterInterface
 
         // --- preflight: nothing below this block has touched the disk yet ---
         foreach ($files as $file) {
-            $refusal = $this->refusePath($file->path);
+            $refusal = $this->refusePath($file->path) ?? $this->refuseClassName($file);
             if ($refusal !== null) {
                 $errors[] = $refusal;
                 continue;
@@ -129,7 +143,18 @@ final class SafeFileWriter implements FileWriterInterface
             $nextSteps[] = 'Use --force to overwrite conflicting files';
         }
         if ($status === 'rejected') {
-            $nextSteps[] = 'Fix the generator: the paths above cannot be written into a project';
+            $nextSteps[] = in_array('reserved', array_column($errors, 'reason'), true)
+                ? 'Choose another --name: a PHP reserved word cannot name a class'
+                : 'Fix the generator: the paths above cannot be written into a project';
+        }
+
+        $verify = $this->verifyCreated($created);
+        // Written but not valid PHP is a failed generation: the envelope's own
+        // status has to say so, not only the exit code — an agent branches on
+        // `status`, and "success" sent it on to build on a file that does not parse.
+        if ($status === 'success' && ($verify['status'] ?? null) === 'fail') {
+            $status = 'error';
+            $nextSteps[] = 'Fix the files listed under verify: they were written but do not parse';
         }
 
         return new GenerationResult(
@@ -139,9 +164,31 @@ final class SafeFileWriter implements FileWriterInterface
             skipped: [],
             conflicts: $conflicts,
             next_steps: $nextSteps,
-            verify: $this->verifyCreated($created),
+            verify: $verify,
             errors: $errors === [] ? null : $errors,
         );
+    }
+
+    /**
+     * A generated class is named after its file, and a PHP keyword or reserved
+     * type name cannot be a class name: `make:service --name=List` wrote
+     * `final class List`, which php -l then failed — after the file was already
+     * in the project. Refused here, before anything is written.
+     *
+     * @return array{path: string, reason: string, detail: string}|null
+     */
+    private function refuseClassName(PlannedFile $file): ?array
+    {
+        $name = basename($file->path, '.php');
+        if ($file->type !== FileType::PhpClass || !in_array(strtolower($name), self::RESERVED_CLASS_NAMES, true)) {
+            return null;
+        }
+
+        return [
+            'path' => $file->path,
+            'reason' => 'reserved',
+            'detail' => sprintf("'%s' is a reserved word in PHP and cannot name a class; choose another --name", $name),
+        ];
     }
 
     /**
