@@ -152,8 +152,12 @@ final class SafeFileWriter implements FileWriterInterface
         // Written but not valid PHP is a failed generation: the envelope's own
         // status has to say so, not only the exit code — an agent branches on
         // `status`, and "success" sent it on to build on a file that does not parse.
-        if ($status === 'success' && ($verify['status'] ?? null) === 'fail') {
-            $status = 'error';
+        // A `partial` result keeps its status (the conflicts still stand) but
+        // needs the same guidance: its created files do not parse either.
+        if (($verify['status'] ?? null) === 'fail') {
+            if ($status === 'success') {
+                $status = 'error';
+            }
             $nextSteps[] = 'Fix the files listed under verify: they were written but do not parse';
         }
 

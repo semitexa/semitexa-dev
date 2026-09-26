@@ -17,12 +17,25 @@ use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
  */
 final class ObservatoryPanelGateTest extends TestCase
 {
+    private const ENV_KEYS = ['APP_ENV', 'SEMITEXA_OBSERVATORY_MODE', 'SEMITEXA_OBSERVATORY_TOKEN'];
+
+    /** @var array<string, string|false> */
+    private array $envSnapshot = [];
+
+    protected function setUp(): void
+    {
+        foreach (self::ENV_KEYS as $key) {
+            $this->envSnapshot[$key] = getenv($key);
+        }
+    }
+
     protected function tearDown(): void
     {
         CurrentRequestStore::clear();
-        putenv('APP_ENV');
-        putenv('SEMITEXA_OBSERVATORY_MODE');
-        putenv('SEMITEXA_OBSERVATORY_TOKEN');
+        // Restore what the process started with; a variable that was unset stays unset.
+        foreach ($this->envSnapshot as $key => $value) {
+            putenv($value === false ? $key : "{$key}={$value}");
+        }
     }
 
     /** @param array<string, string> $headers */

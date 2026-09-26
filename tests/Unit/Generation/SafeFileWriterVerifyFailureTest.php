@@ -64,6 +64,22 @@ final class SafeFileWriterVerifyFailureTest extends TestCase
     }
 
     #[Test]
+    public function a_partial_result_with_a_failed_verify_keeps_its_status_and_gets_the_guidance(): void
+    {
+        file_put_contents($this->root . '/Existing.php', '<?php // already there');
+        $writer = new SafeFileWriter($this->root, 'make:thing', new ScriptedRunner([
+            ['exit' => 255, 'output' => 'PHP Parse error: syntax error in First.php on line 1'],
+        ]));
+
+        $result = $writer->write([$this->file('First.php'), $this->file('Existing.php')]);
+
+        self::assertSame('fail', $result->verify['status']);
+        self::assertSame('partial', $result->status, 'the conflict still stands beside the created file');
+        self::assertSame(['Existing.php'], $result->conflicts);
+        self::assertContains('Fix the files listed under verify: they were written but do not parse', $result->next_steps);
+    }
+
+    #[Test]
     public function a_class_file_named_after_a_reserved_word_is_refused_before_writing(): void
     {
         $writer = new SafeFileWriter($this->root, 'make:service', new ScriptedRunner());
