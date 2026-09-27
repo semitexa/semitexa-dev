@@ -181,25 +181,27 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 145,
+            "total": 155,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
-                "semitexa-authorization": 2,
+                "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 10,
+                "semitexa-core": 11,
                 "semitexa-dev": 33,
-                "semitexa-ledger": 1,
-                "semitexa-orm": 35,
+                "semitexa-ledger": 2,
+                "semitexa-media": 1,
+                "semitexa-orm": 37,
                 "semitexa-os": 1,
-                "semitexa-platform-settings": 1,
+                "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 2,
+                "semitexa-rbac": 1,
                 "semitexa-ssr": 28,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
                 "semitexa-testing": 1,
                 "semitexa-theme": 1,
-                "semitexa-ultimate": 1,
+                "semitexa-ultimate": 2,
                 "semitexa-update": 4,
                 "semitexa-webhooks": 15
             },
@@ -811,6 +813,47 @@
                 }
             },
             "reason": "semitexa-ssr 27 -> 28: SlotHandlerPipelineTest's cancellation test now skips when Swoole is not loaded (review on ssr #131). ssr does not require ext-swoole in composer.json and already guards Swoole-dependent tests the same way in 23 places; without the guard the test errors on the environment instead of checking cancellation."
+        },
+        {
+            "at": "2026-09-27",
+            "metric": "tests.skip-calls",
+            "from": 145,
+            "to": 155,
+            "keys": {
+                "semitexa-authorization": {
+                    "from": 2,
+                    "to": 3
+                },
+                "semitexa-core": {
+                    "from": 10,
+                    "to": 11
+                },
+                "semitexa-ledger": {
+                    "from": 1,
+                    "to": 2
+                },
+                "semitexa-media": {
+                    "from": 0,
+                    "to": 1
+                },
+                "semitexa-orm": {
+                    "from": 35,
+                    "to": 37
+                },
+                "semitexa-platform-settings": {
+                    "from": 1,
+                    "to": 3
+                },
+                "semitexa-rbac": {
+                    "from": 0,
+                    "to": 1
+                },
+                "semitexa-ultimate": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "Environment-capability guards added by the 2026-09-26 review round (Swoole/pcntl/Imagick/installer checkout absent in the runner); each skips only when the extension or sibling repo is missing, no assertion was disabled."
         }
     ]
 }
