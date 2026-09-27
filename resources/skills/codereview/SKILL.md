@@ -17,7 +17,7 @@ Default assumption:
 ## Resources
 
 - Primary workflow reference: [`references/CODE_REVIEW.md`](references/CODE_REVIEW.md)
-- Bundled scripts live in [`scripts/`](scripts)
+- Bundled scripts live in [`scripts/`](scripts); `pr-process.sh` is the fix queue, `pr-merge-sweep.sh` the merge verdict for every open PR
 - Script paths in this document are relative to **this skill's own directory** — the base
   directory the runtime reports when it loads the skill. Do not rewrite them to a
   runtime-specific path such as `.claude/skills/...` or `~/.codex/skills/...`: the same body
@@ -104,12 +104,76 @@ once per run). On the operator's workstation a systemd user timer runs it every 
 `~/.local/state/semitexa/coderabbit-retry.log`. So a "Review rate limited" head is
 not a reason to trigger by hand. Check the log first; `--dry-run` shows what it would do.
 
+## The full cycle: fix → re-review → merge, until nothing is open
+
+A broad review request means the WHOLE cycle, run autonomously until every open
+PR is merged — not one pass over today's comments. The operator should not be
+asked anything a rule below already answers; they get short progress reports in
+their own language (merged / fixed / waiting, with SHAs), not questions.
+
+1. **Fix pass.** Run the queue. Fast-forward every repo you will touch first
+   (`git fetch && git merge --ff-only origin/develop`) — local checkouts are
+   routinely behind the PR head. With many repos, fan out: one subagent per
+   batch of 3–5 repos, each told exactly which repos are its own, the rules
+   below, and to report per comment `fixed <sha> / rejected <why>`. Serialize
+   the heavy shared commands across agents with one lock:
+   `flock /tmp/claude-1000/semitexa-review.lock composer phpstan` (same for
+   phpunit in the app container).
+2. **Merge sweep.** `scripts/pr-merge-sweep.sh` lists every open PR with a
+   verdict; `--merge` merges the READY ones (0 unresolved comments, CodeRabbit
+   "Review completed" on the current head, mergeState CLEAN). Use it, not
+   `pr-process.sh`, to decide merges: the fix queue drops a PR with no
+   comments, so a PR waiting on a rate-limited review is invisible there.
+3. **Wait, don't poke.** A fix push starts a review by itself and spends
+   quota; "Review rate limited" heads are woken one per 30 minutes by the retry
+   timer (below). Never post `@coderabbitai review` by hand. Instead set a
+   recurring wake-up for yourself a few minutes after each timer run — read
+   its phase from `systemctl --user list-timers semitexa-coderabbit-retry.timer`
+   (it drifts, e.g. after a reboot); in Claude Code a `CronCreate` job — and on
+   each tick: sweep, merge what is READY, fix what came back, report.
+4. **Stop** when the sweep says `No open PRs.`: cancel the wake-up and give a
+   final report — what merged, what was rejected and why, what was found beyond
+   the comments, and what is knowingly left open.
+
+### How to treat a comment
+
+- **Verify before acting.** Reproduce the claim against the code (a probe
+  script, a failing test). A comment is right, right for a different reason, or
+  wrong; only the first two change code.
+- **A behavior fix carries a test that fails without it.** Prove it: stash the
+  `src/` change, run the test, see it fail, restore. A test that passes on the
+  old code protects nothing.
+- **Assert positively.** Bots come back for every assertion an empty or missing
+  value would satisfy (`assertIsString`, `assertContains`, a negative
+  `assertStringNotContainsString`). Pin the exact value, list or message the
+  first time and the thread ends in one round instead of three.
+- **Fix at the source.** When the comment exposes a defect that lives in
+  another package (a docs PR describing a pattern core cannot load), fix it in
+  that package's develop — it joins that package's open PR — reply on both
+  threads, and note the merge order (source first).
+- **Not every fix is code.** A repository setting (e.g. private vulnerability
+  reporting that SECURITY.md promises) is changed on GitHub; reply saying so.
+- **Rejecting** is a technical reply with evidence; before merging, read the
+  bot's follow-up on that thread — it either withdraws or names what remains.
+- **Environment, not code:** a package test failing with "class not found" for
+  its own `Tests\Fixtures` in the root phpunit is a stale
+  `vendor/composer/autoload_psr4.php` — `docker compose exec -T app composer dump-autoload`.
+- **phpstan is judged against its baseline**, not zero: the project-wide run
+  was red before the review (208 on 2026-09-26). The rule is "no new errors"
+  — compare the count, and run phpstan on the changed files alone to confirm
+  none are yours.
+- **Look past the comment.** A fix that reveals an adjacent defect in the same
+  area (a worker that lost its lease still writing the final state) is fixed in
+  the same PR when it is in the PR's own scope; otherwise report it.
+
 ## Rules
 
 - Follow [`references/CODE_REVIEW.md`](references/CODE_REVIEW.md) when more detail is needed.
 - Never reply before the fix is pushed.
 - Always run `composer phpstan` from the Semitexa project root after the fix and before pushing.
-- Do not touch repositories outside the specific Semitexa repository selected by the review queue.
+- Do not touch repositories outside the specific Semitexa repository selected by the review queue — except to fix a defect at its source, as described above.
+- Merge with `gh pr merge --merge` (merge commit) and never delete `develop`; `pr-merge-sweep.sh --merge` does exactly that and refuses a head that moved since the check.
+- In a checkout other sessions share, run `git status --short` as its own step before `commit.sh` (which stages everything) and commit by pathspec if anything there is not yours.
 - If a review comment is incorrect, reply with a concise technical explanation instead of changing code.
 - Keep replies short and factual.
 - Throttle review replies. Prefer one reply at a time with a random delay between posts instead of batch-spamming GitHub.
