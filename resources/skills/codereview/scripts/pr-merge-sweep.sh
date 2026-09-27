@@ -15,6 +15,9 @@
 #   - no unresolved actionable comment (pr-review.sh's own count)
 #   - CodeRabbit's status on the CURRENT head is "success / Review completed"
 #     (a success that says "Review rate limited" is a skipped review, not a pass)
+#   - a Greptile check run on the head, if there is one, has completed with
+#     success, neutral or skipped
+#   - still no unresolved comment when recounted after the gates above passed
 #   - GitHub mergeStateStatus is CLEAN
 # Anything else is FIX:<n> or WAIT:<reason>. A merge uses --merge (a merge
 # commit, as every develop->master merge in these repos) and
@@ -27,6 +30,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# An unfinished Greptile run older than this is treated as abandoned.
+GREPTILE_STALE_SECONDS="${GREPTILE_STALE_SECONDS:-1800}"
 MERGE=0
 # One option at most: `--merge --help` must not merge while ignoring the rest.
 if (( $# > 1 )); then
@@ -36,7 +41,7 @@ fi
 case "${1:-}" in
     --merge) MERGE=1 ;;
     '') ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -59,15 +64,66 @@ while read -r slug number unresolved; do
         --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none|no CodeRabbit status" else "\(.state)|\(.description)" end')"
     state="${status%%|*}"
     desc="${status#*|}"
+    # A second reviewer, when installed, reports as a check run. Its findings
+    # land as line comments (counted above); an unfinished run means more may come.
+    # Paginated: the endpoint pages at 30, and a run on a later page read as
+    # "none" would skip the wait. filter=all, because the default (latest)
+    # drops an older run in the same suite. A head can carry several runs:
+    # the most recently started run decides, so an old failed run cannot block
+    # a head that a later run passed. An OLDER run still going also makes the
+    # PR wait — it may still post findings — but only while it is recent: a
+    # run that has been "in progress" for longer than any review takes is
+    # abandoned, and must not block the merge forever. A queued run has no
+    # started_at yet, so it is dated by created_at.
+    greptile_runs="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100&filter=all" \
+        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // .created_at // "")|\(.status)|\(.conclusion // "")"' \
+        | sort -r)"
+    greptile_run=""
+    now="$(date -u +%s)"
+    while IFS= read -r run; do
+        [[ -z "$run" ]] && continue
+        started="${run%%|*}"
+        run="${run#*|}"
+        if [[ -z "$greptile_run" ]]; then
+            greptile_run="$run"
+            [[ "${run%%|*}" != "completed" ]] && break
+            continue
+        fi
+        if [[ "${run%%|*}" != "completed" ]]; then
+            started_at="$(date -u -d "$started" +%s 2>/dev/null || echo 0)"
+            if (( now - started_at < GREPTILE_STALE_SECONDS )); then
+                greptile_run="$run"
+                break
+            fi
+        fi
+    done <<<"$greptile_runs"
+    greptile_status="${greptile_run%%|*}"
+    greptile_conclusion="${greptile_run#*|}"
 
     if (( unresolved > 0 )); then
         verdict="FIX:$unresolved"
     elif [[ "$state" != "success" || "$desc" != "Review completed" ]]; then
         verdict="WAIT:$desc"
+    elif [[ -n "$greptile_run" && "$greptile_status" != "completed" ]]; then
+        verdict="WAIT:greptile-$greptile_status"
+    elif [[ -n "$greptile_run" && ! "$greptile_conclusion" =~ ^(success|neutral|skipped)$ ]]; then
+        # A failed or cancelled run posted nothing: no comments is not a pass.
+        verdict="WAIT:greptile-${greptile_conclusion:-no-conclusion}"
     elif [[ "$merge_state" != "CLEAN" ]]; then
         verdict="WAIT:merge-state-$merge_state"
     else
         verdict="READY"
+    fi
+
+    # The comment count above was taken before this PR's reviewers were seen
+    # finished; findings posted in between would be missed. Recount now that
+    # every gate has passed.
+    if [[ "$verdict" == "READY" ]]; then
+        recount="$("$SCRIPT_DIR/pr-review.sh" --repo "$slug" --pr "$number" --compact --no-diff \
+            | jq -r '[.repos[].prs[].summary.unresolvedActionableComments // 0] | add // 0')"
+        if (( recount > 0 )); then
+            verdict="FIX:$recount"
+        fi
     fi
 
     printf '%-40s %-8s %-10s %s\n' "$slug#$number" "${head:0:7}" "$merge_state" "$verdict"
