@@ -30,6 +30,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# An unfinished Greptile run older than this is treated as abandoned.
+GREPTILE_STALE_SECONDS="${GREPTILE_STALE_SECONDS:-1800}"
 MERGE=0
 # One option at most: `--merge --help` must not merge while ignoring the rest.
 if (( $# > 1 )); then
@@ -67,20 +69,31 @@ while read -r slug number unresolved; do
     # Paginated: the endpoint pages at 30, and a run on a later page read as
     # "none" would skip the wait. filter=all, because the default (latest)
     # drops an older run in the same suite. A head can carry several runs:
-    # any run still going means findings may still come, so it decides first;
-    # otherwise the most recently started run decides, so an old failed run
-    # cannot block a head that a later run passed.
+    # the most recently started run decides, so an old failed run cannot block
+    # a head that a later run passed. An OLDER run still going also makes the
+    # PR wait — it may still post findings — but only while it is recent: a
+    # run that has been "in progress" for longer than any review takes is
+    # abandoned, and must not block the merge forever.
     greptile_runs="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100&filter=all" \
         --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // "")|\(.status)|\(.conclusion // "")"' \
         | sort -r)"
     greptile_run=""
+    now="$(date -u +%s)"
     while IFS= read -r run; do
         [[ -z "$run" ]] && continue
+        started="${run%%|*}"
         run="${run#*|}"
-        [[ -z "$greptile_run" ]] && greptile_run="$run"
-        if [[ "${run%%|*}" != "completed" ]]; then
+        if [[ -z "$greptile_run" ]]; then
             greptile_run="$run"
-            break
+            [[ "${run%%|*}" != "completed" ]] && break
+            continue
+        fi
+        if [[ "${run%%|*}" != "completed" ]]; then
+            started_at="$(date -u -d "$started" +%s 2>/dev/null || echo 0)"
+            if (( now - started_at < GREPTILE_STALE_SECONDS )); then
+                greptile_run="$run"
+                break
+            fi
         fi
     done <<<"$greptile_runs"
     greptile_status="${greptile_run%%|*}"
