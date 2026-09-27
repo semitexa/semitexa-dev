@@ -320,9 +320,13 @@ for dir in "$PACKAGES_DIR"/*/; do
             # Review summaries and issue comments genuinely do contain
             # walkthroughs and wrappers, so those two kinds keep the stricter
             # test. Only line comments bypass it.
+            # The Greptile summary is posted as a conversation comment and repeats
+            # the findings it also posts line by line; the line comments are
+            # what gets fixed and answered.
             def noise_comment:
                 hard_noise
                 or ((text | test("<!-- This is an auto-generated (comment|reply)"; "i")) and (review_signal | not))
+                or (text | test("<!-- greptile_summary -->"))
                 or codex_wrapper_only;
             . + {
                 diff: $diff,

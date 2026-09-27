@@ -15,6 +15,7 @@
 #   - no unresolved actionable comment (pr-review.sh's own count)
 #   - CodeRabbit's status on the CURRENT head is "success / Review completed"
 #     (a success that says "Review rate limited" is a skipped review, not a pass)
+#   - a Greptile check run on the head, if there is one, has completed
 #   - GitHub mergeStateStatus is CLEAN
 # Anything else is FIX:<n> or WAIT:<reason>. A merge uses --merge (a merge
 # commit, as every develop->master merge in these repos) and
@@ -59,11 +60,17 @@ while read -r slug number unresolved; do
         --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none|no CodeRabbit status" else "\(.state)|\(.description)" end')"
     state="${status%%|*}"
     desc="${status#*|}"
+    # A second reviewer, when installed, reports as a check run. Its findings
+    # land as line comments (counted above); an unfinished run means more may come.
+    greptile="$(gh api "repos/$slug/commits/$head/check-runs" \
+        --jq '[.check_runs[] | select(.name | test("greptile"; "i"))][0] | if . == null then "none" else .status end')"
 
     if (( unresolved > 0 )); then
         verdict="FIX:$unresolved"
     elif [[ "$state" != "success" || "$desc" != "Review completed" ]]; then
         verdict="WAIT:$desc"
+    elif [[ "$greptile" != "none" && "$greptile" != "completed" ]]; then
+        verdict="WAIT:greptile-$greptile"
     elif [[ "$merge_state" != "CLEAN" ]]; then
         verdict="WAIT:merge-state-$merge_state"
     else
