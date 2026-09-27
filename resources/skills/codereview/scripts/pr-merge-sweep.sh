@@ -73,9 +73,10 @@ while read -r slug number unresolved; do
     # a head that a later run passed. An OLDER run still going also makes the
     # PR wait — it may still post findings — but only while it is recent: a
     # run that has been "in progress" for longer than any review takes is
-    # abandoned, and must not block the merge forever.
+    # abandoned, and must not block the merge forever. A queued run has no
+    # started_at yet, so it is dated by created_at.
     greptile_runs="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100&filter=all" \
-        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // "")|\(.status)|\(.conclusion // "")"' \
+        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // .created_at // "")|\(.status)|\(.conclusion // "")"' \
         | sort -r)"
     greptile_run=""
     now="$(date -u +%s)"
