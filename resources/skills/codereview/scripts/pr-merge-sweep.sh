@@ -28,6 +28,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MERGE=0
+# One option at most: `--merge --help` must not merge while ignoring the rest.
+if (( $# > 1 )); then
+    echo "expected at most one option" >&2
+    exit 2
+fi
 case "${1:-}" in
     --merge) MERGE=1 ;;
     '') ;;
@@ -48,8 +53,10 @@ waiting=0
 while read -r slug number unresolved; do
     meta="$(gh pr view "$number" -R "$slug" --json headRefOid,mergeStateStatus --jq '"\(.headRefOid) \(.mergeStateStatus)"')"
     read -r head merge_state <<<"$meta"
-    status="$(gh api "repos/$slug/commits/$head/statuses" \
-        --jq '[.[] | select(.context == "CodeRabbit")][0] | if . == null then "none|no CodeRabbit status" else "\(.state)|\(.description)" end')"
+    # The combined status holds the LATEST status per context; the plain
+    # statuses list is paginated at 30, so a busy head could hide CodeRabbit.
+    status="$(gh api "repos/$slug/commits/$head/status?per_page=100" \
+        --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none|no CodeRabbit status" else "\(.state)|\(.description)" end')"
     state="${status%%|*}"
     desc="${status#*|}"
 

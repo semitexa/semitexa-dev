@@ -111,14 +111,16 @@ PR is merged — not one pass over today's comments. The operator should not be
 asked anything a rule below already answers; they get short progress reports in
 their own language (merged / fixed / waiting, with SHAs), not questions.
 
-1. **Fix pass.** Run the queue. Fast-forward every repo you will touch first
+1. **Fix pass.** Run the queue. Every repo you will touch must be on
+   `develop` (the queue flags any other branch) and fast-forwarded first
    (`git fetch && git merge --ff-only origin/develop`) — local checkouts are
    routinely behind the PR head. With many repos, fan out: one subagent per
    batch of 3–5 repos, each told exactly which repos are its own, the rules
    below, and to report per comment `fixed <sha> / rejected <why>`. Serialize
-   the heavy shared commands across agents with one lock:
-   `flock /tmp/claude-1000/semitexa-review.lock composer phpstan` (same for
-   phpunit in the app container).
+   the heavy shared commands across agents with one lock in the project's
+   own `var/` (same path for every runtime, and it always exists):
+   `flock var/semitexa-review.lock composer phpstan`, run from the project
+   root (same for phpunit in the app container).
 2. **Merge sweep.** `scripts/pr-merge-sweep.sh` lists every open PR with a
    verdict; `--merge` merges the READY ones (0 unresolved comments, CodeRabbit
    "Review completed" on the current head, mergeState CLEAN). Use it, not

@@ -131,7 +131,7 @@ Compatibility note:
 ## After the fixes: merging
 
 The cycle ends when the PRs are merged, not when the comments are answered.
-`scripts/pr-merge-sweep.sh` lists every open PR (including the ones the fix
+`bin/pr-merge-sweep.sh` (like the other commands in this file, the project-root copy) lists every open PR (including the ones the fix
 queue hides because they have no comments) with a verdict, and `--merge` merges
 the READY ones: no unresolved actionable comment, CodeRabbit "Review completed"
 on the current head, mergeState CLEAN. See SKILL.md, "The full cycle".
