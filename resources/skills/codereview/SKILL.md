@@ -122,13 +122,23 @@ their own language (merged / fixed / waiting, with SHAs), not questions.
    `flock var/semitexa-review.lock composer phpstan`, run from the project
    root (same for phpunit in the app container).
 2. **Merge sweep.** `scripts/pr-merge-sweep.sh` lists every open PR with a
-   verdict; `--merge` merges the READY ones (0 unresolved comments, CodeRabbit
-   "Review completed" on the current head, mergeState CLEAN). Use it, not
+   verdict; `--merge` merges the READY ones: 0 unresolved comments, the
+   primary reviewer passed the current head, mergeState CLEAN. **Greptile is
+   the primary reviewer** (since 2026-09-27: minutes per review, no rate
+   limit, and it found the real bugs CodeRabbit missed that day); its check
+   run must complete successfully. CodeRabbit is secondary: a review it is
+   running is waited for, but rate limiting no longer blocks a merge. A repo
+   without Greptile still needs CodeRabbit "Review completed". Findings from
+   both are fixed and answered the same way. When the two contradict each
+   other on the same line round after round, decide once, say why in the
+   thread, and stop moving the line. Use it, not
    `pr-process.sh`, to decide merges: the fix queue drops a PR with no
    comments, so a PR waiting on a rate-limited review is invisible there.
-3. **Wait, don't poke.** A fix push starts a review by itself and spends
-   quota; "Review rate limited" heads are woken one per 30 minutes by the retry
-   timer (below). Never post `@coderabbitai review` by hand. Instead set a
+3. **Wait, don't poke.** A fix push starts a review by itself (Greptile
+   reviews every push within minutes). CodeRabbit's "Review rate limited" heads
+   are woken one per 30 minutes by the retry timer (below); a PR that waited
+   through two timer runs may get one `@coderabbitai review` by hand (a skipped
+   trigger costs nothing). `@greptileai review` re-requests Greptile. Set a
    recurring wake-up for yourself a few minutes after each timer run — read
    its phase from `systemctl --user list-timers semitexa-coderabbit-retry.timer`
    (it drifts, e.g. after a reboot); in Claude Code a `CronCreate` job — and on
