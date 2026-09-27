@@ -14,12 +14,13 @@
 # READY means all of:
 #   - no unresolved actionable comment (pr-review.sh's own count)
 #   - the PRIMARY reviewer passed the CURRENT head. Greptile is primary
-#     (2026-09-27): its check run must have completed with success, neutral or
-#     skipped. CodeRabbit is secondary: a review it is running right now is
-#     waited for (findings may still land), but "Review rate limited" or no
-#     status at all no longer blocks. A repo without Greptile falls back to
-#     requiring CodeRabbit's "success / Review completed" (a success that says
-#     "Review rate limited" is a skipped review, not a pass).
+#     (2026-09-27): its check run must have completed with success or neutral;
+#     a run not started yet is waited for, and a skipped run counts only if
+#     CodeRabbit completed on that head. CodeRabbit is secondary: a review it
+#     is running is waited for, but "Review rate limited" or no status no
+#     longer blocks. Repos in GREPTILE_DISABLED_REPOS require CodeRabbit's
+#     "success / Review completed" (a success that says "Review rate limited"
+#     is a skipped review, not a pass).
 #   - still no unresolved comment when recounted after the gates above passed
 #   - GitHub mergeStateStatus is CLEAN
 # Anything else is FIX:<n> or WAIT:<reason>. A merge uses --merge (a merge
@@ -33,6 +34,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Repos where Greptile is deliberately not installed (no PRs happen there).
+# Everywhere else a missing Greptile run means "not started yet", never "absent".
+GREPTILE_DISABLED_REPOS="${GREPTILE_DISABLED_REPOS:-semitexa/apart-space semitexa/dev-sandbox semitexa/release-tooling semitexa/semi}"
 # An unfinished Greptile run older than this is treated as abandoned.
 GREPTILE_STALE_SECONDS="${GREPTILE_STALE_SECONDS:-1800}"
 MERGE=0
@@ -103,17 +107,34 @@ while read -r slug number unresolved; do
     greptile_status="${greptile_run%%|*}"
     greptile_conclusion="${greptile_run#*|}"
 
+    coderabbit_passed=0
+    [[ "$state" == "success" && "$desc" == "Review completed" ]] && coderabbit_passed=1
+    greptile_enabled=1
+    [[ " $GREPTILE_DISABLED_REPOS " == *" $slug "* ]] && greptile_enabled=0
+
     if (( unresolved > 0 )); then
         verdict="FIX:$unresolved"
-    elif [[ -z "$greptile_run" && ( "$state" != "success" || "$desc" != "Review completed" ) ]]; then
-        # No Greptile on this repo: CodeRabbit is the only reviewer and must pass.
+    elif (( ! greptile_enabled )) && (( ! coderabbit_passed )); then
+        # This repo has no Greptile: CodeRabbit is the only reviewer and must pass.
         verdict="WAIT:$desc"
-    elif [[ -n "$greptile_run" && "$state" == "pending" ]]; then
+    elif (( ! greptile_enabled )) && [[ "$merge_state" != "CLEAN" ]]; then
+        verdict="WAIT:merge-state-$merge_state"
+    elif (( ! greptile_enabled )); then
+        verdict="READY"
+    elif [[ -z "$greptile_run" ]]; then
+        # Greptile is installed here but has not started on this head yet — a
+        # missing run is a pending review, not an absent reviewer.
+        verdict="WAIT:greptile-not-started"
+    elif [[ "$state" == "pending" ]]; then
         # Secondary reviewer mid-review: its findings are still worth waiting for.
         verdict="WAIT:coderabbit-$desc"
-    elif [[ -n "$greptile_run" && "$greptile_status" != "completed" ]]; then
+    elif [[ "$greptile_status" != "completed" ]]; then
         verdict="WAIT:greptile-$greptile_status"
-    elif [[ -n "$greptile_run" && ! "$greptile_conclusion" =~ ^(success|neutral|skipped)$ ]]; then
+    elif [[ "$greptile_conclusion" == "skipped" ]] && (( ! coderabbit_passed )); then
+        # A skipped run reviewed nothing; then only a completed CodeRabbit
+        # review stands behind this head.
+        verdict="WAIT:greptile-skipped"
+    elif [[ ! "$greptile_conclusion" =~ ^(success|neutral|skipped)$ ]]; then
         # A failed or cancelled run posted nothing: no comments is not a pass.
         verdict="WAIT:greptile-${greptile_conclusion:-no-conclusion}"
     elif [[ "$merge_state" != "CLEAN" ]]; then

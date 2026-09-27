@@ -133,5 +133,10 @@ Compatibility note:
 The cycle ends when the PRs are merged, not when the comments are answered.
 `bin/pr-merge-sweep.sh` (like the other commands in this file, the project-root copy) lists every open PR (including the ones the fix
 queue hides because they have no comments) with a verdict, and `--merge` merges
-the READY ones: no unresolved actionable comment, CodeRabbit "Review completed"
-on the current head, mergeState CLEAN. See SKILL.md, "The full cycle".
+the READY ones: no unresolved actionable comment, the primary reviewer passed
+the current head, mergeState CLEAN. Greptile is primary: its check run must have
+completed with success or neutral (a run not started yet is waited for; a skipped
+run counts only if CodeRabbit completed). CodeRabbit is secondary — waited for
+while it is reviewing, not required while rate-limited — except in the repos
+listed in GREPTILE_DISABLED_REPOS, where its "Review completed" is required.
+See SKILL.md, "The full cycle".
