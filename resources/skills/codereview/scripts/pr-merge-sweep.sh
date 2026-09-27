@@ -65,10 +65,23 @@ while read -r slug number unresolved; do
     # A second reviewer, when installed, reports as a check run. Its findings
     # land as line comments (counted above); an unfinished run means more may come.
     # Paginated: the endpoint pages at 30, and a run on a later page read as
-    # "none" would skip the wait. --jq runs per page, so take the first match.
+    # "none" would skip the wait. A head can carry several runs (a re-review):
+    # any run still going means findings may still come, so it decides first;
+    # otherwise the most recently started run decides, so an old failed run
+    # cannot block a head that a later run passed.
     greptile_runs="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100" \
-        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.status)|\(.conclusion // "")"')"
-    greptile_run="${greptile_runs%%$'\n'*}"
+        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // "")|\(.status)|\(.conclusion // "")"' \
+        | sort -r)"
+    greptile_run=""
+    while IFS= read -r run; do
+        [[ -z "$run" ]] && continue
+        run="${run#*|}"
+        [[ -z "$greptile_run" ]] && greptile_run="$run"
+        if [[ "${run%%|*}" != "completed" ]]; then
+            greptile_run="$run"
+            break
+        fi
+    done <<<"$greptile_runs"
     greptile_status="${greptile_run%%|*}"
     greptile_conclusion="${greptile_run#*|}"
 
