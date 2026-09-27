@@ -369,7 +369,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the property's declared type, and a worker-scoped service runs
         // initialize() only AFTER its factories are injected (core #167 review).
         // Both are ordering rules of the build graph and belong where it is built.
-        'semitexa-core/src/Container/GraphBuilder.php' => [21, 781],
+        // 21/781 -> 22/829 on 2026-09-27: defersInitialization() (core 8192682,
+        // #167 review) — a service that injects one whose initialize() waits for
+        // its factories now waits too, in dependency order. Same ordering rule
+        // of the build graph, so it stays where the graph is built.
+        'semitexa-core/src/Container/GraphBuilder.php' => [22, 829],
         'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
         // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
         // when the prompt.catalog detector landed, and the four lines are the
@@ -447,7 +451,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // redundant, which is the thing a later reader would otherwise delete.
         // 947 -> 948 on 2026-09-18, one line, NO new method: the SqlIdentifier
         // sweep, same as ResourceModelQuery above.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 948],
+        // 948 -> 956 on 2026-09-27, NO new method: owned children whose
+        // relation was never loaded are left alone on save (orm 9bd9ba0) — the
+        // guard and the paragraph saying why a skipped relation is not a delete.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 956],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over
