@@ -13,10 +13,13 @@
 #
 # READY means all of:
 #   - no unresolved actionable comment (pr-review.sh's own count)
-#   - CodeRabbit's status on the CURRENT head is "success / Review completed"
-#     (a success that says "Review rate limited" is a skipped review, not a pass)
-#   - a Greptile check run on the head, if there is one, has completed with
-#     success, neutral or skipped
+#   - the PRIMARY reviewer passed the CURRENT head. Greptile is primary
+#     (2026-09-27): its check run must have completed with success, neutral or
+#     skipped. CodeRabbit is secondary: a review it is running right now is
+#     waited for (findings may still land), but "Review rate limited" or no
+#     status at all no longer blocks. A repo without Greptile falls back to
+#     requiring CodeRabbit's "success / Review completed" (a success that says
+#     "Review rate limited" is a skipped review, not a pass).
 #   - still no unresolved comment when recounted after the gates above passed
 #   - GitHub mergeStateStatus is CLEAN
 # Anything else is FIX:<n> or WAIT:<reason>. A merge uses --merge (a merge
@@ -102,8 +105,12 @@ while read -r slug number unresolved; do
 
     if (( unresolved > 0 )); then
         verdict="FIX:$unresolved"
-    elif [[ "$state" != "success" || "$desc" != "Review completed" ]]; then
+    elif [[ -z "$greptile_run" && ( "$state" != "success" || "$desc" != "Review completed" ) ]]; then
+        # No Greptile on this repo: CodeRabbit is the only reviewer and must pass.
         verdict="WAIT:$desc"
+    elif [[ -n "$greptile_run" && "$state" == "pending" ]]; then
+        # Secondary reviewer mid-review: its findings are still worth waiting for.
+        verdict="WAIT:coderabbit-$desc"
     elif [[ -n "$greptile_run" && "$greptile_status" != "completed" ]]; then
         verdict="WAIT:greptile-$greptile_status"
     elif [[ -n "$greptile_run" && ! "$greptile_conclusion" =~ ^(success|neutral|skipped)$ ]]; then
