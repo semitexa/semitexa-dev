@@ -14,7 +14,7 @@
         "semitexa/core": ">=2026.09.13.1915 || dev-master",
         "semitexa/orm": "*",
         "semitexa/project-graph": "*",
-        "semitexa/ssr": "*"
+        "semitexa/ssr": ">=2026.09.27.0404 || dev-master"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.95",
@@ -34,7 +34,7 @@
     "extra": {
         "semitexa": {
             "floors": {
-                "semitexa/ssr": "next"
+                "semitexa/ssr": "2026.09.27.0404"
             }
         }
     },
