@@ -19,7 +19,7 @@
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
         "requests.query-shapes": {
-            "total": 184,
+            "total": 185,
             "breakdown": {
                 "GET /": 1,
                 "GET /blog": 1,
@@ -125,6 +125,7 @@
                 "GET /playground/rbac": 1,
                 "GET /playground/rbac/action/public": 1,
                 "GET /playground/tenancy": 1,
+                "GET /replication-demo": 1,
                 "GET /ssr-polygon": 1,
                 "GET /ssr-polygon/basic": 1,
                 "GET /ssr-polygon/coverage": 1,
@@ -893,6 +894,19 @@
                 }
             },
             "reason": "semitexa-ledger ReplicationCaptureMySqlTest needs a live MySQL (ON DUPLICATE KEY ... AS alias, FOR UPDATE); skips only when the database is unreachable"
+        },
+        {
+            "at": "2026-09-28",
+            "metric": "requests.query-shapes",
+            "from": 184,
+            "to": 185,
+            "keys": {
+                "GET /replication-demo": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "New page GET /replication-demo (src/modules/ReplicationDemo, multi-master replication demo): one SELECT listing the notes. Recorded by hand for this one route: a workspace re-measure flaps other routes between 0 and 1 (one shared shape runs only sometimes inside the traced request), and taking that lucky low reading as the baseline would fail the release clone."
         }
     ]
 }
