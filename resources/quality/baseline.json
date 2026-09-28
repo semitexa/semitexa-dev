@@ -181,7 +181,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 156,
+            "total": 157,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -191,7 +191,7 @@
                 "semitexa-dev": 33,
                 "semitexa-ledger": 3,
                 "semitexa-media": 1,
-                "semitexa-orm": 37,
+                "semitexa-orm": 38,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 2,
@@ -867,6 +867,19 @@
                 }
             },
             "reason": "semitexa-ledger TwoNodeReplicationTest needs a live JetStream server; skips only when no NATS is reachable (dev compose always provides one)"
+        },
+        {
+            "at": "2026-09-28",
+            "metric": "tests.skip-calls",
+            "from": 156,
+            "to": 157,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 37,
+                    "to": 38
+                }
+            },
+            "reason": "semitexa-orm SchemaSyncLockTest needs a live MySQL (named locks); skips only when the database is unreachable, same guard as DatabaseQueueTransportTest"
         }
     ]
 }
