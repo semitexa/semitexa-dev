@@ -1573,34 +1573,10 @@ parameters:
 			path: packages/semitexa-orm/src/Application/Console/Command/OrmDiffCommand.php
 
 		-
-			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmDiffCommand.php
-
-		-
 			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmSeedCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
 			identifier: semitexa.injectionViaConstructor
 			count: 1
 			path: packages/semitexa-orm/src/Application/Console/Command/OrmSeedCommand.php
-
-		-
-			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmStatusCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmSyncCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmSyncCommand.php
-
-		-
-			message: '#^Parameter \#1 \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) expects array\<string, Semitexa\\Orm\\Domain\\Contract\\TableDefinition\>, array\<string, Semitexa\\Orm\\Domain\\Model\\TableDefinition\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmSyncCommand.php
 
 		-
 			message: '#^Cannot cast mixed to float\.$#'
@@ -2009,12 +1985,6 @@ parameters:
 			identifier: return.type
 			count: 1
 			path: packages/semitexa-orm/src/Discovery/RepositoryDiscovery.php
-
-		-
-			message: '#^Parameter \$codeSchema of method Semitexa\\Orm\\Domain\\Contract\\SchemaComparatorInterface\:\:compare\(\) has invalid type Semitexa\\Orm\\Domain\\Contract\\TableDefinition\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Domain/Contract/SchemaComparatorInterface.php
 
 		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
