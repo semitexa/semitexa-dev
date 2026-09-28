@@ -63,7 +63,8 @@ final class StaticContainerAccessRatchetTest extends TestCase
      *
      * MEASURED 2026-09-06: down from 16 to five. The eleven that went were
      * classes the container builds, so they could take it as an injected
-     * property — the UiDispatchHandler pattern.
+     * property — the UiDispatchHandler pattern. 2026-09-28: four — the ledger
+     * replayer now receives its handler resolver from LedgerBootstrap.
      *
      * @return array<string, int>
      */
@@ -73,7 +74,7 @@ final class StaticContainerAccessRatchetTest extends TestCase
     }
 
     #[Test]
-    public function no_production_class_reaches_the_container_statically_beyond_the_known_five(): void
+    public function no_production_class_reaches_the_container_statically_beyond_the_known_four(): void
     {
         $found = $this->staticAccessSites();
         $known = self::known();

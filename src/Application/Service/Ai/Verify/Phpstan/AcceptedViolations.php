@@ -69,15 +69,6 @@ final class AcceptedViolations
                     . 'never filled. Fixing it means changing who builds it, which is not a one-step change.',
             ],
         ],
-        'packages/semitexa-ledger/src/Application/Service/LedgerReplayer.php' => [
-            'semitexa.staticContainerAccess' => [
-                'site' => 'processMessage',
-                'diagnostics' => 1,
-                'source_occurrences' => 1,
-                'reason' => 'Constructed directly rather than by the container, so an injected property is '
-                    . 'never filled. Fixing it means changing who builds it, which is not a one-step change.',
-            ],
-        ],
         'packages/semitexa-ssr/src/Application/Service/Layout/SlotHandlerPipeline.php' => [
             'semitexa.staticContainerAccess' => [
                 'site' => 'resolveHandler',
