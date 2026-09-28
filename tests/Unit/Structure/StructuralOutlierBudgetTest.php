@@ -360,7 +360,6 @@ final class StructuralOutlierBudgetTest extends TestCase
         // statement into an if costs two lines that no wording can remove. No new
         // method; the class is no more tangled than it was.
         'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 915],
-        'semitexa-update/src/Application/Service/Composer/ComposerUpdateRunner.php' => [20, 751],
         // 742 -> 747 on 2026-09-26, NO NEW METHOD: worker-wide statics now
         // declare their lifetime (core 30e2b35).
         'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 747],
