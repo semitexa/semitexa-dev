@@ -181,7 +181,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 155,
+            "total": 158,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -189,9 +189,9 @@
                 "semitexa-cms": 1,
                 "semitexa-core": 11,
                 "semitexa-dev": 33,
-                "semitexa-ledger": 2,
+                "semitexa-ledger": 4,
                 "semitexa-media": 1,
-                "semitexa-orm": 37,
+                "semitexa-orm": 38,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 2,
@@ -854,6 +854,45 @@
                 }
             },
             "reason": "Environment-capability guards added by the 2026-09-26 review round (Swoole/pcntl/Imagick/installer checkout absent in the runner); each skips only when the extension or sibling repo is missing, no assertion was disabled."
+        },
+        {
+            "at": "2026-09-28",
+            "metric": "tests.skip-calls",
+            "from": 155,
+            "to": 156,
+            "keys": {
+                "semitexa-ledger": {
+                    "from": 2,
+                    "to": 3
+                }
+            },
+            "reason": "semitexa-ledger TwoNodeReplicationTest needs a live JetStream server; skips only when no NATS is reachable (dev compose always provides one)"
+        },
+        {
+            "at": "2026-09-28",
+            "metric": "tests.skip-calls",
+            "from": 156,
+            "to": 157,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 37,
+                    "to": 38
+                }
+            },
+            "reason": "semitexa-orm SchemaSyncLockTest needs a live MySQL (named locks); skips only when the database is unreachable, same guard as DatabaseQueueTransportTest"
+        },
+        {
+            "at": "2026-09-28",
+            "metric": "tests.skip-calls",
+            "from": 157,
+            "to": 158,
+            "keys": {
+                "semitexa-ledger": {
+                    "from": 3,
+                    "to": 4
+                }
+            },
+            "reason": "semitexa-ledger ReplicationCaptureMySqlTest needs a live MySQL (ON DUPLICATE KEY ... AS alias, FOR UPDATE); skips only when the database is unreachable"
         }
     ]
 }

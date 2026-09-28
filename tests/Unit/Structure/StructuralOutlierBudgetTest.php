@@ -453,7 +453,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 948 -> 956 on 2026-09-27, NO new method: owned children whose
         // relation was never loaded are left alone on save (orm 9bd9ba0) — the
         // guard and the paragraph saying why a skipped relation is not a delete.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [35, 956],
+        // 956 -> 1016 and 35 -> 37 methods on 2026-09-28: multi-master
+        // replication capture (ADR 0001, semitexa-ledger). A #[Replicated]
+        // root is locked and read before the write and read back after it, on
+        // the write's own transaction — the two new methods are exactly those
+        // two steps, because they need this class's private primary-key and
+        // property access. The capture logic itself lives in
+        // ReplicationCapture; what landed here is the calls and why the lock
+        // orders the clocks.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [37, 1016],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over
