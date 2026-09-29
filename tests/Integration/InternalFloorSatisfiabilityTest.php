@@ -1132,6 +1132,46 @@ final class InternalFloorSatisfiabilityTest extends TestCase
         self::assertStringContainsString('that tag is not in', $withoutPlanned['output']);
     }
 
+    /**
+     * A `next` RE-DECLARED over a floor an earlier release already dated. The
+     * package started using a newer API of the same sibling; finalize rewrites
+     * `require` to the release being cut, so that is the promise to verify, not
+     * the stale date. Measured 2026-09-29: ledger -> orm refused for a class orm
+     * gained in the very release being cut.
+     */
+    #[Test]
+    public function a_next_declaration_overrides_an_already_dated_floor(): void
+    {
+        $this->provider('2026.09.13.1330', ['Support/Other.php']);
+        $dir = $this->root . '/packages/semitexa-core';
+        file_put_contents(
+            $dir . '/src/Support/Row.php',
+            "<?php\n\nnamespace Semitexa\\Core\\Support;\n\nfinal class Row {}\n",
+        );
+        $q = escapeshellarg($dir);
+        exec("git -C {$q} -c safe.directory={$q} add -A 2>&1");
+        exec("git -C {$q} -c safe.directory={$q} -c commit.gpgsign=false commit -q -m row 2>&1");
+
+        $this->consumer('>=2026.09.13.1330 || dev-master', 'Semitexa\\Core\\Support\\Row');
+        $composerPath = $this->root . '/packages/semitexa-ssr/composer.json';
+        $composer = json_decode((string) file_get_contents($composerPath), true);
+        self::assertIsArray($composer);
+        $composer['extra']['semitexa']['floors']['semitexa/core'] = 'next';
+        file_put_contents($composerPath, (string) json_encode($composer));
+
+        $result = $this->gate(['RELEASE_VERSION' => '2026.09.13.1900']);
+        self::assertSame(0, $result['exit'], $result['output']);
+
+        // Without a release being cut there is nothing for `next` to mean, and
+        // the dated floor is still the promise: it lacks Row, so it fails.
+        $unplanned = $this->gate();
+        self::assertSame(1, $unplanned['exit'], $unplanned['output']);
+        self::assertStringContainsString(
+            'semitexa/ssr uses Semitexa\\Core\\Support\\Row but floors semitexa/core at 2026.09.13.1330, which does not declare it',
+            $unplanned['output'],
+        );
+    }
+
     /** And a class that is NOT in the tree still fails, planned version or not. */
     #[Test]
     public function a_floor_on_the_release_being_cut_still_fails_for_a_class_that_is_not_there(): void
