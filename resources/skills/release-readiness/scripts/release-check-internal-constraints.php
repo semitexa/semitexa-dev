@@ -1115,6 +1115,21 @@ function indexPackages(string $packagesDir): array
                 $declaredFloors[$dependency] = $declared;
             }
         }
+        // A `next` declaration also OVERRIDES a floor `require` already dates.
+        // A package re-declares `next` after its previous floor was dated, when
+        // it starts using a newer API of the same sibling; finalize will
+        // rewrite `require` to the release being cut, so that -- not the stale
+        // date still in `require` -- is the promise to verify. Checking the old
+        // date refused ledger -> orm on 2026-09-29 for a class orm gained in
+        // this very release.
+        $plannedRelease = trim((string) getenv('RELEASE_VERSION'));
+        if ($plannedRelease !== '') {
+            foreach ($declaredFloors as $dependency => $declared) {
+                if ($declared === 'next' && isset($promises[$dependency])) {
+                    $promises[$dependency] = ['version' => $plannedRelease, 'kind' => 'floor'];
+                }
+            }
+        }
         if ($declaredFloors !== []) {
             $wildcards = array_values(array_filter(
                 $wildcards,
