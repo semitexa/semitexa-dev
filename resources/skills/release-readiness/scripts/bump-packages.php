@@ -120,6 +120,11 @@ if ($releaseVersion === '' || !isReleaseTag($releaseVersion)) {
     exit(1);
 }
 
+// buildUltimateReleaseCandidate() and writeReleaseSummary() read the version
+// from the environment. Without this, `--release-version` alone gave ultimate
+// an empty version while every other package got the right one.
+putenv('RELEASE_VERSION=' . $releaseVersion);
+
 if (!is_dir($packagesDir)) {
     fwrite(STDERR, "Packages directory not found: {$packagesDir}\n");
     exit(1);
@@ -152,6 +157,7 @@ $candidates = [];
 $skipped = 0;
 $skippedAheadOfMaster = [];
 $packageStates = [];
+$untaggedNotPinned = [];
 $ultimatePlan = null;
 $ultimatePreviewCandidate = null;
 
@@ -183,7 +189,10 @@ foreach ($dirs as $dir) {
         continue;
     }
 
-    if ($filterByName !== null && $name !== $filterByName) {
+    // A run filtered to semitexa/ultimate still needs the release STATE of
+    // every package ultimate pins, or assertUltimateDependenciesArePresent()
+    // throws. So that filter narrows the candidates below, not this scan.
+    if ($filterByName !== null && $name !== $filterByName && $filterByName !== 'semitexa/ultimate') {
         continue;
     }
 
@@ -219,13 +228,24 @@ foreach ($dirs as $dir) {
     ];
 
     if ($name === 'semitexa/ultimate') {
+        // $data was read BEFORE syncLocalBranch() moved master to origin, so
+        // the pins it holds may be a commit old. Read them from master itself.
         $ultimatePlan = [
             'name' => $name,
             'composer_path' => $composerPath,
             'package_dir' => $packageDir,
-            'composer' => $data,
+            'composer' => manifestAt($packageDir, 'master') ?? $data,
             'info' => $state,
         ];
+        continue;
+    }
+
+    // Filtered to ultimate: every other package is state only. Ultimate pins
+    // its latest tag, and an untagged master HEAD is said, not silently kept.
+    if ($filterByName !== null && $name !== $filterByName) {
+        if (!$state['head_has_release_tag']) {
+            $untaggedNotPinned[] = $name . ' (pinned at ' . ($state['current_release_version'] ?? 'none') . ')';
+        }
         continue;
     }
 
@@ -288,6 +308,7 @@ if ($candidates === [] && $ultimatePreviewCandidate === null) {
     }
 
     printDevelopAheadWarning($skippedAheadOfMaster);
+    printUntaggedNotPinned($untaggedNotPinned);
 
     echo "All packages are up to date. Nothing to release.";
     if ($skipped > 0) {
@@ -345,6 +366,8 @@ if ($changelogsToStamp !== []) {
 }
 
 printDevelopAheadWarning($skippedAheadOfMaster);
+
+printUntaggedNotPinned($untaggedNotPinned);
 
 $ultimateNotice = ultimateLeftBehindNotice($filterByName);
 if ($ultimateNotice !== null) {
@@ -428,9 +451,10 @@ if ($notPackages !== []) {
  * Measured 2026-09-22: six filtered cuts (core, ssr, showcase-kit, update,
  * theme, dev) left ultimate pinning the 0645 set, and nothing said so.
  * A warning rather than a refusal, naming the one recovery that works: an
- * unfiltered cut. A run filtered to semitexa/ultimate does NOT work — the same
- * filter skips every package ultimate pins, so assertUltimateDependenciesArePresent()
- * throws "Release set is missing internal packages".
+ * unfiltered cut, or a run filtered to semitexa/ultimate, which re-pins it to
+ * every package's latest tag without tagging anything else. (Until 2026-09-30
+ * the ultimate filter also hid the packages it pins, and threw "Release set is
+ * missing internal packages".)
  */
 function ultimateLeftBehindNotice(?string $filterByName): ?string
 {
@@ -439,9 +463,22 @@ function ultimateLeftBehindNotice(?string $filterByName): ?string
     }
 
     return "\033[1;33msemitexa/ultimate was NOT re-pinned\033[0m — this run was filtered to {$filterByName}, "
-        . "so no consumer receives its tag until ultimate pins it. Next: an unfiltered cut\n"
-        . "  php scripts/bump-packages.php --release-version <next version>\n"
-        . "(a run filtered to semitexa/ultimate cannot do it: the filter hides the packages it pins).\n";
+        . "so no consumer receives its tag until ultimate pins it. Next: re-pin ultimate alone\n"
+        . "  php scripts/bump-packages.php semitexa/ultimate --release-version <next version>\n"
+        . "or an unfiltered cut, which also tags every other untagged master HEAD.\n";
+}
+
+/**
+ * @param list<string> $rows packages a run filtered to semitexa/ultimate left untagged
+ */
+function printUntaggedNotPinned(array $rows): void
+{
+    if ($rows === []) {
+        return;
+    }
+
+    echo "\033[1;33mMaster HEAD untagged, NOT in this run\033[0m — ultimate keeps their latest tag: "
+        . implode(', ', $rows) . "\n\n";
 }
 
 function printUsage(): void
