@@ -1,27 +1,25 @@
 {
     "_": "Per-package counts for the Semitexa semantic rules, measured across the whole tree. Clean packages are absent rather than listed as zero.",
-    "measured_at": "2026-09-28",
+    "measured_at": "2026-09-30",
     "command": "vendor/bin/phpstan analyse -c packages/semitexa-dev/config/phpstan-ai-verify.neon --error-format=json --no-progress packages/semitexa-*/src   (semitexa-ultimate excluded)",
-    "total": 70,
+    "total": 50,
     "deliberate": {
         "2026-09-19 semitexa-orm 3 -> 4": "The semitexa.builtSqlFragment rule ships in this cut and found one call: CollectionQueryCompiler::applyCursor()'s whereRaw(), given implode(' OR ', $branches) — a keyset-pagination predicate assembled at runtime because the branch count depends on the sort spec. Every identifier goes through SqlIdentifier::quote() and every value is a bound '?', so it is safe in substance but not by CONSTRUCTION, which is what the rule checks. A dynamic OR-chain cannot be a literal, so nothing short of restructuring cursor pagination satisfies it — ORM work, not release work. Recorded here rather than baselined, for the same reason AcceptedViolations gives: the rule keeps firing and the gate keeps reporting it. PHPSTAN_CEILING 178 -> 179 in the same cut is this same one finding seen by the other gate."
     },
     "packages": {
         "semitexa-cache": 1,
-        "semitexa-core": 9,
+        "semitexa-core": 1,
         "semitexa-dev": 2,
-        "semitexa-docs": 5,
         "semitexa-graphql": 3,
         "semitexa-ledger": 5,
-        "semitexa-orm": 3,
+        "semitexa-orm": 1,
         "semitexa-os": 3,
-        "semitexa-platform-ui": 5,
+        "semitexa-platform-ui": 1,
         "semitexa-showcase-kit": 1,
         "semitexa-ssr": 1,
         "semitexa-tenancy": 2,
         "semitexa-testing": 2,
         "semitexa-theme": 8,
-        "semitexa-update": 1,
         "semitexa-webhooks": 19
     }
 }
