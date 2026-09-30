@@ -7,40 +7,16 @@ parameters:
 			path: packages/semitexa-core/src/Application/Console/Command/CacheClearCommand.php
 
 		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintDiCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/LintDiCommand.php
-
-		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
 			identifier: argument.type
 			count: 2
 			path: packages/semitexa-core/src/Application/Console/Command/LintDiCommand.php
 
 		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintHandlersCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/LintHandlersCommand.php
-
-		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
 			identifier: argument.type
 			count: 1
 			path: packages/semitexa-core/src/Application/Console/Command/LintHandlersCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintResourcesCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/LintResourcesCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintScopingCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/LintScopingCommand.php
 
 		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
@@ -55,12 +31,6 @@ parameters:
 			path: packages/semitexa-core/src/Application/Console/Command/LintTemplatesCommand.php
 
 		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\LintTemplatesCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/LintTemplatesCommand.php
-
-		-
 			message: '#^Parameter \#1 \$transportName of method Semitexa\\Core\\Queue\\QueueWorker\:\:run\(\) expects string\|null, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -71,18 +41,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: packages/semitexa-core/src/Application/Console/Command/QueueWorkCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RegistrySyncContractsCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/RegistrySyncContractsCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RoutesListCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/RoutesListCommand.php
 
 		-
 			message: '#^Parameter \#1 \$className of method Semitexa\\Core\\Application\\Console\\Command\\RoutesListCommand\:\:detectModule\(\) expects string, mixed given\.$#'
@@ -184,12 +142,6 @@ parameters:
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
 			count: 2
-			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Core\\Application\\Console\\Command\\RoutesShowCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
 			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
 
 		-
@@ -1565,18 +1517,6 @@ parameters:
 			identifier: assign.propertyType
 			count: 1
 			path: packages/semitexa-orm/src/Adapter/SingleConnectionPool.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmDiffCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmDiffCommand.php
-
-		-
-			message: '#^Constructor injection is not the DI channel on container\-managed Semitexa\\Orm\\Application\\Console\\Command\\OrmSeedCommand\. Declare dependencies as protected properties with \#\[InjectAsReadonly\], \#\[InjectAsMutable\], or \#\[InjectAsFactory\] \(and \#\[Config\] for scalar configuration\) instead of constructor parameters\. Constructors themselves are not banned — an EMPTY parameterless __construct is still allowed here \(the container never calls it, so a body would not run\); initialization belongs in Semitexa\\Core\\Contract\\InitializesAfterInjectionInterface\:\:initialize\(\)\. Constructors are unrestricted on non\-container\-managed types \(DTOs, payloads, resources, value objects\)\.$#'
-			identifier: semitexa.injectionViaConstructor
-			count: 1
-			path: packages/semitexa-orm/src/Application/Console/Command/OrmSeedCommand.php
 
 		-
 			message: '#^Cannot cast mixed to float\.$#'
