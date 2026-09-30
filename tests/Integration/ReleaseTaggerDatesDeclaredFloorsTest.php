@@ -526,6 +526,7 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertStringContainsString('semitexa/ultimate was NOT re-pinned', $notice['filtered']);
         self::assertStringContainsString('filtered to semitexa/ssr', $notice['filtered']);
         self::assertStringContainsString('an unfiltered cut', $notice['filtered']);
+        self::assertStringContainsString('bump-packages.php semitexa/ultimate', $notice['filtered']);
         self::assertNull($notice['unfiltered']);
         self::assertNull($notice['ultimate']);
     }
