@@ -82,6 +82,12 @@ class ChangedFileClassifierTest extends TestCase
             ],
             // Loose helper directly under tests/ with no Test.php
             // suffix → still fixture-like (e.g. tests/bootstrap.php).
+            // A documentation snippet is never loaded: its own kind, so
+            // class-resolving gates leave it alone.
+            'documentation_example' => [
+                'packages/semitexa-demo/resources/examples/Auth/Rbac/RbacHandler.example.php',
+                ChangedFile::KIND_EXAMPLE,
+            ],
             'loose_helper_under_tests' => [
                 'tests/bootstrap.php',
                 ChangedFile::KIND_TEST_FIXTURE,
