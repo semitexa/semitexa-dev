@@ -111,6 +111,8 @@ test('the exported file works from file:// with no server', async ({ page }) => 
     test.skip(!file, 'set GRAPH_EXPORT_FILE to an exported graph to run this');
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
+    // The file enforces its own policy (default-src 'none' + a nonce): it must still run under it.
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const requests: string[] = [];
     page.on('request', (r) => { if (!r.url().startsWith('file://') && !r.url().startsWith('data:')) requests.push(r.url()); });
 
