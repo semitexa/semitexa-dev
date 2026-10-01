@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
+use Semitexa\Orm\OrmManager;
 use Semitexa\ProjectGraph\Application\Service\Graph\GraphStorage;
 use Semitexa\ProjectGraph\Application\Service\Support\ProjectGraphConnection;
 use Semitexa\ProjectGraph\Domain\Model\Node;
@@ -217,8 +218,8 @@ final class TraceGraphReader
 
     /**
      * Opening an unbuilt graph creates an empty SQLite file, so absence shows
-     * up as the first read finding no table — anything else is a failure to
-     * read a graph that is there.
+     * up as the first read finding no table (and, checked separately, no
+     * table at all) — anything else is a failure to read a graph that is there.
      */
     private static function meansNoGraph(\Throwable $e): bool
     {
@@ -229,6 +230,21 @@ final class TraceGraphReader
         }
 
         return false;
+    }
+
+    /**
+     * An unbuilt graph is an EMPTY database. A file that has some tables but
+     * not graph_nodes is a graph that cannot be read, not one never built.
+     */
+    private static function holdsNoTables(OrmManager $orm): bool
+    {
+        try {
+            $tables = $orm->getAdapter()->execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'")->fetchColumn();
+
+            return is_numeric($tables) && (int) $tables === 0;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** The open graph, for read-only views that query it directly. */
@@ -298,6 +314,7 @@ final class TraceGraphReader
             return null;
         }
 
+        $orm = null;
         try {
             $root = ProjectRoot::get();
             $orm = $this->storage === null && $this->openedPath === null
@@ -328,7 +345,7 @@ final class TraceGraphReader
         } catch (\Throwable $e) {
             $this->storage = null;
             $this->failedAt = time();
-            $this->failedBecauseAbsent = self::meansNoGraph($e);
+            $this->failedBecauseAbsent = $orm !== null && self::meansNoGraph($e) && self::holdsNoTables($orm);
             $this->logOnce('Project graph unavailable to the trace viewer', $e);
         }
 
