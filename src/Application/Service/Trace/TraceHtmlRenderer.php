@@ -404,7 +404,7 @@ final class TraceHtmlRenderer
             '<div class="head">%s
                <h1>%s <span class="kind">%s</span></h1>
                <div class="meta"><code>%s</code></div>
-               <div class="meta dim">%s &middot; %s:%d</div>
+               <div class="meta dim">%s &middot; %s:%d &middot; <a href="%s">open in graph →</a></div>
              </div>',
             $back,
             $this->e($this->shortClass($fqcn)),
@@ -412,7 +412,7 @@ final class TraceHtmlRenderer
             $this->e($fqcn),
             $this->e(($node['module'] ?? '') !== '' ? $node['module'] : 'no module'),
             $this->e($node['file'] ?? $slice?->file ?? ''),
-            $node['line'] ?? $slice?->startLine ?? 0,
+            $node['line'] ?? $slice?->startLine ?? 0, $this->e('/__observatory#graph=' . rawurlencode('class:' . $fqcn)),
         );
 
         // Source first: a reader who clicked a step wants what ran before what it

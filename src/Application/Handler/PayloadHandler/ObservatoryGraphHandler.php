@@ -12,6 +12,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryGraphPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
+use Semitexa\Dev\Application\Service\Trace\TraceClassIndex;
 use Semitexa\Dev\Application\Service\Trace\TraceGraphReader;
 use Semitexa\ProjectGraph\Application\Service\Query\GraphBrowser;
 
@@ -29,6 +30,9 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected TraceGraphReader $graph;
 
+    #[InjectAsReadonly]
+    protected TraceClassIndex $traces;
+
     public function handle(ObservatoryGraphPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         if (!$this->gate->allowsDevTools()) {
@@ -36,6 +40,13 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')
                 ->setContent('Not Found');
+        }
+
+        if ($payload->view === 'traces') {
+            // Read from the journal, not the graph: it answers without one.
+            $fqcn = str_starts_with($payload->id, 'class:') ? substr($payload->id, 6) : '';
+
+            return $this->json($resource, ['id' => $payload->id, 'traces' => $this->traces->forClass($fqcn)], HttpStatus::Ok->value);
         }
 
         $storage = $this->graph->storage();
