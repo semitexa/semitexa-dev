@@ -195,6 +195,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         // whole worker, so anything per-request on it is a coroutine race.
         $traceFile = null;
         $phases = [];
+        $classes = [];
 
         try {
             // No early return on a missing buffer: an UNMARKED request has no
@@ -239,6 +240,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                         // time went.
                         $phases = PhaseSummary::fold($buffer->events());
                         if ($buffer->persist) {
+                            $classes = PhaseSummary::classes($buffer->events());
                             $traceFile = $this->flush($buffer);
                         }
                     }
@@ -254,7 +256,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
             // only known post-flush, and the journal line carries it so a
             // consumer can jump from the live row to the full waterfall.
             if (($name === 'request' || $name === 'sse' || $name === 'job') && ObservatoryMode::journals()) {
-                $this->announceEnd($context, $traceFile, $phases);
+                $this->announceEnd($context, $traceFile, $phases, $classes);
             }
         } catch (\Throwable) {
             // Journal trouble must not degrade tracing, let alone the request.
@@ -647,8 +649,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
      *
      * @param array<string, mixed> $context
      * @param array<string, mixed> $phases  {@see PhaseSummary::fold()}, [] when no buffer ran
+     * @param list<string>         $classes {@see PhaseSummary::classes()}, only for a persisted trace
      */
-    private function announceEnd(array $context, ?string $traceFile, array $phases = []): void
+    private function announceEnd(array $context, ?string $traceFile, array $phases = [], array $classes = []): void
     {
         $record = ObservatoryContext::close();
         if ($record === null || ($record['suppressed'] ?? false) === true) {
@@ -672,6 +675,13 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         }
         if ($context !== []) {
             $line['context'] = $this->scrub($context);
+        }
+        // Classes last, and only if the FINAL line — scrubbed context, the
+        // journal's own encoding — still fits: a line over the cap is dropped
+        // whole, and the request would never end in the live view.
+        if ($traceFile !== null && $classes !== []
+            && strlen((string) json_encode($line + ['classes' => $classes], ObservatoryJournal::JSON_FLAGS)) <= ObservatoryJournal::MAX_LINE_BYTES) {
+            $line['classes'] = $classes;
         }
         ObservatoryJournal::write($line);
     }

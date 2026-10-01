@@ -557,11 +557,8 @@ final class VerificationPlanner
     /** A kind excluded from the production-only `phpstan_di` target. */
     private static function isPhpstanDiIneligibleKind(string $kind): bool
     {
-        return $kind === ChangedFile::KIND_TEST
-            || $kind === ChangedFile::KIND_TEST_FIXTURE
-            || $kind === ChangedFile::KIND_TEMPLATE
-            || $kind === ChangedFile::KIND_NON_PHP
-            || $kind === ChangedFile::KIND_CLIENT_SCRIPT;
+        return in_array($kind, [ChangedFile::KIND_TEST, ChangedFile::KIND_TEST_FIXTURE, ChangedFile::KIND_TEMPLATE,
+            ChangedFile::KIND_NON_PHP, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_EXAMPLE], true);
     }
 
     /**

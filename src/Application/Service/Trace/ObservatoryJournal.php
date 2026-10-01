@@ -43,7 +43,10 @@ final class ObservatoryJournal
      * up to PIPE_BUF-ish sizes; records are scrubbed summaries, so anything
      * larger than this is a bug upstream and is dropped rather than interleaved.
      */
-    private const MAX_LINE_BYTES = 4000;
+    public const MAX_LINE_BYTES = 4000;
+
+    /** How a record is encoded on disk — shared with callers that size a line before writing it. */
+    public const JSON_FLAGS = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
 
     /** Journal files older than this are swept on the first write of a new day. */
     private const RETENTION_DAYS = 7;
@@ -72,7 +75,7 @@ final class ObservatoryJournal
     public static function write(array $record): void
     {
         try {
-            $line = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $line = json_encode($record, self::JSON_FLAGS);
             if ($line === false || strlen($line) > self::MAX_LINE_BYTES) {
                 return;
             }

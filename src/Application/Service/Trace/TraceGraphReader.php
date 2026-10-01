@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Service\Trace;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
 use Semitexa\ProjectGraph\Application\Service\Graph\GraphStorage;
@@ -42,13 +43,39 @@ final class TraceGraphReader
         'satisfies_contract', 'implements', 'extends', 'instantiates',
     ];
 
+    /**
+     * How long a failed open is remembered before the next request tries again.
+     * Long enough that a missing graph costs one attempt per half-minute, not
+     * one per request; short enough that building the graph while the stack is
+     * up shows in the viewer without a worker restart.
+     */
+    private const RETRY_AFTER_SECONDS = 30;
+
+    /** Staleness walks every indexed file; that answer is reused this long. */
+    private const STALE_CHECK_TTL_SECONDS = 30;
+
     #[InjectAsReadonly]
     protected ConnectionRegistry $connections;
 
     /** Per-worker: opening the graph is a connection, not a per-request cost. */
     private ?GraphStorage $storage = null;
 
-    private bool $attempted = false;
+    /** When the last open failed; null while no open has failed. */
+    private ?int $failedAt = null;
+
+    /** The reason last logged, so a graph that stays missing is logged once. */
+    private ?string $loggedReason = null;
+
+    /** @var array{at: int, stale: bool}|null */
+    private ?array $staleCheck = null;
+
+    /** The graph file this worker has open, and when it last checked for a newer one. */
+    private ?string $openedPath = null;
+
+    private int $pathCheckedAt = 0;
+
+    /** How often an open reader looks for a graph written to a different file since. */
+    private const PATH_CHECK_SECONDS = 5;
 
     public function isAvailable(): bool
     {
@@ -66,6 +93,7 @@ final class TraceGraphReader
      *     file: string,
      *     line: int,
      *     endLine: int,
+     *     stale: bool,
      *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null
@@ -84,14 +112,14 @@ final class TraceGraphReader
 
         $out = [];
         $in = [];
-        foreach ($storage->edges->findByNode($node->id) as $edge) {
-            $kind = $edge->type->value;
+        foreach ($storage->edges->findByNode($node->getId()) as $edge) {
+            $kind = $edge->getType()->value;
             if (in_array($kind, self::NOISE, true)) {
                 continue;
             }
 
-            $isOutgoing = $edge->sourceId === $node->id;
-            $otherId = $isOutgoing ? $edge->targetId : $edge->sourceId;
+            $isOutgoing = $edge->getSourceId() === $node->getId();
+            $otherId = $isOutgoing ? $edge->getTargetId() : $edge->getSourceId();
             $other = $this->resolve($storage, $otherId);
             if ($other === null) {
                 continue;
@@ -99,9 +127,9 @@ final class TraceGraphReader
 
             $row = [
                 'kind' => $kind,
-                'fqcn' => $other->fqcn,
+                'fqcn' => $other->getFqcn(),
                 'name' => $other->name(),
-                'type' => $other->type->value,
+                'type' => $other->getType()->value,
             ];
 
             if ($isOutgoing) {
@@ -112,13 +140,14 @@ final class TraceGraphReader
         }
 
         return [
-            'fqcn' => $node->fqcn,
+            'fqcn' => $node->getFqcn(),
             'name' => $node->name(),
-            'type' => $node->type->value,
-            'module' => $node->module,
-            'file' => $this->relative($node->file),
-            'line' => $node->line,
-            'endLine' => $node->endLine,
+            'type' => $node->getType()->value,
+            'module' => $node->getModule(),
+            'file' => $this->relative($node->getFile()),
+            'line' => $node->getLine(),
+            'endLine' => $node->getEndLine(),
+            'stale' => $this->isStale(),
             'out' => $this->rank($out),
             'in' => $this->rank($in),
         ];
@@ -133,7 +162,50 @@ final class TraceGraphReader
     {
         $node = $storage->nodes->findById($nodeId);
 
-        return $node !== null && $node->fqcn !== '' ? $node : null;
+        return $node !== null && $node->getFqcn() !== '' ? $node : null;
+    }
+
+    /**
+     * Whether code the graph indexed has changed since the graph was built.
+     *
+     * An indexed file that is newer than the last build, or gone, means the
+     * edges shown may describe code that no longer exists. A file added since
+     * the build is not seen here — the graph never knew it — which is the
+     * "not in the graph" answer the viewer already gives for that class.
+     */
+    public function isStale(): bool
+    {
+        $now = time();
+        if ($this->staleCheck !== null && $now - $this->staleCheck['at'] < self::STALE_CHECK_TTL_SECONDS) {
+            return $this->staleCheck['stale'];
+        }
+
+        $stale = false;
+        $storage = $this->open();
+        if ($storage !== null) {
+            try {
+                $built = (int) ($storage->getMeta('last_update') ?? 0);
+                foreach (array_keys($storage->fileIndex->getAll()) as $path) {
+                    $mtime = @filemtime($path);
+                    if ($mtime === false || $mtime > $built) {
+                        $stale = true;
+                        break;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->logOnce('Project graph staleness check failed', $e);
+            }
+        }
+
+        $this->staleCheck = ['at' => $now, 'stale' => $stale];
+
+        return $stale;
+    }
+
+    /** The open graph, for read-only views that query it directly. */
+    public function storage(): ?GraphStorage
+    {
+        return $this->open();
     }
 
     /**
@@ -181,17 +253,31 @@ final class TraceGraphReader
     /**
      * Fails soft: a project that has never run `ai:review-graph:generate` has no
      * graph, and the trace viewer still has a job to do without one.
+     *
+     * A failure is not final. It used to be: the first request set a flag, and a
+     * graph built a minute later stayed invisible until the worker restarted,
+     * with nothing logged to say why. Now a failure is retried after a cooldown
+     * and its reason logged once.
      */
     private function open(): ?GraphStorage
     {
-        if ($this->attempted) {
+        if ($this->storage !== null && !$this->newerGraphElsewhere()) {
             return $this->storage;
         }
 
-        $this->attempted = true;
+        if ($this->failedAt !== null && time() - $this->failedAt < self::RETRY_AFTER_SECONDS) {
+            return null;
+        }
 
         try {
-            $orm = ProjectGraphConnection::manager($this->connections, ProjectRoot::get());
+            $root = ProjectRoot::get();
+            $orm = $this->storage === null && $this->openedPath === null
+                ? ProjectGraphConnection::manager($this->connections, $root)
+                : ProjectGraphConnection::reopen($this->connections, $root);
+            $this->storage = null;
+            $this->staleCheck = null;
+            $this->openedPath = ProjectGraphConnection::currentDefaultPath($root);
+            $this->pathCheckedAt = time();
             $storage = new GraphStorage(
                 $orm->getAdapter(),
                 $orm->getTransactionManager(),
@@ -207,10 +293,40 @@ final class TraceGraphReader
             $storage->nodes->countAll();
 
             $this->storage = $storage;
-        } catch (\Throwable) {
+            $this->failedAt = null;
+            $this->loggedReason = null;
+        } catch (\Throwable $e) {
             $this->storage = null;
+            $this->failedAt = time();
+            $this->logOnce('Project graph unavailable to the trace viewer', $e);
         }
 
         return $this->storage;
+    }
+
+    /**
+     * Whether the graph resolution would now pick a different file than the one
+     * open — the CLI built a newer graph where this worker was not reading.
+     * Checked at most every few seconds: it stats the candidate files.
+     */
+    private function newerGraphElsewhere(): bool
+    {
+        if ($this->openedPath === null || time() - $this->pathCheckedAt < self::PATH_CHECK_SECONDS) {
+            return false;
+        }
+        $this->pathCheckedAt = time();
+
+        return ProjectGraphConnection::currentDefaultPath(ProjectRoot::get()) !== $this->openedPath;
+    }
+
+    private function logOnce(string $message, \Throwable $e): void
+    {
+        $reason = $e::class . ': ' . $e->getMessage();
+        if ($reason === $this->loggedReason) {
+            return;
+        }
+
+        $this->loggedReason = $reason;
+        StaticLoggerBridge::info('dev', $message, ['reason' => $reason]);
     }
 }

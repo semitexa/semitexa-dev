@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Service\Trace;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\ProjectGraph\Application\Service\Query\GraphViewerAssets;
 
 /**
  * The live panel at `/__observatory`: the architecture as a moving picture.
@@ -49,7 +50,7 @@ final class ObservatoryHtmlRenderer
 
     public function render(): string
     {
-        $notice = $this->missingAssetNotice();
+        $notice = $this->missingAssetNotice(ObservatoryMode::full());
         // Facts about THIS project that the picture must not guess, handed
         // over as plain attributes. Not a JSON data block and not an inline
         // script: the panel carries no inline anything, for the reason the
@@ -57,6 +58,21 @@ final class ObservatoryHtmlRenderer
         // which CSP directive covers it.
         $queueTransport = htmlspecialchars($this->topology->queueTransport(), ENT_QUOTES);
         $cacheDriver = htmlspecialchars($this->topology->cacheDriver() ?? '', ENT_QUOTES);
+        // The Graph view maps the application's internals: dev mode only, like
+        // the Explorer — monitor mode never gets the switch, the assets or the data.
+        $graph = ObservatoryMode::full();
+        $modeSwitch = $graph
+            ? '<span class="seg mode" id="mode" title="live processes or the project graph"><button type="button" class="on" data-mode="live">live</button><button type="button" data-mode="graph">graph <kbd>G</kbd></button></span>'
+            : '';
+        $graphView = $graph
+            ? '<section class="graph-host" id="view-graph" hidden data-graph-endpoint="/__observatory/graph"></section>'
+            : '';
+        $graphAssets = $graph
+            ? '<link rel="stylesheet" href="/__observatory/asset/graph-view.css">'
+            : '';
+        $graphScript = $graph
+            ? '<script src="/__observatory/asset/graph-view.js"></script>'
+            : '';
 
         return <<<HTML
 <!DOCTYPE html>
@@ -67,12 +83,13 @@ final class ObservatoryHtmlRenderer
 <meta name="robots" content="noindex, nofollow">
 <title>Observatory · Semitexa</title>
 <link rel="stylesheet" href="/__observatory/asset/observatory.css">
+{$graphAssets}
 </head>
 <body>
 {$notice}
 <div class="obs" data-queue-transport="{$queueTransport}" data-cache-driver="{$cacheDriver}">
   <header class="head panel">
-    <div class="brand"><span class="dot" id="led"></span><h1>Semitexa <span>Observatory</span></h1><span class="tr" id="transport" title="transport">…</span></div>
+    <div class="brand"><span class="dot" id="led"></span><h1>Semitexa <span>Observatory</span></h1><span class="tr" id="transport" title="transport">…</span>{$modeSwitch}</div>
     <!--
       Five tiles, and each is the only place its number appears.
 
@@ -170,18 +187,15 @@ final class ObservatoryHtmlRenderer
     </header>
     <iframe title="API Explorer"></iframe>
   </dialog>
+  {$graphView}
 </div>
+{$graphScript}
 <script src="/__observatory/asset/observatory.js"></script>
 </body>
 </html>
 HTML;
     }
 
-    /**
-     * One inlined asset. A missing file renders a visible notice instead of a
-     * blank page: the operator is looking at this to debug, and a debugger
-     * that fails silently is the one thing it must not be.
-     */
     /**
      * A missing asset must SAY so.
      *
@@ -192,12 +206,17 @@ HTML;
      * page carries a line that names what is missing, visible without the
      * stylesheet because it brings its own.
      */
-    private function missingAssetNotice(): string
+    private function missingAssetNotice(bool $withGraph): string
     {
         $missing = [];
         foreach (['observatory.css', 'observatory.js'] as $name) {
             if (!is_file(self::assetDir() . '/' . $name)) {
                 $missing[] = $name;
+            }
+        }
+        foreach ($withGraph ? array_keys(GraphViewerAssets::FILES) : [] as $name) {
+            if (!is_file(GraphViewerAssets::dir() . '/' . $name)) {
+                $missing[] = $name . ' (' . GraphViewerAssets::dir() . ')';
             }
         }
 

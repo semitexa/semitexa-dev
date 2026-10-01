@@ -512,3 +512,15 @@ html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rg
 .explorer-dialog header{display:flex;align-items:center;gap:12px;padding:8px 10px 8px 16px;border-bottom:1px solid var(--line)}
 .explorer-dialog header .sub{flex:1;color:var(--faint);font-size:11.5px}
 .explorer-dialog iframe{flex:1;width:100%;border:0;background:var(--bg)}
+
+/* ---- graph mode: the project graph replaces the live picture ---- */
+.seg.mode{margin-left:6px}
+.seg.mode kbd{font:600 9px/1 var(--mono);color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:1px 3px;margin-left:4px}
+.graph-host{grid-area:graph;min-height:0;min-width:0}
+.obs.mode-graph{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"head" "graph"}
+.obs.mode-graph>.workers,.obs.mode-graph>.river,.obs.mode-graph>.ticker,.obs.mode-graph>.time,
+.obs.mode-graph .tiles,.obs.mode-graph .controls>.btn:not(#b-full):not([data-action="explorer"]),.obs.mode-graph #speed{display:none}
+@media (max-width:1100px){
+  html.graph-mode body{overflow:auto}
+  .obs.mode-graph{height:auto;min-height:100dvh;grid-template-rows:auto auto}
+}

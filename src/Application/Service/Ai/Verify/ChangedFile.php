@@ -61,6 +61,14 @@ final readonly class ChangedFile
      * suites that actually load the fixture get re-run.
      */
     public const KIND_TEST_FIXTURE = 'test_fixture';
+    /**
+     * A documentation snippet (`*.example.php`, e.g. semitexa-demo's
+     * resources/examples): shown to readers, never loaded. It lives in a
+     * fictional App\ namespace, so a rule that resolves class names —
+     * phpstan_di's brokenFqcn above all — fails on every such file for a
+     * reason no edit can remove. Syntax is still checked.
+     */
+    public const KIND_EXAMPLE      = 'example';
     public const KIND_PHP_OTHER    = 'php_other';
     public const KIND_NON_PHP      = 'non_php';
 

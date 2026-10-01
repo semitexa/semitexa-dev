@@ -151,6 +151,42 @@ final class PhaseSummary
         return $out;
     }
 
+    /** Byte budget for {@see classes()}: the whole journal line is capped at 4000. */
+    private const CLASSES_BUDGET = 1500;
+
+    /**
+     * Every class a span of this request named, first-seen order — what lets
+     * the graph view answer "which recent traces ran this class". The journal
+     * keeps only short names in `by`; this keeps FQCNs, deduplicated, and
+     * stops before the list could push the line over the journal's cap (a
+     * line over it is dropped whole).
+     *
+     * @param  list<array<string, mixed>> $events
+     * @return list<string>
+     */
+    public static function classes(array $events): array
+    {
+        $seen = [];
+        $bytes = 0;
+        foreach ($events as $event) {
+            $context = $event['context'] ?? null;
+            if (($event['type'] ?? null) !== 'begin' || !is_array($context)) {
+                continue;
+            }
+            $class = SpanTarget::of($context)?->class;
+            if ($class === null || isset($seen[$class])) {
+                continue;
+            }
+            $bytes += strlen((string) json_encode($class)) + 1; // as it will be written, plus the comma
+            if ($bytes > self::CLASSES_BUDGET) {
+                break;
+            }
+            $seen[$class] = true;
+        }
+
+        return array_keys($seen);
+    }
+
     private static function short(string $fqcn): string
     {
         $pos = strrpos($fqcn, '\\');

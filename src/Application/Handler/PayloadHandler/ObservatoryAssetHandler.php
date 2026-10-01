@@ -12,12 +12,15 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryAssetPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryHtmlRenderer;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
+use Semitexa\ProjectGraph\Application\Service\Query\GraphViewerAssets;
 
 /**
- * Serves the panel's two static files.
+ * Serves the panel's static files: its own two, and the project graph
+ * viewer's two, which semitexa/project-graph owns (its HTML export inlines
+ * the same files) and only the dev-tools gate may fetch.
  *
  * The requested name is a MAP KEY, never a path fragment: a name that is not
- * one of the two literals below never reaches the filesystem, so there is no
+ * one of the literals below never reaches the filesystem, so there is no
  * traversal to defend against rather than a defence to get right. Anything
  * else is a 404, like the panel itself.
  */
@@ -36,16 +39,19 @@ final class ObservatoryAssetHandler implements TypedHandlerInterface
     public function handle(ObservatoryAssetPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $name = $payload->getName();
-        $type = self::SERVED[$name] ?? null;
 
-        if ($type === null || !$this->gate->allows()) {
-            return $this->notFound($resource);
+        if (isset(GraphViewerAssets::FILES[$name])) {
+            $type = GraphViewerAssets::FILES[$name];
+            $body = $this->gate->allowsDevTools() ? GraphViewerAssets::read($name) : null;
+        } else {
+            $type = self::SERVED[$name] ?? null;
+            // Safe to build only once $name is one of the keys above.
+            $body = $type !== null && $this->gate->allows()
+                ? @file_get_contents(ObservatoryHtmlRenderer::assetDir() . '/' . $name)
+                : null;
         }
 
-        // Safe to build now and not before: $name is one of the two keys above.
-        $body = @file_get_contents(ObservatoryHtmlRenderer::assetDir() . '/' . $name);
-
-        if ($body === false) {
+        if ($type === null || $body === null || $body === false) {
             return $this->notFound($resource);
         }
 

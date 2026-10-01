@@ -89,6 +89,9 @@ final class ChangedFileClassifier
         if (!str_ends_with($path, '.php')) {
             return ChangedFile::KIND_NON_PHP;
         }
+        if (str_ends_with($path, '.example.php')) {
+            return ChangedFile::KIND_EXAMPLE;
+        }
         if ($this->isTest($normalised)) {
             return $this->isFixtureLike($normalised)
                 ? ChangedFile::KIND_TEST_FIXTURE

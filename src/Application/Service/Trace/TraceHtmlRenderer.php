@@ -371,7 +371,7 @@ final class TraceHtmlRenderer
      *
      * @param array{
      *     fqcn: string, name: string, type: string, module: string,
-     *     file: string, line: int, endLine?: int,
+     *     file: string, line: int, endLine?: int, stale?: bool,
      *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null $node
@@ -404,7 +404,7 @@ final class TraceHtmlRenderer
             '<div class="head">%s
                <h1>%s <span class="kind">%s</span></h1>
                <div class="meta"><code>%s</code></div>
-               <div class="meta dim">%s &middot; %s:%d</div>
+               <div class="meta dim">%s &middot; %s:%d &middot; <a href="%s">open in graph →</a></div>
              </div>',
             $back,
             $this->e($this->shortClass($fqcn)),
@@ -412,13 +412,13 @@ final class TraceHtmlRenderer
             $this->e($fqcn),
             $this->e(($node['module'] ?? '') !== '' ? $node['module'] : 'no module'),
             $this->e($node['file'] ?? $slice?->file ?? ''),
-            $node['line'] ?? $slice?->startLine ?? 0,
+            $node['line'] ?? $slice?->startLine ?? 0, $this->e('/__observatory#graph=' . rawurlencode('class:' . $fqcn)),
         );
 
-        // Source first: a reader who clicked a step wants to see what ran before
-        // they want to see what it is wired to. Then outgoing edges — "what this
-        // reaches for" — then incoming.
-        $body = $head . $this->source($fqcn, $slice, $from, $classScope, $method);
+        // Source first: a reader who clicked a step wants what ran before what it
+        // is wired to. Then outgoing edges ("what this reaches for"), then incoming.
+        $body = $head . $this->source($fqcn, $slice, $from, $classScope, $method)
+            . (($node['stale'] ?? false) ? '<p class="dim stale-note">Code has changed since the project graph was built, so the edges below may be out of date.</p>' : '');
         if ($node !== null) {
             $body .= $this->edges('Reaches', $node['out'], $from, 'to')
                 . $this->edges('Reached by', $node['in'], $from, 'from');

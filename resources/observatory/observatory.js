@@ -1343,6 +1343,55 @@ function bindView(rc) {
   rc.addEventListener('mouseleave', hideTip);
 }
 
+/* ------------------------------------------------------------ graph mode */
+// The project graph (semitexa/project-graph's viewer) in place of the live
+// picture. Dev mode only: the server renders the switch, the host and the
+// viewer's assets only then, so in monitor mode none of this finds anything.
+// The live feed keeps polling underneath — switching back shows the present,
+// not the moment the view was left — but nothing is drawn while hidden.
+function graphMode() { return document.documentElement.classList.contains('graph-mode'); }
+function bindGraphMode(obsRoot) {
+  const host = obsRoot.querySelector('#view-graph'), seg = obsRoot.querySelector('#mode');
+  if (!host || !seg) return;
+  let api = null;
+  const setMode = (mode, focus) => {
+    const g = mode === 'graph';
+    document.documentElement.classList.toggle('graph-mode', g);
+    obsRoot.classList.toggle('mode-graph', g);
+    host.hidden = !g;
+    seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    if (g && !api && window.SemitexaGraphView) {
+      api = window.SemitexaGraphView.mount(host, window.SemitexaGraphView.fetchSource(host.dataset.graphEndpoint), {
+        initial: focus,
+        // The address names the selected node, so a link or a reload lands on it.
+        onSelect: id => history.replaceState(null, '', '#graph=' + encodeURIComponent(id)),
+      });
+    } else if (g && api && focus) {
+      api.reveal(focus);
+    }
+    if (!g && location.hash.startsWith('#graph')) history.replaceState(null, '', location.pathname + location.search);
+    else if (g && !location.hash.startsWith('#graph')) history.replaceState(null, '', '#graph');
+  };
+  const fromHash = () => {
+    const m = /^#graph(?:=(.+))?$/.exec(location.hash);
+    if (!m) return;
+    // A malformed link opens the view with nothing selected, not a dead panel.
+    let focus = null;
+    try { focus = m[1] ? decodeURIComponent(m[1]) : null; } catch (e) { focus = null; }
+    setMode('graph', focus);
+  };
+  seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  window.addEventListener('hashchange', fromHash);
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl/Cmd+G is the browser's "find next"
+    if (e.target && (/input|textarea|select/i.test(e.target.tagName) || e.target.isContentEditable)) return;
+    if (document.querySelector('dialog[open]')) return;
+    if (e.key === 'g') setMode(graphMode() ? 'live' : 'graph');
+    else if (e.key === '/' && graphMode() && api) { e.preventDefault(); api.focusSearch(); }
+  });
+  fromHash();
+}
+
 /* ------------------------------------------------------------ boot */
 function boot() {
   // Dev tool: the state is inspectable from the console on purpose.
@@ -1362,7 +1411,8 @@ function boot() {
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(pn => pn.hidden = pn.id !== 'pane-' + b.dataset.tab); }));
   document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.v)));
   document.addEventListener('keydown', e => {
-    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (graphMode()) return; // the Graph view has keys of its own
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
     else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'c') toggleCinema(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
     else if (e.key === '1') setSpeed(1); else if (e.key === '2') setSpeed(0.5); else if (e.key === '3') setSpeed(0.25);
@@ -1386,12 +1436,14 @@ function boot() {
   document.addEventListener('keydown', e => {
     if (e.key === 'a' && !exDialog.open && !(e.target && /input|textarea|select/i.test(e.target.tagName))) openExplorer();
   });
+  // The live panel must boot whatever the Graph view does.
+  try { bindGraphMode(obsRoot); } catch (e) { console.warn('[observatory] graph mode unavailable', e); }
   refreshStage(); setInterval(refreshStage, 15000);
   loadSchedules(); setInterval(loadSchedules, 60000);
   schedule(0);
   let lastPanels = 0, lastSpotlight = 0;
   const frame = t => {
-    if (!document.hidden) {
+    if (!document.hidden && !graphMode()) {
       drawRiver(t);
       if (t - lastSpotlight > 160) { lastSpotlight = t; renderSpotlight(t); }
       if (t - lastPanels > 400) {

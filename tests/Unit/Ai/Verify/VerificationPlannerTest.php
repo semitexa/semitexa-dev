@@ -429,6 +429,7 @@ class VerificationPlannerTest extends TestCase
             new ChangedFile('packages/semitexa-core/tests/Unit/Fixtures/F.php', ChangedFile::KIND_TEST_FIXTURE),
             new ChangedFile('src/modules/Foo/src/Application/View/templates/pages/x.html.twig', ChangedFile::KIND_TEMPLATE),
             new ChangedFile('docker/etc/nginx.conf', ChangedFile::KIND_NON_PHP),
+            new ChangedFile('packages/semitexa-demo/resources/examples/Auth/Rbac/RbacHandler.example.php', ChangedFile::KIND_EXAMPLE),
         ], VerificationPlan::SCOPE_STANDARD);
 
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPSTAN_DI));
