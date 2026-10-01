@@ -1343,6 +1343,49 @@ function bindView(rc) {
   rc.addEventListener('mouseleave', hideTip);
 }
 
+/* ------------------------------------------------------------ graph mode */
+// The project graph (semitexa/project-graph's viewer) in place of the live
+// picture. Dev mode only: the server renders the switch, the host and the
+// viewer's assets only then, so in monitor mode none of this finds anything.
+// The live feed keeps polling underneath — switching back shows the present,
+// not the moment the view was left — but nothing is drawn while hidden.
+function graphMode() { return document.documentElement.classList.contains('graph-mode'); }
+function bindGraphMode(obsRoot) {
+  const host = $('#view-graph'), seg = $('#mode');
+  if (!host || !seg) return;
+  let api = null;
+  const setMode = (mode, focus) => {
+    const g = mode === 'graph';
+    document.documentElement.classList.toggle('graph-mode', g);
+    obsRoot.classList.toggle('mode-graph', g);
+    host.hidden = !g;
+    seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    if (g && !api && window.SemitexaGraphView) {
+      api = window.SemitexaGraphView.mount(host, window.SemitexaGraphView.fetchSource(host.dataset.graphEndpoint), {
+        initial: focus,
+        // The address names the selected node, so a link or a reload lands on it.
+        onSelect: id => history.replaceState(null, '', '#graph=' + encodeURIComponent(id)),
+      });
+    } else if (g && api && focus) {
+      api.reveal(focus);
+    }
+    if (!g && location.hash.startsWith('#graph')) history.replaceState(null, '', location.pathname + location.search);
+    else if (g && !location.hash.startsWith('#graph')) history.replaceState(null, '', '#graph');
+  };
+  const fromHash = () => {
+    const m = /^#graph(?:=(.+))?$/.exec(location.hash);
+    if (m) setMode('graph', m[1] ? decodeURIComponent(m[1]) : null);
+  };
+  seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  window.addEventListener('hashchange', fromHash);
+  document.addEventListener('keydown', e => {
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.key === 'g') setMode(graphMode() ? 'live' : 'graph');
+    else if (e.key === '/' && graphMode() && api) { e.preventDefault(); api.focusSearch(); }
+  });
+  fromHash();
+}
+
 /* ------------------------------------------------------------ boot */
 function boot() {
   // Dev tool: the state is inspectable from the console on purpose.
@@ -1363,6 +1406,7 @@ function boot() {
   document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.v)));
   document.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    if (graphMode()) return; // the Graph view has keys of its own
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
     else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'c') toggleCinema(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
     else if (e.key === '1') setSpeed(1); else if (e.key === '2') setSpeed(0.5); else if (e.key === '3') setSpeed(0.25);
@@ -1386,12 +1430,13 @@ function boot() {
   document.addEventListener('keydown', e => {
     if (e.key === 'a' && !exDialog.open && !(e.target && /input|textarea|select/i.test(e.target.tagName))) openExplorer();
   });
+  bindGraphMode(obsRoot);
   refreshStage(); setInterval(refreshStage, 15000);
   loadSchedules(); setInterval(loadSchedules, 60000);
   schedule(0);
   let lastPanels = 0, lastSpotlight = 0;
   const frame = t => {
-    if (!document.hidden) {
+    if (!document.hidden && !graphMode()) {
       drawRiver(t);
       if (t - lastSpotlight > 160) { lastSpotlight = t; renderSpotlight(t); }
       if (t - lastPanels > 400) {

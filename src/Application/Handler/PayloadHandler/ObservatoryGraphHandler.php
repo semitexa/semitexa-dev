@@ -51,6 +51,7 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
         $body = match ($payload->view) {
             'node' => $browser->describe($payload->id),
             'subgraph' => $browser->subgraph($payload->id, $payload->depth),
+            'path' => ['id' => $payload->id, 'path' => $browser->pathToEntry($payload->id)],
             'search' => ['query' => $payload->q, 'hits' => $browser->search($payload->q)],
             default => $browser->summary() + ['stale' => $this->graph->isStale()],
         };

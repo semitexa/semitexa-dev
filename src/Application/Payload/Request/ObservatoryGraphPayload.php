@@ -10,9 +10,10 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 /**
  * The project graph, sliced for the Observatory's Graph view.
  *
- * One path, four views: `summary` (what the view opens on), `node` (one node
+ * One path, five views: `summary` (what the view opens on), `node` (one node
  * and its edges), `subgraph` (a walk from a root, for tree expansion and the
- * DAG focus) and `search`. Dev only, like the Explorer: the graph is a map of
+ * DAG focus), `path` (entry point down to a node, to reveal it in the tree)
+ * and `search`. Dev only, like the Explorer: the graph is a map of
  * the application's internals.
  *
  * GET only and side-effect free — the hydrator binds query parameters on every
@@ -25,7 +26,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 )]
 final class ObservatoryGraphPayload
 {
-    public const VIEWS = ['summary', 'node', 'subgraph', 'search'];
+    public const VIEWS = ['summary', 'node', 'subgraph', 'path', 'search'];
 
     public string $view = 'summary';
 
