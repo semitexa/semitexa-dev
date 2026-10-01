@@ -43,7 +43,7 @@ final class ObservatoryJournal
      * up to PIPE_BUF-ish sizes; records are scrubbed summaries, so anything
      * larger than this is a bug upstream and is dropped rather than interleaved.
      */
-    private const MAX_LINE_BYTES = 4000;
+    public const MAX_LINE_BYTES = 4000;
 
     /** Journal files older than this are swept on the first write of a new day. */
     private const RETENTION_DAYS = 7;

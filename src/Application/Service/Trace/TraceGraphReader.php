@@ -69,6 +69,14 @@ final class TraceGraphReader
     /** @var array{at: int, stale: bool}|null */
     private ?array $staleCheck = null;
 
+    /** The graph file this worker has open, and when it last checked for a newer one. */
+    private ?string $openedPath = null;
+
+    private int $pathCheckedAt = 0;
+
+    /** How often an open reader looks for a graph written to a different file since. */
+    private const PATH_CHECK_SECONDS = 5;
+
     public function isAvailable(): bool
     {
         return $this->open() !== null;
@@ -194,14 +202,6 @@ final class TraceGraphReader
         return $stale;
     }
 
-    /** The last build time, as the graph recorded it; null without a graph. */
-    public function lastUpdate(): ?int
-    {
-        $value = $this->open()?->getMeta('last_update');
-
-        return $value !== null && $value !== '' ? (int) $value : null;
-    }
-
     /** The open graph, for read-only views that query it directly. */
     public function storage(): ?GraphStorage
     {
@@ -261,7 +261,7 @@ final class TraceGraphReader
      */
     private function open(): ?GraphStorage
     {
-        if ($this->storage !== null) {
+        if ($this->storage !== null && !$this->newerGraphElsewhere()) {
             return $this->storage;
         }
 
@@ -270,7 +270,14 @@ final class TraceGraphReader
         }
 
         try {
-            $orm = ProjectGraphConnection::manager($this->connections, ProjectRoot::get());
+            $root = ProjectRoot::get();
+            $orm = $this->storage === null && $this->openedPath === null
+                ? ProjectGraphConnection::manager($this->connections, $root)
+                : ProjectGraphConnection::reopen($this->connections, $root);
+            $this->storage = null;
+            $this->staleCheck = null;
+            $this->openedPath = ProjectGraphConnection::currentDefaultPath($root);
+            $this->pathCheckedAt = time();
             $storage = new GraphStorage(
                 $orm->getAdapter(),
                 $orm->getTransactionManager(),
@@ -295,6 +302,21 @@ final class TraceGraphReader
         }
 
         return $this->storage;
+    }
+
+    /**
+     * Whether the graph resolution would now pick a different file than the one
+     * open — the CLI built a newer graph where this worker was not reading.
+     * Checked at most every few seconds: it stats the candidate files.
+     */
+    private function newerGraphElsewhere(): bool
+    {
+        if ($this->openedPath === null || time() - $this->pathCheckedAt < self::PATH_CHECK_SECONDS) {
+            return false;
+        }
+        $this->pathCheckedAt = time();
+
+        return ProjectGraphConnection::currentDefaultPath(ProjectRoot::get()) !== $this->openedPath;
     }
 
     private function logOnce(string $message, \Throwable $e): void

@@ -669,7 +669,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         ];
         if ($traceFile !== null) {
             $line['trace'] = $traceFile;
-            if ($classes !== []) {
+            // Only while the whole line stays under the journal's cap: a line
+            // over it is dropped entirely, and the request would never end.
+            if ($classes !== [] && strlen((string) json_encode($line + ['classes' => $classes, 'phases' => $phases, 'context' => $context])) < ObservatoryJournal::MAX_LINE_BYTES - 200) {
                 $line['classes'] = $classes;
             }
         }

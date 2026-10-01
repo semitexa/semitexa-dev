@@ -34,7 +34,8 @@
     "extra": {
         "semitexa": {
             "floors": {
-                "semitexa/ssr": "2026.09.27.0404"
+                "semitexa/ssr": "2026.09.27.0404",
+                "semitexa/project-graph": "next"
             }
         }
     },

@@ -12,10 +12,10 @@ use Semitexa\Core\Attribute\AsService;
  *
  * There is no index to ask: the journal is the only cross-worker record, and
  * since the graph view each persisted trace's end line carries the FQCNs its
- * spans named (`classes`, {@see PhaseSummary::classes()}). This scans the
- * retained journal newest file first, newest line first, and stops at the
- * cap. A cheap substring test on the raw line comes before json_decode, so a
- * week of journal costs a read, not a parse.
+ * spans named (`classes`, {@see PhaseSummary::classes()}). This streams the
+ * retained journal newest file first, keeps the newest matches of each file,
+ * and stops at the cap. A substring test comes before json_decode, so a week
+ * of journal costs a read, not a parse, and never more than a line in memory.
  *
  * An empty answer means "no persisted trace names it", not "it never ran":
  * stage mode and unmarked requests write no trace file, and end lines written
@@ -42,33 +42,58 @@ final class TraceClassIndex
 
         $found = [];
         foreach ($files as $file) {
-            $raw = @file_get_contents($file);
-            if ($raw === false || !str_contains($raw, $needle)) {
+            $want = $limit - count($found);
+            if ($want <= 0) {
+                break;
+            }
+            // Streamed, keeping only the newest $want matches: a busy day's
+            // journal runs to tens of megabytes, and a click must not hold it.
+            $handle = @fopen($file, 'rb');
+            if ($handle === false) {
                 continue;
             }
-            foreach (array_reverse(explode("\n", $raw)) as $line) {
+            $matches = [];
+            while (($line = fgets($handle)) !== false) {
                 if (!str_contains($line, $needle)) {
                     continue;
                 }
-                $row = json_decode($line, true);
-                if (!is_array($row) || ($row['event'] ?? null) !== 'end' || !is_string($row['trace'] ?? null)
-                    || !is_array($row['classes'] ?? null) || !in_array($fqcn, $row['classes'], true)) {
-                    continue;
+                $row = self::match($line, $fqcn);
+                if ($row !== null) {
+                    $matches[] = $row;
+                    if (count($matches) > $want) {
+                        array_shift($matches);
+                    }
                 }
-                $duration = $row['durationMs'] ?? null;
-                $found[] = [
-                    'trace' => $row['trace'],
-                    'ts' => is_string($row['ts'] ?? null) ? $row['ts'] : '',
-                    'name' => is_string($row['name'] ?? null) ? $row['name'] : '',
-                    'kind' => is_string($row['kind'] ?? null) ? $row['kind'] : '',
-                    'durationMs' => is_int($duration) || is_float($duration) ? (float) $duration : null,
-                ];
-                if (count($found) >= $limit) {
-                    return $found;
-                }
+            }
+            fclose($handle);
+            foreach (array_reverse($matches) as $row) {
+                $found[] = $row;
             }
         }
 
         return $found;
+    }
+
+    /**
+     * One journal line, when it is the end of a persisted trace that names $fqcn.
+     *
+     * @return array{trace: string, ts: string, name: string, kind: string, durationMs: float|null}|null
+     */
+    private static function match(string $line, string $fqcn): ?array
+    {
+        $row = json_decode($line, true);
+        if (!is_array($row) || ($row['event'] ?? null) !== 'end' || !is_string($row['trace'] ?? null)
+            || !is_array($row['classes'] ?? null) || !in_array($fqcn, $row['classes'], true)) {
+            return null;
+        }
+        $duration = $row['durationMs'] ?? null;
+
+        return [
+            'trace' => $row['trace'],
+            'ts' => is_string($row['ts'] ?? null) ? $row['ts'] : '',
+            'name' => is_string($row['name'] ?? null) ? $row['name'] : '',
+            'kind' => is_string($row['kind'] ?? null) ? $row['kind'] : '',
+            'durationMs' => is_int($duration) || is_float($duration) ? (float) $duration : null,
+        ];
     }
 }

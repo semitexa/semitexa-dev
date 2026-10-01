@@ -1374,12 +1374,18 @@ function bindGraphMode(obsRoot) {
   };
   const fromHash = () => {
     const m = /^#graph(?:=(.+))?$/.exec(location.hash);
-    if (m) setMode('graph', m[1] ? decodeURIComponent(m[1]) : null);
+    if (!m) return;
+    // A malformed link opens the view with nothing selected, not a dead panel.
+    let focus = null;
+    try { focus = m[1] ? decodeURIComponent(m[1]) : null; } catch (e) { focus = null; }
+    setMode('graph', focus);
   };
   seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
   window.addEventListener('hashchange', fromHash);
   document.addEventListener('keydown', e => {
-    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl/Cmd+G is the browser's "find next"
+    if (e.target && (/input|textarea|select/i.test(e.target.tagName) || e.target.isContentEditable)) return;
+    if (document.querySelector('dialog[open]')) return;
     if (e.key === 'g') setMode(graphMode() ? 'live' : 'graph');
     else if (e.key === '/' && graphMode() && api) { e.preventDefault(); api.focusSearch(); }
   });
@@ -1405,7 +1411,7 @@ function boot() {
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(pn => pn.hidden = pn.id !== 'pane-' + b.dataset.tab); }));
   document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.v)));
   document.addEventListener('keydown', e => {
-    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
     if (graphMode()) return; // the Graph view has keys of its own
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
     else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'c') toggleCinema(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
@@ -1430,7 +1436,8 @@ function boot() {
   document.addEventListener('keydown', e => {
     if (e.key === 'a' && !exDialog.open && !(e.target && /input|textarea|select/i.test(e.target.tagName))) openExplorer();
   });
-  bindGraphMode(obsRoot);
+  // The live panel must boot whatever the Graph view does.
+  try { bindGraphMode(obsRoot); } catch (e) { console.warn('[observatory] graph mode unavailable', e); }
   refreshStage(); setInterval(refreshStage, 15000);
   loadSchedules(); setInterval(loadSchedules, 60000);
   schedule(0);

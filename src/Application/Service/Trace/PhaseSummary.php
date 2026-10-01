@@ -177,7 +177,7 @@ final class PhaseSummary
             if ($class === null || isset($seen[$class])) {
                 continue;
             }
-            $bytes += strlen($class) + 4; // quotes, comma, and an escaped backslash or two
+            $bytes += strlen((string) json_encode($class)) + 1; // as it will be written, plus the comma
             if ($bytes > self::CLASSES_BUDGET) {
                 break;
             }
