@@ -10,6 +10,7 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
+use Semitexa\Dev\Application\Service\Ai\Verify\CoverageGap;
 use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
@@ -198,7 +199,7 @@ final class AiVerifyCommand extends BaseCommand
         $executor = new VerificationExecutor($app, $projectRoot);
         $results = $executor->execute($plan);
 
-        $verdict = $this->verdict($results);
+        $verdict = CoverageGap::of($plan, $this->getProjectRoot())->adjust($this->verdict($results));
         $exit = in_array($verdict, [VerificationResult::STATUS_PASS, VerificationResult::STATUS_SKIPPED], true) ? self::SUCCESS : self::FAILURE;
 
         $impact = null;
@@ -552,7 +553,7 @@ final class AiVerifyCommand extends BaseCommand
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
             'restart'         => $report->restartAdvice($plan->changedFiles),
-        ];
+        ] + CoverageGap::of($plan, $this->getProjectRoot())->toArray();
     }
 
     /**
@@ -713,7 +714,7 @@ final class AiVerifyCommand extends BaseCommand
             'verdict' => $verdict,
             'completed' => $report->completed($results),
             'counts'  => $report->countByStatus($results),
-        ];
+        ] + CoverageGap::of($plan, $this->getProjectRoot())->toArray();
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
@@ -731,9 +732,6 @@ final class AiVerifyCommand extends BaseCommand
             ], JSON_UNESCAPED_SLASHES));
             return;
         }
-        $output->writeln(json_encode([
-            'kind'  => 'error',
-            'error' => $message,
-        ], JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode(['kind' => 'error', 'error' => $message], JSON_UNESCAPED_SLASHES));
     }
 }
