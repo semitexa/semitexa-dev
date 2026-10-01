@@ -63,6 +63,9 @@ final class TraceGraphReader
     /** When the last open failed; null while no open has failed. */
     private ?int $failedAt = null;
 
+    /** Why the last open failed: the graph was never built, or one exists and could not be read. */
+    private ?bool $failedBecauseAbsent = null;
+
     /** The reason last logged, so a graph that stays missing is logged once. */
     private ?string $loggedReason = null;
 
@@ -202,6 +205,32 @@ final class TraceGraphReader
         return $stale;
     }
 
+    /**
+     * True when the graph is unavailable because none was ever built — as
+     * opposed to one that exists and could not be opened or read. The two
+     * need different answers: "build one" is wrong advice for a broken one.
+     */
+    public function isMissing(): bool
+    {
+        return $this->open() === null && $this->failedBecauseAbsent !== false;
+    }
+
+    /**
+     * Opening an unbuilt graph creates an empty SQLite file, so absence shows
+     * up as the first read finding no table — anything else is a failure to
+     * read a graph that is there.
+     */
+    private static function meansNoGraph(\Throwable $e): bool
+    {
+        for ($at = $e; $at !== null; $at = $at->getPrevious()) {
+            if (stripos($at->getMessage(), 'no such table') !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** The open graph, for read-only views that query it directly. */
     public function storage(): ?GraphStorage
     {
@@ -294,10 +323,12 @@ final class TraceGraphReader
 
             $this->storage = $storage;
             $this->failedAt = null;
+            $this->failedBecauseAbsent = null;
             $this->loggedReason = null;
         } catch (\Throwable $e) {
             $this->storage = null;
             $this->failedAt = time();
+            $this->failedBecauseAbsent = self::meansNoGraph($e);
             $this->logOnce('Project graph unavailable to the trace viewer', $e);
         }
 

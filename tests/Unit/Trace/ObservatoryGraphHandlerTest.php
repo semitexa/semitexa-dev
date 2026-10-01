@@ -75,9 +75,7 @@ final class ObservatoryGraphHandlerTest extends TestCase
         putenv('APP_ENV=dev');
         putenv('SEMITEXA_OBSERVATORY_MODE');
 
-        // A reader whose last open failed a moment ago: it answers "no graph" without retrying.
-        $reader = (new \ReflectionClass(TraceGraphReader::class))->newInstanceWithoutConstructor();
-        (new \ReflectionProperty($reader, 'failedAt'))->setValue($reader, time());
+        $reader = $this->readerThatFailed(absent: true);
 
         $handler = new ObservatoryGraphHandler();
         (new \ReflectionProperty($handler, 'gate'))->setValue($handler, new ObservatoryPanelGate());
@@ -87,6 +85,32 @@ final class ObservatoryGraphHandlerTest extends TestCase
 
         self::assertSame(404, $response->getStatusCode());
         self::assertSame('no-graph', json_decode((string) $response->getContent(), true)['error'] ?? null);
+    }
+
+    #[Test]
+    public function a_graph_that_exists_but_cannot_be_read_is_a_503_not_build_one(): void
+    {
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+
+        $handler = new ObservatoryGraphHandler();
+        (new \ReflectionProperty($handler, 'gate'))->setValue($handler, new ObservatoryPanelGate());
+        (new \ReflectionProperty($handler, 'graph'))->setValue($handler, $this->readerThatFailed(absent: false));
+
+        $response = $handler->handle(new ObservatoryGraphPayload(), new ResourceResponse());
+
+        self::assertSame(503, $response->getStatusCode());
+        self::assertSame('graph-unreadable', json_decode((string) $response->getContent(), true)['error'] ?? null);
+    }
+
+    /** A reader whose last open failed a moment ago, so it answers without retrying. */
+    private function readerThatFailed(bool $absent): TraceGraphReader
+    {
+        $reader = (new \ReflectionClass(TraceGraphReader::class))->newInstanceWithoutConstructor();
+        (new \ReflectionProperty($reader, 'failedAt'))->setValue($reader, time());
+        (new \ReflectionProperty($reader, 'failedBecauseAbsent'))->setValue($reader, $absent);
+
+        return $reader;
     }
 
     #[Test]
