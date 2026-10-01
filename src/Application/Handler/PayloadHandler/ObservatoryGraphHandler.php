@@ -18,8 +18,10 @@ use Semitexa\ProjectGraph\Application\Service\Query\GraphBrowser;
 
 /**
  * Serves {@see ObservatoryGraphPayload}. A refusal is the 404 every other
- * Observatory handler gives; a missing graph is a 503 that says how to build
- * one, so the view can tell "no graph yet" from "no such page".
+ * Observatory handler gives; a missing graph is a 404 whose JSON body says
+ * `no-graph` and how to build one, so the view can tell "no graph yet" from
+ * "no such page". Not a 5xx: a project that never built a graph is a normal
+ * state, not a server failure (the all-routes smoke rejects every 5xx).
  */
 #[AsPayloadHandler(payload: ObservatoryGraphPayload::class, resource: ResourceResponse::class)]
 final class ObservatoryGraphHandler implements TypedHandlerInterface
@@ -54,7 +56,7 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
             return $this->json($resource, [
                 'error' => 'no-graph',
                 'message' => 'No project graph was found. Build one with bin/semitexa ai:review-graph:generate.',
-            ], HttpStatus::ServiceUnavailable->value);
+            ], HttpStatus::NotFound->value);
         }
 
         $browser = new GraphBrowser($storage, ProjectRoot::get());

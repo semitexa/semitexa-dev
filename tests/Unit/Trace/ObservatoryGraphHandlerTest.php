@@ -12,6 +12,7 @@ use Semitexa\Core\Request;
 use Semitexa\Dev\Application\Handler\PayloadHandler\ObservatoryGraphHandler;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryGraphPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
+use Semitexa\Dev\Application\Service\Trace\TraceGraphReader;
 
 /**
  * The Graph view's endpoint behind the dev-tools gate.
@@ -66,6 +67,26 @@ final class ObservatoryGraphHandlerTest extends TestCase
 
         self::assertSame(404, $response->getStatusCode());
         self::assertSame('Not Found', $response->getContent());
+    }
+
+    #[Test]
+    public function no_graph_is_a_404_that_says_so_never_a_5xx(): void
+    {
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+
+        // A reader whose last open failed a moment ago: it answers "no graph" without retrying.
+        $reader = (new \ReflectionClass(TraceGraphReader::class))->newInstanceWithoutConstructor();
+        (new \ReflectionProperty($reader, 'failedAt'))->setValue($reader, time());
+
+        $handler = new ObservatoryGraphHandler();
+        (new \ReflectionProperty($handler, 'gate'))->setValue($handler, new ObservatoryPanelGate());
+        (new \ReflectionProperty($handler, 'graph'))->setValue($handler, $reader);
+
+        $response = $handler->handle(new ObservatoryGraphPayload(), new ResourceResponse());
+
+        self::assertSame(404, $response->getStatusCode());
+        self::assertSame('no-graph', json_decode((string) $response->getContent(), true)['error'] ?? null);
     }
 
     #[Test]

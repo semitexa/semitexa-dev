@@ -38,7 +38,8 @@ test('the graph view walks, searches, focuses and follows findings under a stric
     await expect(page.locator('#view-graph')).toBeVisible();
     await expect(page.locator('.obs')).toHaveClass(/mode-graph/);
 
-    if (summary.status() === 503) {
+    const noGraph = summary.status() === 404 && (await summary.json().catch(() => ({}))).error === 'no-graph';
+    if (noGraph) {
         await expect(page.locator('.gv-side .gv-err')).toContainText('ai:review-graph:generate');
         expect(errors).toEqual([]);
         return;
