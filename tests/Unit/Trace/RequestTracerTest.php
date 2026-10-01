@@ -120,6 +120,59 @@ final class RequestTracerTest extends TestCase
     }
 
     #[Test]
+    public function a_recorded_request_names_its_span_classes_on_the_end_line(): void
+    {
+        $this->marker = '1';
+
+        $this->runRequest(new RequestTracer());
+
+        $end = array_values(array_filter($this->journalLines(), static fn (array $l): bool => $l['event'] === 'end'));
+        self::assertCount(1, $end);
+        self::assertSame(['App\\HubPayload'], $end[0]['classes']);
+    }
+
+    #[Test]
+    public function long_context_that_scrubs_small_still_leaves_room_for_classes(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/long', 'marker' => '1']);
+        $tracer->begin('payload.hydrate_and_validate', ['payload' => 'App\\HubPayload']);
+        $tracer->end('payload.hydrate_and_validate');
+        // 6 KB raw, about 1.2 KB once each value is scrubbed to 200 characters.
+        $context = [];
+        for ($i = 0; $i < 6; $i++) {
+            $context['k' . $i] = str_repeat('y', 1000);
+        }
+        $tracer->end('request', $context);
+
+        $end = array_values(array_filter($this->journalLines(), static fn (array $l): bool => $l['event'] === 'end'));
+        self::assertCount(1, $end);
+        self::assertSame(['App\\HubPayload'], $end[0]['classes']);
+    }
+
+    #[Test]
+    public function classes_give_way_when_the_end_line_would_pass_the_journal_cap(): void
+    {
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/big', 'marker' => '1']);
+        $tracer->begin('payload.hydrate_and_validate', ['payload' => 'App\\HubPayload']);
+        $tracer->end('payload.hydrate_and_validate');
+        // Scrubbed to 200 characters each, but the number of keys is not capped.
+        $context = [];
+        for ($i = 0; $i < 18; $i++) {
+            $context['k' . $i] = str_repeat('x', 400);
+        }
+        $tracer->end('request', $context);
+
+        $end = array_values(array_filter($this->journalLines(), static fn (array $l): bool => $l['event'] === 'end'));
+        self::assertCount(1, $end, 'the end line must still be written');
+        self::assertArrayHasKey('trace', $end[0]);
+        self::assertArrayNotHasKey('classes', $end[0]);
+    }
+
+    #[Test]
     public function the_marker_is_taken_from_the_span_context(): void
     {
         $this->marker = '1';

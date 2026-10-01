@@ -1351,7 +1351,7 @@ function bindView(rc) {
 // not the moment the view was left — but nothing is drawn while hidden.
 function graphMode() { return document.documentElement.classList.contains('graph-mode'); }
 function bindGraphMode(obsRoot) {
-  const host = $('#view-graph'), seg = $('#mode');
+  const host = obsRoot.querySelector('#view-graph'), seg = obsRoot.querySelector('#mode');
   if (!host || !seg) return;
   let api = null;
   const setMode = (mode, focus) => {

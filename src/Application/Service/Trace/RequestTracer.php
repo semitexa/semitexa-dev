@@ -669,17 +669,19 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         ];
         if ($traceFile !== null) {
             $line['trace'] = $traceFile;
-            // Only while the whole line stays under the journal's cap: a line
-            // over it is dropped entirely, and the request would never end.
-            if ($classes !== [] && strlen((string) json_encode($line + ['classes' => $classes, 'phases' => $phases, 'context' => $context])) < ObservatoryJournal::MAX_LINE_BYTES - 200) {
-                $line['classes'] = $classes;
-            }
         }
         if ($phases !== []) {
             $line['phases'] = $phases;
         }
         if ($context !== []) {
             $line['context'] = $this->scrub($context);
+        }
+        // Classes last, and only if the FINAL line — scrubbed context, the
+        // journal's own encoding — still fits: a line over the cap is dropped
+        // whole, and the request would never end in the live view.
+        if ($traceFile !== null && $classes !== []
+            && strlen((string) json_encode($line + ['classes' => $classes], ObservatoryJournal::JSON_FLAGS)) <= ObservatoryJournal::MAX_LINE_BYTES) {
+            $line['classes'] = $classes;
         }
         ObservatoryJournal::write($line);
     }

@@ -56,6 +56,7 @@ final class ObservatoryGraphSurfaceTest extends TestCase
         self::assertSame(200, $this->asset('observatory.js')->getStatusCode(), 'the panel itself still loads');
 
         $html = $this->page();
+        self::assertStringContainsString('<script src="/__observatory/asset/observatory.js"></script>', $html, 'the panel rendered');
         self::assertStringNotContainsString('data-mode="graph"', $html);
         self::assertStringNotContainsString('id="view-graph"', $html);
         self::assertStringNotContainsString('graph-view.', $html);
