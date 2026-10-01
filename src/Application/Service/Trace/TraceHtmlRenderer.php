@@ -371,7 +371,7 @@ final class TraceHtmlRenderer
      *
      * @param array{
      *     fqcn: string, name: string, type: string, module: string,
-     *     file: string, line: int, endLine?: int,
+     *     file: string, line: int, endLine?: int, stale?: bool,
      *     out: list<array{kind: string, fqcn: string, name: string, type: string}>,
      *     in: list<array{kind: string, fqcn: string, name: string, type: string}>
      * }|null $node
@@ -415,10 +415,10 @@ final class TraceHtmlRenderer
             $node['line'] ?? $slice?->startLine ?? 0,
         );
 
-        // Source first: a reader who clicked a step wants to see what ran before
-        // they want to see what it is wired to. Then outgoing edges — "what this
-        // reaches for" — then incoming.
-        $body = $head . $this->source($fqcn, $slice, $from, $classScope, $method);
+        // Source first: a reader who clicked a step wants what ran before what it
+        // is wired to. Then outgoing edges ("what this reaches for"), then incoming.
+        $body = $head . $this->source($fqcn, $slice, $from, $classScope, $method)
+            . (($node['stale'] ?? false) ? '<p class="dim stale-note">Code has changed since the project graph was built, so the edges below may be out of date.</p>' : '');
         if ($node !== null) {
             $body .= $this->edges('Reaches', $node['out'], $from, 'to')
                 . $this->edges('Reached by', $node['in'], $from, 'from');
