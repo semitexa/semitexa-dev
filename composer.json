@@ -13,7 +13,7 @@
         "php": "^8.4",
         "semitexa/core": ">=2026.09.13.1915 || dev-master",
         "semitexa/orm": "*",
-        "semitexa/project-graph": "*",
+        "semitexa/project-graph": ">=2026.10.01.1020 || dev-master",
         "semitexa/ssr": ">=2026.09.27.0404 || dev-master"
     },
     "require-dev": {
@@ -35,7 +35,7 @@
         "semitexa": {
             "floors": {
                 "semitexa/ssr": "2026.09.27.0404",
-                "semitexa/project-graph": "next"
+                "semitexa/project-graph": "2026.10.01.1020"
             }
         }
     },
