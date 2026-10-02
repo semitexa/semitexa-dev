@@ -68,7 +68,14 @@ final class PhpstanRunner
             );
         }
 
+        // PHPStan keeps its container cache in sys_get_temp_dir()/phpstan, one
+        // directory for every user. A single run as root (`docker compose exec
+        // app` without --user) left it 0755 and every later run as the host
+        // user died "Unable to create file … .lock" — reported as an error of
+        // the gate, on code nobody had touched (2026-10-02). Per-user TMPDIR.
         $command = [
+            'env',
+            'TMPDIR=' . self::tmpDir(),
             $binary,
             'analyse',
             '--no-progress',
@@ -410,6 +417,17 @@ final class PhpstanRunner
             }
         }
         return $rawIdentifier;
+    }
+
+    /** @internal public for the test that pins it */
+    public static function tmpDir(): string
+    {
+        $dir = rtrim(sys_get_temp_dir(), '/') . '/semitexa-phpstan-' . (function_exists('posix_geteuid') ? posix_geteuid() : getmyuid());
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+
+        return $dir;
     }
 
     private function discoverConfig(): string

@@ -112,6 +112,30 @@ class PhpstanRunnerTest extends TestCase
         $this->assertSame('phpstan.error', $result->diagnostics[0]['identifier']);
     }
 
+    /**
+     * PHPStan's cache lives in sys_get_temp_dir()/phpstan, shared by every
+     * user: one run as root left it 0755 and the gate errored for everyone
+     * else until the container was recreated (2026-10-02).
+     */
+    public function test_phpstan_runs_with_a_temp_dir_of_its_own_user(): void
+    {
+        $process = new class implements ProcessRunner {
+            /** @var list<string> */
+            public array $command = [];
+            public function run(array $command, string $cwd): array
+            {
+                $this->command = $command;
+                return ['exit' => 0, 'output' => (string) json_encode(['totals' => ['errors' => 0, 'file_errors' => 0], 'files' => new \stdClass(), 'errors' => []])];
+            }
+        };
+        (new PhpstanRunner(projectRoot: '/var/www/html', processRunner: $process, phpstanBinary: __FILE__, configPath: __FILE__))->run(['Foo.php']);
+
+        $uid = function_exists('posix_geteuid') ? posix_geteuid() : getmyuid();
+        $this->assertSame(['env', 'TMPDIR=' . sys_get_temp_dir() . '/semitexa-phpstan-' . $uid, __FILE__, 'analyse'], array_slice($process->command, 0, 4));
+        $this->assertDirectoryExists(PhpstanRunner::tmpDir());
+        $this->assertSame(0700, fileperms(PhpstanRunner::tmpDir()) & 0777, 'nobody else writes into it, nobody else is locked out of theirs');
+    }
+
     public function test_unparseable_output_is_reported_as_error(): void
     {
         $runner = $this->runnerWithFakeProcess(0, "not JSON at all\nsome garbage\n");
