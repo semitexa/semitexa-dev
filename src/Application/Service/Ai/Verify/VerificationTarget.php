@@ -47,10 +47,10 @@ final readonly class VerificationTarget
         public array $triggeredBy,
         public ?string $commandName = null,
         /**
-         * Extra console input for the target's command. TYPE_LINT runs a bare
-         * command; a docs gate needs its baseline and its --check.
+         * Extra console input for the target's command: a docs gate needs its
+         * baseline and its --check, lint:var-artifacts its --path list.
          *
-         * @var array<string, string|bool>
+         * @var array<string, string|bool|list<string>>
          */
         public array $commandInput = [],
         public ?string $filePath = null,

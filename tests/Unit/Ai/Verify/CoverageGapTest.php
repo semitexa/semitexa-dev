@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\CoverageGap;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 
 final class CoverageGapTest extends TestCase
@@ -70,7 +71,7 @@ final class CoverageGapTest extends TestCase
             [$this->target(VerificationTarget::TYPE_MODULE_STRUCTURE, ['packages/semitexa-x'])],
         );
 
-        $gap = CoverageGap::of($plan, $root);
+        $gap = CoverageGap::of($plan, self::ran($plan), $root);
         @rmdir($root . '/packages/semitexa-x');
         @rmdir($root . '/packages');
         @rmdir($root);
@@ -91,6 +92,46 @@ final class CoverageGapTest extends TestCase
         self::assertSame('pass', $gap->adjust('pass'));
     }
 
+    #[Test]
+    public function a_check_that_was_skipped_read_nothing(): void
+    {
+        // docs:lint is planned for a .md change, and skipped where semitexa/docs
+        // is not installed: the page was never read (review of dev#126).
+        $gap = $this->gap(
+            $this->plan(
+                [$this->file('docs/guide.md', ChangedFile::KIND_NON_PHP)],
+                [new VerificationTarget(VerificationTarget::TYPE_DOCS, 'docs:claims', 'test', ['docs/guide.md'], 'docs:lint')],
+            ),
+            ['docs:claims' => VerificationResult::STATUS_SKIPPED],
+        );
+
+        self::assertSame([['path' => 'docs/guide.md', 'kind' => ChangedFile::KIND_NON_PHP]], $gap->toArray()['unchecked_files']);
+        self::assertSame('incomplete', $gap->adjust('skipped'));
+    }
+
+    #[Test]
+    public function a_check_that_failed_did_read_the_file(): void
+    {
+        $gap = $this->gap(
+            $this->plan([$this->file('src/A.php', ChangedFile::KIND_SERVICE)], [$this->target(VerificationTarget::TYPE_SYNTAX, ['src/A.php'])]),
+            [VerificationTarget::TYPE_SYNTAX . ':x' => VerificationResult::STATUS_FAIL],
+        );
+
+        self::assertSame([], $gap->unchecked);
+    }
+
+    #[Test]
+    public function the_var_artifact_lint_reads_a_path_not_a_file(): void
+    {
+        $gap = $this->gap($this->plan(
+            [$this->file('var/e2e-proof/shot.png', ChangedFile::KIND_NON_PHP)],
+            [new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:var-artifacts', 'test', ['var/e2e-proof/shot.png'], 'lint:var-artifacts')],
+        ));
+
+        self::assertSame([['path' => 'var/e2e-proof/shot.png', 'kind' => ChangedFile::KIND_NON_PHP]], $gap->toArray()['unchecked_files']);
+        self::assertSame('incomplete', $gap->adjust('pass'));
+    }
+
     /**
      * @param list<ChangedFile>        $files
      * @param list<VerificationTarget> $targets
@@ -100,9 +141,24 @@ final class CoverageGapTest extends TestCase
         return new VerificationPlan(VerificationPlan::SCOPE_STANDARD, VerificationPlan::SCOPE_STANDARD, $files, $targets);
     }
 
-    private function gap(VerificationPlan $plan): CoverageGap
+    /**
+     * @param array<string, string> $statusById target id => result status; every other target passed
+     */
+    private function gap(VerificationPlan $plan, array $statusById = []): CoverageGap
     {
-        return CoverageGap::of($plan, sys_get_temp_dir() . '/coverage-gap-test-' . getmypid());
+        return CoverageGap::of($plan, self::ran($plan, $statusById), sys_get_temp_dir() . '/coverage-gap-test-' . getmypid());
+    }
+
+    /**
+     * @param array<string, string> $statusById
+     * @return list<VerificationResult>
+     */
+    private static function ran(VerificationPlan $plan, array $statusById = []): array
+    {
+        return array_map(
+            static fn (VerificationTarget $t): VerificationResult => new VerificationResult($t, $statusById[$t->id] ?? VerificationResult::STATUS_PASS, 0, ''),
+            $plan->targets,
+        );
     }
 
     private function file(string $path, string $kind, string $status = ChangedFile::STATUS_MODIFIED): ChangedFile

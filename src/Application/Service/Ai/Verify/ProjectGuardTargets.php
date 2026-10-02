@@ -69,6 +69,12 @@ final class ProjectGuardTargets
                 reason: 'a changed path under var/ is runtime output git would commit — screenshots and traces have reached public commits this way',
                 triggeredBy: $var,
                 commandName: 'lint:var-artifacts',
+                // The selected paths, not only the dirty tree: a screenshot
+                // committed in the range under review is in no `git status`.
+                commandInput: ['--path' => array_values(array_map(
+                    static fn (ChangedFile $f): string => $f->path,
+                    array_filter($changedFiles, static fn (ChangedFile $f): bool => $f->status !== ChangedFile::STATUS_DELETED && VarArtifactScan::concerns($f->path)),
+                ))],
             );
         }
 

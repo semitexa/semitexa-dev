@@ -21,9 +21,12 @@ final class RetentionTest extends TestCase
 {
     private string $root;
     private \DateTimeImmutable $now;
+    /** @var array<mixed, mixed> TraceRetention's process-wide "swept today" map, put back as found. */
+    private array $sweptDay = [];
 
     protected function setUp(): void
     {
+        $this->sweptDay = (array) (new \ReflectionProperty(TraceRetention::class, 'sweptDay'))->getValue();
         $this->root = sys_get_temp_dir() . '/semitexa-retention-' . bin2hex(random_bytes(4));
         mkdir($this->root . '/var/tmp', 0777, true);
         $this->now = new \DateTimeImmutable('2026-10-02T12:00:00+00:00');
@@ -31,6 +34,7 @@ final class RetentionTest extends TestCase
 
     protected function tearDown(): void
     {
+        (new \ReflectionProperty(TraceRetention::class, 'sweptDay'))->setValue(null, $this->sweptDay);
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
@@ -74,6 +78,7 @@ final class RetentionTest extends TestCase
         touch($dir . '/20260901-999999-bbbb2222.json');
         TraceRetention::sweepDaily($dir, $at);
         self::assertCount(1, glob($dir . '/*.json') ?: [], 'once done, the day is done');
+        self::assertSame($this->sweptDay + [$dir => '20261002'], (new \ReflectionProperty(TraceRetention::class, 'sweptDay'))->getValue());
     }
 
     #[Test]

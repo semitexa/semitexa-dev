@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Skills;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Evidence\PrivateEvidencePatterns;
 
 /**
  * What review-prep refuses to publish in a PR title or description
@@ -32,17 +33,10 @@ final class PrivateEvidencePatternsTest extends TestCase
         return $patterns;
     }
 
-    /** @return list<string> the ids that fire, the way the script reads: line by line */
+    /** @return list<string> the ids that fire, read the way the script and ai:evidence read: the whole text */
     private static function findings(string $text): array
     {
-        $fired = [];
-        foreach (explode("\n", $text) as $line) {
-            foreach (self::patterns() as $id => $regex) {
-                if (preg_match($regex, $line) === 1) {
-                    $fired[] = $id;
-                }
-            }
-        }
+        $fired = array_map(static fn (array $hit): string => $hit['id'], PrivateEvidencePatterns::load(self::FILE)->scan($text));
 
         return array_values(array_unique($fired));
     }
@@ -75,6 +69,9 @@ final class PrivateEvidencePatternsTest extends TestCase
         yield 'a path after a colon' => ['local-path', 'path:/home/taras/x'];
         yield 'a project key' => ['token', 'OPENAI_API_KEY=sk-proj-' . str_repeat('aB3_-', 6)];
         yield 'a token after a non-ascii letter' => ['token', 'éghp_' . str_repeat('a1', 18)];
+        // Read line by line, an image split over two lines matched neither and
+        // was published: GitHub renders it (review of dev#126).
+        yield 'an image split over two lines' => ['embedded-image', "Proof:\n![session\ncapture](https://example.org/session.png)"];
     }
 
     #[Test]
@@ -98,6 +95,7 @@ final class PrivateEvidencePatternsTest extends TestCase
         yield 'a path that ends in a home folder' => ['See src/home/index.php and docs/Users/guide.md.'];
         yield 'the word data with a colon' => ['Data: the importer reads data:rows from the feed.'];
         yield 'an exclamation and a reference link' => ['Done! [1] is the issue.'];
+        yield 'an exclamation ending a line before a link' => ["Fixed!\n[docs](https://semitexa.com/docs/)"];
     }
 
     #[Test]
@@ -105,6 +103,14 @@ final class PrivateEvidencePatternsTest extends TestCase
     public function an_ordinary_description_passes(string $text): void
     {
         self::assertSame([], self::findings($text));
+    }
+
+    #[Test]
+    public function a_finding_names_the_line_its_match_starts_on(): void
+    {
+        $hits = PrivateEvidencePatterns::load(self::FILE)->scan("Proof:\r\n![session\ncapture](x.png)\nLog: /home/taras/a.log");
+
+        self::assertSame([[2, 'embedded-image'], [4, 'local-path']], array_map(static fn (array $hit): array => [$hit['line'], $hit['id']], $hits));
     }
 
     #[Test]

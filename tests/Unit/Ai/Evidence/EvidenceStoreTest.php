@@ -190,7 +190,7 @@ final class EvidenceStoreTest extends TestCase
         copy($this->store->dir() . '/' . $record->id . '/meta.json', $this->store->dir() . '/' . $twin . '/meta.json');
 
         self::assertNull($this->store->find($twin));
-        self::assertContains($twin, $this->store->all()['unreadable']);
+        self::assertSame([$twin], $this->store->all()['unreadable']);
     }
 
     #[Test]

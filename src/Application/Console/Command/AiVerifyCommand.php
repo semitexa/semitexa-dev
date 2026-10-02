@@ -199,7 +199,7 @@ final class AiVerifyCommand extends BaseCommand
         $executor = new VerificationExecutor($app, $projectRoot);
         $results = $executor->execute($plan);
 
-        $verdict = CoverageGap::of($plan, $this->getProjectRoot())->adjust($this->verdict($results));
+        $verdict = CoverageGap::of($plan, $results, $this->getProjectRoot())->adjust($this->verdict($results));
         $exit = in_array($verdict, [VerificationResult::STATUS_PASS, VerificationResult::STATUS_SKIPPED], true) ? self::SUCCESS : self::FAILURE;
 
         $impact = null;
@@ -523,6 +523,7 @@ final class AiVerifyCommand extends BaseCommand
         return $bands;
     }
 
+    /** @param list<VerificationResult> $results */
     private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
     {
         $report = new VerifyReportSerializer();
@@ -553,7 +554,7 @@ final class AiVerifyCommand extends BaseCommand
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
             'restart'         => $report->restartAdvice($plan->changedFiles),
-        ] + CoverageGap::of($plan, $this->getProjectRoot())->toArray();
+        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
     }
 
     /**
@@ -714,7 +715,7 @@ final class AiVerifyCommand extends BaseCommand
             'verdict' => $verdict,
             'completed' => $report->completed($results),
             'counts'  => $report->countByStatus($results),
-        ] + CoverageGap::of($plan, $this->getProjectRoot())->toArray();
+        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
@@ -724,14 +725,13 @@ final class AiVerifyCommand extends BaseCommand
     private function emitError(OutputInterface $output, string $message, bool $jsonMode): void
     {
         if ($jsonMode) {
-            $output->writeln(json_encode([
+            $output->writeln((string) json_encode([
                 'artifact'     => 'semitexa-dev.verify-report/v1',
-                'generated_at' => date('c'),
-                'verdict'      => 'fail',
-                'error'        => $message,
-            ], JSON_UNESCAPED_SLASHES));
+                'generated_at' => date('c'), 'verdict' => 'fail',
+                'error'        => $message, // may carry a git ref or path that is not UTF-8
+            ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
             return;
         }
-        $output->writeln(json_encode(['kind' => 'error', 'error' => $message], JSON_UNESCAPED_SLASHES));
+        $output->writeln((string) json_encode(['kind' => 'error', 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
     }
 }

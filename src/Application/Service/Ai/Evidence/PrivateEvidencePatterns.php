@@ -47,20 +47,24 @@ final class PrivateEvidencePatterns
     }
 
     /**
-     * Line by line, as the host script reads.
+     * The whole text, as the host script reads it: Markdown renders an image
+     * split over two lines (`![a` / `b](x.png)`), which neither line matched
+     * alone. `m` keeps `^` meaning the start of a line. A finding names the
+     * line its match starts on.
      *
      * @return list<array{line: int, id: string, why: string}>
      */
     public function scan(string $text): array
     {
         $found = [];
-        foreach (preg_split('/\R/', $text) ?: [] as $i => $line) {
-            foreach ($this->patterns as $id => $pattern) {
-                if (preg_match($pattern['regex'], $line) === 1) {
-                    $found[] = ['line' => $i + 1, 'id' => $id, 'why' => $pattern['why']];
-                }
+        foreach ($this->patterns as $id => $pattern) {
+            preg_match_all($pattern['regex'] . 'm', $text, $matches, PREG_OFFSET_CAPTURE);
+            foreach ($matches[0] as [, $offset]) {
+                $found[] = ['line' => substr_count($text, "\n", 0, $offset) + 1, 'id' => $id, 'why' => $pattern['why']];
             }
         }
+        // By line, then in the list's order (usort is stable).
+        usort($found, static fn (array $a, array $b): int => $a['line'] <=> $b['line']);
 
         return $found;
     }

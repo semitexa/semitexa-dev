@@ -136,6 +136,15 @@ class PhpstanRunnerTest extends TestCase
         $this->assertSame(0700, fileperms(PhpstanRunner::tmpDir()) & 0777, 'nobody else writes into it, nobody else is locked out of theirs');
     }
 
+    public function test_without_posix_the_uid_is_the_process_not_the_script_owner(): void
+    {
+        // getmyuid() names the owner of the running script: under another user
+        // (root in the container, a second developer) it chose a directory
+        // that user could not write (review of dev#126).
+        $this->assertSame(posix_geteuid(), PhpstanRunner::processUid(false));
+        $this->assertSame(posix_geteuid(), PhpstanRunner::processUid(true));
+    }
+
     public function test_unparseable_output_is_reported_as_error(): void
     {
         $runner = $this->runnerWithFakeProcess(0, "not JSON at all\nsome garbage\n");

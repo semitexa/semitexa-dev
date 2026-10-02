@@ -48,9 +48,66 @@ final class VarArtifactScan
             }
             $found[] = $row['path'];
         }
+        $found = array_values(array_unique($found));
         sort($found);
 
         return $found;
+    }
+
+    /**
+     * Named paths git would commit, or has: what `ai:verify --files` or
+     * `--git-ref` selected. A committed screenshot is not in a clean
+     * checkout's `git status`, so reading only the dirty tree let the lint
+     * pass over the very file it was run for.
+     *
+     * Asks the repository that owns each path. `check-ignore` treats a tracked
+     * file as not ignored, so committed and committable both count; a path no
+     * repository owns cannot be committed at all.
+     *
+     * @param list<string> $paths workspace-relative
+     * @return list<array{path: string, status: string}> rows for {@see offending()}
+     * @throws \RuntimeException when git cannot answer: a check that cannot run must not pass
+     */
+    public static function committable(string $projectRoot, array $paths): array
+    {
+        $root = rtrim($projectRoot, '/');
+        $rows = [];
+        foreach ($paths as $path) {
+            $repository = self::concerns($path) ? self::repositoryOf($root, $path) : null;
+            if ($repository === null) {
+                continue;
+            }
+            $cmd = sprintf(
+                'git -C %s -c safe.directory=%s check-ignore -q -- %s 2>&1',
+                escapeshellarg($repository),
+                escapeshellarg($repository),
+                escapeshellarg(ltrim(substr($root . '/' . $path, strlen($repository)), '/')),
+            );
+            $output = [];
+            exec($cmd, $output, $code);
+            if ($code === 1) {
+                $rows[] = ['path' => $path, 'status' => ChangedFile::STATUS_MODIFIED];
+            } elseif ($code !== 0) {
+                throw new \RuntimeException('git check-ignore failed for ' . $path . ': ' . implode(' / ', $output));
+            }
+        }
+
+        return $rows;
+    }
+
+    /** The nearest directory above the path, up to the project root, that is a git work tree. */
+    private static function repositoryOf(string $root, string $path): ?string
+    {
+        $dir = dirname($root . '/' . $path);
+        while (strlen($dir) >= strlen($root)) {
+            // `.git` is a file in a linked worktree.
+            if (file_exists($dir . '/.git')) {
+                return $dir;
+            }
+            $dir = dirname($dir);
+        }
+
+        return null;
     }
 
     /** Whether a changed path is one this scan reads: what decides that ai:verify runs it. */

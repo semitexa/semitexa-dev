@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Console;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphRouteCommand;
 use Semitexa\Dev\Application\Service\Console\LookupRefusal;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -68,6 +69,46 @@ final class LookupRefusalTest extends TestCase
         $decoded = json_decode(trim($tester->getDisplay()), true);
         self::assertSame('semitexa-dev.route-description/v1', $decoded['artifact']);
         self::assertStringContainsString('--path', $decoded['error']);
+    }
+
+    public function test_without_method_a_post_only_path_is_looked_up_by_post(): void
+    {
+        // The option's 'GET' default made "not given" look explicit, so the
+        // POST fallback below it never ran (review of dev#126).
+        $tester = new CommandTester($this->routeCommandServing('/submit', 'POST'));
+        $exit = $tester->execute(['--path' => '/submit', '--json' => true]);
+
+        self::assertSame(1, $exit);
+        $decoded = json_decode(trim($tester->getDisplay()), true);
+        self::assertIsArray($decoded);
+        self::assertSame('Route not found: POST /submit', $decoded['error'] ?? null);
+    }
+
+    public function test_an_explicit_method_the_path_does_not_serve_is_refused(): void
+    {
+        $tester = new CommandTester($this->routeCommandServing('/submit', 'POST'));
+        $exit = $tester->execute(['--path' => '/submit', '--method' => 'GET', '--json' => true]);
+
+        self::assertSame(1, $exit);
+        $decoded = json_decode(trim($tester->getDisplay()), true);
+        self::assertIsArray($decoded);
+        self::assertSame('GET /submit is not served; the path answers POST.', $decoded['error'] ?? null);
+    }
+
+    /**
+     * A route command whose discovery knows one path served by one method.
+     * findRoute() answers null even for that method, so the run ends in a
+     * refusal that names the method it looked up.
+     */
+    private function routeCommandServing(string $path, string $method): DevGraphRouteCommand
+    {
+        $discovery = $this->createMock(AttributeDiscovery::class);
+        $discovery->method('getRoutes')->willReturn([['path' => $path, 'methods' => [$method]]]);
+        $discovery->method('findRoute')->willReturn(null);
+        $command = new DevGraphRouteCommand();
+        (new \ReflectionProperty($command, 'attributeDiscovery'))->setValue($command, $discovery);
+
+        return $command;
     }
 
     private function input(bool $json): ArrayInput

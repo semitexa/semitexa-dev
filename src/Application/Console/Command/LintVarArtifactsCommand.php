@@ -27,13 +27,16 @@ final class LintVarArtifactsCommand extends BaseCommand
 
     protected function configure(): void
     {
-        $this->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
+        $this
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope')
+            ->addOption('path', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Also check this workspace-relative path, committed or not (ai:verify passes the paths it selected)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $scanner = new DirtyWorkspaceScanner($this->getProjectRoot());
-        $offending = VarArtifactScan::offending($scanner->changedFiles());
+        $named = array_values(array_filter((array) $input->getOption('path'), is_string(...)));
+        $offending = VarArtifactScan::offending([...$scanner->changedFiles(), ...VarArtifactScan::committable($this->getProjectRoot(), $named)]);
 
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode(['ok' => $offending === [], 'paths' => $offending], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

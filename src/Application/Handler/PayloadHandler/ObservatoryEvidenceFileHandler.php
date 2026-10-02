@@ -61,7 +61,10 @@ final class ObservatoryEvidenceFileHandler implements TypedHandlerInterface
     {
         $store = $this->gate->allowsDevTools() ? new EvidenceStore(ProjectRoot::get()) : null;
         $record = $store?->find($payload->id);
-        $body = $record !== null ? @file_get_contents($store->fileOf($record)) : false;
+        $path = $record !== null ? $store->fileOf($record) : null;
+        // The store only ever writes a regular file; a link in a hand-made
+        // folder would serve whatever it points at (.env, /etc/passwd).
+        $body = $path !== null && !is_link($path) ? @file_get_contents($path) : false;
         if ($store === null || $record === null || $body === false) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)

@@ -207,6 +207,22 @@ class AiVerifyCommandTest extends TestCase
         $this->assertStringContainsString('no changed files supplied', $line['error']);
     }
 
+    public function test_an_error_naming_a_ref_that_is_not_utf8_is_still_one_json_line(): void
+    {
+        // json_encode() returned false on the ref's byte and writeln() threw a
+        // TypeError instead of reporting the error (review of dev#126).
+        $tester = $this->newTester();
+        $exit = $tester->execute(['--git-ref' => "bad\xFFref"]);
+
+        $this->assertSame(1, $exit);
+        $line = json_decode(trim($tester->getDisplay()), true);
+        $this->assertIsArray($line);
+        $this->assertSame('error', $line['kind'] ?? null);
+        $error = $line['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringStartsWith("git diff against 'bad\u{FFFD}ref' failed: ", $error);
+    }
+
     public function test_trace_option_appends_verify_result_event(): void
     {
         $store = new TraceStore();

@@ -34,7 +34,8 @@ final class DevGraphRouteCommand extends BaseCommand
     {
         $this
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path (e.g., /pricing)')
-            ->addOption('method', null, InputOption::VALUE_OPTIONAL, 'HTTP method (default: GET)', 'GET')
+            // No option default: null is how "not given" is told from an explicit --method=GET.
+            ->addOption('method', null, InputOption::VALUE_OPTIONAL, 'HTTP method (default: GET, else the first one the path serves)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
 

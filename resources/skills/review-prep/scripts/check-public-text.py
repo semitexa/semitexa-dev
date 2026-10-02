@@ -23,7 +23,9 @@ def main(paths):
         return 2
     try:
         with open(PATTERNS, encoding='utf-8') as handle:
-            patterns = [(p['id'], p['why'], re.compile(p['regex'], re.ASCII)) for p in json.load(handle)['patterns']]
+            # MULTILINE: '^' still means "start of a line", but a match may now
+            # span lines — Markdown renders `![a<newline>b](x.png)` as an image.
+            patterns = [(p['id'], p['why'], re.compile(p['regex'], re.ASCII | re.MULTILINE)) for p in json.load(handle)['patterns']]
     except (OSError, ValueError, KeyError, re.error) as error:
         print(f'cannot read {PATTERNS}: {error}', file=sys.stderr)
         return 2
@@ -33,15 +35,21 @@ def main(paths):
         name, _, path = argument.partition('=') if '=' in argument and not argument.startswith('/') else (argument, '', argument)
         try:
             with open(path, encoding='utf-8', errors='replace') as handle:
-                lines = handle.read().splitlines()
+                text = handle.read()
         except OSError as error:
             print(f'cannot read {path}: {error}', file=sys.stderr)
             return 2
-        for number, line in enumerate(lines, 1):
-            for pid, why, regex in patterns:
-                if regex.search(line):
-                    print(f'{name}:{number}: {pid} — {why}', file=sys.stderr)
-                    found += 1
+        # The whole text, not line by line: an image split over two lines
+        # matched neither line and was published. A finding names the line
+        # its match starts on.
+        hits = sorted(
+            ((text.count('\n', 0, match.start()) + 1, order, pid, why)
+             for order, (pid, why, regex) in enumerate(patterns)
+             for match in regex.finditer(text)),
+        )
+        for number, _, pid, why in hits:
+            print(f'{name}:{number}: {pid} — {why}', file=sys.stderr)
+        found += len(hits)
     return 3 if found else 0
 
 

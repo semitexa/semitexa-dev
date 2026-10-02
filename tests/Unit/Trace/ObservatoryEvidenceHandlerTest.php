@@ -176,6 +176,21 @@ final class ObservatoryEvidenceHandlerTest extends TestCase
     }
 
     #[Test]
+    public function a_file_that_is_a_link_is_not_followed(): void
+    {
+        $this->dev();
+        $id = $this->record('shot.png', "\x89PNG");
+        file_put_contents($this->root . '/.env', 'DB_PASSWORD=secret');
+        $file = (new EvidenceStore($this->root))->fileOf((new EvidenceStore($this->root))->find($id) ?? self::fail('recorded'));
+        unlink($file);
+        symlink($this->root . '/.env', $file);
+
+        $response = $this->file($id);
+
+        self::assertSame([404, 'Not Found'], [$response->getStatusCode(), $response->getContent()]);
+    }
+
+    #[Test]
     public function an_id_that_is_not_one_reads_nothing(): void
     {
         $this->dev();
