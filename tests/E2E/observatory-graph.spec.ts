@@ -128,3 +128,16 @@ test('the exported file works from file:// with no server', async ({ page }) => 
     expect(errors).toEqual([]);
     expect(requests, 'the export fetches nothing').toEqual([]);
 });
+
+test('leaving the graph view hides it again', async ({ page }) => {
+    // The viewer's root sets display:grid, which outranks the browser's own
+    // [hidden] rule: once mounted, the graph stayed drawn over the live view.
+    await page.goto('/__observatory#graph');
+    await expect(page.locator('#view-graph')).toBeVisible();
+    await page.locator('#mode button[data-mode="live"]').click();
+    await expect(page.locator('#view-graph')).toBeHidden();
+    await page.keyboard.press('g');
+    await expect(page.locator('#view-graph')).toBeVisible();
+    await page.keyboard.press('g');
+    await expect(page.locator('#view-graph')).toBeHidden();
+});

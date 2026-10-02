@@ -45,7 +45,49 @@ final class ObservatoryPanelGate
      */
     public function allowsDevTools(): bool
     {
-        return ObservatoryMode::full() && $this->allows();
+        return ObservatoryMode::full() && $this->allows() && !$this->isCrossSite(CurrentRequestStore::get());
+    }
+
+    /**
+     * A page on another site reading these endpoints. The app answers every
+     * route with `Access-Control-Allow-Origin: *` (CORS_ALLOW_ORIGIN), so any
+     * site a developer had open could fetch the route map, the project graph
+     * and trace ids (measured 2026-10-02 against /__observatory/graph). The
+     * Observatory's own page asks same-origin; a browser says so in
+     * Sec-Fetch-Site, and an Origin naming another host gives it away too.
+     */
+    private function isCrossSite(?Request $request): bool
+    {
+        if ($request === null) {
+            return false;
+        }
+
+        // Following a link to the Explorer from docs, chat or another local
+        // app is a top-level navigation: the other site cannot read what it
+        // opens. Only a request whose response it could read is refused.
+        $mode = strtolower(trim((string) $request->getHeader('Sec-Fetch-Mode')));
+        $dest = strtolower(trim((string) $request->getHeader('Sec-Fetch-Dest')));
+        if ($mode === 'navigate' && $dest === 'document' && strtoupper($request->getMethod()) === 'GET') {
+            return false;
+        }
+
+        $site = strtolower(trim((string) $request->getHeader('Sec-Fetch-Site')));
+        if ($site === 'cross-site' || $site === 'same-site') {
+            return true;
+        }
+
+        $origin = trim((string) $request->getHeader('Origin'));
+        if ($origin === '') {
+            return false;
+        }
+        $parts = parse_url($origin);
+        if (!is_array($parts) || !isset($parts['host'])) {
+            return true; // `Origin: null` and the like: an opaque, foreign origin
+        }
+        $originHost = strtolower($parts['host']) . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        $host = strtolower(trim((string) $request->getHeader('Host')));
+
+        return $host === '' || ($originHost !== $host && strtolower($parts['host']) !== $host);
     }
 
     public function allows(): bool

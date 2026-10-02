@@ -114,13 +114,68 @@ final class ObservatoryGraphHandlerTest extends TestCase
     }
 
     #[Test]
-    public function an_unknown_view_falls_back_to_the_summary(): void
+    public function an_unknown_view_is_a_400_not_the_summary(): void
     {
+        // A typo used to come back as the 290 KB summary with a 200.
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
         $payload = new ObservatoryGraphPayload();
-        $payload->setView('../../etc/passwd');
-        self::assertSame('summary', $payload->view);
+        $payload->setView('nodes');
 
-        $payload->setView('subgraph');
-        self::assertSame('subgraph', $payload->view);
+        $handler = new ObservatoryGraphHandler();
+        (new \ReflectionProperty($handler, 'gate'))->setValue($handler, new ObservatoryPanelGate());
+        $response = $handler->handle($payload, new ResourceResponse());
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame('unknown-view', json_decode((string) $response->getContent(), true)['error'] ?? null);
+
+        $payload->setView(['node']);
+        self::assertSame('', $payload->view);
+    }
+
+    #[Test]
+    public function another_site_cannot_read_the_dev_tools(): void
+    {
+        // Every route answers Access-Control-Allow-Origin: *, so any page the
+        // developer had open could fetch the graph (measured 2026-10-02).
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+        $gate = new ObservatoryPanelGate();
+
+        foreach ([
+            ['Sec-Fetch-Site' => 'cross-site'],
+            ['Sec-Fetch-Site' => 'same-site'],
+            ['Origin' => 'https://evil.example', 'Host' => '127.0.0.1:9507'],
+            ['Origin' => 'null', 'Host' => '127.0.0.1:9507'],
+        ] as $headers) {
+            CurrentRequestStore::set($this->request($headers));
+            self::assertFalse($gate->allowsDevTools(), json_encode($headers) . ' was let in');
+        }
+
+        foreach ([
+            [],
+            ['Sec-Fetch-Site' => 'same-origin'],
+            ['Sec-Fetch-Site' => 'none'],
+            ['Origin' => 'http://127.0.0.1:9507', 'Host' => '127.0.0.1:9507'],
+            // A link followed from another site: a navigation, not a read.
+            ['Sec-Fetch-Site' => 'cross-site', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document'],
+        ] as $headers) {
+            CurrentRequestStore::set($this->request($headers));
+            self::assertTrue($gate->allowsDevTools(), json_encode($headers) . ' was refused');
+        }
+    }
+
+    /** @param array<string, string> $headers */
+    private function request(array $headers): Request
+    {
+        return new Request(
+            method: 'GET',
+            uri: '/__observatory/graph',
+            headers: $headers,
+            query: [],
+            post: [],
+            server: ['remote_addr' => '127.0.0.1'],
+            cookies: [],
+        );
     }
 }

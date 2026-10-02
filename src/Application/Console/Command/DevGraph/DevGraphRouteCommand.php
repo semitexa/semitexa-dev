@@ -54,12 +54,25 @@ final class DevGraphRouteCommand extends BaseCommand
         $route = $this->attributeDiscovery()->findRoute($path, $method);
 
         if ($route === null) {
-            $routes = $this->attributeDiscovery()->getRoutes();
-            foreach ($routes as $r) {
+            $served = [];
+            foreach ($this->attributeDiscovery()->getRoutes() as $r) {
                 if (($r['path'] ?? '') === $path) {
-                    $methods = $r['methods'] ?? [$r['method'] ?? 'GET'];
-                    $route = $this->attributeDiscovery()->findRoute($path, $methods[0]);
-                    break;
+                    foreach ((array) ($r['methods'] ?? [$r['method'] ?? 'GET']) as $m) {
+                        $served[] = strtoupper((string) $m);
+                    }
+                }
+            }
+            $served = array_values(array_unique($served));
+            // An explicit --method the path does not serve used to be swapped
+            // for another method without a word: POST answered with the GET route.
+            if ($served !== [] && $input->getOption('method') !== null) {
+                return LookupRefusal::refuse($input, $output, 'semitexa-dev.route-description/v1', sprintf('%s %s is not served; the path answers %s.', $method, $path, implode(', ', $served)));
+            }
+            if ($served !== []) {
+                $method = $served[0];
+                $route = $this->attributeDiscovery()->findRoute($path, $method);
+                if (!$input->getOption('json')) {
+                    $io->note(sprintf('No --method given and GET is not served; describing %s.', $method));
                 }
             }
         }
