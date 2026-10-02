@@ -1343,23 +1343,36 @@ function bindView(rc) {
   rc.addEventListener('mouseleave', hideTip);
 }
 
-/* ------------------------------------------------------------ graph mode */
-// The project graph (semitexa/project-graph's viewer) in place of the live
-// picture. Dev mode only: the server renders the switch, the host and the
-// viewer's assets only then, so in monitor mode none of this finds anything.
-// The live feed keeps polling underneath — switching back shows the present,
-// not the moment the view was left — but nothing is drawn while hidden.
+/* ------------------------------------------------------------ graph & evidence modes */
+// The project graph (semitexa/project-graph's viewer) or the review-evidence
+// store in place of the live picture. Dev mode only: the server renders the
+// switch, the hosts and the views' assets only then, so in monitor mode none
+// of this finds anything. The live feed keeps polling underneath — switching
+// back shows the present, not the moment the view was left — but nothing is
+// drawn while hidden. Each view mounts on first use and keeps its own state.
 function graphMode() { return document.documentElement.classList.contains('graph-mode'); }
+function evidenceMode() { return document.documentElement.classList.contains('evidence-mode'); }
 function bindGraphMode(obsRoot) {
-  const host = obsRoot.querySelector('#view-graph'), seg = obsRoot.querySelector('#mode');
+  const seg = obsRoot.querySelector('#mode');
+  const host = obsRoot.querySelector('#view-graph'), evHost = obsRoot.querySelector('#view-evidence');
   if (!host || !seg) return;
-  let api = null;
+  let api = null, evApi = null, current = 'live';
   const setMode = (mode, focus) => {
-    const g = mode === 'graph';
+    if (mode === 'evidence' && !evHost) mode = 'live';
+    current = mode;
+    const g = mode === 'graph', ev = mode === 'evidence';
     document.documentElement.classList.toggle('graph-mode', g);
+    document.documentElement.classList.toggle('evidence-mode', ev);
     obsRoot.classList.toggle('mode-graph', g);
+    obsRoot.classList.toggle('mode-evidence', ev);
     host.hidden = !g;
+    if (evHost) evHost.hidden = !ev;
     seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    // The address first: the Evidence view reads its state from it on mount.
+    const hash = location.hash;
+    if (g && !hash.startsWith('#graph')) history.replaceState(null, '', '#graph');
+    else if (ev && !hash.startsWith('#evidence')) history.replaceState(null, '', '#evidence');
+    else if (!g && !ev && (hash.startsWith('#graph') || hash.startsWith('#evidence'))) history.replaceState(null, '', location.pathname + location.search);
     if (g && !api && window.SemitexaGraphView) {
       api = window.SemitexaGraphView.mount(host, window.SemitexaGraphView.fetchSource(host.dataset.graphEndpoint), {
         initial: focus,
@@ -1369,10 +1382,18 @@ function bindGraphMode(obsRoot) {
     } else if (g && api && focus) {
       api.reveal(focus);
     }
-    if (!g && location.hash.startsWith('#graph')) history.replaceState(null, '', location.pathname + location.search);
-    else if (g && !location.hash.startsWith('#graph')) history.replaceState(null, '', '#graph');
+    if (ev && !evApi && window.SemitexaEvidenceView) {
+      evApi = window.SemitexaEvidenceView.mount(evHost, evHost.dataset.evidenceEndpoint);
+    } else if (ev && evApi) {
+      // A link with its own filters wins over what the view held when it was left.
+      if (/^#evidence\?/.test(location.hash)) evApi.fromHash(); else evApi.reload();
+    }
   };
   const fromHash = () => {
+    if (/^#evidence(\?|$)/.test(location.hash)) {
+      if (current === 'evidence' && evApi) evApi.fromHash(); else setMode('evidence');
+      return;
+    }
     const m = /^#graph(?:=(.+))?$/.exec(location.hash);
     if (!m) return;
     // A malformed link opens the view with nothing selected, not a dead panel.
@@ -1387,7 +1408,9 @@ function bindGraphMode(obsRoot) {
     if (e.target && (/input|textarea|select/i.test(e.target.tagName) || e.target.isContentEditable)) return;
     if (document.querySelector('dialog[open]')) return;
     if (e.key === 'g') setMode(graphMode() ? 'live' : 'graph');
+    else if (e.key === 'v' && evHost) setMode(evidenceMode() ? 'live' : 'evidence');
     else if (e.key === '/' && graphMode() && api) { e.preventDefault(); api.focusSearch(); }
+    else if (e.key === '/' && evidenceMode() && evApi) { e.preventDefault(); evApi.focusSearch(); }
   });
   fromHash();
 }
@@ -1412,7 +1435,7 @@ function boot() {
   document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.v)));
   document.addEventListener('keydown', e => {
     if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
-    if (graphMode()) return; // the Graph view has keys of its own
+    if (graphMode() || evidenceMode()) return; // the Graph and Evidence views have keys of their own
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
     else if (e.key === 's') toggleStage(); else if (e.key === 'd') toggleDemo(); else if (e.key === 'c') toggleCinema(); else if (e.key === 'f') fullscreen(); else if (e.key === 'e') toggleExplain(); else if (e.key === '0') fitView();
     else if (e.key === '1') setSpeed(1); else if (e.key === '2') setSpeed(0.5); else if (e.key === '3') setSpeed(0.25);
@@ -1443,7 +1466,7 @@ function boot() {
   schedule(0);
   let lastPanels = 0, lastSpotlight = 0;
   const frame = t => {
-    if (!document.hidden && !graphMode()) {
+    if (!document.hidden && !graphMode() && !evidenceMode()) {
       drawRiver(t);
       if (t - lastSpotlight > 160) { lastSpotlight = t; renderSpotlight(t); }
       if (t - lastPanels > 400) {

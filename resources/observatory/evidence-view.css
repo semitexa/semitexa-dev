@@ -1,0 +1,74 @@
+/* Observatory · Evidence view — the review-evidence store (var/evidence/).
+   Uses the panel's tokens; every class is ev-* so nothing leaks either way. */
+.evidence-host{grid-area:evidence;min-height:0;min-width:0}
+.obs.mode-evidence{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"head" "evidence"}
+.obs.mode-evidence>.workers,.obs.mode-evidence>.river,.obs.mode-evidence>.ticker,.obs.mode-evidence>.time,
+.obs.mode-evidence .tiles,.obs.mode-evidence .controls>.btn:not(#b-full):not([data-action="explorer"]),.obs.mode-evidence #speed{display:none}
+.evidence-host[hidden]{display:none}
+
+.ev{display:grid;grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto auto minmax(0,1fr) auto;
+  grid-template-areas:"bar bar" "note note" "list side" "pager side";gap:10px;height:100%;min-height:0}
+.ev-bar{grid-area:bar;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px}
+.ev-bar label{display:flex;flex-direction:column;gap:3px;font:600 10px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+.ev-bar input,.ev-bar select{font:12px/1.2 var(--sans);color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);
+  border-radius:8px;padding:7px 9px;min-width:0}
+.ev-bar input:focus,.ev-bar select:focus{outline:2px solid color-mix(in srgb,var(--http) 60%,transparent);outline-offset:1px;border-color:var(--http)}
+.ev-bar .ev-search{flex:1 1 240px}
+.ev-bar .ev-search input{width:100%}
+.ev-bar .btn{align-self:flex-end}
+.ev-note{grid-area:note;display:flex;flex-wrap:wrap;gap:6px 14px;padding:0 4px;color:var(--dim);font-size:12px}
+.ev-note b{color:var(--text);font-variant-numeric:tabular-nums}
+.ev-note .ev-warn{color:var(--warn)}
+.ev-note .ev-err{color:var(--danger)}
+
+.ev-list{grid-area:list;overflow:auto;padding:0}
+.ev-table{width:100%;border-collapse:collapse;font-size:12px}
+.ev-table th{position:sticky;top:0;z-index:1;background:var(--panel);text-align:left;font:600 10.5px/1 var(--mono);color:var(--faint);
+  text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line);padding:0}
+.ev-table th button,.ev-table th span{display:flex;align-items:center;gap:4px;width:100%;padding:10px 10px;text-transform:inherit;letter-spacing:inherit;font:inherit;color:inherit}
+.ev-table th button:hover{color:var(--text)}
+.ev-table th[aria-sort="ascending"] button,.ev-table th[aria-sort="descending"] button{color:var(--http)}
+.ev-table th button::after{content:"↕";opacity:.35}
+.ev-table th[aria-sort="ascending"] button::after{content:"↑";opacity:1}
+.ev-table th[aria-sort="descending"] button::after{content:"↓";opacity:1}
+.ev-table td{padding:8px 10px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:top}
+.ev-table tbody tr{cursor:pointer}
+.ev-table tbody tr:hover{background:color-mix(in srgb,var(--http) 7%,transparent)}
+.ev-table tbody tr.sel{background:color-mix(in srgb,var(--http) 14%,transparent)}
+.ev-table tbody tr:focus-visible{outline:2px solid var(--http);outline-offset:-2px}
+.ev-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ev-table .when{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--dim)}
+.ev-file{font-family:var(--mono);word-break:break-all}
+.ev-note-cell{color:var(--dim);max-width:340px}
+.ev-tag{display:inline-block;font:600 10px/1 var(--mono);padding:3px 6px;border-radius:999px;border:1px solid var(--line-2);white-space:nowrap}
+.ev-tag.real{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.ev-tag.synthetic{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.ev-tag.published{color:var(--http);border-color:color-mix(in srgb,var(--http) 45%,var(--line))}
+.ev-tag.expired{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.ev-empty{padding:28px;text-align:center;color:var(--dim)}
+
+.ev-pager{grid-area:pager;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px}
+.ev-pager .btn{padding:6px 9px}
+.ev-pager .btn[aria-current="page"]{border-color:var(--http);color:var(--http)}
+.ev-pager .btn:disabled{opacity:.4;cursor:default}
+.ev-pager .ev-gap{color:var(--faint);padding:0 2px}
+.ev-pager .ev-of{margin-left:auto;color:var(--dim);font-size:12px}
+
+.ev-side{grid-area:side;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.ev-side h3{margin:0;font-size:13px;word-break:break-all}
+.ev-side dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:0;font-size:12px}
+.ev-side dt{color:var(--faint);font:600 10.5px/1.6 var(--mono);text-transform:uppercase}
+.ev-side dd{margin:0;word-break:break-all}
+.ev-side .ev-hint{color:var(--dim);font-size:12px;margin:0}
+.ev-preview img,.ev-preview video{max-width:100%;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.ev-preview pre{margin:0;max-height:420px;overflow:auto;font:11px/1.45 var(--mono);background:var(--bg);border:1px solid var(--line);
+  border-radius:8px;padding:8px;white-space:pre-wrap;word-break:break-word}
+.ev-side code{font-family:var(--mono);font-size:11px}
+
+@media (max-width:1100px){
+  html.evidence-mode body{overflow:auto}
+  .obs.mode-evidence{height:auto;min-height:100dvh;grid-template-rows:auto auto}
+  .ev{grid-template-columns:minmax(0,1fr);grid-template-areas:"bar" "note" "list" "pager" "side";height:auto}
+  .ev-list{max-height:none}
+  .ev-table .ev-note-cell,.ev-table .col-expires{display:none}
+}
