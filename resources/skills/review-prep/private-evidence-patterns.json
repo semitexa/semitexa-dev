@@ -1,0 +1,30 @@
+{
+    "about": "What must not reach a public PR description unasked. Read by scripts/check-public-text.py before anything is pushed, and pinned with allow/refuse cases by tests/Unit/Skills/PrivateEvidencePatternsTest.php. Regexes stay in the subset Python re (compiled with re.ASCII) and PCRE read alike: an inline flag only at the start, no '~'.",
+    "patterns": [
+        {
+            "id": "embedded-image",
+            "why": "an image: a screenshot an agent took shows whatever was on screen",
+            "regex": "(?i)!\\[[^\\]]*\\]\\s*[(\\[]|<(?:img|video|picture|source)\\b"
+        },
+        {
+            "id": "uploaded-attachment",
+            "why": "a file uploaded to GitHub is public at that URL even after the PR is edited",
+            "regex": "(?i)github\\.com/user-attachments/|user-images\\.githubusercontent\\.com|private-user-images\\.githubusercontent\\.com"
+        },
+        {
+            "id": "data-uri",
+            "why": "inline file contents (an image or a recording) carried in the text itself",
+            "regex": "(?i)data:[\\w.+-]+/[\\w.+-]+[;,]"
+        },
+        {
+            "id": "local-path",
+            "why": "an absolute path on a workstation names its user and layout",
+            "regex": "(?:^|[^\\w.-])(?:/home/[^/\\s]+/|/Users/[^/\\s]+/|/root/|/tmp/claude-|[A-Za-z]:\\\\Users\\\\)"
+        },
+        {
+            "id": "token",
+            "why": "a credential, published",
+            "regex": "\\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abprs]-[A-Za-z0-9-]{10,})|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+        }
+    ]
+}

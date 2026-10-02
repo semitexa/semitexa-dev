@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Dev\Application\Service\Ai\Evidence\VarArtifactScan;
+
 /**
  * Checks that guard the whole project, whichever file changed.
  *
@@ -52,6 +54,23 @@ final class ProjectGuardTargets
                 filePath: 'packages/semitexa-dev/resources/phpstan-sync.sh',
             ),
         ];
+
+        // Runtime output git would take as source: a screenshot or a trace in a
+        // var/ folder the .gitignore does not list. Decided by the path alone —
+        // git status already left out everything that IS ignored.
+        $var = array_values(array_filter(
+            array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles),
+            static fn (string $path): bool => VarArtifactScan::concerns($path),
+        ));
+        if ($var !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_LINT,
+                id: 'lint:var-artifacts',
+                reason: 'a changed path under var/ is runtime output git would commit — screenshots and traces have reached public commits this way',
+                triggeredBy: $var,
+                commandName: 'lint:var-artifacts',
+            );
+        }
 
         // Tests are not part of the minimal contract, and a consumer project
         // has no workspace tree to ratchet — the suite only exists here.

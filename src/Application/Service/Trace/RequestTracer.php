@@ -537,6 +537,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
         $final = $dir . '/' . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 8) . '.json';
         $tmp = $final . '.tmp';
         $written = @file_put_contents($tmp, $payload) !== false && @rename($tmp, $final);
+        TraceRetention::sweepDaily($dir);
 
         // A second destination, not a replacement: the file is what /__trace
         // reads and a developer opens; the collector is where the same trace
