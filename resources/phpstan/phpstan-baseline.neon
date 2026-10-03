@@ -1507,18 +1507,6 @@ parameters:
 			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
 
 		-
-			message: '#^Method Semitexa\\Orm\\Adapter\\SingleConnectionPool\:\:ensureAlive\(\) should return PDO but returns mixed\.$#'
-			identifier: return.type
-			count: 2
-			path: packages/semitexa-orm/src/Adapter/SingleConnectionPool.php
-
-		-
-			message: '#^Property Semitexa\\Orm\\Adapter\\SingleConnectionPool\:\:\$connection \(PDO\|null\) does not accept mixed\.$#'
-			identifier: assign.propertyType
-			count: 1
-			path: packages/semitexa-orm/src/Adapter/SingleConnectionPool.php
-
-		-
 			message: '#^Cannot cast mixed to float\.$#'
 			identifier: cast.double
 			count: 2
