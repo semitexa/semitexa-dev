@@ -25,6 +25,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class CoroutineStateLeakGuardTest extends TestCase
 {
+    /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
+    public const RATIONALE = 'Why: a container service lives as long as the worker, so request state stored on it is handed to whoever is served next, and a single-user test never interleaves two requests to show it. Learned 2026-07-05: a sweep of about 120 singletons found the shape (request state on worker objects) and nothing stopped it coming back; measured 2026-09-06: zero services assign request-shaped values, now pinned.';
+
     /** Names and expressions that mean "this belongs to one request". */
     private const REQUEST_SHAPED = '(tenant|session|auth|user|request|payload|principal|locale)';
 

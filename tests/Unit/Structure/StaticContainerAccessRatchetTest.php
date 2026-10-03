@@ -24,6 +24,9 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\AcceptedViolations;
  */
 final class StaticContainerAccessRatchetTest extends TestCase
 {
+    /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
+    public const RATIONALE = 'Why: the phpstan_di gate analyses only the files a change touches, so a violation in a file nobody edits is never looked at again. Learned 2026-09-06: sixteen such sites had accumulated in packages whose tests were green the whole time.';
+
     /**
      * Namespaces the rule itself blesses — core internals plus the narrow
      * dynamic-dispatch tier. Kept in step with StaticContainerAccessRule; this

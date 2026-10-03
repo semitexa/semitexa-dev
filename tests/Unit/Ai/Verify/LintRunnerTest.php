@@ -74,6 +74,28 @@ final class LintRunnerTest extends TestCase
         self::assertSame('', $result->diagnostics[0]['rationale']);
     }
 
+    #[Test]
+    public function missing_optional_tooling_skips_the_gate_without_failing_it(): void
+    {
+        $result = (new LintRunner(new Application()))->run(
+            new VerificationTarget(VerificationTarget::TYPE_DOCS, 'docs:claims', 'r', [], commandName: 'docs:lint'),
+            optional: true,
+        );
+
+        self::assertSame(
+            [VerificationResult::STATUS_SKIPPED, 0, false, 'semitexa/docs command docs:lint unavailable; optional documentation tooling'],
+            [$result->status, $result->exitCode, $result->required, $result->signal],
+        );
+    }
+
+    #[Test]
+    public function a_missing_required_lint_is_incomplete_not_a_pass(): void
+    {
+        $result = (new LintRunner(new Application()))->run(new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:gone', 'r', [], commandName: 'lint:gone'));
+
+        self::assertSame([VerificationResult::STATUS_INCOMPLETE, 'command lint:gone is not registered'], [$result->status, $result->signal]);
+    }
+
     private function runLint(Command $command): VerificationResult
     {
         $app = new Application();

@@ -11,7 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 
 /**
- * Every lint ai:verify runs says why it exists — the same contract as the
+ * Every lint and docs gate ai:verify runs says why it exists — the same contract as the
  * Semitexa PHPStan rules and the module_structure codes: a RATIONALE constant
  * on the command class, a cause, then the incident that taught it or the
  * admission that there was none. A lint added to the plan without one fails
@@ -29,6 +29,7 @@ final class LintRationaleTest extends TestCase
         $planned = $this->plannedLints();
         self::assertContains('lint:di', $planned, 'the planner constants moved; this test would be vacuous');
         self::assertContains('lint:var-artifacts', $planned, 'the guard target moved; this test would be vacuous');
+        self::assertContains('docs:lint', $planned, 'the docs gate moved; this test would be vacuous');
 
         $classes = $this->commandClasses();
         $wrong = [];
@@ -68,7 +69,12 @@ final class LintRationaleTest extends TestCase
         preg_match_all("/commandName:\s*'(lint:[a-z0-9-]+)'/", $source, $guards);
         array_push($names, ...$guards[1]);
 
-        return array_values(array_unique(array_filter($names, static fn (string $n): bool => str_starts_with($n, 'lint:'))));
+        // Docs gates are planned in code too, and run through the same LintRunner.
+        $planner = (string) file_get_contents((string) (new ReflectionClass(VerificationPlanner::class))->getFileName());
+        preg_match_all("/commandName:\s*'(docs:[a-z0-9:-]+)'/", $planner, $docs);
+        array_push($names, ...$docs[1]);
+
+        return array_values(array_unique(array_filter($names, static fn (string $n): bool => str_starts_with($n, 'lint:') || str_starts_with($n, 'docs:'))));
     }
 
     /** @return array<string, class-string> command name => class */
@@ -77,7 +83,7 @@ final class LintRationaleTest extends TestCase
         $classes = [];
         foreach (glob(self::PACKAGES . 'semitexa-*/src/Application/Console/Command/*Command.php') ?: [] as $file) {
             $source = (string) file_get_contents($file);
-            if (preg_match("/name:\s*'(lint:[a-z0-9-]+)'/", $source, $name) !== 1
+            if (preg_match("/name:\s*'((?:lint|docs):[a-z0-9:-]+)'/", $source, $name) !== 1
                 || preg_match('/^namespace\s+([^;]+);/m', $source, $namespace) !== 1) {
                 continue;
             }

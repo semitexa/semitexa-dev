@@ -103,36 +103,7 @@ final class VerificationExecutor
      */
     private function runDocsGate(VerificationTarget $target): VerificationResult
     {
-        $commandName = $target->commandName;
-        if ($commandName === null) {
-            return $this->skipped($target, 'docs target missing commandName');
-        }
-
-        try {
-            $command = $this->application->find($commandName);
-        } catch (CommandNotFoundException) {
-            return $this->skipped($target, "semitexa/docs command {$commandName} unavailable; optional documentation tooling", required: false);
-        }
-
-        $buffer = new BufferedOutput();
-        $input = new ArrayInput(['command' => $commandName] + $target->commandInput);
-        $input->setInteractive(false);
-
-        try {
-            $exit = $command->run($input, $buffer);
-        } catch (\Throwable $e) {
-            return $this->failed(
-                $target,
-                "{$commandName} threw " . $e::class . ': ' . SignalText::compress($e->getMessage()),
-            );
-        }
-
-        return new VerificationResult(
-            target:   $target,
-            status:   $exit === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
-            exitCode: $exit,
-            signal:   SignalText::lastLine($buffer->fetch()),
-        );
+        return $this->lintRunner->run($target, optional: true);
     }
 
     private function runSyntax(VerificationTarget $target): VerificationResult
@@ -288,7 +259,7 @@ final class VerificationExecutor
         $errorCount = count($violations);
         $signal = $errorCount === 0
             ? 'live_tenancy → 0 violations'
-            : "live_tenancy → {$errorCount} violation(s); first: {$violations[0]->code} {$violations[0]->scopeKey}";
+            : "live_tenancy → {$errorCount} violation(s); first: {$violations[0]->code} {$violations[0]->scopeKey} — " . $violations[0]->rationale();
 
         return new VerificationResult(
             target:      $target,

@@ -16,6 +16,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class PhpstanCeilingIsVersionedTest extends TestCase
 {
+    /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
+    public const RATIONALE = 'Why: a ceiling an environment variable can replace lets one machine\'s shell raise the bar every release is held to, without a commit anyone sees. Learned 2026-09-24: the release script read ${PHPSTAN_CEILING:-179}.';
+
     private const CEILING = __DIR__ . '/../../../resources/phpstan/phpstan-ceiling.json';
     private const GATE = __DIR__ . '/../../../resources/skills/release-readiness/scripts/release-auto-checks.sh';
 

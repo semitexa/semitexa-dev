@@ -30,6 +30,9 @@ use Semitexa\Dev\Application\Service\Quality\Verdict;
  */
 final class QualityLedgerGateTest extends TestCase
 {
+    /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
+    public const RATIONALE = 'Why: a regression in a count is invisible to a duration threshold, so a number nobody records drifts up one reasonable-looking change at a time; the ledger lets it fall freely and rise only with a written reason (ai:quality accept). Learned 2026-09-01: GET / issued 18 queries, 17 of them the same statement, 3.8 ms in total, and the slow-query log could never flag it.';
+
     #[Test]
     public function no_metric_rose_in_the_repos_this_change_touched(): void
     {

@@ -12,7 +12,8 @@ use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
- * Runs one planned lint command and reports it as a verification result.
+ * Runs one planned command gate — a lint, or a docs gate — and reports it as a
+ * verification result.
  *
  * A lint states why it exists in a `RATIONALE` constant on its command class,
  * the same contract as a Semitexa PHPStan rule. When the lint fails, that
@@ -26,15 +27,28 @@ final class LintRunner
         private readonly Application $application,
     ) {}
 
-    public function run(VerificationTarget $target): VerificationResult
+    /**
+     * @param bool $optional the command belongs to optional tooling (semitexa/docs):
+     *                       its absence skips the gate instead of failing it
+     */
+    public function run(VerificationTarget $target, bool $optional = false): VerificationResult
     {
         $commandName = $target->commandName;
         if ($commandName === null) {
-            return $this->incomplete($target, 'lint target missing commandName');
+            return $this->incomplete($target, "{$target->type} target missing commandName");
         }
         try {
             $command = $this->application->find($commandName);
         } catch (CommandNotFoundException) {
+            if ($optional) {
+                return new VerificationResult(
+                    target:   $target,
+                    status:   VerificationResult::STATUS_SKIPPED,
+                    exitCode: 0,
+                    signal:   "semitexa/docs command {$commandName} unavailable; optional documentation tooling",
+                    required: false,
+                );
+            }
             // A planned gate that does not exist is a defect in the plan, not a
             // reason to pass. Reporting it as skipped is how five lints named
             // with a stale prefix went unrun while ai:verify kept saying pass.
@@ -68,7 +82,7 @@ final class LintRunner
             exitCode:    $exit,
             signal:      $why === '' ? $signal : $signal . ' — ' . $why,
             diagnostics: [[
-                'check'         => 'lint',
+                'check'         => $target->type,
                 'severity'      => 'error',
                 'rule'          => $commandName,
                 'identifier'    => $commandName,
