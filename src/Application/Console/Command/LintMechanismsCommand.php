@@ -46,6 +46,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 final class LintMechanismsCommand extends BaseCommand
 {
+    /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
+    public const RATIONALE = 'Why: application code that hand-builds a mechanism the framework already ships drifts from it, and the advice is only obviously relevant at the moment the code is written. Policy since 2026-07-29 (capability catalog); no incident on record.';
+
     #[InjectAsReadonly]
     protected ClassDiscovery $classDiscovery;
 

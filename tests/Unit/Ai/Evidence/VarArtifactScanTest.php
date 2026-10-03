@@ -106,9 +106,14 @@ final class VarArtifactScanTest extends TestCase
             exec('rm -rf ' . escapeshellarg($root));
         }
 
+        $finding = 'lint:var-artifacts → git would commit 1 runtime file(s) from var/, first var/e2e-proof/shot.png: add the directory to .gitignore, or keep evidence in var/evidence/ (ai:evidence add)';
         self::assertSame(
-            ['fail', 'lint:var-artifacts → git would commit 1 runtime file(s) from var/, first var/e2e-proof/shot.png: add the directory to .gitignore, or keep evidence in var/evidence/ (ai:evidence add)'],
+            ['fail', $finding . ' — ' . LintVarArtifactsCommand::RATIONALE],
             [$results[0]->status, $results[0]->signal],
+        );
+        self::assertSame(
+            ['lint:var-artifacts', $finding, LintVarArtifactsCommand::RATIONALE],
+            [$results[0]->diagnostics[0]['rule'], $results[0]->diagnostics[0]['message'], $results[0]->diagnostics[0]['rationale']],
         );
     }
 }

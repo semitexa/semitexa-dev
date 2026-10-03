@@ -354,7 +354,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 22/759 -> 22/760 on 2026-09-13: one line, carrying that same
         // `accepted` block through to the result so the command has something
         // to report. NO NEW METHOD.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 753],
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 704],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new
