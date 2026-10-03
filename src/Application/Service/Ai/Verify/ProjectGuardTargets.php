@@ -78,6 +78,26 @@ final class ProjectGuardTargets
             );
         }
 
+        // A changed test may check less than it did at HEAD: removed, loosened,
+        // skipped. Every scope, because it is one `git show` per test file and
+        // because "the tests pass" is exactly the claim it exists to check.
+        $tests = array_values(array_filter(
+            array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles),
+            static fn (string $path): bool => str_ends_with($path, 'Test.php'),
+        ));
+        if ($tests !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_LINT,
+                id: 'lint:test-integrity',
+                reason: 'a changed test may now check less than at HEAD — removed, loosened or skipped — which turns a suite green without making the code right',
+                triggeredBy: $tests,
+                commandName: 'lint:test-integrity',
+                // Every path of the change, not only the tests: a deleted test
+                // file says why on an added line of whichever file replaced it.
+                commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)],
+            );
+        }
+
         // Tests are not part of the minimal contract, and a consumer project
         // has no workspace tree to ratchet — the suite only exists here.
         if ($effectiveScope === VerificationPlan::SCOPE_MINIMAL || !is_dir($this->projectRoot . '/' . self::RATCHET_SUITE)) {

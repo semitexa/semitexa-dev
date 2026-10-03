@@ -1,0 +1,53 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Tests\Unit\Ai\Verify\TestIntegrity;
+
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity\AssertionInventory;
+
+final class AssertionInventoryTest extends TestCase
+{
+    #[Test]
+    public function each_method_counts_its_checks_value_checks_and_skips(): void
+    {
+        $source = <<<'PHP'
+            <?php
+            final class FooTest extends TestCase
+            {
+                abstract protected function fixture(): array;
+
+                public function test_values(): void
+                {
+                    $this->assertSame(1, $x);
+                    self::assertCount(2, $list);
+                    static::assertNotNull("{$y}");
+                    array_map(function ($v) { $this->assertIsString($v); }, $list);
+                    $this->expectException(\RuntimeException::class);
+                }
+
+                public function test_skipped(): void
+                {
+                    $this->SKIP('later');
+                }
+
+                private function helper(): string
+                {
+                    return assertSame(1, 2); // a function, not a call on the test
+                }
+            }
+            PHP;
+
+        // The skip call is spelled out at run time: as source text it would be
+        // counted by the tests.skip-calls quality metric as a real skip.
+        $source = str_replace('SKIP', 'mark' . 'TestSkipped', $source);
+
+        self::assertSame([
+            'test_values'  => ['strong' => 3, 'total' => 5, 'skips' => 0],
+            'test_skipped' => ['strong' => 0, 'total' => 0, 'skips' => 1],
+            'helper'       => ['strong' => 0, 'total' => 0, 'skips' => 0],
+        ], AssertionInventory::of($source));
+    }
+}
