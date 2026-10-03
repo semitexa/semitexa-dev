@@ -137,16 +137,58 @@ final class TestChangeScanTest extends TestCase
         self::assertCount(1, $result['accepted']);
     }
 
+    #[Test]
+    public function a_renamed_test_is_compared_with_its_own_old_content(): void
+    {
+        // Review of dev#127: renamed, the new path has no HEAD and read as new.
+        $loosened = str_replace("self::assertSame('EUR', \$cart->currency());", '', self::BEFORE);
+        $files = ['tests/PriceTest.php' => [self::BEFORE, null], 'tests/PriceCheck.php' => [null, $loosened]];
+
+        self::assertSame(
+            [[TestChangeFinding::ASSERTIONS_REMOVED, 'test_currency', 'test_currency(): 1 of 1 assertion(s) removed']],
+            self::summary($this->scan($files, ['tests/PriceCheck.php' => 'tests/PriceTest.php'], ['tests/PriceCheck.php'])['findings']),
+        );
+        $moved = ['tests/PriceTest.php' => [self::BEFORE, null], 'tests/CartPriceTest.php' => [null, self::BEFORE]];
+        self::assertSame([], $this->scan($moved, ['tests/CartPriceTest.php' => 'tests/PriceTest.php'], ['tests/CartPriceTest.php'])['findings']);
+    }
+
+    #[Test]
+    public function the_marker_counts_only_in_a_comment(): void
+    {
+        // Review of dev#127: inside a string it is the test's data, not a reason.
+        $after = str_replace(
+            "self::assertSame('EUR', \$cart->currency());",
+            "\$label = 'verify:accept-test-change and a reason that is long enough';",
+            self::BEFORE,
+        );
+
+        self::assertCount(1, $this->scan(['tests/PriceTest.php' => [self::BEFORE, $after]])['findings']);
+    }
+
+    #[Test]
+    public function a_test_whose_committed_version_cannot_be_read_fails_the_scan(): void
+    {
+        $scan = new TestChangeScan(
+            static fn (string $path): ?string => throw new \RuntimeException("cannot read HEAD:{$path}"),
+            static fn (string $path): string => self::BEFORE,
+        );
+
+        $this->expectExceptionObject(new \RuntimeException('cannot read HEAD:tests/PriceTest.php'));
+        $scan->scan(['tests/PriceTest.php']);
+    }
+
     /**
      * @param array<string, array{0: ?string, 1: ?string}> $files path => [committed, current]
+     * @param array<string, string> $renamedFrom
+     * @param list<string>|null $paths
      * @return array{findings: list<TestChangeFinding>, accepted: list<TestChangeFinding>}
      */
-    private function scan(array $files): array
+    private function scan(array $files, array $renamedFrom = [], ?array $paths = null): array
     {
         return (new TestChangeScan(
             static fn (string $path): ?string => $files[$path][0] ?? null,
             static fn (string $path): ?string => $files[$path][1] ?? null,
-        ))->scan(array_keys($files));
+        ))->scan($paths ?? array_keys($files), $renamedFrom);
     }
 
     /**

@@ -81,9 +81,15 @@ final class ProjectGuardTargets
         // A changed test may check less than it did at HEAD: removed, loosened,
         // skipped. Every scope, because it is one `git show` per test file and
         // because "the tests pass" is exactly the claim it exists to check.
-        $tests = array_values(array_filter(
-            array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles),
-            static fn (string $path): bool => str_ends_with($path, 'Test.php'),
+        // A test renamed away from *Test.php still took its checks with it.
+        $tests = array_values(array_map(
+            static fn (ChangedFile $f): string => $f->path,
+            array_filter($changedFiles, static fn (ChangedFile $f): bool => str_ends_with($f->path, 'Test.php')
+                || str_ends_with((string) $f->originalPath, 'Test.php')),
+        ));
+        $renames = array_values(array_map(
+            static fn (ChangedFile $f): string => $f->originalPath . '=>' . $f->path,
+            array_filter($changedFiles, static fn (ChangedFile $f): bool => $f->originalPath !== null && $f->originalPath !== ''),
         ));
         if ($tests !== []) {
             $targets[] = new VerificationTarget(
@@ -94,7 +100,8 @@ final class ProjectGuardTargets
                 commandName: 'lint:test-integrity',
                 // Every path of the change, not only the tests: a deleted test
                 // file says why on an added line of whichever file replaced it.
-                commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)],
+                commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)]
+                    + ($renames === [] ? [] : ['--renamed' => $renames]),
             );
         }
 

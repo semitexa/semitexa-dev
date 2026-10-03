@@ -43,6 +43,16 @@ final class LintTestIntegrityCommandTest extends TestCase
         self::assertNotNull($lint);
         self::assertSame(['packages/semitexa-x/tests/PriceTest.php'], $lint->triggeredBy);
         self::assertSame(['--path' => ['packages/semitexa-x/src/Price.php', 'packages/semitexa-x/tests/PriceTest.php']], $lint->commandInput);
+
+        // A test renamed away from *Test.php is still scheduled, and the pair
+        // is passed so the new file is compared with its old self (review of dev#127).
+        $renamed = new ChangedFile('packages/semitexa-x/tests/PriceCheck.php', ChangedFile::KIND_PHP_OTHER, ChangedFile::STATUS_RENAMED, 'packages/semitexa-x/tests/PriceTest.php');
+        $lint = array_values(array_filter($guards->targets([$renamed], 'minimal'), static fn ($t): bool => $t->id === 'lint:test-integrity'))[0] ?? null;
+        self::assertNotNull($lint);
+        self::assertSame(
+            ['--path' => ['packages/semitexa-x/tests/PriceCheck.php'], '--renamed' => ['packages/semitexa-x/tests/PriceTest.php=>packages/semitexa-x/tests/PriceCheck.php']],
+            $lint->commandInput,
+        );
     }
 
     #[Test]

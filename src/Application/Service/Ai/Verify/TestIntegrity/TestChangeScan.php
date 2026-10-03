@@ -33,10 +33,15 @@ final class TestChangeScan
     ) {}
 
     /**
-     * @param list<string> $paths workspace-relative paths of the change (tests and production alike)
+     * @param list<string>          $paths       workspace-relative paths of the change (tests and production alike)
+     * @param array<string, string> $renamedFrom new path => the path it had at HEAD: a renamed test is
+     *                                           compared with its own old content, not read as new
      * @return array{findings: list<TestChangeFinding>, accepted: list<TestChangeFinding>}
+     *
+     * @throws \RuntimeException when the committed version of a changed test cannot be read: a gate
+     *                           that could not compare must not pass the change
      */
-    public function scan(array $paths): array
+    public function scan(array $paths, array $renamedFrom = []): array
     {
         $findings = [];
         $accepted = [];
@@ -46,15 +51,30 @@ final class TestChangeScan
         // production file on every run.
         $added = [];
         /** @var \Closure(string): list<string> $addedTo */
-        $addedTo = function (string $path) use (&$added): array {
-            return $added[$path] ??= self::addedLines(($this->committed)($path), ($this->current)($path));
+        $addedTo = function (string $path) use (&$added, $renamedFrom): array {
+            return $added[$path] ??= self::addedLines(($this->committed)($renamedFrom[$path] ?? $path), ($this->current)($path));
+        };
+        // Searching every file of the change for a reason must not fail the
+        // scan: a file whose history cannot be read simply offers none.
+        $reasonAnywhere = function () use ($paths, $addedTo): ?string {
+            $lines = [];
+            foreach ($paths as $other) {
+                try {
+                    array_push($lines, ...$addedTo($other));
+                } catch (\RuntimeException) {
+                }
+            }
+
+            return self::reasonIn($lines);
         };
 
         foreach ($paths as $path) {
-            if (!str_ends_with($path, 'Test.php')) {
+            $old = $renamedFrom[$path] ?? $path;
+            // FooTest.php renamed to FooCheck.php still takes FooTest's checks with it.
+            if (!str_ends_with($path, 'Test.php') && !str_ends_with($old, 'Test.php')) {
                 continue;
             }
-            $before = ($this->committed)($path);
+            $before = ($this->committed)($old);
             if ($before === null) {
                 continue; // a new test file weakens nothing
             }
@@ -64,9 +84,7 @@ final class TestChangeScan
                 continue;
             }
             // A deleted file cannot carry its own reason: any file of the change may.
-            $reason = $after === null
-                ? self::reasonIn(array_merge(...array_map($addedTo, $paths)))
-                : self::reasonIn($addedTo($path));
+            $reason = $after === null ? $reasonAnywhere() : self::reasonIn($addedTo($path));
             foreach ($found as $finding) {
                 if ($reason === null) {
                     $findings[] = $finding;
@@ -188,11 +206,12 @@ final class TestChangeScan
     private static function reasonIn(array $lines): ?string
     {
         foreach ($lines as $line) {
-            $at = strpos($line, self::MARKER);
-            if ($at === false) {
+            // Only in a comment: the marker inside a string literal of the test
+            // is data, and must not accept the test's own weakening.
+            if (preg_match('~^\s*(?://|#|/\*+|\*)\s*' . preg_quote(self::MARKER, '~') . '(.*)$~u', $line, $match) !== 1) {
                 continue;
             }
-            $reason = trim(substr($line, $at + strlen(self::MARKER)), " \t:—-*/#");
+            $reason = trim(str_replace('*/', '', $match[1]), " \t:—-");
             if (mb_strlen($reason) >= self::MIN_REASON) {
                 return $reason;
             }

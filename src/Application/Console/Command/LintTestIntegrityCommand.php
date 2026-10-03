@@ -41,18 +41,38 @@ final class LintTestIntegrityCommand extends BaseCommand
     {
         $this
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope')
-            ->addOption('path', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Workspace-relative path of the change (ai:verify passes the paths it selected); default: every uncommitted change');
+            ->addOption('path', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Workspace-relative path of the change (ai:verify passes the paths it selected); default: every uncommitted change')
+            ->addOption('renamed', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'A rename in the change, as OLD=>NEW workspace paths: NEW is compared with OLD at HEAD');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $root = $this->getProjectRoot();
         $paths = array_values(array_filter((array) $input->getOption('path'), is_string(...)));
+        $renamedFrom = [];
+        foreach (array_filter((array) $input->getOption('renamed'), is_string(...)) as $pair) {
+            [$old, $new] = array_pad(explode('=>', $pair, 2), 2, '');
+            if ($old !== '' && $new !== '') {
+                $renamedFrom[$new] = $old;
+            }
+        }
         if ($paths === []) {
-            $paths = array_column((new DirtyWorkspaceScanner($root))->changedFiles(), 'path');
+            foreach ((new DirtyWorkspaceScanner($root))->changedFiles() as $file) {
+                $paths[] = $file['path'];
+                if (isset($file['originalPath'])) {
+                    $renamedFrom[$file['path']] = $file['originalPath'];
+                }
+            }
         }
         $revisions = new WorkspaceRevisions($root);
-        $result = (new TestChangeScan($revisions->committed(...), $revisions->current(...)))->scan($paths);
+        try {
+            $result = (new TestChangeScan($revisions->committed(...), $revisions->current(...)))->scan($paths, $renamedFrom);
+        } catch (\RuntimeException $e) {
+            // Could not compare, so cannot clear the change: fail, and say why.
+            $output->writeln('lint:test-integrity → could not compare a changed test with HEAD: ' . $e->getMessage());
+
+            return self::FAILURE;
+        }
         $findings = $result['findings'];
         $accepted = $result['accepted'];
 

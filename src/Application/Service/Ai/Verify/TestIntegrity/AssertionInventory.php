@@ -89,6 +89,13 @@ final class AssertionInventory
                     }
                 }
             }
+            // Two classes in one file may each have a method of this name:
+            // their checks add up, or a loss in one hides behind the other.
+            if (isset($methods[$name])) {
+                foreach ($counts as $key => $value) {
+                    $counts[$key] = $value + $methods[$name][$key];
+                }
+            }
             $methods[$name] = $counts;
             $i = $k;
         }

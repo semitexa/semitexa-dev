@@ -50,4 +50,14 @@ final class AssertionInventoryTest extends TestCase
             'helper'       => ['strong' => 0, 'total' => 0, 'skips' => 0],
         ], AssertionInventory::of($source));
     }
+
+    #[Test]
+    public function same_named_methods_in_two_classes_add_up(): void
+    {
+        // Review of dev#127: the second overwrote the first, hiding a loss in it.
+        $source = "<?php\nfinal class A { public function test_it(): void { \$this->assertSame(1, 1); \$this->assertSame(2, 2); } }\n"
+            . "final class B { public function test_it(): void { \$this->assertNotNull(1); } }\n";
+
+        self::assertSame(['test_it' => ['strong' => 2, 'total' => 3, 'skips' => 0]], AssertionInventory::of($source));
+    }
 }
