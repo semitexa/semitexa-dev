@@ -888,7 +888,7 @@ final class VerificationPlanner
         $markdown = [];
         $php = [];
         foreach ($changedFiles as $file) {
-            if (str_ends_with(strtolower($file->path), '.md')) {
+            if (str_ends_with(strtolower($file->path), '.md') && !ProjectGuardTargets::isInstruction($file->path)) {
                 $markdown[] = $file->path;
             } elseif (str_ends_with(strtolower($file->path), '.php')) {
                 $php[] = $file->path;
