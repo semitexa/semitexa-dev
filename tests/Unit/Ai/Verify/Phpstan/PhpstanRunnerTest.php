@@ -69,6 +69,34 @@ class PhpstanRunnerTest extends TestCase
         $this->assertStringContainsString('#[InjectAsReadonly]', (string) $diag['suggested_fix']);
     }
 
+    public function test_a_semitexa_rule_rationale_reaches_the_violation_and_the_signal(): void
+    {
+        // The rule attaches its RATIONALE as the PHPStan tip; ai:verify must
+        // forward it where the agent reads: the violation and the one-line signal.
+        $why = 'Why: the container never passes constructor parameters. Learned 2026-04-30: 18 legacy classes.';
+        $json = json_encode([
+            'totals' => ['errors' => 0, 'file_errors' => 2],
+            'files'  => [
+                '/var/www/html/src/Foo.php' => [
+                    'errors'   => 2,
+                    'messages' => [
+                        ['message' => 'Constructor injection on Foo.', 'line' => 7, 'ignorable' => true, 'identifier' => 'semitexa.injectionViaConstructor', 'tip' => $why],
+                        ['message' => 'Class Bar not found.', 'line' => 9, 'ignorable' => true, 'identifier' => 'class.notFound', 'tip' => 'Learn more at https://phpstan.org/user-guide/discovering-symbols'],
+                    ],
+                ],
+            ],
+            'errors' => [],
+        ]);
+
+        $result = $this->runnerWithFakeProcess(1, (string) $json, projectRoot: '/var/www/html')->run(['src/Foo.php']);
+
+        $this->assertSame($why, $result->diagnostics[0]['rationale']);
+        $this->assertSame($why, $result->diagnostics[0]['tip']);
+        $this->assertSame('semitexa.brokenFqcn', $result->diagnostics[1]['identifier']);
+        $this->assertSame('', $result->diagnostics[1]['rationale'], 'a PHPStan help link is not the history of a rule');
+        $this->assertSame('phpstan_di → 2 violation(s); first: semitexa.injectionViaConstructor src/Foo.php — ' . $why, $result->rawSignal);
+    }
+
     public function test_static_container_access_identifier_is_recognised(): void
     {
         $json = json_encode([

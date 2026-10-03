@@ -132,6 +132,12 @@ final class PhpstanRunner
                 $unresolved[0]['identifier'] ?? 'phpstan.error',
                 $unresolved[0]['path'] ?? '?',
             );
+        // The reason the rule exists, at the moment an agent is about to argue
+        // with it: a rejected approach is cheaper to read than to rediscover.
+        $why = $unresolved[0]['rationale'] ?? '';
+        if (is_string($why) && $why !== '') {
+            $signal .= ' — ' . $why;
+        }
 
         if ($accepted !== []) {
             // Named, never hidden. The point of the registry is that a reader
@@ -299,6 +305,7 @@ final class PhpstanRunner
                         : 'phpstan.error';
                     $messageText = isset($msg['message']) && is_string($msg['message']) ? $msg['message'] : '';
                     $identifier  = $this->namespaceBrokenFqcn($rawIdentifier, $messageText);
+                    $tip         = isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '';
                     $rows[] = [
                         'check'         => 'phpstan_di',
                         'severity'      => 'error',
@@ -307,7 +314,12 @@ final class PhpstanRunner
                         'path'          => $rel,
                         'line'          => (int) ($msg['line'] ?? 0),
                         'message'       => $messageText,
-                        'tip'           => isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '',
+                        'tip'           => $tip,
+                        // Why the rule exists and what taught us, from the rule's own
+                        // RATIONALE. Only a Semitexa rule writes one: PHPStan's tips on
+                        // its own errors (and on a remapped class.notFound) are help
+                        // links, not history.
+                        'rationale'     => str_starts_with($rawIdentifier, 'semitexa.') ? $tip : '',
                         'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
                         'suggested_fix' => $this->suggestionFor($identifier),
                     ];
@@ -330,6 +342,7 @@ final class PhpstanRunner
                     'line'          => 0,
                     'message'       => $err,
                     'tip'           => '',
+                    'rationale'     => '',
                     'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
                     'suggested_fix' => 'Resolve the PHPStan configuration issue and re-run ai:verify.',
                 ];
