@@ -44,8 +44,11 @@ final class WorkspaceRevisions
             // Unborn (a fresh `git init`): HEAD names a branch that has no
             // commit yet, so everything in it is new. Anything else that fails
             // here is a broken HEAD, which must not read as "new" (review of dev#127).
+            // show-ref --verify exits 1 for a ref that does not exist and 128
+            // for one that is there but broken (measured on git 2.43 and 2.54);
+            // only the first is unborn (review of dev#127).
             $branch = $this->git($repository, ['symbolic-ref', '-q', 'HEAD']);
-            if ($branch['exit'] === 0 && $this->git($repository, ['show-ref', '--verify', '--quiet', trim($branch['output'])])['exit'] !== 0) {
+            if ($branch['exit'] === 0 && $this->git($repository, ['show-ref', '--verify', '--quiet', trim($branch['output'])])['exit'] === 1) {
                 return null;
             }
             throw new \RuntimeException("HEAD of {$repository} does not resolve to a commit");

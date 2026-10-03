@@ -77,4 +77,17 @@ final class WorkspaceRevisionsTest extends TestCase
         $this->expectExceptionObject(new \RuntimeException('HEAD of ' . $this->root . '/packages/semitexa-x does not resolve to a commit'));
         (new WorkspaceRevisions($this->root))->committed('packages/semitexa-x/tests/OldTest.php');
     }
+
+    #[Test]
+    public function a_branch_ref_holding_a_missing_commit_is_an_error_not_unborn(): void
+    {
+        // HEAD -> refs/heads/<branch> -> an object that does not exist: the
+        // ref is there and broken, not absent (review of dev#127).
+        $repository = $this->root . '/packages/semitexa-x';
+        exec('git -C ' . escapeshellarg($repository) . ' symbolic-ref HEAD', $out);
+        file_put_contents($repository . '/.git/' . trim($out[0]), str_repeat('a', 40) . "\n");
+
+        $this->expectExceptionObject(new \RuntimeException('HEAD of ' . $repository . ' does not resolve to a commit'));
+        (new WorkspaceRevisions($this->root))->committed('packages/semitexa-x/tests/OldTest.php');
+    }
 }
