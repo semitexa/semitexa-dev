@@ -50,7 +50,7 @@ final class LintTestIntegrityCommandTest extends TestCase
         $lint = array_values(array_filter($guards->targets([$renamed], 'minimal'), static fn ($t): bool => $t->id === 'lint:test-integrity'))[0] ?? null;
         self::assertNotNull($lint);
         self::assertSame(
-            ['--path' => ['packages/semitexa-x/tests/PriceCheck.php'], '--renamed' => ['packages/semitexa-x/tests/PriceTest.php=>packages/semitexa-x/tests/PriceCheck.php']],
+            ['--path' => ['packages/semitexa-x/tests/PriceCheck.php'], '--renamed-from' => ['packages/semitexa-x/tests/PriceTest.php'], '--renamed-to' => ['packages/semitexa-x/tests/PriceCheck.php']],
             $lint->commandInput,
         );
     }
@@ -105,6 +105,16 @@ final class LintTestIntegrityCommandTest extends TestCase
         );
         self::assertSame(['lint:test-integrity', LintTestIntegrityCommand::RATIONALE], [$red->diagnostics[0]['rule'], $red->diagnostics[0]['rationale']]);
         self::assertSame([VerificationResult::STATUS_PASS, 'lint:test-integrity → 1 weakening(s) accepted with a reason in the diff: total is pinned in CartTotalTest now'], [$green->status, $green->signal]);
+    }
+
+    #[Test]
+    public function renames_come_in_pairs_whatever_the_paths_contain(): void
+    {
+        // A single OLD=>NEW value broke on a path containing '=>' (review of dev#127).
+        $tester = new CommandTester(new LintTestIntegrityCommand());
+
+        self::assertSame(1, $tester->execute(['--path' => ['x/NewTest.php'], '--renamed-from' => ['a=>b/OldTest.php']]));
+        self::assertStringContainsString('--renamed-from and --renamed-to must come in pairs', $tester->getDisplay());
     }
 
     private function verify(string $root): VerificationResult

@@ -40,9 +40,15 @@ final class WorkspaceRevisions
         if ($readable['exit'] !== 0) {
             throw new \RuntimeException("cannot read the repository {$repository}: " . $readable['output']);
         }
-        // A repository without a commit has no HEAD: everything in it is new.
-        if ($this->git($repository, ['rev-parse', '--verify', '-q', 'HEAD'])['exit'] !== 0) {
-            return null;
+        if ($this->git($repository, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'])['exit'] !== 0) {
+            // Unborn (a fresh `git init`): HEAD names a branch that has no
+            // commit yet, so everything in it is new. Anything else that fails
+            // here is a broken HEAD, which must not read as "new" (review of dev#127).
+            $branch = $this->git($repository, ['symbolic-ref', '-q', 'HEAD']);
+            if ($branch['exit'] === 0 && $this->git($repository, ['show-ref', '--verify', '--quiet', trim($branch['output'])])['exit'] !== 0) {
+                return null;
+            }
+            throw new \RuntimeException("HEAD of {$repository} does not resolve to a commit");
         }
         $listing = $this->git($repository, ['ls-tree', '--name-only', 'HEAD', '--', $relative]);
         if ($listing['exit'] !== 0) {
@@ -60,26 +66,36 @@ final class WorkspaceRevisions
     }
 
     /**
+     * proc_open, not exec(): exec() strips trailing whitespace from every line
+     * it captures, and a committed line that differs from the working tree by
+     * its trailing spaces then reads as added (review of dev#127).
+     *
      * @param list<string> $arguments
      * @return array{exit: int, output: string}
      */
     private function git(string $repository, array $arguments, bool $content = false): array
     {
-        $output = [];
-        $exit = 1;
         // `-c safe.directory=` for this repository only: the command runs as a
         // different user inside the container, and git refuses a "dubious
         // ownership" repository outright (same as DirtyWorkspaceScanner).
-        exec(sprintf(
-            // Content must be the blob alone; a diagnostic is wanted otherwise.
-            'git -C %s -c safe.directory=%s %s %s',
-            escapeshellarg($repository),
-            escapeshellarg($repository),
-            implode(' ', array_map('escapeshellarg', $arguments)),
-            $content ? '2>/dev/null' : '2>&1',
-        ), $output, $exit);
+        $command = ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, ...$arguments];
+        // A blob read sends stderr nowhere: draining two pipes one after the
+        // other can block on the one not being read.
+        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => $content ? ['file', '/dev/null', 'w'] : ['pipe', 'w']], $pipes);
+        if (!is_resource($process)) {
+            return ['exit' => 1, 'output' => 'git could not be started'];
+        }
+        $stdout = (string) stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $stderr = '';
+        if (isset($pipes[2])) {
+            $stderr = (string) stream_get_contents($pipes[2]);
+            fclose($pipes[2]);
+        }
+        $exit = proc_close($process);
 
-        return ['exit' => $exit, 'output' => implode("\n", $output)];
+        // Content must be the blob alone; a diagnostic is wanted otherwise.
+        return ['exit' => $exit, 'output' => $content ? $stdout : rtrim($stdout . $stderr)];
     }
 
     public function current(string $path): ?string

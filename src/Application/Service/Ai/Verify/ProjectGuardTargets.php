@@ -87,10 +87,7 @@ final class ProjectGuardTargets
             array_filter($changedFiles, static fn (ChangedFile $f): bool => str_ends_with($f->path, 'Test.php')
                 || str_ends_with((string) $f->originalPath, 'Test.php')),
         ));
-        $renames = array_values(array_map(
-            static fn (ChangedFile $f): string => $f->originalPath . '=>' . $f->path,
-            array_filter($changedFiles, static fn (ChangedFile $f): bool => $f->originalPath !== null && $f->originalPath !== ''),
-        ));
+        $renames = array_values(array_filter($changedFiles, static fn (ChangedFile $f): bool => $f->originalPath !== null && $f->originalPath !== ''));
         if ($tests !== []) {
             $targets[] = new VerificationTarget(
                 type: VerificationTarget::TYPE_LINT,
@@ -101,7 +98,10 @@ final class ProjectGuardTargets
                 // Every path of the change, not only the tests: a deleted test
                 // file says why on an added line of whichever file replaced it.
                 commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)]
-                    + ($renames === [] ? [] : ['--renamed' => $renames]),
+                    + ($renames === [] ? [] : [
+                        '--renamed-from' => array_map(static fn (ChangedFile $f): string => (string) $f->originalPath, $renames),
+                        '--renamed-to'   => array_map(static fn (ChangedFile $f): string => $f->path, $renames),
+                    ]),
             );
         }
 

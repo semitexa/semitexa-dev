@@ -42,20 +42,24 @@ final class LintTestIntegrityCommand extends BaseCommand
         $this
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope')
             ->addOption('path', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Workspace-relative path of the change (ai:verify passes the paths it selected); default: every uncommitted change')
-            ->addOption('renamed', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'A rename in the change, as OLD=>NEW workspace paths: NEW is compared with OLD at HEAD');
+            ->addOption('renamed-from', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'The old path of a rename in the change; paired by position with --renamed-to')
+            ->addOption('renamed-to', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'The new path of that rename: it is compared with the old path at HEAD');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $root = $this->getProjectRoot();
         $paths = array_values(array_filter((array) $input->getOption('path'), is_string(...)));
-        $renamedFrom = [];
-        foreach (array_filter((array) $input->getOption('renamed'), is_string(...)) as $pair) {
-            [$old, $new] = array_pad(explode('=>', $pair, 2), 2, '');
-            if ($old !== '' && $new !== '') {
-                $renamedFrom[$new] = $old;
-            }
+        // Two lists paired by position: a path can contain any delimiter a
+        // single OLD=>NEW value would need (review of dev#127).
+        $from = array_values(array_filter((array) $input->getOption('renamed-from'), is_string(...)));
+        $to = array_values(array_filter((array) $input->getOption('renamed-to'), is_string(...)));
+        if (count($from) !== count($to)) {
+            $output->writeln('lint:test-integrity → --renamed-from and --renamed-to must come in pairs');
+
+            return self::FAILURE;
         }
+        $renamedFrom = $to === [] ? [] : array_combine($to, $from);
         if ($paths === []) {
             foreach ((new DirtyWorkspaceScanner($root))->changedFiles() as $file) {
                 $paths[] = $file['path'];
