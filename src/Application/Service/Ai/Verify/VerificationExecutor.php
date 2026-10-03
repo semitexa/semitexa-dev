@@ -289,7 +289,7 @@ final class VerificationExecutor
             $signal = "module_structure {$rel} → 0 violations";
         } else {
             $first = $violations[0];
-            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}";
+            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}" . $first->whyClause();
         }
 
         return new VerificationResult(
