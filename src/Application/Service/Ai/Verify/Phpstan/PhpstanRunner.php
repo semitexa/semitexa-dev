@@ -419,15 +419,41 @@ final class PhpstanRunner
         return $rawIdentifier;
     }
 
-    /** @internal public for the test that pins it */
-    public static function tmpDir(): string
+    /**
+     * The per-uid directory, unless someone else got there first: a path
+     * another user created (or a symlink planted there) is owned by them,
+     * and PHPStan could not write its cache into it. Then a fresh private
+     * directory this process creates itself.
+     *
+     * @internal public (and parameterised) for the test that pins it
+     */
+    public static function tmpDir(?string $base = null, ?int $uid = null): string
     {
-        $dir = rtrim(sys_get_temp_dir(), '/') . '/semitexa-phpstan-' . self::processUid(function_exists('posix_geteuid'));
-        if (!is_dir($dir)) {
+        $base = rtrim($base ?? sys_get_temp_dir(), '/');
+        $uid ??= self::processUid(function_exists('posix_geteuid'));
+        $dir = $base . '/semitexa-phpstan-' . $uid;
+        if (!file_exists($dir) && !is_link($dir)) {
             @mkdir($dir, 0700, true);
+        }
+        if (self::isOwnWritableDir($dir, $uid)) {
+            return $dir;
+        }
+        for ($attempt = 0; $attempt < 8; $attempt++) {
+            $private = $dir . '-' . bin2hex(random_bytes(4));
+            // mkdir() fails on an existing path, so success means we made it.
+            if (@mkdir($private, 0700)) {
+                return $private;
+            }
         }
 
         return $dir;
+    }
+
+    private static function isOwnWritableDir(string $dir, int $uid): bool
+    {
+        clearstatcache(true, $dir);
+
+        return !is_link($dir) && is_dir($dir) && @fileowner($dir) === $uid && is_writable($dir);
     }
 
     /**
