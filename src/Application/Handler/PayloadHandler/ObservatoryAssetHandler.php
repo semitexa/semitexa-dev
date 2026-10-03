@@ -33,6 +33,12 @@ final class ObservatoryAssetHandler implements TypedHandlerInterface
         'observatory.js' => 'text/javascript; charset=utf-8',
     ];
 
+    /** The Evidence view: dev only, like the store it shows. */
+    private const DEV_SERVED = [
+        'evidence-view.css' => 'text/css; charset=utf-8',
+        'evidence-view.js' => 'text/javascript; charset=utf-8',
+    ];
+
     #[InjectAsReadonly]
     protected ObservatoryPanelGate $gate;
 
@@ -43,6 +49,9 @@ final class ObservatoryAssetHandler implements TypedHandlerInterface
         if (isset(GraphViewerAssets::FILES[$name])) {
             $type = GraphViewerAssets::FILES[$name];
             $body = $this->gate->allowsDevTools() ? GraphViewerAssets::read($name) : null;
+        } elseif (isset(self::DEV_SERVED[$name])) {
+            $type = self::DEV_SERVED[$name];
+            $body = $this->gate->allowsDevTools() ? @file_get_contents(ObservatoryHtmlRenderer::assetDir() . '/' . $name) : null;
         } else {
             $type = self::SERVED[$name] ?? null;
             // Safe to build only once $name is one of the keys above.

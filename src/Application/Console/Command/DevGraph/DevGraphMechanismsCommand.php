@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Semitexa\Core\Console\BaseCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -61,6 +62,10 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $capabilities = $everything;
 
         $state = $input->getOption('state');
+        // A typo filtered everything away and reported "count: 0" with exit 0.
+        if (is_string($state) && $state !== '' && !in_array($state, ['installed', 'available'], true)) {
+            return $this->refuse($input, $output, sprintf('--state accepts installed or available; got "%s".', $state));
+        }
         if (is_string($state) && $state !== '') {
             $capabilities = array_values(array_filter(
                 $capabilities,
@@ -84,9 +89,8 @@ final class DevGraphMechanismsCommand extends BaseCommand
             ));
 
             if ($capabilities === []) {
-                $output->writeln('<comment>' . self::missingIdMessage($everything, $id) . '</comment>');
-
-                return Command::FAILURE;
+                // --json callers got this as plain text.
+                return $this->refuse($input, $output, self::missingIdMessage($everything, $id));
             }
         }
 
@@ -272,4 +276,14 @@ final class DevGraphMechanismsCommand extends BaseCommand
         ];
     }
 
+    private function refuse(InputInterface $input, OutputInterface $output, string $message): int
+    {
+        if ($input->getOption('json')) {
+            $output->writeln((string) json_encode(['artifact' => 'semitexa.dev.mechanisms/v1', 'error' => $message], JSON_UNESCAPED_SLASHES));
+        } else {
+            $output->writeln('<comment>' . OutputFormatter::escape($message) . '</comment>');
+        }
+
+        return Command::FAILURE;
+    }
 }

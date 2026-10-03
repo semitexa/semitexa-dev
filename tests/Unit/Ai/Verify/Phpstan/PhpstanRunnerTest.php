@@ -112,6 +112,106 @@ class PhpstanRunnerTest extends TestCase
         $this->assertSame('phpstan.error', $result->diagnostics[0]['identifier']);
     }
 
+    /**
+     * PHPStan's cache lives in sys_get_temp_dir()/phpstan, shared by every
+     * user: one run as root left it 0755 and the gate errored for everyone
+     * else until the container was recreated (2026-10-02).
+     */
+    public function test_phpstan_runs_with_a_temp_dir_of_its_own_user(): void
+    {
+        $process = new class implements ProcessRunner {
+            /** @var list<string> */
+            public array $command = [];
+            public function run(array $command, string $cwd): array
+            {
+                $this->command = $command;
+                return ['exit' => 0, 'output' => (string) json_encode(['totals' => ['errors' => 0, 'file_errors' => 0], 'files' => new \stdClass(), 'errors' => []])];
+            }
+        };
+        (new PhpstanRunner(projectRoot: '/var/www/html', processRunner: $process, phpstanBinary: __FILE__, configPath: __FILE__))->run(['Foo.php']);
+
+        $uid = PhpstanRunner::processUid(function_exists('posix_geteuid'));
+        $this->assertSame('env', $process->command[0]);
+        // The per-uid directory, or a private suffixed one when someone else got there first.
+        $this->assertMatchesRegularExpression('~^TMPDIR=' . preg_quote(sys_get_temp_dir() . '/semitexa-phpstan-' . $uid, '~') . '(-[0-9a-f]{8})?$~', $process->command[1]);
+        $this->assertSame([__FILE__, 'analyse'], array_slice($process->command, 2, 2));
+        $tmpDir = substr($process->command[1], strlen('TMPDIR='));
+        $this->assertSame($uid, fileowner($tmpDir));
+        $this->assertSame(0700, fileperms($tmpDir) & 0777, 'nobody else writes into it, nobody else is locked out of theirs');
+    }
+
+    public function test_without_posix_the_uid_is_the_process_not_the_script_owner(): void
+    {
+        // getmyuid() names the owner of the running script: under another user
+        // (root in the container, a second developer) it chose a directory
+        // that user could not write (review of dev#126).
+        $probe = tempnam(sys_get_temp_dir(), 'uid-owner-');
+        $owner = fileowner($probe);
+        unlink($probe);
+
+        $this->assertSame($owner, PhpstanRunner::processUid(false));
+        if (function_exists('posix_geteuid')) {
+            $this->assertSame($owner, PhpstanRunner::processUid(true));
+        }
+    }
+
+    public function test_a_per_uid_dir_someone_else_owns_is_not_reused(): void
+    {
+        // Another user created semitexa-phpstan-<uid> first: PHPStan could not
+        // write its cache there (review of dev#126). Simulated by asking for a
+        // uid that does not own the directory this process creates.
+        $base = sys_get_temp_dir() . '/phpstan-tmpdir-test-' . bin2hex(random_bytes(4));
+        mkdir($base, 0700);
+        $own = (int) fileowner($base);
+        $foreign = $own + 4242;
+        mkdir($base . '/semitexa-phpstan-' . $foreign, 0700);
+
+        try {
+            $dir = PhpstanRunner::tmpDir($base, $foreign);
+            $this->assertNotNull($dir);
+            $this->assertNotSame($base . '/semitexa-phpstan-' . $foreign, $dir);
+            $this->assertMatchesRegularExpression('~^' . preg_quote($base, '~') . '/semitexa-phpstan-' . $foreign . '-[0-9a-f]{8}$~', $dir);
+            $this->assertSame($own, fileowner($dir));
+            $this->assertSame(0700, fileperms($dir) & 0777);
+
+            $this->assertSame($base . '/semitexa-phpstan-' . $own, PhpstanRunner::tmpDir($base, $own), 'its own directory is reused');
+        } finally {
+            exec('rm -rf ' . escapeshellarg($base));
+        }
+    }
+
+    public function test_an_own_per_uid_dir_open_to_others_is_not_reused(): void
+    {
+        // Others could replace the result cache in a 0777 directory (review of dev#126).
+        $base = sys_get_temp_dir() . '/phpstan-tmpdir-test-' . bin2hex(random_bytes(4));
+        mkdir($base, 0700);
+        $own = (int) fileowner($base);
+        $open = $base . '/semitexa-phpstan-' . $own;
+        mkdir($open);
+        chmod($open, 0777);
+
+        try {
+            $dir = PhpstanRunner::tmpDir($base, $own);
+            $this->assertMatchesRegularExpression('~^' . preg_quote($open, '~') . '-[0-9a-f]{8}$~', (string) $dir);
+            $this->assertSame(0700, fileperms((string) $dir) & 0777);
+        } finally {
+            exec('rm -rf ' . escapeshellarg($base));
+        }
+    }
+
+    public function test_no_temp_dir_at_all_is_null_not_an_unusable_path(): void
+    {
+        // A base nothing can be created under (a regular file): returning the
+        // unusable per-uid path handed PHPStan a TMPDIR it could not write.
+        $base = (string) tempnam(sys_get_temp_dir(), 'phpstan-base-');
+
+        try {
+            $this->assertNull(PhpstanRunner::tmpDir($base, (int) fileowner($base)));
+        } finally {
+            unlink($base);
+        }
+    }
+
     public function test_unparseable_output_is_reported_as_error(): void
     {
         $runner = $this->runnerWithFakeProcess(0, "not JSON at all\nsome garbage\n");

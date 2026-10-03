@@ -68,7 +68,18 @@ final class PhpstanRunner
             );
         }
 
+        // PHPStan keeps its container cache in sys_get_temp_dir()/phpstan, one
+        // directory for every user. A single run as root (`docker compose exec
+        // app` without --user) left it 0755 and every later run as the host
+        // user died "Unable to create file … .lock" — reported as an error of
+        // the gate, on code nobody had touched (2026-10-02). Per-user TMPDIR.
+        $tmpDir = self::tmpDir();
+        if ($tmpDir === null) {
+            return $this->error('no private temp directory for phpstan under ' . sys_get_temp_dir());
+        }
         $command = [
+            'env',
+            'TMPDIR=' . $tmpDir,
             $binary,
             'analyse',
             '--no-progress',
@@ -410,6 +421,73 @@ final class PhpstanRunner
             }
         }
         return $rawIdentifier;
+    }
+
+    /**
+     * The per-uid directory, unless someone else got there first: a path
+     * another user created (or a symlink planted there) is owned by them,
+     * and PHPStan could not write its cache into it; one open to the group
+     * or the world lets others replace the cache. Then a fresh private
+     * directory this process creates itself, or null when none can be made.
+     *
+     * @internal public (and parameterised) for the test that pins it
+     */
+    public static function tmpDir(?string $base = null, ?int $uid = null): ?string
+    {
+        $base = rtrim($base ?? sys_get_temp_dir(), '/');
+        $uid ??= self::processUid(function_exists('posix_geteuid'));
+        $dir = $base . '/semitexa-phpstan-' . $uid;
+        if (!file_exists($dir) && !is_link($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        if (self::isOwnWritableDir($dir, $uid)) {
+            return $dir;
+        }
+        for ($attempt = 0; $attempt < 8; $attempt++) {
+            $private = $dir . '-' . bin2hex(random_bytes(4));
+            // mkdir() fails on an existing path, so success means we made it.
+            if (@mkdir($private, 0700)) {
+                return $private;
+            }
+        }
+
+        return null;
+    }
+
+    private static function isOwnWritableDir(string $dir, int $uid): bool
+    {
+        clearstatcache(true, $dir);
+
+        $mode = @fileperms($dir);
+
+        return !is_link($dir)
+            && is_dir($dir)
+            && @fileowner($dir) === $uid
+            && is_writable($dir)
+            && $mode !== false
+            && ($mode & 0077) === 0;
+    }
+
+    /**
+     * The effective uid of THIS process. Without POSIX, not getmyuid(): that
+     * is the uid of the script's owner, which every user running the same
+     * install shares, so the second one met the first one's 0700 directory.
+     * A file this process just created is owned by its effective uid.
+     *
+     * @internal public for the test that pins it
+     */
+    public static function processUid(bool $posix): int
+    {
+        if ($posix) {
+            return posix_geteuid();
+        }
+        $probe = @tempnam(sys_get_temp_dir(), 'semitexa-uid-');
+        $uid = is_string($probe) ? @fileowner($probe) : false;
+        if (is_string($probe)) {
+            @unlink($probe);
+        }
+
+        return is_int($uid) ? $uid : (int) getmyuid();
     }
 
     private function discoverConfig(): string

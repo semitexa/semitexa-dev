@@ -20,6 +20,11 @@
 #   trip GitHub's secondary rate limits. Override with
 #   PR_REPLY_DELAY_MIN_SECONDS / PR_REPLY_DELAY_MAX_SECONDS; set both to 0 for none.
 #
+# Private evidence:
+#   A reply is public. One carrying a screenshot, an upload link, a workstation
+#   path or a token shape is refused (review-prep/private-evidence-patterns.json);
+#   --allow-private-evidence is the operator's call, never the agent's.
+#
 # Examples:
 #   pr-reply.sh semitexa/platform-wm 5 12345 "Fixed — moved overflow to .content"
 #   pr-reply.sh semitexa/semitexa-core 72 4234028496 "Already addressed in caa141b." --kind=review
@@ -27,6 +32,7 @@
 set -euo pipefail
 
 KIND="line"
+ALLOW_PRIVATE_EVIDENCE=0
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,8 +45,13 @@ while [[ $# -gt 0 ]]; do
             KIND="$2"
             shift 2
             ;;
+        --allow-private-evidence)
+            # Only when the operator approved publishing this exact reply.
+            ALLOW_PRIVATE_EVIDENCE=1
+            shift
+            ;;
         --help|-h)
-            sed -n '2,26p' "$0"
+            sed -n '2,31p' "$0"
             exit 0
             ;;
         --)
@@ -83,6 +94,41 @@ case "$KIND" in
     *) printf 'Unknown --kind: %s (expected: line, review, issue)\n' "$KIND" >&2; exit 1 ;;
 esac
 BODY="${POSITIONAL[3]}"
+
+if [[ "$ALLOW_PRIVATE_EVIDENCE" -eq 0 ]]; then
+    # Beside the skill (a runtime's skills dir), or — for the flat copy in a
+    # project's bin/ — from the package that ships it. None found means the
+    # check cannot run, and a check that cannot run must not pass.
+    HERE="$(cd "$(dirname "$0")" && pwd)"
+    CHECKER=""
+    for candidate in \
+        "$HERE/../../review-prep/scripts/check-public-text.py" \
+        "$HERE/../packages/semitexa-dev/resources/skills/review-prep/scripts/check-public-text.py" \
+        "$HERE/../vendor/semitexa/dev/resources/skills/review-prep/scripts/check-public-text.py"; do
+        if [[ -f "$candidate" ]]; then
+            CHECKER="$candidate"
+            break
+        fi
+    done
+    BODY_FILE="$(mktemp)"
+    trap 'rm -f "$BODY_FILE"' EXIT
+    printf '%s\n' "$BODY" > "$BODY_FILE"
+    CHECK_STATUS=0
+    if [[ -z "$CHECKER" ]]; then
+        CHECK_STATUS=2
+        echo "check-public-text.py not found beside this script, in packages/semitexa-dev or in vendor/semitexa/dev." >&2
+    else
+        python3 "$CHECKER" "reply=$BODY_FILE" || CHECK_STATUS=$?
+    fi
+    if [[ "$CHECK_STATUS" -ne 0 ]]; then
+        if [[ "$CHECK_STATUS" -eq 3 ]]; then
+            echo "Refusing to post: the reply carries private review evidence (above). Describe it in words, or pass --allow-private-evidence if the operator approved it." >&2
+        else
+            echo "Refusing to post: the private-evidence check could not run (exit $CHECK_STATUS)." >&2
+        fi
+        exit 1
+    fi
+fi
 
 # Throttle before posting.
 #

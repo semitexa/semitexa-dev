@@ -62,16 +62,17 @@ final class ObservatoryHtmlRenderer
         // the Explorer — monitor mode never gets the switch, the assets or the data.
         $graph = ObservatoryMode::full();
         $modeSwitch = $graph
-            ? '<span class="seg mode" id="mode" title="live processes or the project graph"><button type="button" class="on" data-mode="live">live</button><button type="button" data-mode="graph">graph <kbd>G</kbd></button></span>'
+            ? '<span class="seg mode" id="mode" title="live processes, the project graph or the review evidence"><button type="button" class="on" data-mode="live">live</button><button type="button" data-mode="graph">graph <kbd>G</kbd></button><button type="button" data-mode="evidence">evidence <kbd>V</kbd></button></span>'
             : '';
         $graphView = $graph
             ? '<section class="graph-host" id="view-graph" hidden data-graph-endpoint="/__observatory/graph"></section>'
+                . '<section class="evidence-host" id="view-evidence" hidden data-evidence-endpoint="/__observatory/evidence" aria-label="Review evidence"></section>'
             : '';
         $graphAssets = $graph
-            ? '<link rel="stylesheet" href="/__observatory/asset/graph-view.css">'
+            ? '<link rel="stylesheet" href="/__observatory/asset/graph-view.css"><link rel="stylesheet" href="/__observatory/asset/evidence-view.css">'
             : '';
         $graphScript = $graph
-            ? '<script src="/__observatory/asset/graph-view.js"></script>'
+            ? '<script src="/__observatory/asset/graph-view.js"></script><script src="/__observatory/asset/evidence-view.js"></script>'
             : '';
 
         return <<<HTML
@@ -210,6 +211,11 @@ HTML;
     {
         $missing = [];
         foreach (['observatory.css', 'observatory.js'] as $name) {
+            if (!is_file(self::assetDir() . '/' . $name)) {
+                $missing[] = $name;
+            }
+        }
+        foreach ($withGraph ? ['evidence-view.css', 'evidence-view.js'] : [] as $name) {
             if (!is_file(self::assetDir() . '/' . $name)) {
                 $missing[] = $name;
             }

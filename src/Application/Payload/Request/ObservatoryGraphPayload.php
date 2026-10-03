@@ -42,9 +42,13 @@ final class ObservatoryGraphPayload
      * The hydrator fills payloads through set{CamelCase}() rather than by writing
      * properties, so a public property alone is never populated.
      */
+    /**
+     * Kept as sent; the handler answers anything outside VIEWS with a 400. A
+     * typo used to come back as the 290 KB summary with a 200.
+     */
     public function setView(mixed $value): void
     {
-        $this->view = is_string($value) && in_array($value, self::VIEWS, true) ? $value : 'summary';
+        $this->view = is_string($value) ? substr($value, 0, 64) : '';
     }
 
     public function setId(mixed $value): void

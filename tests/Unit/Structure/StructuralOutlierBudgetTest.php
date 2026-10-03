@@ -284,7 +284,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // a file staged for deletion and written again, and keeping only the
         // deletion made the planner skip a file sitting right there.
         // METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 740],
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 738],
         // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
         // review of dev#84 and the ratchet said so. The addition is a refusal:
         // `--preview` with `--expect-field` resolved the target, returned

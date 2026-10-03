@@ -7,6 +7,7 @@ checks_file=""
 base_branch=""
 title=""
 body_source=""
+allow_private_evidence=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -26,6 +27,11 @@ while [ "$#" -gt 0 ]; do
             body_source="${2:-}"
             shift 2
             ;;
+        --allow-private-evidence)
+            # Only when the operator said so for THIS description.
+            allow_private_evidence=1
+            shift
+            ;;
         *)
             if [ -z "$repo" ]; then
                 repo="$1"
@@ -38,7 +44,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title] [--body-file /tmp/body.md]\n' "$0" >&2; exit 1; }
+[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title] [--body-file /tmp/body.md] [--allow-private-evidence]\n' "$0" >&2; exit 1; }
 if [ -n "$body_source" ]; then
     [ -f "$body_source" ] || { printf 'Body file not found: %s\n' "$body_source" >&2; exit 1; }
     # An empty file is the likelier mistake than a missing one -- a heredoc that
@@ -100,6 +106,25 @@ if [ -n "$body_source" ]; then
     cat "$body_source" > "$body_file"
 else
     "$script_dir/render-pr-body.sh" "$repo" "$checks_file" "$base_branch" > "$body_file"
+fi
+
+# The description is published the moment the PR exists, and a screenshot or
+# a local path an agent pasted as "proof" goes with it (PixelLeak, 2026-09).
+# Checked before the push, so a refusal leaves nothing behind on GitHub.
+title_file="$(mktemp)"
+trap 'rm -f "$body_file" "$title_file"' EXIT
+printf '%s\n' "$title" > "$title_file"
+if [ "$allow_private_evidence" -eq 0 ]; then
+    check_status=0
+    python3 "$script_dir/check-public-text.py" "title=$title_file" "description=$body_file" || check_status=$?
+    if [ "$check_status" -ne 0 ]; then
+        if [ "$check_status" -eq 3 ]; then
+            printf 'Refusing to publish: the PR title or description carries private review evidence (above).\nRemove it, or pass --allow-private-evidence if the operator approved publishing it.\n' >&2
+        else
+            printf 'Refusing to publish: the private-evidence check could not run (exit %s).\n' "$check_status" >&2
+        fi
+        exit 1
+    fi
 fi
 
 git -C "$repo" push -u origin HEAD

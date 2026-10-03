@@ -883,19 +883,21 @@ final class VerificationPlanner
      */
     private function docsTargets(array $changedFiles): array
     {
-        $touchedMarkdown = false;
-        $touchedPhp = false;
+        // The files each gate reads, named: an empty triggeredBy made every
+        // changed .md look unchecked to the coverage report.
+        $markdown = [];
+        $php = [];
         foreach ($changedFiles as $file) {
             if (str_ends_with(strtolower($file->path), '.md')) {
-                $touchedMarkdown = true;
+                $markdown[] = $file->path;
             } elseif (str_ends_with(strtolower($file->path), '.php')) {
-                $touchedPhp = true;
+                $php[] = $file->path;
             }
         }
 
         $targets = [];
 
-        if ($touchedMarkdown) {
+        if ($markdown !== []) {
             $input = [];
             $baseline = $this->projectRoot . '/var/docs/docs-lint-baseline.json';
             if (is_file($baseline)) {
@@ -906,18 +908,18 @@ final class VerificationPlanner
                 type: VerificationTarget::TYPE_DOCS,
                 id: 'docs:claims',
                 reason: 'a documented attribute, command or env key that the framework no longer has',
-                triggeredBy: [],
+                triggeredBy: $markdown,
                 commandName: 'docs:lint',
                 commandInput: $input,
             );
         }
 
-        if ($touchedPhp) {
+        if ($php !== []) {
             $targets[] = new VerificationTarget(
                 type: VerificationTarget::TYPE_DOCS,
                 id: 'docs:reference',
                 reason: 'the generated reference is built from signatures; changing one without rebuilding leaves the page wrong',
-                triggeredBy: [],
+                triggeredBy: $php,
                 commandName: 'docs:reference:generate',
                 commandInput: ['--check' => true],
             );

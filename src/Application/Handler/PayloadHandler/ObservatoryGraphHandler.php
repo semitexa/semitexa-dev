@@ -45,6 +45,10 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
                 ->setContent('Not Found');
         }
 
+        if (!in_array($payload->view, ObservatoryGraphPayload::VIEWS, true)) {
+            return $this->json($resource, ['error' => 'unknown-view', 'view' => $payload->view, 'views' => ObservatoryGraphPayload::VIEWS], HttpStatus::BadRequest->value);
+        }
+
         if ($payload->view === 'traces') {
             // Read from the journal, not the graph: it answers without one.
             $fqcn = str_starts_with($payload->id, 'class:') ? substr($payload->id, 6) : '';
@@ -70,8 +74,9 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
         $body = match ($payload->view) {
             'node' => $browser->describe($payload->id),
             'subgraph' => $browser->subgraph($payload->id, $payload->depth),
-            'path' => ['id' => $payload->id, 'path' => $browser->pathToEntry($payload->id)],
-            'search' => ['query' => $payload->q, 'hits' => $browser->search($payload->q)],
+            // No such node is a 404 like `node` and `subgraph`; `path: null` means only "unreachable".
+            'path' => $storage->nodes->findById($payload->id) === null ? null : ['id' => $payload->id, 'path' => $browser->pathToEntry($payload->id)],
+            'search' => ['query' => $payload->q] + $browser->searchPage($payload->q),
             'findings' => $browser->findings(),
             default => $browser->summary() + ['stale' => $this->graph->isStale()],
         };

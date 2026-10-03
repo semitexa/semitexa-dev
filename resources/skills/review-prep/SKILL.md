@@ -75,6 +75,15 @@ scripts/create-review-pr.sh /absolute/path/to/repo --checks-file /tmp/review-che
 scripts/create-review-pr.sh /absolute/path/to/repo --checks-file /tmp/review-checks.txt \
     --title 'Subject that names the change' --body-file /tmp/pr-body.md
 ```
+- the title and description are checked for private review evidence **before the push**: an image,
+  a GitHub upload link, a `data:` URI, a workstation path (`/home/<user>/`, `/Users/<user>/`,
+  `/tmp/claude-…`) or a token shape makes the script refuse with each finding listed. Remove it and
+  describe the result in words — a screenshot of your session shows whatever was on screen, and a
+  PR description is public the moment it exists. Keep the proof itself with
+  `bin/semitexa ai:evidence add <file> --kind=screenshot --data=synthetic` and name its id in the
+  description; only the operator, at their own terminal, runs `ai:evidence publish`. Pass `--allow-private-evidence` only when the
+  operator approved publishing that exact content; the patterns live in
+  `private-evidence-patterns.json`
 - **never reach for `gh pr edit`.** On orgs that still carry Projects (classic) it fails with a
   `projectCards` deprecation error even though the edit is valid; this script goes through
   `gh api -X PATCH` for exactly that reason, and going around it re-learns the failure by hand

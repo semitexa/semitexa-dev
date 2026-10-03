@@ -101,7 +101,7 @@ final class VerificationExecutor
         }
 
         $buffer = new BufferedOutput();
-        $input = new ArrayInput(['command' => $commandName]);
+        $input = new ArrayInput(['command' => $commandName] + $target->commandInput);
         $input->setInteractive(false);
 
         try {
@@ -213,7 +213,7 @@ final class VerificationExecutor
         $abs = $rel !== null ? $this->projectRoot . '/' . ltrim($rel, '/') : null;
         $isDir = $abs !== null && is_dir($abs);
 
-        $command = $target->commandInput === [] ? [$binary] : ['env', ...array_map(static fn (string $k, string|bool $v): string => $k . '=' . (string) $v, array_keys($target->commandInput), $target->commandInput), $binary];
+        $command = $target->commandInput === [] ? [$binary] : ['env', ...array_map(static fn (string $k, string|bool|array $v): string => $k . '=' . (is_array($v) ? implode(',', $v) : (string) $v), array_keys($target->commandInput), $target->commandInput), $binary];
         if ($filter !== null) {
             $command[] = '--filter';
             $command[] = $filter;
