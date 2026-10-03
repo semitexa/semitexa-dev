@@ -22,7 +22,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
  * Runs every {@see VerificationTarget} in a {@see VerificationPlan} and
  * collects per-target outcomes. Three dispatch paths:
  *
- *   - lint    → Application::find()->run() with BufferedOutput
+ *   - lint    → LintRunner (Application::find()->run(), plus the lint's RATIONALE on failure)
  *               (matches {@see \Semitexa\Dev\Application\Service\Generation\Verifier\PostWriteLinter})
  *   - syntax  → `php -l <file>`
  *   - phpunit → `vendor/bin/phpunit --filter <class>`
@@ -37,6 +37,7 @@ final class VerificationExecutor
     private readonly ModuleStructureSpecLoader $specLoader;
 
     private readonly PhpstanRunner $phpstanRunner;
+    private readonly LintRunner $lintRunner;
 
     public function __construct(
         private readonly Application $application,
@@ -49,6 +50,7 @@ final class VerificationExecutor
     ) {
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
         $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
+        $this->lintRunner = new LintRunner($application);
     }
 
     /**
@@ -79,7 +81,7 @@ final class VerificationExecutor
                 ),
             };
             } catch (\Throwable $e) {
-                $results[] = $this->failed($target, 'verification could not complete: ' . $this->compress($e->getMessage()));
+                $results[] = $this->failed($target, 'verification could not complete: ' . SignalText::compress($e->getMessage()));
             }
         }
         return $results;
@@ -87,39 +89,7 @@ final class VerificationExecutor
 
     private function runLint(VerificationTarget $target): VerificationResult
     {
-        $commandName = $target->commandName;
-        if ($commandName === null) {
-            return $this->skipped($target, 'lint target missing commandName');
-        }
-        try {
-            $command = $this->application->find($commandName);
-        } catch (CommandNotFoundException) {
-            // A planned gate that does not exist is a defect in the plan, not a
-            // reason to pass. Reporting it as skipped is how five lints named
-            // with a stale prefix went unrun while ai:verify kept saying pass.
-            return $this->failed($target, "command {$commandName} is not registered");
-        }
-
-        $buffer = new BufferedOutput();
-        $input = new ArrayInput(['command' => $commandName] + $target->commandInput);
-        $input->setInteractive(false);
-
-        try {
-            $exit = $command->run($input, $buffer);
-        } catch (\Throwable $e) {
-            // Same reasoning: a gate that blew up did not clear the change.
-            return $this->failed(
-                $target,
-                "{$commandName} threw " . $e::class . ': ' . $this->compress($e->getMessage()),
-            );
-        }
-
-        return new VerificationResult(
-            target:   $target,
-            status:   $exit === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
-            exitCode: $exit,
-            signal:   $this->lastSignalLine($buffer->fetch()),
-        );
+        return $this->lintRunner->run($target);
     }
 
     /**
@@ -133,36 +103,7 @@ final class VerificationExecutor
      */
     private function runDocsGate(VerificationTarget $target): VerificationResult
     {
-        $commandName = $target->commandName;
-        if ($commandName === null) {
-            return $this->skipped($target, 'docs target missing commandName');
-        }
-
-        try {
-            $command = $this->application->find($commandName);
-        } catch (CommandNotFoundException) {
-            return $this->skipped($target, "semitexa/docs command {$commandName} unavailable; optional documentation tooling", required: false);
-        }
-
-        $buffer = new BufferedOutput();
-        $input = new ArrayInput(['command' => $commandName] + $target->commandInput);
-        $input->setInteractive(false);
-
-        try {
-            $exit = $command->run($input, $buffer);
-        } catch (\Throwable $e) {
-            return $this->failed(
-                $target,
-                "{$commandName} threw " . $e::class . ': ' . $this->compress($e->getMessage()),
-            );
-        }
-
-        return new VerificationResult(
-            target:   $target,
-            status:   $exit === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
-            exitCode: $exit,
-            signal:   $this->lastSignalLine($buffer->fetch()),
-        );
+        return $this->lintRunner->run($target, optional: true);
     }
 
     private function runSyntax(VerificationTarget $target): VerificationResult
@@ -182,7 +123,7 @@ final class VerificationExecutor
             target:   $target,
             status:   isset($r['failure']) ? VerificationResult::STATUS_INCOMPLETE : ($r['exit'] === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL),
             exitCode: $r['exit'],
-            signal:   $this->lastSignalLine($r['output']),
+            signal:   SignalText::lastLine($r['output']),
         );
     }
 
@@ -234,7 +175,7 @@ final class VerificationExecutor
         $noTestsExecuted = str_contains($r['output'], 'No tests executed!');
 
         $describe = $filter !== null ? "--filter {$filter}" : "<{$rel}>";
-        $signal = PhpunitFailureHeadline::of($r['output']) . $this->lastSignalLine($r['output']);
+        $signal = PhpunitFailureHeadline::of($r['output']) . SignalText::lastLine($r['output']);
         if ($signal === '') {
             $signal = "phpunit {$describe} → exit {$r['exit']}";
         }
@@ -273,7 +214,7 @@ final class VerificationExecutor
         try {
             $spec = $this->specLoader->load();
         } catch (\Throwable $e) {
-            return $this->skipped($target, 'module_structure spec load failed: ' . $this->compress($e->getMessage()));
+            return $this->skipped($target, 'module_structure spec load failed: ' . SignalText::compress($e->getMessage()));
         }
 
         $validator = new ModuleStructureValidator($this->projectRoot, $spec);
@@ -289,7 +230,7 @@ final class VerificationExecutor
             $signal = "module_structure {$rel} → 0 violations";
         } else {
             $first = $violations[0];
-            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}";
+            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}" . $first->whyClause();
         }
 
         return new VerificationResult(
@@ -307,7 +248,7 @@ final class VerificationExecutor
             $validator = new \Semitexa\Dev\Application\Service\Ai\Verify\Tenancy\LiveResourceTenancyValidator();
             $violations = $validator->validateProject(new \Semitexa\Core\Discovery\ClassDiscovery());
         } catch (\Throwable $e) {
-            return $this->skipped($target, 'live_tenancy discovery failed: ' . $this->compress($e->getMessage()));
+            return $this->skipped($target, 'live_tenancy discovery failed: ' . SignalText::compress($e->getMessage()));
         }
 
         $diagnostics = array_map(
@@ -318,7 +259,7 @@ final class VerificationExecutor
         $errorCount = count($violations);
         $signal = $errorCount === 0
             ? 'live_tenancy → 0 violations'
-            : "live_tenancy → {$errorCount} violation(s); first: {$violations[0]->code} {$violations[0]->scopeKey}";
+            : "live_tenancy → {$errorCount} violation(s); first: {$violations[0]->code} {$violations[0]->scopeKey} — " . $violations[0]->rationale();
 
         return new VerificationResult(
             target:      $target,
@@ -359,7 +300,7 @@ final class VerificationExecutor
             $live = (new FrameworkCapabilityCatalog($discovery))->everythingOnDisk($this->projectRoot);
             $shipped = CapabilityIndex::read(CapabilityIndex::path($this->projectRoot));
         } catch (\Throwable $e) {
-            return $this->skipped($target, 'capability_index discovery failed: ' . $this->compress($e->getMessage()));
+            return $this->skipped($target, 'capability_index discovery failed: ' . SignalText::compress($e->getMessage()));
         }
 
         if (CapabilityIndex::isInSync($live, $shipped)) {
@@ -428,7 +369,7 @@ final class VerificationExecutor
         try {
             $missing = CapabilityIndex::packagesWithoutDeclaration($this->projectRoot);
         } catch (\Throwable $e) {
-            return $this->skipped($target, 'capability_coverage scan failed: ' . $this->compress($e->getMessage()));
+            return $this->skipped($target, 'capability_coverage scan failed: ' . SignalText::compress($e->getMessage()));
         }
 
         if ($missing === []) {
@@ -609,7 +550,7 @@ final class VerificationExecutor
         } catch (\Throwable $e) {
             return $this->failed(
                 $target,
-                'scaffold:sync --check threw ' . $e::class . ': ' . $this->compress($e->getMessage()),
+                'scaffold:sync --check threw ' . $e::class . ': ' . SignalText::compress($e->getMessage()),
             );
         }
 
@@ -626,7 +567,7 @@ final class VerificationExecutor
             target:   $target,
             status:   VerificationResult::STATUS_FAIL,
             exitCode: $exit,
-            signal:   'scaffold_drift → ' . $this->compress($buffer->fetch())
+            signal:   'scaffold_drift → ' . SignalText::compress($buffer->fetch())
                 . ' — edit packages/semitexa-installer/scaffold/, then run bin/semitexa scaffold:sync',
         );
     }
@@ -675,7 +616,7 @@ final class VerificationExecutor
             target:   $target,
             status:   VerificationResult::STATUS_FAIL,
             exitCode: $r['exit'],
-            signal:   "{$label} → " . $this->compress($r['output'])
+            signal:   "{$label} → " . SignalText::compress($r['output'])
                 . ($label === 'skill_copies' ? ' — edit packages/semitexa-dev/resources/skills/, then run bin/skills-sync.sh' : ''),
         );
     }
@@ -729,24 +670,5 @@ final class VerificationExecutor
             exitCode: 1,
             signal:   $reason,
         );
-    }
-
-    private function lastSignalLine(string $output): string
-    {
-        $lines = preg_split('/\R/', trim($output)) ?: [];
-        for ($i = count($lines) - 1; $i >= 0; $i--) {
-            $line = trim(preg_replace('/\[[a-zA-Z]+\]/', '', $lines[$i]) ?? '');
-            if ($line === '') {
-                continue;
-            }
-            return $this->compress($line);
-        }
-        return '';
-    }
-
-    private function compress(string $value): string
-    {
-        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
-        return strlen($value) > 240 ? substr($value, 0, 237) . '...' : $value;
     }
 }

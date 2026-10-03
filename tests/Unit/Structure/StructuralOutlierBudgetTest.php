@@ -27,6 +27,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class StructuralOutlierBudgetTest extends TestCase
 {
+    /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
+    public const RATIONALE = 'Why: god-class work was declared done more than once while the class was still the largest in the repository, because nothing was counting. Learned 2026-09-06: SseServer measured 102 methods and 2082 lines, 1.7x the next class, after it had been reported fixed. A class that shrinks must lower its budget, or the next regrowth is invisible.';
+
     /** Classes at or above 30 methods or 700 lines: path => [methods, lines]. */
     private const BUDGETS = [
         // NEW on 2026-09-16, at 655 -> 756 lines, and recorded rather than
@@ -334,27 +337,6 @@ final class StructuralOutlierBudgetTest extends TestCase
         // interpolated string is a different node, and one that carries no
         // literal backtick at all when the quote character lives in $q.
         'semitexa-orm/src/Application/Service/Sync/SyncEngine.php' => [21, 882],
-        // 21/718 -> 22/750 on 2026-09-09: semitexa-dev#73, a regression that
-        // shipped in 2026.09.08.2003 and turned the first ai:verify after any
-        // framework update red in every consumer project. The new method is
-        // installerScaffoldDir(), a sibling of skillsSyncScript() answering the
-        // same question for the other gate — "is the thing I compare even here".
-        // Recorded rather than trimmed: most of the growth is the comment saying
-        // why the guard exists, and shrinking that to fit a budget would delete
-        // the part a future reader needs to not remove the guard again.
-        // 22/750 -> 22/759 on 2026-09-11: the skipped/incomplete split. A target
-        // that was SUPPOSED to run and did not used to be recorded as skipped
-        // with exit 0, which reads as a pass — the same false green that once
-        // let five lints go unrun without anyone noticing. Every such result is
-        // now INCOMPLETE with exit 1, and only genuinely optional tooling (the
-        // docs commands, absent when semitexa/docs is not installed) keeps
-        // skipped. NO NEW METHOD: the count is still 22, so the class is no
-        // more tangled than it was, just nine lines longer for a distinction it
-        // previously could not make.
-        // 22/759 -> 22/760 on 2026-09-13: one line, carrying that same
-        // `accepted` block through to the result so the command has something
-        // to report. NO NEW METHOD.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [21, 753],
         // 912 -> 915 on 2026-09-06: the `?cursor=` parameter became conditional
         // on the route's declared pagination modes, and turning one unconditional
         // statement into an if costs two lines that no wording can remove. No new

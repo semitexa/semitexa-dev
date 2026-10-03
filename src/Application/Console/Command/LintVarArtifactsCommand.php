@@ -20,6 +20,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'lint:var-artifacts', description: 'Fail when git would commit runtime output (screenshots, traces, exports) from a var/ directory')]
 final class LintVarArtifactsCommand extends BaseCommand
 {
+    /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
+    public const RATIONALE = 'Why: var/ holds runtime output (screenshots, traces, exports) that can show private data, and only listed subdirectories are git-ignored, so a new one is committed by the next git add -A. Learned 2026-10-02: var/ turned out not to be ignored as a whole while review evidence was being kept out of public PRs.';
+
     public function __construct()
     {
         parent::__construct('lint:var-artifacts');

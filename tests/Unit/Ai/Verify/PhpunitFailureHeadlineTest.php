@@ -58,4 +58,40 @@ final class PhpunitFailureHeadlineTest extends TestCase
         self::assertTrue(mb_check_encoding($headline, 'UTF-8'));
         self::assertStringEndsWith('… · ', $headline);
     }
+
+    #[Test]
+    public function a_guard_that_explains_itself_ends_the_headline_with_its_rationale(): void
+    {
+        // A ratchet failing used to say what grew and never why the ratchet is
+        // there; the reason lived in a docblock the agent was not reading.
+        $dir = sys_get_temp_dir() . '/headline-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        file_put_contents($dir . '/BudgetGuardTest.php', "<?php\nfinal class BudgetGuardTest\n{\n    private const RATIONALE = 'Why: nothing was counting. Learned 2026-09-06: it\\'s 102 methods.';\n}\n");
+        $output = "There was 1 failure:\n\n1) Ns\\Structure\\BudgetGuardTest::nothing_grew\nClasses grew.\nFailed asserting that two arrays are identical.\n\n{$dir}/Helper.php:9\n{$dir}/BudgetGuardTest.php:41\n\nFAILURES!\n";
+
+        try {
+            self::assertSame(
+                "BudgetGuardTest::nothing_grew — Classes grew. — Why: nothing was counting. Learned 2026-09-06: it's 102 methods. · ",
+                PhpunitFailureHeadline::of($output),
+            );
+        } finally {
+            exec('rm -rf ' . escapeshellarg($dir));
+        }
+    }
+
+    #[Test]
+    public function every_guard_in_the_ratchet_suite_explains_itself(): void
+    {
+        $files = glob(__DIR__ . '/../../Structure/*Test.php') ?: [];
+        self::assertGreaterThanOrEqual(5, count($files), 'the ratchet suite moved; this test would be vacuous');
+
+        $wrong = [];
+        foreach ($files as $file) {
+            if (preg_match('/^Why: \S.{60,}(Learned (\d{4}-\d{2}|in )|no incident on record)/s', PhpunitFailureHeadline::rationaleIn($file)) !== 1) {
+                $wrong[] = basename($file);
+            }
+        }
+
+        self::assertSame([], $wrong, 'a guard without a RATIONALE (a single-quoted literal: "Why: ... Learned <date>: ..." or "... no incident on record")');
+    }
 }

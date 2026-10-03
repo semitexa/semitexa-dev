@@ -14,6 +14,12 @@ final readonly class LiveTenancyViolation
     public const CODE_UNTENANTED = 'live_resource_untenanted';
     public const CODE_UNBACKED   = 'live_scope_unbacked';
 
+    /** Why each check exists, and what taught us; same shape as the PHPStan rules' RATIONALE. */
+    public const RATIONALES = [
+        self::CODE_UNTENANTED => 'Why: a live re-run is tenant-filtered only when the resource carries #[TenantScoped], so a live-bound resource with no posture re-reads every tenant\'s rows into one tenant\'s stream. Learned 2026-06-17: the live-grid audit found every resource wired to a live scope without a tenancy posture, and nothing guarded it.',
+        self::CODE_UNBACKED   => 'Why: a watched scope that nothing publishes is a dead wire: the grid looks live and never re-runs, which no single-request test can see. Policy since 2026-07-04 (live_tenancy guard); no incident on record.',
+    ];
+
     /** @param list<class-string> $watchers */
     public function __construct(
         public string $code,
@@ -31,7 +37,13 @@ final readonly class LiveTenancyViolation
             'watchers' => $this->watchers,
             'resource' => $this->resourceClass,
             'message' => $this->message(),
+            'rationale' => $this->rationale(),
         ];
+    }
+
+    public function rationale(): string
+    {
+        return self::RATIONALES[$this->code] ?? '';
     }
 
     public function message(): string

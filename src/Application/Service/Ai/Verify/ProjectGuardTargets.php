@@ -78,9 +78,61 @@ final class ProjectGuardTargets
             );
         }
 
+        // A changed test may check less than it did at HEAD: removed, loosened,
+        // skipped. Every scope, because it is one `git show` per test file and
+        // because "the tests pass" is exactly the claim it exists to check.
+        // A test renamed away from *Test.php still took its checks with it.
+        $tests = array_values(array_map(
+            static fn (ChangedFile $f): string => $f->path,
+            array_filter($changedFiles, static fn (ChangedFile $f): bool => str_ends_with($f->path, 'Test.php')
+                || str_ends_with((string) $f->originalPath, 'Test.php')),
+        ));
+        $renames = array_values(array_filter($changedFiles, static fn (ChangedFile $f): bool => $f->originalPath !== null && $f->originalPath !== ''));
+        if ($tests !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_LINT,
+                id: 'lint:test-integrity',
+                reason: 'a changed test may now check less than at HEAD — removed, loosened or skipped — which turns a suite green without making the code right',
+                triggeredBy: $tests,
+                commandName: 'lint:test-integrity',
+                // Every path of the change, not only the tests: a deleted test
+                // file says why on an added line of whichever file replaced it.
+                commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)]
+                    + ($renames === [] ? [] : [
+                        '--renamed-from' => array_map(static fn (ChangedFile $f): string => (string) $f->originalPath, $renames),
+                        '--renamed-to'   => array_map(static fn (ChangedFile $f): string => $f->path, $renames),
+                    ]),
+            );
+        }
+
+        if ($effectiveScope === VerificationPlan::SCOPE_MINIMAL) {
+            return $targets;
+        }
+
+        // What an agent is told to run and open can stop existing from either
+        // side: the instructions change, or the file they name is deleted or
+        // renamed. Same expensive tier as the other docs gates (a console boot
+        // for the truth index), so not at minimal.
+        $instructionTriggers = array_values(array_map(
+            static fn (ChangedFile $f): string => $f->path,
+            array_filter($changedFiles, static fn (ChangedFile $f): bool => self::isInstruction($f->path)
+                || $f->status === ChangedFile::STATUS_DELETED
+                || $f->status === ChangedFile::STATUS_RENAMED),
+        ));
+        if ($instructionTriggers !== []) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_DOCS,
+                id: 'docs:instructions',
+                reason: 'an instruction to an agent (AGENTS.md, CLAUDE.md, AI_NOTES.md, a skill) naming a command or file that no longer exists is followed anyway',
+                triggeredBy: $instructionTriggers,
+                commandName: 'docs:lint',
+                commandInput: ['--instructions' => true],
+            );
+        }
+
         // Tests are not part of the minimal contract, and a consumer project
         // has no workspace tree to ratchet — the suite only exists here.
-        if ($effectiveScope === VerificationPlan::SCOPE_MINIMAL || !is_dir($this->projectRoot . '/' . self::RATCHET_SUITE)) {
+        if (!is_dir($this->projectRoot . '/' . self::RATCHET_SUITE)) {
             return $targets;
         }
 
@@ -124,5 +176,24 @@ final class ProjectGuardTargets
         }
 
         return array_keys($repos);
+    }
+
+    /**
+     * Read by an agent as instructions: a markdown file at the project root, or
+     * a skill (its installed copy or, in the workspace, its canonical source).
+     * `docs:lint --instructions` reads the same set. In the workspace the root
+     * is not a repository, so an edit there is seen through the versioned copy
+     * of the scaffold docs in semitexa-ultimate.
+     */
+    public static function isInstruction(string $path): bool
+    {
+        if (!str_ends_with(strtolower($path), '.md')) {
+            return false;
+        }
+
+        return !str_contains($path, '/')
+            || preg_match('#^packages/semitexa-ultimate/[^/]+$#', $path) === 1
+            || str_starts_with($path, '.claude/skills/')
+            || str_starts_with($path, 'packages/semitexa-dev/resources/skills/');
     }
 }

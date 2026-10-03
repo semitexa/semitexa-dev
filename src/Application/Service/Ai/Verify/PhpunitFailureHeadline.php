@@ -41,10 +41,65 @@ final class PhpunitFailureHeadline
             }
             $message = implode(' ', $parts);
             $headline = $test . ($message !== '' ? ' — ' . $message : '');
+            $headline = mb_strlen($headline) > self::MAX ? mb_substr($headline, 0, self::MAX - 1) . '…' : $headline;
+            // The guard's own RATIONALE, outside the cap: the reason a ratchet
+            // exists is what the agent needs before it reaches for its budget.
+            $why = self::rationaleIn(self::testFile($m[1], array_slice($lines, $i + 1)));
 
-            return (mb_strlen($headline) > self::MAX ? mb_substr($headline, 0, self::MAX - 1) . '…' : $headline) . ' · ';
+            return $headline . ($why !== '' ? ' — ' . $why : '') . ' · ';
         }
 
         return '';
+    }
+
+    /**
+     * A test class's `RATIONALE` constant, read from its source with the
+     * tokenizer: the class is never loaded, so a test file that would fatal on
+     * load cannot take ai:verify down with it. Only a single string literal is
+     * read; anything else reads as no rationale.
+     */
+    public static function rationaleIn(?string $file): string
+    {
+        if ($file === null || !is_file($file)) {
+            return '';
+        }
+        $tokens = array_values(array_filter(
+            \PhpToken::tokenize((string) file_get_contents($file)),
+            static fn (\PhpToken $t): bool => !$t->isIgnorable(),
+        ));
+        foreach ($tokens as $k => $token) {
+            if ($token->id === T_CONST
+                && ($tokens[$k + 1]->text ?? '') === 'RATIONALE'
+                && ($tokens[$k + 2]->text ?? '') === '='
+                && ($tokens[$k + 3]->id ?? 0) === T_CONSTANT_ENCAPSED_STRING
+                && ($tokens[$k + 4]->text ?? '') === ';'
+                && $tokens[$k + 3]->text[0] === "'") {
+                return strtr(substr($tokens[$k + 3]->text, 1, -1), ['\\\\' => '\\', "\\'" => "'"]);
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * The failing test's own file, from the frames PHPUnit prints under the
+     * failure: the one named after the test class.
+     *
+     * @param list<string> $after
+     */
+    private static function testFile(string $testId, array $after): ?string
+    {
+        $class = explode('::', $testId)[0];
+        $short = preg_replace('/^.*\\\\/', '', $class) ?? $class;
+        foreach (array_slice($after, 0, 80) as $line) {
+            if (preg_match('/^(\S+\.php):\d+$/', trim($line), $frame) === 1 && basename($frame[1]) === $short . '.php') {
+                return $frame[1];
+            }
+            if (preg_match('/^2\) /', $line) === 1) {
+                break;
+            }
+        }
+
+        return null;
     }
 }
