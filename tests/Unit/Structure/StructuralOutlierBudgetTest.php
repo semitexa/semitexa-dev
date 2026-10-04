@@ -69,7 +69,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // it a deferred slot handler injecting AuthContextInterface was refused
         // and its region rendered empty on every page. The spawn point lives in
         // SseSessionCoroutines; this class only owns the container.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [102, 2093],
+        // 2093 -> 2098, 102 -> 100 methods on 2026-10-04 (feeds over KISS/HUG):
+        // submitSubscribe takes the feed's route name and stamps the HUG
+        // request's tenant, and the class implements FeedStreamSinkInterface.
+        // No new method; step 7 of the feeds design deletes the per-feed
+        // held-open serve and should take this back down.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2098],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
@@ -120,7 +125,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-workflow/src/Domain/Model/WorkflowInstance.php' => [36, 208],
         'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
-        'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 932],
+        // 932 -> 935 on 2026-10-04: the route's `exposure` (Public | Hug) is read
+        // and passed through like sseGateModel. No new method.
+        'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 935],
         'semitexa-media/src/Domain/Model/MediaVariant.php' => [33, 261],
         'semitexa-weave/src/Application/Service/GraphStore.php' => [32, 685],
         'semitexa-webhooks/src/Domain/Model/InboundDelivery.php' => [32, 122],
@@ -466,7 +473,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // No new method. 737 -> 744 (review, core#147): the escape is recorded
         // only when mapping itself throws, not for every exception the mapper
         // answers — a try/catch around map + decorate. No new method.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [18, 744],
+        // 744 -> 659, 18 -> 16 on 2026-10-04: payload admission moved to
+        // PayloadAdmission, shared by execute() and the new admit().
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [16, 659],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
