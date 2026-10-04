@@ -243,8 +243,8 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         array $envelope,
     ): void {
-        $report = new VerifyReportSerializer();
-        $counts = $report->countByStatus($results);
+        $counts = (new VerifyReportSerializer())->countByStatus($results);
+        (new \Semitexa\Dev\Application\Service\Ai\Verify\RuleStats\RuleFireLedger($this->getProjectRoot()))->record($envelope); // every run, traced or not: ai:verify:rules
         $summary = sprintf(
             'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d incomplete=%d',
             $verdict,
