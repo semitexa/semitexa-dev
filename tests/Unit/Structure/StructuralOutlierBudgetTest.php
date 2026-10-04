@@ -170,7 +170,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // annotation was TWO errors: the annotation itself and the argument
         // type at the delegation. Six lines, twelve errors, no new methods.
         'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 213],
-        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [29, 762],
+        // 762 -> 216, 29 -> 10 on 2026-10-04: the per-feed held-open stream and
+        // its subscribe/unsubscribe/re-hydrate header intake are gone — feeds
+        // ride KISS and are controlled through HUG (FeedStreamControl).
+        'semitexa-ssr/src/Application/Handler/PayloadHandler/AbstractSseFeedHandler.php' => [10, 216],
         // Newly recorded on 2026-09-11, at 24/709: it crossed the 700-line
         // threshold by nine lines, and every one of them is the guard that
         // stops a partial write from RESURRECTING a deleted row. Table::set()

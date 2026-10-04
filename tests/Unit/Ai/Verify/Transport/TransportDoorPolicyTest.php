@@ -62,6 +62,8 @@ final class TransportDoorPolicyTest extends TestCase
     #[Test]
     public function every_pending_door_names_the_task_that_removes_it(): void
     {
+        // The last extra door went with tk-kh-form-doc-over-kiss.
+        self::assertArrayNotHasKey('/__ui/form-doc', TransportDoorPolicy::PENDING);
         foreach (TransportDoorPolicy::PENDING as $path => $task) {
             self::assertStringStartsWith('/__', $path);
             self::assertMatchesRegularExpression('/\Atk-[a-z0-9-]+\z/', $task);

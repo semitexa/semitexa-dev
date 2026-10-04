@@ -49,7 +49,6 @@ final class TransportDoorPolicy
      * closes, the entry goes and the route must be gone too.
      */
     public const PENDING = [
-        '/__ui/form-doc' => 'tk-kh-form-doc-over-kiss',
     ];
 
     /**
