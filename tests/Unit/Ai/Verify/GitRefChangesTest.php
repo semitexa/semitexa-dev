@@ -43,8 +43,8 @@ final class GitRefChangesTest extends TestCase
         file_put_contents($this->root . '/packages/semitexa-b/tests/ATest.php', "<?php // uncommitted\n");
 
         self::assertSame(
-            ["M\tpackages/semitexa-b/tests/ATest.php"],
-            (new GitRefChanges($this->root))->nameStatus('HEAD'),
+            [['path' => 'packages/semitexa-b/tests/ATest.php', 'status' => 'M']],
+            (new GitRefChanges($this->root))->changes('HEAD'),
         );
     }
 
@@ -55,7 +55,7 @@ final class GitRefChangesTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage("git diff against 'HEAD~1' failed in packages/semitexa-b");
 
-        (new GitRefChanges($this->root))->nameStatus('HEAD~1');
+        (new GitRefChanges($this->root))->changes('HEAD~1');
     }
 
     #[Test]
@@ -63,7 +63,7 @@ final class GitRefChangesTest extends TestCase
     {
         $this->expectExceptionObject(new \RuntimeException("'--output=/tmp/x' is not a git ref"));
 
-        (new GitRefChanges($this->root))->nameStatus('--output=/tmp/x');
+        (new GitRefChanges($this->root))->changes('--output=/tmp/x');
     }
 
     #[Test]
@@ -83,10 +83,30 @@ final class GitRefChangesTest extends TestCase
         mkdir($empty);
         try {
             $this->expectExceptionObject(new \RuntimeException("git diff against 'HEAD' failed: no git repository in {$empty}"));
-            (new GitRefChanges($empty))->nameStatus('HEAD');
+            (new GitRefChanges($empty))->changes('HEAD');
         } finally {
             rmdir($empty);
         }
+    }
+
+    #[Test]
+    public function a_pathname_git_would_quote_and_a_rename_come_through_as_they_are(): void
+    {
+        // Without -z git prints "tests/Price\tTest.php" quoted and escaped, which
+        // names no file on disk (review of dev#130).
+        $repo = $this->root . '/packages/semitexa-b';
+        file_put_contents($repo . "/tests/Price\tTest.php", "<?php\n");
+        $this->git($repo, 'add -A');
+        $this->git($repo, 'commit -qm tab');
+        file_put_contents($repo . "/tests/Price\tTest.php", "<?php // changed\n");
+        $this->git($repo, 'mv tests/ATest.php tests/BTest.php');
+
+        $changes = (new GitRefChanges($this->root))->changes('HEAD');
+        usort($changes, static fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
+        self::assertSame([
+            ['path' => 'packages/semitexa-b/tests/BTest.php', 'status' => 'R', 'originalPath' => 'packages/semitexa-b/tests/ATest.php'],
+            ['path' => "packages/semitexa-b/tests/Price\tTest.php", 'status' => 'M'],
+        ], $changes);
     }
 
     private function git(string $repo, string $arguments): void

@@ -49,7 +49,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
         if ($check['found'] && $check['id'] !== null) {
             $receipts->markRead($check['id']);
         }
-        $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['verdict'] === 'pass';
+        $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
 
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipt-check/v1', 'holds' => $holds] + $check, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -66,7 +66,10 @@ final class AiVerifyReceiptCommand extends BaseCommand
         $output->writeln('  receipt: ' . ($check['intact'] ? 'intact' : 'EDITED SINCE IT WAS WRITTEN (digest does not match)'));
         $output->writeln($check['changed_since'] === []
             ? '  tree:    every file the run checked is unchanged since'
-            : sprintf('  tree:    %d file(s) changed since the run: %s', count($check['changed_since']), implode(', ', $check['changed_since'])));
+            : sprintf('  tree:    %d file(s) changed or unreadable since the run: %s', count($check['changed_since']), implode(', ', $check['changed_since'])));
+        if ($check['changed_during_run'] !== []) {
+            $output->writeln(sprintf('  run:     %d file(s) changed WHILE the run checked them: %s', count($check['changed_during_run']), implode(', ', $check['changed_during_run'])));
+        }
         $output->writeln($holds
             ? 'The claim holds for the tree in front of you.'
             : 'The claim does not hold for the tree in front of you: re-run ai:verify.');

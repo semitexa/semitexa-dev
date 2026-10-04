@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 /**
- * `git diff --name-status <ref>` for every repository the project is made of.
+ * `git diff --name-status -z <ref>` for every repository the project is made of.
  *
  * A consumer project is one repository at its root. The Semitexa workspace is
  * not: its root is no repository and every package is its own, so a diff run at
@@ -22,10 +22,14 @@ final class GitRefChanges
     public function __construct(private readonly string $projectRoot) {}
 
     /**
-     * @return list<string> name-status lines, paths relative to the project root
+     * The changes against the ref, read NUL-framed (`-z`): without it git
+     * quotes and escapes any pathname with a tab, a newline or a non-ASCII
+     * byte, and the escaped text names no file on disk (review of dev#130).
+     *
+     * @return list<array{path: string, status: string, originalPath?: string}> paths relative to the project root
      * @throws \RuntimeException
      */
-    public function nameStatus(string $ref): array
+    public function changes(string $ref): array
     {
         if ($ref === '' || str_starts_with($ref, '-')) {
             throw new \RuntimeException("'{$ref}' is not a git ref");
@@ -35,29 +39,44 @@ final class GitRefChanges
         if ($repositories === []) {
             throw new \RuntimeException("git diff against '{$ref}' failed: no git repository in {$this->projectRoot}");
         }
-        $lines = [];
+        $changes = [];
         foreach ($repositories as $prefix => $repository) {
-            $output = [];
-            $code = 1;
-            exec(sprintf(
-                'git -C %s -c safe.directory=%s diff --name-status %s -- 2>&1',
-                escapeshellarg($repository),
-                escapeshellarg($repository),
-                escapeshellarg($ref),
-            ), $output, $code);
-            if ($code !== 0) {
-                throw new \RuntimeException(sprintf("git diff against '%s' failed in %s: %s", $ref, $prefix === '' ? 'the project root' : $prefix, implode(' / ', array_slice($output, 0, 3))));
+            $command = ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, 'diff', '--name-status', '-z', $ref, '--'];
+            $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            if (!is_resource($process)) {
+                throw new \RuntimeException("git diff against '{$ref}' could not start in " . ($prefix === '' ? 'the project root' : $prefix));
             }
-            foreach ($output as $line) {
-                $fields = explode("\t", $line);
-                if (count($fields) < 2) {
+            $stdout = (string) stream_get_contents($pipes[1]);
+            $stderr = (string) stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            if (proc_close($process) !== 0) {
+                throw new \RuntimeException(sprintf("git diff against '%s' failed in %s: %s", $ref, $prefix === '' ? 'the project root' : $prefix, trim(implode(' / ', array_slice(preg_split('/\R/', $stderr) ?: [], 0, 3)))));
+            }
+            $at = static fn (string $path): string => $prefix === '' ? $path : $prefix . '/' . $path;
+            $fields = explode("\0", rtrim($stdout, "\0"));
+            for ($i = 0; $i + 1 < count($fields); $i += 2) {
+                $code = $fields[$i];
+                $status = match ($code[0] ?? '') {
+                    'A', 'C' => ChangedFile::STATUS_ADDED,
+                    'D' => ChangedFile::STATUS_DELETED,
+                    'R' => ChangedFile::STATUS_RENAMED,
+                    default => ChangedFile::STATUS_MODIFIED,
+                };
+                // A rename or a copy carries two paths: old, then new.
+                if ($code !== '' && ($code[0] === 'R' || $code[0] === 'C') && isset($fields[$i + 2])) {
+                    $entry = ['path' => $at($fields[$i + 2]), 'status' => $status];
+                    if ($code[0] === 'R') {
+                        $entry['originalPath'] = $at($fields[$i + 1]);
+                    }
+                    $changes[] = $entry;
+                    $i++;
                     continue;
                 }
-                $status = array_shift($fields);
-                $lines[] = $status . "\t" . implode("\t", array_map(static fn (string $p): string => $prefix === '' ? $p : $prefix . '/' . $p, $fields));
+                $changes[] = ['path' => $at($fields[$i + 1]), 'status' => $status];
             }
         }
 
-        return $lines;
+        return $changes;
     }
 }

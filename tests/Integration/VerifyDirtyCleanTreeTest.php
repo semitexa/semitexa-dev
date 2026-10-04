@@ -93,6 +93,11 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertSame(0, $result['exit'], 'a clean checkout must not fail the run');
         self::assertSame('nothing_to_verify', $result['envelope']['verdict']);
         self::assertSame([], $result['envelope']['changed_files']);
+        // The clean run has its receipt too, so "the latest receipt" is this run (review of dev#130).
+        $receipt = $result['envelope']['receipt'] ?? null;
+        self::assertIsArray($receipt);
+        self::assertIsString($receipt['id'] ?? null);
+        self::assertMatchesRegularExpression('/^rcpt-\d{8}-\d{6}-[0-9a-f]{6}$/', $receipt['id']);
     }
 
     /** And it still says what it could reach, so silence is never mistaken for cleanliness. */

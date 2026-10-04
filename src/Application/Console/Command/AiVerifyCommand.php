@@ -123,7 +123,8 @@ final class AiVerifyCommand extends BaseCommand
                 // review of dev#84 by both reviewers.
                 $emptyPlan = new VerificationPlan($scope, $scope, [], []);
                 $report = new VerifyReportSerializer();
-                $envelope = [
+                // A receipt for the clean run too: "the latest receipt" must be this run (review of dev#130).
+                $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($this->getProjectRoot()))->attach([
                     'artifact' => 'semitexa-dev.verify-report/v1',
                     'generated_at' => date('c'),
                     'verdict' => 'nothing_to_verify',
@@ -132,7 +133,7 @@ final class AiVerifyCommand extends BaseCommand
                     'changed_files' => [],
                     'dirty_scan' => $scan,
                     'restart' => $report->restartAdvice([]),
-                ];
+                ], []);
 
                 if ($jsonMode) {
                     $traceOutput = new BufferedOutput();
@@ -197,6 +198,8 @@ final class AiVerifyCommand extends BaseCommand
             return self::FAILURE;
         }
         $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()));
+        // What the targets are about to check: a file edited before the receipt is written must not ride on this verdict.
+        $treeBefore = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->fingerprintOf(array_map(static fn (ChangedFile $f): string => $f->path, $plan->changedFiles));
         $results = $executor->execute($plan);
 
         $verdict = CoverageGap::of($plan, $results, $this->getProjectRoot())->adjust($this->verdict($results));
@@ -207,7 +210,7 @@ final class AiVerifyCommand extends BaseCommand
             $impact = $this->probeImpact($plan);
         }
 
-        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls()); // ai:verify:receipt checks it
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
@@ -344,7 +347,7 @@ final class AiVerifyCommand extends BaseCommand
     private function gitDiffNameStatus(string $ref): array
     {
         // Every repository of the project: the workspace root is none of them.
-        return $this->parseNameStatus((new \Semitexa\Dev\Application\Service\Ai\Verify\GitRefChanges($this->getProjectRoot()))->nameStatus($ref));
+        return (new \Semitexa\Dev\Application\Service\Ai\Verify\GitRefChanges($this->getProjectRoot()))->changes($ref);
     }
 
     /**

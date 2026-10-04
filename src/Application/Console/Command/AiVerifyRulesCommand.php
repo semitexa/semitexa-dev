@@ -40,25 +40,22 @@ final class AiVerifyRulesCommand extends BaseCommand
         // Omitted: every rule. Given: a whole number, and only never-fired rules
         // with at least that many chances; anything else is refused, not ignored.
         $dormant = $input->getOption('dormant');
+        $json = (bool) $input->getOption('json');
         if ($dormant !== null && (!is_string($dormant) || preg_match('/^\d+$/', $dormant) !== 1)) {
-            $output->writeln('--dormant takes a whole number of chances, e.g. --dormant=50');
-
-            return self::INVALID;
+            return $this->error($output, $json, '--dormant takes a whole number of chances, e.g. --dormant=50', self::INVALID);
         }
         try {
             $report = RuleFireReport::build((new RuleCatalog($root))->rules(), (new RuleFireLedger($root))->runs());
         } catch (\RuntimeException $e) {
             // An audit missing a family would call live rules retired.
-            $output->writeln('ai:verify:rules cannot list the rules: ' . $e->getMessage());
-
-            return self::FAILURE;
+            return $this->error($output, $json, 'ai:verify:rules cannot list the rules: ' . $e->getMessage(), self::FAILURE);
         }
         $rules = $dormant === null ? $report['rules'] : array_values(array_filter(
             $report['rules'],
             static fn (array $r): bool => $r['fires'] === 0 && $r['chances'] >= (int) $dormant,
         ));
 
-        if ((bool) $input->getOption('json')) {
+        if ($json) {
             $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-rules/v1', 'runs' => $report['runs'], 'since' => $report['since'], 'rules' => $rules, 'retired' => $report['retired']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;
@@ -79,5 +76,13 @@ final class AiVerifyRulesCommand extends BaseCommand
         $output->writeln(sprintf('%d of %d rules never fired in the runs that gave them a chance. Quiet is not proof of uselessness: a guard on rarely-changed code is quiet by design.', $never, count($report['rules'])));
 
         return self::SUCCESS;
+    }
+
+    /** In --json mode an error is JSON too: a caller parsing the output must not get prose. */
+    private function error(OutputInterface $output, bool $json, string $message, int $exit): int
+    {
+        $output->writeln($json ? (string) json_encode(['artifact' => 'semitexa-dev.verify-rules/v1', 'error' => $message], JSON_UNESCAPED_SLASHES) : $message);
+
+        return $exit;
     }
 }

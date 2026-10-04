@@ -26,17 +26,33 @@ final class VerifyReceipts
 
     private const READS = 'reads.ndjson';
 
+    private const UNREADABLE = 'unreadable';
+
     public function __construct(private readonly string $projectRoot) {}
 
     /**
      * Write the receipt for this envelope and name it in the envelope.
      *
-     * @param array<string, mixed> $envelope
-     * @param list<array<string, mixed>> $processes
+     * @param array<string, mixed>        $envelope
+     * @param list<array<string, mixed>>  $processes
+     * @param array<string, ?string>|null $treeBefore the fingerprint taken before the targets ran
      * @return array<string, mixed> the envelope with `receipt`
      */
-    public function attach(array $envelope, array $processes): array
+    public function attach(array $envelope, array $processes, ?array $treeBefore = null): array
     {
+        $paths = array_map(
+            static fn (mixed $f): string => is_array($f) && is_string($f['path'] ?? null) ? $f['path'] : '',
+            array_values((array) ($envelope['changed_files'] ?? [])),
+        );
+        $now = $this->fingerprint($paths);
+        // The receipt vouches for the bytes the targets checked. A file edited
+        // while they ran is named, and such a receipt never holds (review of dev#130).
+        $changedDuringRun = [];
+        foreach ($treeBefore ?? [] as $path => $hash) {
+            if (($now[$path] ?? null) !== $hash) {
+                $changedDuringRun[] = (string) $path;
+            }
+        }
         $receipt = [
             'artifact'     => 'semitexa-dev.verify-receipt/v1',
             'id'           => 'rcpt-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3)),
@@ -55,10 +71,8 @@ final class VerifyReceipts
                 'signal_sha256' => hash('sha256', is_string($r['signal'] ?? null) ? $r['signal'] : ''),
             ] : [], array_values((array) ($envelope['results'] ?? []))),
             'processes'    => $processes,
-            'tree'         => $this->fingerprint(array_map(
-                static fn (mixed $f): string => is_array($f) && is_string($f['path'] ?? null) ? $f['path'] : '',
-                array_values((array) ($envelope['changed_files'] ?? [])),
-            )),
+            'tree'         => $treeBefore ?? $now,
+            'changed_during_run' => $changedDuringRun,
         ];
         $receipt['digest'] = self::digest($receipt);
 
@@ -80,14 +94,14 @@ final class VerifyReceipts
     }
 
     /**
-     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, receipt: ?array<string, mixed>}
+     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, receipt: ?array<string, mixed>}
      */
     public function check(?string $id): array
     {
         $file = $id === null ? $this->latest() : $this->projectRoot . '/' . self::DIR . '/' . basename($id) . '.json';
         $receipt = $file !== null && is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
         if (!is_array($receipt)) {
-            return ['found' => false, 'id' => $id, 'intact' => false, 'verdict' => null, 'generated_at' => null, 'changed_since' => [], 'receipt' => null];
+            return ['found' => false, 'id' => $id, 'intact' => false, 'verdict' => null, 'generated_at' => null, 'changed_since' => [], 'changed_during_run' => [], 'receipt' => null];
         }
         /** @var array<string, mixed> $receipt */
         $recorded = is_string($receipt['digest'] ?? null) ? $receipt['digest'] : '';
@@ -97,7 +111,8 @@ final class VerifyReceipts
         $now = $this->fingerprint(array_map('strval', array_keys($tree)));
         $changed = [];
         foreach ($tree as $path => $hash) {
-            if (($now[$path] ?? null) !== $hash) {
+            // A file that cannot be read now is not one the receipt can clear.
+            if (($now[$path] ?? null) !== $hash || ($now[$path] ?? null) === self::UNREADABLE) {
                 $changed[] = (string) $path;
             }
         }
@@ -109,6 +124,7 @@ final class VerifyReceipts
             'verdict'       => is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null,
             'generated_at'  => is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null,
             'changed_since' => $changed,
+            'changed_during_run' => array_values(array_filter((array) ($receipt['changed_during_run'] ?? []), is_string(...))),
             'receipt'       => $receipt,
         ];
     }
@@ -172,7 +188,16 @@ final class VerifyReceipts
 
     /**
      * @param list<string> $paths
-     * @return array<string, ?string> path => sha256 of its content, null when it does not exist
+     * @return array<string, ?string>
+     */
+    public function fingerprintOf(array $paths): array
+    {
+        return $this->fingerprint($paths);
+    }
+
+    /**
+     * @param list<string> $paths
+     * @return array<string, ?string> path => sha256 of its content, null when it does not exist, 'unreadable' when it cannot be read
      */
     private function fingerprint(array $paths): array
     {
@@ -182,7 +207,8 @@ final class VerifyReceipts
                 continue;
             }
             $file = $this->projectRoot . '/' . $path;
-            $tree[$path] = is_file($file) ? (hash_file('sha256', $file) ?: null) : null;
+            // Absent is null; present but unreadable is its own value, never "absent" (review of dev#130).
+            $tree[$path] = !file_exists($file) ? null : (is_file($file) && is_readable($file) ? (hash_file('sha256', $file) ?: self::UNREADABLE) : self::UNREADABLE);
         }
         ksort($tree);
 

@@ -86,6 +86,34 @@ final class VerifyReceiptsTest extends TestCase
     }
 
     #[Test]
+    public function a_file_edited_while_the_targets_ran_keeps_the_receipt_from_holding(): void
+    {
+        // Review of dev#130: hashing at attach() vouched for bytes no target checked.
+        $receipts = new VerifyReceipts($this->root);
+        $before = $receipts->fingerprintOf(['src/Price.php', 'src/Gone.php']);
+        file_put_contents($this->root . '/src/Price.php', "<?php // edited mid-run\n");
+        $id = self::receiptId($receipts->attach($this->envelope('pass'), [], $before));
+
+        $check = $receipts->check($id);
+        self::assertSame(['src/Price.php'], $check['changed_during_run']);
+        $receipt = $check['receipt'];
+        self::assertIsArray($receipt);
+        self::assertIsArray($receipt['tree'] ?? null);
+        self::assertSame(hash('sha256', "<?php // v1\n"), $receipt['tree']['src/Price.php'] ?? null, 'the receipt names what the targets saw');
+    }
+
+    #[Test]
+    public function a_path_that_cannot_be_read_is_not_a_missing_one(): void
+    {
+        // Review of dev#130: a failed read hashed to null, the same as "absent".
+        $receipts = new VerifyReceipts($this->root);
+        $id = self::receiptId($receipts->attach($this->envelope('pass'), []));
+        mkdir($this->root . '/src/Gone.php');
+
+        self::assertSame(['src/Gone.php'], $receipts->check($id)['changed_since']);
+    }
+
+    #[Test]
     public function a_missing_receipt_is_not_found(): void
     {
         self::assertFalse((new VerifyReceipts($this->root))->check('rcpt-nope')['found']);

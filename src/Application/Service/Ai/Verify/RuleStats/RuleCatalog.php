@@ -68,8 +68,8 @@ final class RuleCatalog
             if (!class_exists($class)) {
                 throw new \RuntimeException("{$class} is registered in {$neon} but cannot be loaded");
             }
-            $file = (new \ReflectionClass($class))->getFileName();
-            preg_match_all("/->identifier\\('(semitexa\\.[A-Za-z0-9]+)'\\)/", is_string($file) ? (string) file_get_contents($file) : '', $found);
+            $source = $this->read((new \ReflectionClass($class))->getFileName(), $class);
+            preg_match_all("/->identifier\\('(semitexa\\.[A-Za-z0-9]+)'\\)/", $source, $found);
             array_push($identifiers, ...$found[1]);
         }
 
@@ -91,11 +91,22 @@ final class RuleCatalog
             }
         }
         foreach ([VerificationPlanner::class, ProjectGuardTargets::class] as $class) {
-            $source = (string) file_get_contents((string) (new \ReflectionClass($class))->getFileName());
+            $source = $this->read((new \ReflectionClass($class))->getFileName(), $class);
             preg_match_all("/\\bid:\\s*'((?:lint|docs):[a-z0-9:-]+)'/", $source, $ids);
             array_push($gates, ...$ids[1]);
         }
 
         return array_values(array_unique($gates));
+    }
+
+    /** A source that cannot be read throws: the catalog would drop its rules silently. */
+    private function read(string|false $file, string $class): string
+    {
+        $source = is_string($file) && is_readable($file) ? file_get_contents($file) : false;
+        if ($source === false) {
+            throw new \RuntimeException("cannot read the source of {$class}");
+        }
+
+        return $source;
     }
 }

@@ -180,6 +180,23 @@ final class TestChangeScanTest extends TestCase
     }
 
     #[Test]
+    public function a_new_skipping_test_does_not_cover_a_check_removed_elsewhere(): void
+    {
+        // Review of dev#130: test_currency loses its assertSame while a new
+        // Swoole-gated test adds one; on a worker without Swoole nothing replaced it.
+        $after = str_replace(
+            "        self::assertSame('EUR', \$cart->currency());\n    }",
+            "    }\n\n    public function test_concurrent(): void\n    {\n        if (!extension_loaded('swoole')) {\n            self::mark" . "TestSkipped('Swoole extension is required.');\n        }\n        self::assertSame('EUR', \$cart->currency());\n    }",
+            self::BEFORE,
+        );
+
+        self::assertSame(
+            [[TestChangeFinding::ASSERTIONS_REMOVED, 'test_currency', 'test_currency(): 1 of 1 assertion(s) removed']],
+            self::summary($this->scan(['tests/PriceTest.php' => [self::BEFORE, $after]])['findings']),
+        );
+    }
+
+    #[Test]
     public function a_test_whose_committed_version_cannot_be_read_fails_the_scan(): void
     {
         $scan = new TestChangeScan(

@@ -133,7 +133,11 @@ final class TestChangeScan
                 $skipAdded = true;
             }
         }
-        $lessChecked = $sum($after, 'total') < $sum($before, 'total') || $sum($after, 'strong') < $sum($before, 'strong');
+        // A new method that can skip may never run its assertions (no Swoole on
+        // this worker): it adds no checks that could cover one removed elsewhere
+        // (review of dev#130).
+        $counted = array_filter($after, static fn (array $now, string $method): bool => isset($before[$method]) || $now['skips'] === 0, ARRAY_FILTER_USE_BOTH);
+        $lessChecked = $sum($counted, 'total') < $sum($before, 'total') || $sum($counted, 'strong') < $sum($before, 'strong');
         if (!$lessChecked && !$skipAdded) {
             return [];
         }
