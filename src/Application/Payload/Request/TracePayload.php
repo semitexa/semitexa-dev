@@ -16,8 +16,8 @@ use Semitexa\Core\Http\Response\ResourceResponse;
  * in production at all.
  *
  * The double underscore matches the framework's other internal routes
- * (`/__ui/dispatch`, `/__ui/event`), which is what keeps it clear of application
- * paths.
+ * (`/__semitexa_kiss`, `/__semitexa_hug`), which is what keeps it clear of
+ * application paths.
  */
 #[AsPublicPayload(
     path: '/__trace',
