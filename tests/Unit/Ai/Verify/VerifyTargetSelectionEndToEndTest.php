@@ -105,7 +105,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'payload' => [
                 'Application/Payload/Request/GetThingPayload.php',
                 ChangedFile::KIND_PAYLOAD,
-                ['lint:di', 'lint:responses'],
+                ['lint:di', 'lint:responses', 'lint:transport-doors'],
             ],
             'resource' => [
                 'Application/Resource/Response/ThingResource.php',

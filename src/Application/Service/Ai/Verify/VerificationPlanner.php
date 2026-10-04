@@ -42,7 +42,8 @@ final class VerificationPlanner
         // handler or a service can, so lint:mechanisms rides this row too — the
         // execution shape is what matters, not which directory it sits in.
         ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
-        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
+        // A payload declares routes: lint:transport-doors keeps /__ traffic to KISS and HUG.
+        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di', 'lint:transport-doors'],
         // A slot resource is where `deferred: true` is written, and the only
         // thing that makes it true is a template calling layout_slot_deferred.
         // The two live in different files, so a diff touching either one is
