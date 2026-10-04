@@ -33,13 +33,22 @@ final class AiVerifyReceiptCommand extends BaseCommand
     {
         $this
             ->addArgument('id', InputArgument::OPTIONAL, 'Receipt id (rcpt-...); default: the latest run')
+            ->addOption('unread', null, InputOption::VALUE_NONE, 'List the receipts nobody has checked, failed runs first: what a subagent ran and the parent never looked at')
+            ->addOption('hours', null, InputOption::VALUE_REQUIRED, 'With --unread: only runs from the last N hours', '24')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $receipts = new VerifyReceipts($this->getProjectRoot());
+        if ((bool) $input->getOption('unread')) {
+            return $this->listUnread($receipts, $input, $output);
+        }
         $id = $input->getArgument('id');
-        $check = (new VerifyReceipts($this->getProjectRoot()))->check(is_string($id) && $id !== '' ? $id : null);
+        $check = $receipts->check(is_string($id) && $id !== '' ? $id : null);
+        if ($check['found'] && $check['id'] !== null) {
+            $receipts->markRead($check['id']);
+        }
         $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['verdict'] === 'pass';
 
         if ((bool) $input->getOption('json')) {
@@ -63,5 +72,35 @@ final class AiVerifyReceiptCommand extends BaseCommand
             : 'The claim does not hold for the tree in front of you: re-run ai:verify.');
 
         return $holds ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function listUnread(VerifyReceipts $receipts, InputInterface $input, OutputInterface $output): int
+    {
+        $hours = $input->getOption('hours');
+        if (!is_string($hours) || preg_match('/^\d+$/', $hours) !== 1) {
+            $output->writeln('--hours takes a whole number');
+
+            return self::INVALID;
+        }
+        $unread = $receipts->unread((int) $hours * 3600);
+        // Red first: an unread pass costs nothing, an unread failure is a claim nobody checked.
+        usort($unread, static fn (array $a, array $b): int => [$a['verdict'] === 'pass', $b['generated_at']] <=> [$b['verdict'] === 'pass', $a['generated_at']]);
+        $failed = count(array_filter($unread, static fn (array $r): bool => $r['verdict'] !== 'pass'));
+
+        if ((bool) $input->getOption('json')) {
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipts-unread/v1', 'hours' => (int) $hours, 'failed' => $failed, 'unread' => $unread], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+            return self::SUCCESS;
+        }
+        $output->writeln(sprintf('%d ai:verify run(s) in the last %d hour(s) nobody has checked, %d of them not a pass.', count($unread), (int) $hours, $failed));
+        foreach ($unread as $r) {
+            $by = is_array($r['run_by']) && is_string($r['run_by']['agent_session'] ?? null) ? $r['run_by']['agent_session'] : 'unknown session';
+            $output->writeln(sprintf('  %-30s %-10s %s  by %s', $r['id'], $r['verdict'] ?? '?', substr((string) $r['generated_at'], 0, 19), $by));
+        }
+        if ($failed > 0) {
+            $output->writeln('Check one with: bin/semitexa ai:verify:receipt <id> — a run reported as green must have a receipt that holds.');
+        }
+
+        return self::SUCCESS;
     }
 }

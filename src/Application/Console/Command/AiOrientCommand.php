@@ -117,6 +117,12 @@ final class AiOrientCommand extends BaseCommand
             ],
             'recent_traces'  => $recentTraces,
             'last_verify'    => $lastVerify,
+            // Red runs of the last day nobody checked with ai:verify:receipt:
+            // what a subagent saw and its parent may never have.
+            'unread_failed_verify' => array_values(array_filter(
+                (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($this->getProjectRoot()))->unread(86400),
+                static fn (array $r): bool => $r['verdict'] !== 'pass',
+            )),
             // The improvement loop's entry point: what the quality ledger says to
             // make better next. Read from the recorded baseline, measured nothing.
             'quality_next'   => $qualityNext,
@@ -588,6 +594,25 @@ final class AiOrientCommand extends BaseCommand
             $io->section('Last verify');
             $io->writeln("  trace: {$lv['trace_id']}  at: {$lv['at']}");
             $io->writeln("  verdict: " . ($lv['verdict'] ?? 'unknown') . "  — {$lv['summary']}");
+        }
+
+        $unreadRuns = $envelope['unread_failed_verify'] ?? [];
+        if (is_array($unreadRuns) && $unreadRuns !== []) {
+            $io->section('Red verify runs nobody checked (24h)');
+            foreach (array_slice($unreadRuns, 0, 3) as $run) {
+                if (!is_array($run)) {
+                    continue;
+                }
+                $runBy = is_array($run['run_by'] ?? null) ? $run['run_by'] : [];
+                $io->writeln(sprintf(
+                    '  %s  %s  %s  by %s',
+                    is_string($run['id'] ?? null) ? $run['id'] : '?',
+                    is_string($run['verdict'] ?? null) ? $run['verdict'] : '?',
+                    is_string($run['generated_at'] ?? null) ? substr($run['generated_at'], 0, 16) : '?',
+                    is_string($runBy['agent_session'] ?? null) ? $runBy['agent_session'] : 'unknown session',
+                ));
+            }
+            $io->writeln('  → bin/semitexa ai:verify:receipt --unread   # a run reported as green needs a receipt that holds');
         }
 
         $wn = $envelope['working_now'];

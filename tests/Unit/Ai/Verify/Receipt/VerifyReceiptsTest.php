@@ -92,6 +92,36 @@ final class VerifyReceiptsTest extends TestCase
         self::assertFalse((new VerifyReceipts($this->root))->check(null)['found']);
     }
 
+    #[Test]
+    public function a_run_nobody_checked_is_unread_until_someone_checks_it(): void
+    {
+        putenv('SEMITEXA_AGENT_SESSION=claude-sub-1');
+        try {
+            $receipts = new VerifyReceipts($this->root);
+            $red = self::receiptId($receipts->attach(['generated_at' => gmdate(DATE_ATOM)] + $this->envelope('fail'), []));
+            $green = self::receiptId($receipts->attach(['generated_at' => gmdate(DATE_ATOM)] + $this->envelope('pass'), []));
+
+            $unread = $receipts->unread(3600);
+            self::assertEqualsCanonicalizing([$red, $green], array_column($unread, 'id'));
+            self::assertSame(['agent_session' => 'claude-sub-1', 'trace' => null], $unread[0]['run_by'], 'who ran it travels with it');
+
+            $receipts->markRead($red);
+            self::assertSame([$green], array_column($receipts->unread(3600), 'id'));
+        } finally {
+            putenv('SEMITEXA_AGENT_SESSION');
+        }
+    }
+
+    #[Test]
+    public function a_window_leaves_out_older_runs(): void
+    {
+        $receipts = new VerifyReceipts($this->root);
+        $receipts->attach(['generated_at' => '2026-01-01T00:00:00+00:00'] + $this->envelope('fail'), []);
+
+        self::assertSame([], $receipts->unread(3600));
+        self::assertCount(1, $receipts->unread(null));
+    }
+
     /** @param array<string, mixed> $envelope */
     private static function receiptId(array $envelope): string
     {

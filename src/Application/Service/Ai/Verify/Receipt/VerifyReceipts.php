@@ -24,6 +24,8 @@ final class VerifyReceipts
 
     private const KEEP = 200;
 
+    private const READS = 'reads.ndjson';
+
     public function __construct(private readonly string $projectRoot) {}
 
     /**
@@ -41,6 +43,9 @@ final class VerifyReceipts
             'generated_at' => $envelope['generated_at'] ?? gmdate(DATE_ATOM),
             'argv'         => array_values(array_map(static fn (mixed $arg): string => is_scalar($arg) ? (string) $arg : '', (array) ($_SERVER['argv'] ?? []))),
             'cwd'          => (string) getcwd(),
+            // Who ran it: a subagent's run carries its own session, so a parent
+            // can tell its own runs from the ones it was only told about.
+            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => self::env('SEMITEXA_AI_TRACE_ID')],
             'verdict'      => $envelope['verdict'] ?? null,
             'targets'      => array_map(static fn (mixed $r): array => is_array($r) ? [
                 'id'            => $r['id'] ?? null,
@@ -106,6 +111,63 @@ final class VerifyReceipts
             'changed_since' => $changed,
             'receipt'       => $receipt,
         ];
+    }
+
+    /** Remember that someone looked: a receipt nobody checked is a claim nobody verified. */
+    public function markRead(string $id): void
+    {
+        $file = $this->projectRoot . '/' . self::DIR . '/' . self::READS;
+        try {
+            @file_put_contents($file, json_encode(['id' => basename($id), 'at' => gmdate(DATE_ATOM), 'by' => self::env('SEMITEXA_AGENT_SESSION')], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Receipts nobody has checked with ai:verify:receipt, newest first: the
+     * runs whose outcome reached nobody but the agent that ran them. A subagent
+     * that saw red and reported green leaves exactly this behind.
+     *
+     * @return list<array{id: string, generated_at: ?string, verdict: ?string, run_by: mixed}>
+     */
+    public function unread(?int $withinSeconds = null): array
+    {
+        $read = [];
+        $reads = $this->projectRoot . '/' . self::DIR . '/' . self::READS;
+        foreach (is_file($reads) ? (file($reads, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []) : [] as $line) {
+            $entry = json_decode($line, true);
+            if (is_array($entry) && is_string($entry['id'] ?? null)) {
+                $read[$entry['id']] = true;
+            }
+        }
+        $cutoff = $withinSeconds === null ? null : time() - $withinSeconds;
+        $unread = [];
+        $files = glob($this->projectRoot . '/' . self::DIR . '/rcpt-*.json') ?: [];
+        rsort($files);
+        foreach ($files as $file) {
+            $id = basename($file, '.json');
+            if (isset($read[$id])) {
+                continue;
+            }
+            $receipt = json_decode((string) file_get_contents($file), true);
+            if (!is_array($receipt)) {
+                continue;
+            }
+            $at = is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null;
+            if ($cutoff !== null && ($at === null || strtotime($at) < $cutoff)) {
+                continue;
+            }
+            $unread[] = ['id' => $id, 'generated_at' => $at, 'verdict' => is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null, 'run_by' => $receipt['run_by'] ?? null];
+        }
+
+        return $unread;
+    }
+
+    private static function env(string $name): ?string
+    {
+        $value = getenv($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
