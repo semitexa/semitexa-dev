@@ -196,7 +196,7 @@ final class AiVerifyCommand extends BaseCommand
             $this->emitError($output, 'Application not available — cannot dispatch lint commands', $jsonMode);
             return self::FAILURE;
         }
-        $executor = new VerificationExecutor($app, $projectRoot);
+        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()));
         $results = $executor->execute($plan);
 
         $verdict = CoverageGap::of($plan, $results, $this->getProjectRoot())->adjust($this->verdict($results));
@@ -207,7 +207,7 @@ final class AiVerifyCommand extends BaseCommand
             $impact = $this->probeImpact($plan);
         }
 
-        $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls()); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
