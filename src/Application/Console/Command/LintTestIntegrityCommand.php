@@ -42,6 +42,7 @@ final class LintTestIntegrityCommand extends BaseCommand
         $this
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope')
             ->addOption('path', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Workspace-relative path of the change (ai:verify passes the paths it selected); default: every uncommitted change')
+            ->addOption('base', null, InputOption::VALUE_REQUIRED, 'What the change is compared with: a ref such as origin/master for a branch review (ai:verify --git-ref passes it)', 'HEAD')
             ->addOption('renamed-from', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'The old path of a rename in the change; paired by position with --renamed-to')
             ->addOption('renamed-to', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'The new path of that rename: it is compared with the old path at HEAD');
     }
@@ -68,12 +69,19 @@ final class LintTestIntegrityCommand extends BaseCommand
                 }
             }
         }
-        $revisions = new WorkspaceRevisions($root);
+        $base = $input->getOption('base');
+        // A ref git could read as an option is no ref at all.
+        if (!is_string($base) || $base === '' || str_starts_with($base, '-')) {
+            $output->writeln('lint:test-integrity → --base must be a git ref, e.g. origin/master');
+
+            return self::FAILURE;
+        }
+        $revisions = new WorkspaceRevisions($root, $base);
         try {
             $result = (new TestChangeScan($revisions->committed(...), $revisions->current(...)))->scan($paths, $renamedFrom);
         } catch (\RuntimeException $e) {
             // Could not compare, so cannot clear the change: fail, and say why.
-            $output->writeln('lint:test-integrity → could not compare a changed test with HEAD: ' . $e->getMessage());
+            $output->writeln("lint:test-integrity → could not compare a changed test with {$base}: " . $e->getMessage());
 
             return self::FAILURE;
         }
@@ -101,8 +109,9 @@ final class LintTestIntegrityCommand extends BaseCommand
             // What to do comes first: the signal is cut at 240 characters, and
             // the finding itself is printed in full above.
             $output->writeln(sprintf(
-                'lint:test-integrity → %d test change(s) check less than HEAD: restore the checks, or say why on an added line // %s <reason>; first %s: %s',
+                'lint:test-integrity → %d test change(s) check less than %s: restore the checks, or say why on an added line // %s <reason>; first %s: %s',
                 count($findings),
+                $base,
                 TestChangeScan::MARKER,
                 $findings[0]->path,
                 $findings[0]->message,
@@ -111,7 +120,7 @@ final class LintTestIntegrityCommand extends BaseCommand
             return self::FAILURE;
         }
         $output->writeln($accepted === []
-            ? 'lint:test-integrity → no test checks less than HEAD'
+            ? "lint:test-integrity → no test checks less than {$base}"
             : sprintf('lint:test-integrity → %d weakening(s) accepted with a reason in the diff: %s', count($accepted), $accepted[0]->acceptedReason));
 
         return self::SUCCESS;

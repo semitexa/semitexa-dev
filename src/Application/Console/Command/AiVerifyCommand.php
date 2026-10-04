@@ -189,7 +189,7 @@ final class AiVerifyCommand extends BaseCommand
         /** @var list<ChangedFile> $changed */
 
         $planner = new VerificationPlanner($projectRoot, $classifier);
-        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'));
+        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'), is_string($input->getOption('git-ref')) && $input->getOption('git-ref') !== '' ? $input->getOption('git-ref') : null);
 
         $app = $this->getApplication();
         if ($app === null) {
@@ -343,16 +343,8 @@ final class AiVerifyCommand extends BaseCommand
      */
     private function gitDiffNameStatus(string $ref): array
     {
-        $cmd = sprintf(
-            'git -C %s diff --name-status %s 2>&1',
-            escapeshellarg($this->getProjectRoot()),
-            escapeshellarg($ref),
-        );
-        exec($cmd, $lines, $code);
-        if ($code !== 0) {
-            throw new \RuntimeException("git diff against '{$ref}' failed: " . implode(' / ', $lines));
-        }
-        return $this->parseNameStatus($lines);
+        // Every repository of the project: the workspace root is none of them.
+        return $this->parseNameStatus((new \Semitexa\Dev\Application\Service\Ai\Verify\GitRefChanges($this->getProjectRoot()))->nameStatus($ref));
     }
 
     /**

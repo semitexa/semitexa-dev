@@ -93,7 +93,7 @@ final readonly class DirtyWorkspaceScanner
      *
      * @return array<string, string>
      */
-    private function repositories(): array
+    public function repositories(): array
     {
         $root = $this->root();
         $roots = [];
