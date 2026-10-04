@@ -86,6 +86,16 @@ final class TransportDoorPolicy
             $found[] = ['path' => $path, 'methods' => $methods, 'class' => $class,
                 'reason' => 'A new framework-internal door. Browser↔server UI traffic goes through KISS (GET /__semitexa_kiss, server→browser) and HUG (POST /__semitexa_hug, browser→server). Route the feature through them; a missing verb extends HUG.'];
         }
+        // A pending entry whose route is gone is debt already paid: the entry
+        // must go too, or the list would quietly re-admit a door added later.
+        $present = array_flip(array_map(static fn (array $r): string => (string) ($r['path'] ?? ''), $routes));
+        foreach (self::PENDING as $path => $task) {
+            if (!isset($present[$path])) {
+                $found[] = ['path' => $path, 'methods' => [], 'class' => '',
+                    'reason' => sprintf('%s is listed as pending (%s) but no route declares it any more: remove it from TransportDoorPolicy::PENDING.', $path, $task)];
+            }
+        }
+
         return $found;
     }
 }
