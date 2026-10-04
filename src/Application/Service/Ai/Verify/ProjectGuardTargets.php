@@ -24,7 +24,11 @@ final class ProjectGuardTargets
      */
     public const RATCHET_SUITE = 'packages/semitexa-dev/tests/Unit/Structure';
 
-    public function __construct(private readonly string $projectRoot) {}
+    /** @param string|null $baseRef what the change is measured against (ai:verify --git-ref); null: HEAD */
+    public function __construct(
+        private readonly string $projectRoot,
+        private readonly ?string $baseRef = null,
+    ) {}
 
     /**
      * @param list<ChangedFile> $changedFiles
@@ -98,6 +102,8 @@ final class ProjectGuardTargets
                 // Every path of the change, not only the tests: a deleted test
                 // file says why on an added line of whichever file replaced it.
                 commandInput: ['--path' => array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)]
+                    // A branch review compares with the branch's base, not with HEAD.
+                    + ($this->baseRef === null ? [] : ['--base' => $this->baseRef])
                     + ($renames === [] ? [] : [
                         '--renamed-from' => array_map(static fn (ChangedFile $f): string => (string) $f->originalPath, $renames),
                         '--renamed-to'   => array_map(static fn (ChangedFile $f): string => $f->path, $renames),

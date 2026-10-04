@@ -126,7 +126,7 @@ final class VerificationPlanner
     /**
      * @param list<ChangedFile> $changedFiles
      */
-    public function plan(array $changedFiles, string $requestedScope, bool $isRepoWide = false): VerificationPlan
+    public function plan(array $changedFiles, string $requestedScope, bool $isRepoWide = false, ?string $baseRef = null): VerificationPlan
     {
         [$effectiveScope, $expansions] = $this->resolveEffectiveScope($requestedScope, $changedFiles);
         $contractMoves = $this->contractMoveResolver->resolve($changedFiles);
@@ -290,7 +290,7 @@ final class VerificationPlanner
             );
         }
 
-        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot))->targets($changedFiles, $effectiveScope));
+        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope));
 
         // Not at minimal scope: `docs:reference` regenerates the whole
         // reference (class discovery across every package plus a console boot)

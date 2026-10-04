@@ -14,7 +14,11 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  */
 final class WorkspaceRevisions
 {
-    public function __construct(private readonly string $projectRoot) {}
+    /** @param string $ref what "committed" means: HEAD for an uncommitted change, a base for a branch review */
+    public function __construct(
+        private readonly string $projectRoot,
+        private readonly string $ref = 'HEAD',
+    ) {}
 
     /**
      * The content at HEAD, or null when the path is not in HEAD — a new file.
@@ -40,7 +44,10 @@ final class WorkspaceRevisions
         if ($readable['exit'] !== 0) {
             throw new \RuntimeException("cannot read the repository {$repository}: " . $readable['output']);
         }
-        if ($this->git($repository, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'])['exit'] !== 0) {
+        if ($this->git($repository, ['rev-parse', '--verify', '-q', $this->ref . '^{commit}'])['exit'] !== 0) {
+            if ($this->ref !== 'HEAD') {
+                throw new \RuntimeException("{$this->ref} does not resolve to a commit in {$repository}");
+            }
             // Unborn (a fresh `git init`): HEAD names a branch that has no
             // commit yet, so everything in it is new. Anything else that fails
             // here is a broken HEAD, which must not read as "new" (review of dev#127).
@@ -53,16 +60,16 @@ final class WorkspaceRevisions
             }
             throw new \RuntimeException("HEAD of {$repository} does not resolve to a commit");
         }
-        $listing = $this->git($repository, ['ls-tree', '--name-only', 'HEAD', '--', $relative]);
+        $listing = $this->git($repository, ['ls-tree', '--name-only', $this->ref, '--', $relative]);
         if ($listing['exit'] !== 0) {
-            throw new \RuntimeException("cannot list HEAD in {$repository} for {$relative}: " . $listing['output']);
+            throw new \RuntimeException("cannot list {$this->ref} in {$repository} for {$relative}: " . $listing['output']);
         }
         if (trim($listing['output']) === '') {
             return null;
         }
-        $blob = $this->git($repository, ['show', 'HEAD:' . $relative], content: true);
+        $blob = $this->git($repository, ['show', $this->ref . ':' . $relative], content: true);
         if ($blob['exit'] !== 0) {
-            throw new \RuntimeException("cannot read HEAD:{$relative} in {$repository}");
+            throw new \RuntimeException("cannot read {$this->ref}:{$relative} in {$repository}");
         }
 
         return $blob['output'];

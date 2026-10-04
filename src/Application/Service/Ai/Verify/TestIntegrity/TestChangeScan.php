@@ -122,10 +122,23 @@ final class TestChangeScan
         // this fired on 55, nearly all such reshuffles from review rounds;
         // judged per file, on 23 — every one a real net loss.
         $sum = static fn (array $inventory, string $key): int => array_sum(array_column($inventory, $key));
-        if ($sum($after, 'total') >= $sum($before, 'total')
-            && $sum($after, 'strong') >= $sum($before, 'strong')
-            && $sum($after, 'skips') <= $sum($before, 'skips')
-        ) {
+        // A skip counts where it takes something away: an existing test that now
+        // skips, or a new test that skips and checks nothing. A new test guarded
+        // by "the Swoole extension is required" and full of assertions adds
+        // checks (found on a branch review of platform-settings, 2026-10-04).
+        $skipAdded = false;
+        foreach ($after as $method => $now) {
+            $was = $before[$method] ?? null;
+            if ($was !== null ? $now['skips'] > $was['skips'] : ($now['skips'] > 0 && $now['total'] === 0)) {
+                $skipAdded = true;
+            }
+        }
+        // A new method that can skip may never run its assertions (no Swoole on
+        // this worker): it adds no checks that could cover one removed elsewhere
+        // (review of dev#130).
+        $counted = array_filter($after, static fn (array $now, string $method): bool => isset($before[$method]) || $now['skips'] === 0, ARRAY_FILTER_USE_BOTH);
+        $lessChecked = $sum($counted, 'total') < $sum($before, 'total') || $sum($counted, 'strong') < $sum($before, 'strong');
+        if (!$lessChecked && !$skipAdded) {
             return [];
         }
 
@@ -162,7 +175,7 @@ final class TestChangeScan
             }
         }
         // The file lost checks no single method accounts for: say so at file level.
-        if ($findings === []) {
+        if ($findings === [] && $lessChecked) {
             $findings[] = new TestChangeFinding(TestChangeFinding::ASSERTIONS_REMOVED, $path, null, sprintf(
                 'the file checks less: assertions %d → %d, value checks %d → %d',
                 $sum($before, 'total'),

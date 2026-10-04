@@ -108,6 +108,19 @@ final class LintTestIntegrityCommandTest extends TestCase
     }
 
     #[Test]
+    public function a_branch_review_passes_its_base_and_a_bad_base_is_refused(): void
+    {
+        $files = [new ChangedFile('packages/semitexa-x/tests/PriceTest.php', ChangedFile::KIND_PHP_OTHER)];
+        $lint = array_values(array_filter((new ProjectGuardTargets(sys_get_temp_dir(), 'origin/master'))->targets($files, 'minimal'), static fn ($t): bool => $t->id === 'lint:test-integrity'))[0] ?? null;
+        self::assertNotNull($lint);
+        self::assertSame('origin/master', $lint->commandInput['--base'] ?? null);
+
+        $tester = new CommandTester(new LintTestIntegrityCommand());
+        self::assertSame(1, $tester->execute(['--path' => ['x/ATest.php'], '--base' => '--upload-pack=x']));
+        self::assertStringContainsString('--base must be a git ref', $tester->getDisplay());
+    }
+
+    #[Test]
     public function renames_come_in_pairs_whatever_the_paths_contain(): void
     {
         // A single OLD=>NEW value broke on a path containing '=>' (review of dev#127).

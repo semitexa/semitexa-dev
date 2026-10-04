@@ -1,0 +1,254 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Service\Ai\Verify\Receipt;
+
+/**
+ * A receipt for an ai:verify run, so "all tests pass" can be checked instead
+ * of believed.
+ *
+ * It records what ran (the ai:verify argv, each target's verdict and exit code,
+ * every process with its argv, cwd, exit code and a hash of its output) and the
+ * state it ran against: a sha256 of every changed file. check() answers three
+ * questions: is the receipt as it was written (digest), does the tree still
+ * look like that (fingerprint), and was the verdict a pass.
+ *
+ * The digest catches an edited receipt, not a forged one: whoever can write
+ * var/run can rewrite both. What it buys is that a claim names something that
+ * can be looked at and re-run — the argv is there to run again.
+ */
+final class VerifyReceipts
+{
+    public const DIR = 'var/run/verify-receipts';
+
+    private const KEEP = 200;
+
+    private const READS = 'reads.ndjson';
+
+    private const UNREADABLE = 'unreadable';
+
+    public function __construct(private readonly string $projectRoot) {}
+
+    /**
+     * Write the receipt for this envelope and name it in the envelope.
+     *
+     * @param array<string, mixed>        $envelope
+     * @param list<array<string, mixed>>  $processes
+     * @param array<string, ?string>|null $treeBefore the fingerprint taken before the targets ran
+     * @return array<string, mixed> the envelope with `receipt`
+     */
+    public function attach(array $envelope, array $processes, ?array $treeBefore = null): array
+    {
+        $paths = array_map(
+            static fn (mixed $f): string => is_array($f) && is_string($f['path'] ?? null) ? $f['path'] : '',
+            array_values((array) ($envelope['changed_files'] ?? [])),
+        );
+        $now = $this->fingerprint($paths);
+        // The receipt vouches for the bytes the targets checked. A file edited
+        // while they ran is named, and such a receipt never holds (review of dev#130).
+        $changedDuringRun = [];
+        foreach ($treeBefore ?? [] as $path => $hash) {
+            if (($now[$path] ?? null) !== $hash) {
+                $changedDuringRun[] = (string) $path;
+            }
+        }
+        $receipt = [
+            'artifact'     => 'semitexa-dev.verify-receipt/v1',
+            'id'           => 'rcpt-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3)),
+            'generated_at' => $envelope['generated_at'] ?? gmdate(DATE_ATOM),
+            'argv'         => array_values(array_map(static fn (mixed $arg): string => is_scalar($arg) ? (string) $arg : '', (array) ($_SERVER['argv'] ?? []))),
+            'cwd'          => (string) getcwd(),
+            // Who ran it: a subagent's run carries its own session, so a parent
+            // can tell its own runs from the ones it was only told about.
+            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => self::env('SEMITEXA_AI_TRACE_ID')],
+            'verdict'      => $envelope['verdict'] ?? null,
+            'targets'      => array_map(static fn (mixed $r): array => is_array($r) ? [
+                'id'            => $r['id'] ?? null,
+                'type'          => $r['type'] ?? null,
+                'status'        => $r['status'] ?? null,
+                'exit_code'     => $r['exit_code'] ?? null,
+                'signal_sha256' => hash('sha256', is_string($r['signal'] ?? null) ? $r['signal'] : ''),
+            ] : [], array_values((array) ($envelope['results'] ?? []))),
+            'processes'    => $processes,
+            'tree'         => $treeBefore ?? $now,
+            'changed_during_run' => $changedDuringRun,
+        ];
+        $receipt['digest'] = self::digest($receipt);
+
+        try {
+            $dir = $this->projectRoot . '/' . self::DIR;
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            if (@file_put_contents($dir . '/' . $receipt['id'] . '.json', json_encode($receipt, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n") === false) {
+                return $envelope;
+            }
+            $this->prune($dir);
+        } catch (\Throwable) {
+            // A receipt that could not be written is absent, never a failed run.
+            return $envelope;
+        }
+
+        return $envelope + ['receipt' => ['id' => $receipt['id'], 'path' => self::DIR . '/' . $receipt['id'] . '.json', 'digest' => $receipt['digest']]];
+    }
+
+    /**
+     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, receipt: ?array<string, mixed>}
+     */
+    public function check(?string $id): array
+    {
+        $file = $id === null ? $this->latest() : $this->projectRoot . '/' . self::DIR . '/' . basename($id) . '.json';
+        $receipt = $file !== null && is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+        if (!is_array($receipt)) {
+            return ['found' => false, 'id' => $id, 'intact' => false, 'verdict' => null, 'generated_at' => null, 'changed_since' => [], 'changed_during_run' => [], 'receipt' => null];
+        }
+        /** @var array<string, mixed> $receipt */
+        $recorded = is_string($receipt['digest'] ?? null) ? $receipt['digest'] : '';
+        $unsigned = $receipt;
+        unset($unsigned['digest']);
+        $tree = is_array($receipt['tree'] ?? null) ? $receipt['tree'] : [];
+        $now = $this->fingerprint(array_map('strval', array_keys($tree)));
+        $changed = [];
+        foreach ($tree as $path => $hash) {
+            // A file that cannot be read now is not one the receipt can clear.
+            if (($now[$path] ?? null) !== $hash || ($now[$path] ?? null) === self::UNREADABLE) {
+                $changed[] = (string) $path;
+            }
+        }
+
+        return [
+            'found'         => true,
+            'id'            => is_string($receipt['id'] ?? null) ? $receipt['id'] : null,
+            'intact'        => hash_equals($recorded, self::digest($unsigned)),
+            'verdict'       => is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null,
+            'generated_at'  => is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null,
+            'changed_since' => $changed,
+            'changed_during_run' => array_values(array_filter((array) ($receipt['changed_during_run'] ?? []), is_string(...))),
+            'receipt'       => $receipt,
+        ];
+    }
+
+    /** Remember that someone looked: a receipt nobody checked is a claim nobody verified. */
+    public function markRead(string $id): void
+    {
+        $file = $this->projectRoot . '/' . self::DIR . '/' . self::READS;
+        try {
+            @file_put_contents($file, json_encode(['id' => basename($id), 'at' => gmdate(DATE_ATOM), 'by' => self::env('SEMITEXA_AGENT_SESSION')], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Receipts nobody has checked with ai:verify:receipt, newest first: the
+     * runs whose outcome reached nobody but the agent that ran them. A subagent
+     * that saw red and reported green leaves exactly this behind.
+     *
+     * @return list<array{id: string, generated_at: ?string, verdict: ?string, run_by: mixed}>
+     */
+    public function unread(?int $withinSeconds = null): array
+    {
+        $read = [];
+        $reads = $this->projectRoot . '/' . self::DIR . '/' . self::READS;
+        foreach (is_file($reads) ? (file($reads, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []) : [] as $line) {
+            $entry = json_decode($line, true);
+            if (is_array($entry) && is_string($entry['id'] ?? null)) {
+                $read[$entry['id']] = true;
+            }
+        }
+        $cutoff = $withinSeconds === null ? null : time() - $withinSeconds;
+        $unread = [];
+        $files = glob($this->projectRoot . '/' . self::DIR . '/rcpt-*.json') ?: [];
+        rsort($files);
+        foreach ($files as $file) {
+            $id = basename($file, '.json');
+            if (isset($read[$id])) {
+                continue;
+            }
+            // A receipt that cannot be read, or whose digest no longer matches,
+            // is listed as such, never skipped and never taken at its word: an
+            // edited red receipt must not vanish as a green one (review of dev#130).
+            $raw = is_readable($file) ? file_get_contents($file) : false;
+            $receipt = is_string($raw) ? json_decode($raw, true) : null;
+            if (!is_array($receipt)) {
+                $unread[] = ['id' => $id, 'generated_at' => null, 'verdict' => 'unreadable', 'run_by' => null];
+                continue;
+            }
+            /** @var array<string, mixed> $receipt */
+            $at = is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null;
+            $unsigned = $receipt;
+            unset($unsigned['digest']);
+            $intact = is_string($receipt['digest'] ?? null) && hash_equals($receipt['digest'], self::digest($unsigned));
+            // Integrity before the window: an edited date must not move an
+            // edited receipt out of view (review of dev#130). Only an intact
+            // receipt with a readable date is old enough to leave out.
+            $time = $at !== null ? strtotime($at) : false;
+            if ($intact && $cutoff !== null && $time !== false && $time < $cutoff) {
+                continue;
+            }
+            $verdict = !$intact ? 'edited' : (is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null);
+            $unread[] = ['id' => $id, 'generated_at' => $at, 'verdict' => $verdict, 'run_by' => $receipt['run_by'] ?? null];
+        }
+
+        return $unread;
+    }
+
+    private static function env(string $name): ?string
+    {
+        $value = getenv($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * @param list<string> $paths
+     * @return array<string, ?string>
+     */
+    public function fingerprintOf(array $paths): array
+    {
+        return $this->fingerprint($paths);
+    }
+
+    /**
+     * @param list<string> $paths
+     * @return array<string, ?string> path => sha256 of its content, null when it does not exist, 'unreadable' when it cannot be read
+     */
+    private function fingerprint(array $paths): array
+    {
+        $tree = [];
+        foreach ($paths as $path) {
+            if ($path === '') {
+                continue;
+            }
+            $file = $this->projectRoot . '/' . $path;
+            // Absent is null; present but unreadable is its own value, never "absent" (review of dev#130).
+            $tree[$path] = !file_exists($file) ? null : (is_file($file) && is_readable($file) ? (hash_file('sha256', $file) ?: self::UNREADABLE) : self::UNREADABLE);
+        }
+        ksort($tree);
+
+        return $tree;
+    }
+
+    /** @param array<string, mixed> $receipt */
+    private static function digest(array $receipt): string
+    {
+        return hash('sha256', (string) json_encode($receipt, JSON_UNESCAPED_SLASHES));
+    }
+
+    private function latest(): ?string
+    {
+        $files = glob($this->projectRoot . '/' . self::DIR . '/rcpt-*.json') ?: [];
+        sort($files);
+
+        return $files === [] ? null : end($files);
+    }
+
+    private function prune(string $dir): void
+    {
+        $files = glob($dir . '/rcpt-*.json') ?: [];
+        sort($files);
+        foreach (array_slice($files, 0, max(0, count($files) - self::KEEP)) as $old) {
+            @unlink($old);
+        }
+    }
+}

@@ -123,7 +123,8 @@ final class AiVerifyCommand extends BaseCommand
                 // review of dev#84 by both reviewers.
                 $emptyPlan = new VerificationPlan($scope, $scope, [], []);
                 $report = new VerifyReportSerializer();
-                $envelope = [
+                // A receipt for the clean run too: "the latest receipt" must be this run (review of dev#130).
+                $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($this->getProjectRoot()))->attach([
                     'artifact' => 'semitexa-dev.verify-report/v1',
                     'generated_at' => date('c'),
                     'verdict' => 'nothing_to_verify',
@@ -132,7 +133,7 @@ final class AiVerifyCommand extends BaseCommand
                     'changed_files' => [],
                     'dirty_scan' => $scan,
                     'restart' => $report->restartAdvice([]),
-                ];
+                ], []);
 
                 if ($jsonMode) {
                     $traceOutput = new BufferedOutput();
@@ -189,14 +190,16 @@ final class AiVerifyCommand extends BaseCommand
         /** @var list<ChangedFile> $changed */
 
         $planner = new VerificationPlanner($projectRoot, $classifier);
-        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'));
+        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'), is_string($input->getOption('git-ref')) && $input->getOption('git-ref') !== '' ? $input->getOption('git-ref') : null);
 
         $app = $this->getApplication();
         if ($app === null) {
             $this->emitError($output, 'Application not available — cannot dispatch lint commands', $jsonMode);
             return self::FAILURE;
         }
-        $executor = new VerificationExecutor($app, $projectRoot);
+        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()));
+        // What the targets are about to check: a file edited before the receipt is written must not ride on this verdict.
+        $treeBefore = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->fingerprintOf(array_map(static fn (ChangedFile $f): string => $f->path, $plan->changedFiles));
         $results = $executor->execute($plan);
 
         $verdict = CoverageGap::of($plan, $results, $this->getProjectRoot())->adjust($this->verdict($results));
@@ -207,7 +210,7 @@ final class AiVerifyCommand extends BaseCommand
             $impact = $this->probeImpact($plan);
         }
 
-        $envelope = $this->buildEnvelope($plan, $results, $verdict, $impact);
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
@@ -243,8 +246,8 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         array $envelope,
     ): void {
-        $report = new VerifyReportSerializer();
-        $counts = $report->countByStatus($results);
+        $counts = (new VerifyReportSerializer())->countByStatus($results);
+        (new \Semitexa\Dev\Application\Service\Ai\Verify\RuleStats\RuleFireLedger($this->getProjectRoot()))->record($envelope); // every run, traced or not: ai:verify:rules
         $summary = sprintf(
             'verify %s — scope=%s targets=%d pass=%d fail=%d skipped=%d incomplete=%d',
             $verdict,
@@ -343,16 +346,8 @@ final class AiVerifyCommand extends BaseCommand
      */
     private function gitDiffNameStatus(string $ref): array
     {
-        $cmd = sprintf(
-            'git -C %s diff --name-status %s 2>&1',
-            escapeshellarg($this->getProjectRoot()),
-            escapeshellarg($ref),
-        );
-        exec($cmd, $lines, $code);
-        if ($code !== 0) {
-            throw new \RuntimeException("git diff against '{$ref}' failed: " . implode(' / ', $lines));
-        }
-        return $this->parseNameStatus($lines);
+        // Every repository of the project: the workspace root is none of them.
+        return (new \Semitexa\Dev\Application\Service\Ai\Verify\GitRefChanges($this->getProjectRoot()))->changes($ref);
     }
 
     /**
