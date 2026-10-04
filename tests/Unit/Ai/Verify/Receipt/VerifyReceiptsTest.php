@@ -124,8 +124,13 @@ final class VerifyReceiptsTest extends TestCase
         file_put_contents($file, str_replace('"verdict": "fail"', '"verdict": "pass"', (string) file_get_contents($file)));
         file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20991231-000000-badbad.json', 'not json');
 
+        $dated = self::receiptId($receipts->attach(['generated_at' => gmdate(DATE_ATOM)] + $this->envelope('fail'), []));
+        $datedFile = $this->root . '/' . VerifyReceipts::DIR . '/' . $dated . '.json';
+        file_put_contents($datedFile, (string) preg_replace('/"generated_at": "[^"]+"/', '"generated_at": "not-a-date"', (string) file_get_contents($datedFile), 1));
+
         $verdicts = array_column($receipts->unread(3600), 'verdict', 'id');
         self::assertSame('edited', $verdicts[$edited] ?? null);
+        self::assertSame('edited', $verdicts[$dated] ?? null, 'an edited date must not move it out of the window');
         self::assertSame('unreadable', $verdicts['rcpt-20991231-000000-badbad'] ?? null);
     }
 

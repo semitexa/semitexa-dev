@@ -176,12 +176,16 @@ final class VerifyReceipts
             }
             /** @var array<string, mixed> $receipt */
             $at = is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null;
-            if ($cutoff !== null && $at !== null && strtotime($at) < $cutoff) {
-                continue;
-            }
             $unsigned = $receipt;
             unset($unsigned['digest']);
             $intact = is_string($receipt['digest'] ?? null) && hash_equals($receipt['digest'], self::digest($unsigned));
+            // Integrity before the window: an edited date must not move an
+            // edited receipt out of view (review of dev#130). Only an intact
+            // receipt with a readable date is old enough to leave out.
+            $time = $at !== null ? strtotime($at) : false;
+            if ($intact && $cutoff !== null && $time !== false && $time < $cutoff) {
+                continue;
+            }
             $verdict = !$intact ? 'edited' : (is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null);
             $unread[] = ['id' => $id, 'generated_at' => $at, 'verdict' => $verdict, 'run_by' => $receipt['run_by'] ?? null];
         }
