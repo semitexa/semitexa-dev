@@ -100,6 +100,8 @@ final class GitRefChangesTest extends TestCase
         $this->git($repo, 'commit -qm tab');
         file_put_contents($repo . "/tests/Price\tTest.php", "<?php // changed\n");
         $this->git($repo, 'mv tests/ATest.php tests/BTest.php');
+        // An operator who turned rename detection off still gets the rename (review of dev#130).
+        $this->git($repo, 'config diff.renames false');
 
         $changes = (new GitRefChanges($this->root))->changes('HEAD');
         usort($changes, static fn (array $a, array $b): int => strcmp($a['path'], $b['path']));

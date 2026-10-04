@@ -114,6 +114,22 @@ final class VerifyReceiptsTest extends TestCase
     }
 
     #[Test]
+    public function an_edited_or_unreadable_receipt_is_listed_as_such_not_hidden(): void
+    {
+        // Review of dev#130: a failed receipt edited to "pass" disappeared from
+        // the red list, and an unreadable one was skipped.
+        $receipts = new VerifyReceipts($this->root);
+        $edited = self::receiptId($receipts->attach(['generated_at' => gmdate(DATE_ATOM)] + $this->envelope('fail'), []));
+        $file = $this->root . '/' . VerifyReceipts::DIR . '/' . $edited . '.json';
+        file_put_contents($file, str_replace('"verdict": "fail"', '"verdict": "pass"', (string) file_get_contents($file)));
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20991231-000000-badbad.json', 'not json');
+
+        $verdicts = array_column($receipts->unread(3600), 'verdict', 'id');
+        self::assertSame('edited', $verdicts[$edited] ?? null);
+        self::assertSame('unreadable', $verdicts['rcpt-20991231-000000-badbad'] ?? null);
+    }
+
+    #[Test]
     public function a_missing_receipt_is_not_found(): void
     {
         self::assertFalse((new VerifyReceipts($this->root))->check('rcpt-nope')['found']);
@@ -123,6 +139,7 @@ final class VerifyReceiptsTest extends TestCase
     #[Test]
     public function a_run_nobody_checked_is_unread_until_someone_checks_it(): void
     {
+        $previous = getenv('SEMITEXA_AGENT_SESSION');
         putenv('SEMITEXA_AGENT_SESSION=claude-sub-1');
         try {
             $receipts = new VerifyReceipts($this->root);
@@ -136,7 +153,8 @@ final class VerifyReceiptsTest extends TestCase
             $receipts->markRead($red);
             self::assertSame([$green], array_column($receipts->unread(3600), 'id'));
         } finally {
-            putenv('SEMITEXA_AGENT_SESSION');
+            // Restore what the suite had, rather than unsetting it for every later test.
+            putenv($previous === false ? 'SEMITEXA_AGENT_SESSION' : 'SEMITEXA_AGENT_SESSION=' . $previous);
         }
     }
 

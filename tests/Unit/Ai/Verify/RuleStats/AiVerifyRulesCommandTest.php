@@ -28,7 +28,9 @@ final class AiVerifyRulesCommandTest extends TestCase
         mkdir($this->root . '/var/run', 0777, true);
         mkdir($this->root . '/src/modules', 0777, true);
         file_put_contents($this->root . '/composer.json', '{}');
-        symlink(dirname(__DIR__, 7) . '/vendor', $this->root . '/vendor');
+        // The vendor directory this test runs from, wherever the checkout is
+        // (workspace or a standalone package repository; review of dev#130).
+        symlink(dirname((string) (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName(), 2), $this->root . '/vendor');
         file_put_contents($this->root . '/' . RuleFireLedger::FILE, json_encode([
             'at' => '2026-10-04T10:00:00+00:00', 'chances' => ['phpstan'], 'fired' => ['semitexa.disallowErrorLog'],
         ]) . "\n");

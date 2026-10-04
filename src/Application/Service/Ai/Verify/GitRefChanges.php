@@ -41,7 +41,7 @@ final class GitRefChanges
         }
         $changes = [];
         foreach ($repositories as $prefix => $repository) {
-            $command = ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, 'diff', '--name-status', '-z', $ref, '--'];
+            $command = ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, 'diff', '--name-status', '-z', '--find-renames', $ref, '--'];  // renames whatever diff.renames says
             $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
             if (!is_resource($process)) {
                 throw new \RuntimeException("git diff against '{$ref}' could not start in " . ($prefix === '' ? 'the project root' : $prefix));

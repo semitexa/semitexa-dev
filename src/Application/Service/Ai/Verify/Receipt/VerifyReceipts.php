@@ -165,15 +165,25 @@ final class VerifyReceipts
             if (isset($read[$id])) {
                 continue;
             }
-            $receipt = json_decode((string) file_get_contents($file), true);
+            // A receipt that cannot be read, or whose digest no longer matches,
+            // is listed as such, never skipped and never taken at its word: an
+            // edited red receipt must not vanish as a green one (review of dev#130).
+            $raw = is_readable($file) ? file_get_contents($file) : false;
+            $receipt = is_string($raw) ? json_decode($raw, true) : null;
             if (!is_array($receipt)) {
+                $unread[] = ['id' => $id, 'generated_at' => null, 'verdict' => 'unreadable', 'run_by' => null];
                 continue;
             }
+            /** @var array<string, mixed> $receipt */
             $at = is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null;
-            if ($cutoff !== null && ($at === null || strtotime($at) < $cutoff)) {
+            if ($cutoff !== null && $at !== null && strtotime($at) < $cutoff) {
                 continue;
             }
-            $unread[] = ['id' => $id, 'generated_at' => $at, 'verdict' => is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null, 'run_by' => $receipt['run_by'] ?? null];
+            $unsigned = $receipt;
+            unset($unsigned['digest']);
+            $intact = is_string($receipt['digest'] ?? null) && hash_equals($receipt['digest'], self::digest($unsigned));
+            $verdict = !$intact ? 'edited' : (is_string($receipt['verdict'] ?? null) ? $receipt['verdict'] : null);
+            $unread[] = ['id' => $id, 'generated_at' => $at, 'verdict' => $verdict, 'run_by' => $receipt['run_by'] ?? null];
         }
 
         return $unread;
