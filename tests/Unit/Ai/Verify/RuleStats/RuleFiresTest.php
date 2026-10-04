@@ -89,4 +89,22 @@ final class RuleFiresTest extends TestCase
         ], array_map(static fn (array $r): array => [$r['rule'], $r['chances'], $r['fires']], $report['rules']));
         self::assertSame(['StructuralOutlierBudgetTest' => 2, 'semitexa.builtSqlFragment' => 2], $report['retired']);
     }
+
+    #[Test]
+    public function trimming_keeps_the_newest_runs_and_the_one_just_recorded(): void
+    {
+        $root = sys_get_temp_dir() . '/rule-fires-trim-' . bin2hex(random_bytes(4));
+        mkdir($root . '/var/run', 0777, true);
+        $line = json_encode(['at' => 'old', 'chances' => [str_repeat('x', 420)], 'fired' => []]);
+        file_put_contents($root . '/' . RuleFireLedger::FILE, str_repeat($line . "\n", 5001));
+        try {
+            (new RuleFireLedger($root))->record(self::envelope('2026-10-04T12:00:00+00:00'));
+            $lines = file($root . '/' . RuleFireLedger::FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+
+            self::assertCount(5000, $lines);
+            self::assertStringContainsString('"at":"2026-10-04T12:00:00+00:00"', (string) end($lines));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($root));
+        }
+    }
 }

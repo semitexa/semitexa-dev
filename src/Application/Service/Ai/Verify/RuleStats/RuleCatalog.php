@@ -12,7 +12,9 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 /**
  * The rules ai:verify can fail on today, each with the family whose run gives
  * it a chance. Read from the rules themselves, never from a list kept here: a
- * rule removed from its source leaves the catalog on its own.
+ * rule removed from its source leaves the catalog on its own. A source that
+ * cannot be read throws: an incomplete catalog would report live rules as
+ * renamed or removed.
  */
 final class RuleCatalog
 {
@@ -53,12 +55,18 @@ final class RuleCatalog
     private function phpstanIdentifiers(): array
     {
         $neon = $this->projectRoot . '/vendor/semitexa/core/config/phpstan-rules.neon';
-        $source = is_file($neon) ? (string) file_get_contents($neon) : '';
+        $source = is_file($neon) ? file_get_contents($neon) : false;
+        if ($source === false) {
+            throw new \RuntimeException("cannot read the PHPStan rule list {$neon}");
+        }
         preg_match_all('/^\s*-\s*(Semitexa\\\\[A-Za-z0-9\\\\]+Rule)\s*$/m', $source, $classes);
+        if ($classes[1] === []) {
+            throw new \RuntimeException("no rules found in {$neon}");
+        }
         $identifiers = ['semitexa.brokenFqcn'];
         foreach ($classes[1] as $class) {
             if (!class_exists($class)) {
-                continue;
+                throw new \RuntimeException("{$class} is registered in {$neon} but cannot be loaded");
             }
             $file = (new \ReflectionClass($class))->getFileName();
             preg_match_all("/->identifier\\('(semitexa\\.[A-Za-z0-9]+)'\\)/", is_string($file) ? (string) file_get_contents($file) : '', $found);

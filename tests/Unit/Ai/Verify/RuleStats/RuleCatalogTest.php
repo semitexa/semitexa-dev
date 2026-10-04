@@ -26,4 +26,12 @@ final class RuleCatalogTest extends TestCase
             self::assertSame(1, $families[$gate] ?? 0, $gate);
         }
     }
+
+    #[Test]
+    public function an_unreadable_rule_list_fails_instead_of_shrinking_the_catalog(): void
+    {
+        // Review of dev#130: an empty PHPStan family reported every live rule as retired.
+        $this->expectExceptionObject(new \RuntimeException('cannot read the PHPStan rule list /nonexistent-root/vendor/semitexa/core/config/phpstan-rules.neon'));
+        (new RuleCatalog('/nonexistent-root'))->rules();
+    }
 }

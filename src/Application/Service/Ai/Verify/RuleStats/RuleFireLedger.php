@@ -32,11 +32,26 @@ final class RuleFireLedger
             if (!is_dir(dirname($file))) {
                 @mkdir(dirname($file), 0775, true);
             }
-            @file_put_contents($file, json_encode($run, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
-            if (@filesize($file) > self::MAX_RUNS * 400) {
-                $lines = @file($file, FILE_IGNORE_NEW_LINES) ?: [];
-                @file_put_contents($file, implode("\n", array_slice($lines, -self::MAX_RUNS)) . "\n", LOCK_EX);
+            $handle = @fopen($file, 'c+');
+            if ($handle === false) {
+                return;
             }
+            // One lock across append, read and rewrite: two runs trimming at
+            // once must not rewrite the file from a snapshot missing the other's line.
+            if (flock($handle, LOCK_EX)) {
+                fseek($handle, 0, SEEK_END);
+                fwrite($handle, json_encode($run, JSON_UNESCAPED_SLASHES) . "\n");
+                if (ftell($handle) > self::MAX_RUNS * 400) {
+                    rewind($handle);
+                    $lines = preg_split('/\R/', trim((string) stream_get_contents($handle))) ?: [];
+                    ftruncate($handle, 0);
+                    rewind($handle);
+                    fwrite($handle, implode("\n", array_slice($lines, -self::MAX_RUNS)) . "\n");
+                }
+                fflush($handle);
+                flock($handle, LOCK_UN);
+            }
+            fclose($handle);
         } catch (\Throwable) {
             // Statistics about the gate must never become a reason the gate fails.
         }

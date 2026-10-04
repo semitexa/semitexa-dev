@@ -30,19 +30,32 @@ final class AiVerifyRulesCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('dormant', null, InputOption::VALUE_REQUIRED, 'Only rules that never fired in at least this many chances', '0')
+            ->addOption('dormant', null, InputOption::VALUE_REQUIRED, 'Only rules that never fired, with at least this many chances (0: every never-fired rule)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $root = $this->getProjectRoot();
-        $report = RuleFireReport::build((new RuleCatalog($root))->rules(), (new RuleFireLedger($root))->runs());
+        // Omitted: every rule. Given: a whole number, and only never-fired rules
+        // with at least that many chances; anything else is refused, not ignored.
         $dormant = $input->getOption('dormant');
-        $threshold = is_numeric($dormant) ? max(0, (int) $dormant) : 0;
-        $rules = $threshold === 0 ? $report['rules'] : array_values(array_filter(
+        if ($dormant !== null && (!is_string($dormant) || preg_match('/^\d+$/', $dormant) !== 1)) {
+            $output->writeln('--dormant takes a whole number of chances, e.g. --dormant=50');
+
+            return self::INVALID;
+        }
+        try {
+            $report = RuleFireReport::build((new RuleCatalog($root))->rules(), (new RuleFireLedger($root))->runs());
+        } catch (\RuntimeException $e) {
+            // An audit missing a family would call live rules retired.
+            $output->writeln('ai:verify:rules cannot list the rules: ' . $e->getMessage());
+
+            return self::FAILURE;
+        }
+        $rules = $dormant === null ? $report['rules'] : array_values(array_filter(
             $report['rules'],
-            static fn (array $r): bool => $r['fires'] === 0 && $r['chances'] >= $threshold,
+            static fn (array $r): bool => $r['fires'] === 0 && $r['chances'] >= (int) $dormant,
         ));
 
         if ((bool) $input->getOption('json')) {
