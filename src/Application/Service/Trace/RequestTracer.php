@@ -618,6 +618,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
 
         $line = $record;
         unset($line['startedAtNs'], $line['suppressed']);
+        // The pid in `worker` is only an identity together with the host: a
+        // restart or another stack reuses the same small pids.
+        $line['host'] = ObservatoryJournal::host();
         ObservatoryJournal::write(['ts' => date('c'), 'event' => 'begin'] + $line);
         CoroutineSnapshot::maybeWrite();
     }

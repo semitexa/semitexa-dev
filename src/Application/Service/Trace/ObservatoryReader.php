@@ -37,6 +37,9 @@ final class ObservatoryReader
      */
     private const STALE_AFTER_SECONDS = 3600;
 
+    /** A pulse backlog bigger than this is skipped, not replayed: pulses are live news. */
+    private const PULSE_CATCHUP_BYTES = 65536;
+
     /**
      * Whether there is a journal to read here at all — dev, or monitor mode on
      * a production box. What a given SURFACE may show is a separate question:
@@ -64,12 +67,22 @@ final class ObservatoryReader
         $truncated = false;
 
         foreach ($this->journalFiles() as $path) {
-            [$lines, $cut] = $this->tailLines($path);
-            $truncated = $truncated || $cut;
+            $truncated = $truncated || (int) @filesize($path) > self::TAIL_BYTES;
 
-            foreach ($lines as $line) {
+            foreach ($this->windowLines($path) as $line) {
                 $row = json_decode($line, true);
-                if (!is_array($row) || !isset($row['event'], $row['id'])) {
+                if (!is_array($row) || !isset($row['event'])) {
+                    continue;
+                }
+
+                if (self::isProcessMarker($row)) {
+                    // A restart, a reload or a crash: what that process held
+                    // open never writes its end, and is not running any more.
+                    $open = array_filter($open, static fn (array $begin): bool => !self::outlivedBy($begin, $row));
+                    continue;
+                }
+
+                if (!isset($row['id'])) {
                     continue;
                 }
 
@@ -84,6 +97,9 @@ final class ObservatoryReader
                     // never depends on having seen the begin.
                     unset($open[(string) $row['id']]);
                     $recent[] = $row;
+                    if (count($recent) > self::RECENT_LIMIT) {
+                        array_shift($recent); // only the latest are shown
+                    }
                 }
             }
         }
@@ -205,7 +221,7 @@ final class ObservatoryReader
         if ($parsed === null) {
             return $this->bootstrap($todayPath, $today);
         }
-        [$day, $offset] = $parsed;
+        [$day, $offset, $pulseOffset] = $parsed;
 
         $chunks = [];
         if ($day !== $today) {
@@ -252,10 +268,11 @@ final class ObservatoryReader
             $raw = substr($raw, 0, $lastNewline + 1);
         }
         $chunks[] = $raw;
+        [$pulses, $pulseNext] = $this->pulsesSince($today, $day === $today ? $pulseOffset : null);
 
         return [
-            'cursor' => $today . ':' . $next,
-            'rows' => $this->decodeRows(implode('', $chunks)),
+            'cursor' => $today . ':' . $next . ':p' . $pulseNext,
+            'rows' => [...$this->decodeRows(implode('', $chunks)), ...$pulses],
             'reset' => false,
             'live' => [],
             'coroutines' => CoroutineSnapshot::readAll(),
@@ -263,14 +280,55 @@ final class ObservatoryReader
         ];
     }
 
-    /** @return array{0: string, 1: int}|null */
+    /**
+     * `day:offset`, optionally `:p<offset>` into the day's pulse file. A cursor
+     * without the pulse part (an older tab) is still valid: its pulses start
+     * from now.
+     *
+     * @return array{0: string, 1: int, 2: int|null}|null
+     */
     private function parseCursor(?string $cursor): ?array
     {
-        if ($cursor === null || preg_match('/^(\d{8}):(\d{1,12})$/', $cursor, $m) !== 1) {
+        if ($cursor === null || preg_match('/^(\d{8}):(\d{1,12})(?::p(\d{1,12}))?$/', $cursor, $m) !== 1) {
             return null;
         }
 
-        return [$m[1], (int) $m[2]];
+        return [$m[1], (int) $m[2], isset($m[3]) && $m[3] !== '' ? (int) $m[3] : null];
+    }
+
+    /**
+     * Today's pulses (signals, pushes) after $offset, and where the next read
+     * starts. They are for watching live, so there is no catching up: no
+     * offset, an offset from a rotated file, or more than PULSE_CATCHUP_BYTES
+     * behind all start from the end — a pulse that old is no longer news.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    private function pulsesSince(string $today, ?int $offset): array
+    {
+        $path = ObservatoryJournal::pulsePath($today);
+        clearstatcache(true, $path);
+        $size = (int) (@filesize($path) ?: 0);
+        if ($offset === null || $offset > $size || $size - $offset > self::PULSE_CATCHUP_BYTES) {
+            return [[], $size];
+        }
+        if ($size === $offset) {
+            return [[], $offset];
+        }
+        $raw = (string) @file_get_contents($path, false, null, $offset, $size - $offset);
+        $lastNewline = strrpos($raw, "\n");
+        if ($lastNewline === false) {
+            return [[], $offset];
+        }
+        $rows = [];
+        foreach (explode("\n", substr($raw, 0, $lastNewline)) as $line) {
+            $row = json_decode($line, true);
+            if (is_array($row) && in_array($row['event'] ?? null, [ObservatoryJournal::EVENT_SIGNAL, ObservatoryJournal::EVENT_PUSH], true)) {
+                $rows[] = $row;
+            }
+        }
+
+        return [$rows, $offset + $lastNewline + 1];
     }
 
     /**
@@ -280,17 +338,26 @@ final class ObservatoryReader
     {
         clearstatcache(true, $todayPath);
         $size = (int) (@filesize($todayPath) ?: 0);
-        [$lines] = $this->tailLines($todayPath);
+        $lines = [];
+        foreach ($this->windowLines($todayPath) as $line) {
+            $lines[] = $line;
+            if (count($lines) > self::BOOTSTRAP_ROWS) {
+                array_shift($lines);
+            }
+        }
         $rows = [];
-        foreach (array_slice($lines, -self::BOOTSTRAP_ROWS) as $line) {
+        foreach ($lines as $line) {
             $row = json_decode($line, true);
             if (is_array($row) && isset($row['event'], $row['id'])) {
                 $rows[] = $row;
             }
         }
 
+        clearstatcache(true, ObservatoryJournal::pulsePath($today));
+        $pulseSize = (int) (@filesize(ObservatoryJournal::pulsePath($today)) ?: 0);
+
         return [
-            'cursor' => $today . ':' . $size,
+            'cursor' => $today . ':' . $size . ':p' . $pulseSize,
             'rows' => $rows,
             'reset' => true,
             'live' => $this->snapshot()['live'],
@@ -326,10 +393,15 @@ final class ObservatoryReader
      */
     public function tailRecords(int $limit, ?string $kind = null, ?string $nameContains = null): array
     {
+        if ($limit < 1) {
+            return [];
+        }
+        // Only the last $limit rows are ever held: a busy day's journal is
+        // tens of thousands of rows, and decoding all of them at once ran
+        // `ai:observe tail` out of memory.
         $rows = [];
         foreach ($this->journalFiles() as $path) {
-            [$lines] = $this->tailLines($path);
-            foreach ($lines as $line) {
+            foreach ($this->windowLines($path) as $line) {
                 $row = json_decode($line, true);
                 if (!is_array($row)) {
                     continue;
@@ -341,25 +413,39 @@ final class ObservatoryReader
                     continue;
                 }
                 $rows[] = $row;
+                if (count($rows) > $limit) {
+                    array_shift($rows);
+                }
             }
         }
 
-        return array_slice($rows, -$limit);
+        return $rows;
     }
 
     /**
      * Both lifecycle lines of one process, by id — the starting point of
-     * `ai:observe show`.
+     * `ai:observe show` — and, for a begin that never got its end, the marker
+     * of the restart, reload or crash that cut it (`lost`).
      *
-     * @return array{begin: array<string, mixed>|null, end: array<string, mixed>|null}
+     * @return array{begin: array<string, mixed>|null, end: array<string, mixed>|null, lost: array<string, mixed>|null}
      */
     public function find(string $id): array
     {
         $begin = null;
         $end = null;
+        $lost = null;
         foreach ($this->journalFiles() as $path) {
-            [$lines] = $this->tailLines($path);
-            foreach ($lines as $line) {
+            foreach ($this->windowLines($path) as $line) {
+                if ($begin !== null && $end === null && $lost === null && (str_contains($line, '"event":"server-start"') || str_contains($line, '"event":"worker-'))) {
+                    $marker = json_decode($line, true);
+                    if (is_array($marker) && self::isProcessMarker($marker) && self::outlivedBy($begin, $marker)) {
+                        $lost = $marker;
+                    }
+                    continue;
+                }
+                if (!str_contains($line, $id)) {
+                    continue; // most lines are another process's: skip the decode
+                }
                 $row = json_decode($line, true);
                 if (!is_array($row) || ($row['id'] ?? null) !== $id) {
                     continue;
@@ -372,7 +458,9 @@ final class ObservatoryReader
             }
         }
 
-        return ['begin' => $begin, 'end' => $end];
+        // An end written after the marker (a session closed while its worker
+        // drained) is the better answer: it did end, and says how.
+        return ['begin' => $begin, 'end' => $end, 'lost' => $end === null ? $lost : null];
     }
 
     /**
@@ -383,6 +471,35 @@ final class ObservatoryReader
     public function todayJournalPath(): string
     {
         return ObservatoryJournal::dir() . '/journal-' . date('Ymd') . '.ndjson';
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function isProcessMarker(array $row): bool
+    {
+        return in_array($row['event'] ?? null, [
+            ObservatoryJournal::EVENT_SERVER_START,
+            ObservatoryJournal::EVENT_WORKER_START,
+            ObservatoryJournal::EVENT_WORKER_STOP,
+        ], true);
+    }
+
+    /**
+     * Whether a marker written after this begin means the process cannot be
+     * running: same host, and either the whole server restarted or the pid's
+     * process started anew, stopped or crashed. A begin journaled before begins
+     * carried a host is matched on the pid alone.
+     *
+     * @param array<string, mixed> $begin
+     * @param array<string, mixed> $marker
+     */
+    private static function outlivedBy(array $begin, array $marker): bool
+    {
+        if (isset($begin['host']) && ($begin['host'] !== ($marker['host'] ?? null))) {
+            return false;
+        }
+
+        return ($marker['event'] ?? null) === ObservatoryJournal::EVENT_SERVER_START
+            || (isset($marker['worker']) && ($begin['worker'] ?? null) === $marker['worker']);
     }
 
     /**
@@ -406,28 +523,36 @@ final class ObservatoryReader
     }
 
     /**
-     * @return array{0: list<string>, 1: bool} lines and whether the head was cut off
+     * The lines of a journal's tail window (its last TAIL_BYTES), oldest
+     * first, read one at a time — never the window as one string, nor all its
+     * lines at once. A window that starts mid-file drops its first line, a
+     * half line almost certainly.
+     *
+     * @return \Generator<int, string>
      */
-    private function tailLines(string $path): array
+    private function windowLines(string $path): \Generator
     {
         $size = @filesize($path);
         if ($size === false || $size === 0) {
-            return [[], false];
+            return;
         }
-
-        $cut = $size > self::TAIL_BYTES;
-        $raw = $cut
-            ? (string) @file_get_contents($path, false, null, $size - self::TAIL_BYTES)
-            : (string) @file_get_contents($path);
-
-        $lines = explode("\n", $raw);
-        if ($cut) {
-            // The first chunk is almost certainly a half line; a half line is
-            // not JSON and json_decode would reject it anyway — dropping it
-            // here just makes that explicit.
-            array_shift($lines);
+        $handle = @fopen($path, 'rb');
+        if ($handle === false) {
+            return;
         }
-
-        return [array_values(array_filter($lines, static fn (string $l): bool => $l !== '')), $cut];
+        try {
+            if ($size > self::TAIL_BYTES) {
+                fseek($handle, $size - self::TAIL_BYTES);
+                fgets($handle);
+            }
+            while (($line = fgets($handle)) !== false) {
+                $line = rtrim($line, "\n");
+                if ($line !== '') {
+                    yield $line;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 }
