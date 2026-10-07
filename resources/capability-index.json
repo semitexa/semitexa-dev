@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-09-23T15:20:35+00:00",
-    "source_version": "dev-develop@3bbb0c9",
-    "count": 64,
+    "generated_at": "2026-10-07T07:49:08+00:00",
+    "source_version": "dev-master@cb78c52",
+    "count": 77,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -10,6 +10,7 @@
         "semitexa/cache",
         "semitexa/cms",
         "semitexa/core",
+        "semitexa/crud",
         "semitexa/demo",
         "semitexa/dev",
         "semitexa/docs",
@@ -51,7 +52,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "0f7dc6aac570dea74d270d9685fb4e35487b6271b856b39de6720ede09347c9b",
+    "content_hash": "430dec75e56c7badbf727e51c1ad7daa5009de6863f497766a54c6cc9a089ff6",
     "capabilities": [
         {
             "id": "api.external",
@@ -142,6 +143,82 @@
             "declared_by": "Semitexa\\Core\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/core"
+        },
+        {
+            "id": "crud.action",
+            "summary": "A CRUD screen's own action on a row, a selection of rows or the header, with its permission and confirmation; the runtime checks access and finds the records.",
+            "use_when": "Records of a screen need an operation beyond create, edit and delete - publish, archive, recalculate.",
+            "avoid_when": "The operation needs its own form - give it a page or a dialog of its own.",
+            "replaces": [
+                "a POST route, handler and permission check per grid action"
+            ],
+            "see_also": "crud.screen",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Crud\\Attribute\\AsCrudAction",
+            "declared_by_short": "AsCrudAction",
+            "package": "semitexa/crud"
+        },
+        {
+            "id": "crud.collection-feed",
+            "summary": "A live, paginated, searchable, sortable, filterable collection feed for platform.grid, declared by a field list over an ORM model.",
+            "use_when": "A grid lists rows of one ORM model and should update live when they change.",
+            "avoid_when": "The rows are not one model (a report joining several) - write a feed payload and handler, or narrow with query().",
+            "replaces": [
+                "a feed payload with one getter, setter and raw accessor per view parameter",
+                "a feed handler with a field map, a query and a projection",
+                "a JSON response class carrying the #[Collection*] attributes"
+            ],
+            "see_also": "ui.field-type",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Crud\\Attribute\\AsCollectionFeed",
+            "declared_by_short": "AsCollectionFeed",
+            "package": "semitexa/crud"
+        },
+        {
+            "id": "crud.kit",
+            "summary": "Admin screens from declarations: a CRUD screen (list, live grid, create and edit dialogs, delete, permissions, navigation) or a live grid feed over an ORM model, from a list of fields.",
+            "use_when": "An admin lists, searches, filters, creates, edits and deletes records of one ORM model and should see writes live.",
+            "avoid_when": "The screen is not about one model's rows (a dashboard, a wizard) - compose platform-ui components directly.",
+            "replaces": [
+                "list, create, edit and delete pages, each a payload, handler and template",
+                "a feed payload, handler, JSON response and Resource DTO per grid"
+            ],
+            "see_also": "crud.screen",
+            "kind": "package",
+            "declared_by": "Semitexa\\Crud\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/crud"
+        },
+        {
+            "id": "crud.screen",
+            "summary": "A list / create / edit / delete screen over one ORM model, declared as one class with a field list: page, live grid, dialog forms, permissions and navigation.",
+            "use_when": "An administrator manages the records of one model: list, search, filter, create, edit, delete.",
+            "avoid_when": "The screen is a workflow, not records (a wizard, a dashboard) - compose platform-ui components on your own page; or the rows are not one model - use #[AsCollectionFeed] with query().",
+            "replaces": [
+                "a list page, a create page, an edit page and a delete route, each a payload, handler and template",
+                "a feed payload and handler for the grid",
+                "create and update form actions that copy the form into the model"
+            ],
+            "see_also": "crud.collection-feed",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Crud\\Attribute\\AsCrud",
+            "declared_by_short": "AsCrud",
+            "package": "semitexa/crud"
+        },
+        {
+            "id": "crud.settings-page",
+            "summary": "A settings page declared as one class with a field list: stored per tenant, validated by the field rules, rendered on the platform settings layout, read back typed with defaults.",
+            "use_when": "An application needs editable configuration - names, thresholds, switches - that an administrator changes at runtime.",
+            "avoid_when": "The value is per visitor (a profile, a preference) - store it per user; or it is deployment configuration - use .env.",
+            "replaces": [
+                "a settings page, handler, form action and store calls per group of options",
+                "reading a setting with its default repeated at every call site"
+            ],
+            "see_also": "crud.screen",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Crud\\Attribute\\AsSettingsPage",
+            "declared_by_short": "AsSettingsPage",
+            "package": "semitexa/crud"
         },
         {
             "id": "demo.showcase",
@@ -509,8 +586,8 @@
         },
         {
             "id": "ssr.component",
-            "summary": "A reusable server-rendered component with its own template, optional client script and event triggers.",
-            "use_when": "The same block of markup appears on more than one page, or a block needs its own script and event wiring.",
+            "summary": "A reusable server-rendered component with its own template and optional client script; Platform UI makes it interactive (#[UiPart] + #[UiOn]).",
+            "use_when": "The same block of markup appears on more than one page, or a block needs its own script; for server-handled events add Platform UI #[UiOn].",
             "avoid_when": "The markup appears once and carries no behaviour - a plain template fragment is cheaper to read.",
             "replaces": [
                 "the same Twig include copied across several templates",
@@ -803,6 +880,35 @@
             "package": "semitexa/platform-ui"
         },
         {
+            "id": "ui.command-source",
+            "summary": "A searchable source of commands (records, pages, actions) for the Ctrl+K command palette, filtered by the visitor's permissions.",
+            "use_when": "Users should jump to records or actions by typing, from anywhere the palette is on the page.",
+            "avoid_when": "The list is static and short - mark the page's own buttons and links with data-ui-command instead.",
+            "replaces": [
+                "a bespoke search endpoint and dropdown per application"
+            ],
+            "see_also": "ui.event-intent",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsCommandSource",
+            "declared_by_short": "AsCommandSource",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.component-state",
+            "summary": "A component property kept on the server as its state: a handler changes it, and the component is saved and drawn again, morphed in place.",
+            "use_when": "A component remembers something between clicks \u2014 a count, a selection, a step \u2014 or its props are too large to ride every signed context.",
+            "avoid_when": "The value belongs to a record \u2014 save it through the ORM and let the page be live instead.",
+            "replaces": [
+                "state carried in the page, copied into every signed context and capped at 4 KB",
+                "a handler that reads its props, computes, and returns a re-render with the new value"
+            ],
+            "see_also": "ui.dashboard-widget",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiState",
+            "declared_by_short": "UiState",
+            "package": "semitexa/platform-ui"
+        },
+        {
             "id": "ui.contract",
             "summary": "Declares what a component or primitive accepts \u2014 summary, typed props, worked examples \u2014 so the catalog can describe it without anyone opening its template.",
             "use_when": "A component is meant to be configured, previewed or generated by someone who did not write it, human or AI.",
@@ -815,6 +921,21 @@
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiContract",
             "declared_by_short": "AsUiContract",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.dashboard-widget",
+            "summary": "A dashboard widget - a stat with a trend, a list of recent records, or a small SVG chart - registered by attribute, shown only with its permission, laid out by platform.dashboard.",
+            "use_when": "A landing page summarises the application: counts, trends, what changed recently.",
+            "avoid_when": "The page is about one record or one list - use a CRUD screen or a page of its own.",
+            "replaces": [
+                "a dashboard page whose handler gathers every number and checks every permission by hand",
+                "a JavaScript chart library for a sparkline"
+            ],
+            "see_also": "crud.screen",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsDashboardWidget",
+            "declared_by_short": "AsDashboardWidget",
             "package": "semitexa/platform-ui"
         },
         {
@@ -843,6 +964,50 @@
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
             "declared_by_short": "UiOn",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.field-type",
+            "summary": "A field type: one declaration that is a form control, its validation rules, a grid column, a filter and an inference from a stored column.",
+            "use_when": "A value needs its own editing control or display (a rating, a colour, a money amount with a currency) everywhere it appears.",
+            "avoid_when": "A built-in type with settings or options covers it - list them with bin/semitexa platform-ui:field-types.",
+            "replaces": [
+                "the same field described separately for the form, the grid column, the filter and the validation"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsFieldType",
+            "declared_by_short": "AsFieldType",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.form-submit-action",
+            "summary": "Registers a named server action a platform.form submit runs after its signed rules pass; it answers with a message, field errors, reset or redirect.",
+            "use_when": "A form must do something on submit - save, send, sign up - beyond validating its fields.",
+            "avoid_when": "The form is a plain page POST with its own route and payload - keep that route.",
+            "replaces": [
+                "replacing UiFormSubmitActionRegistry by hand to add one action",
+                "a fetch() to an ad-hoc endpoint from page JavaScript on submit"
+            ],
+            "see_also": "ui.event-intent",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsFormSubmitAction",
+            "declared_by_short": "AsFormSubmitAction",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.grid-action",
+            "summary": "Row, bulk and header actions of a platform.grid run on the server through HUG: selection, confirmation, a busy state and a toast, with the actions the page offered signed into the grid.",
+            "use_when": "Rows of a grid are acted on - delete, publish, archive - one at a time, several at once, or all from the header.",
+            "avoid_when": "The action opens a page or a dialog - give the grid a rowActions link instead.",
+            "replaces": [
+                "a POST route per grid action, called with fetch() and a CSRF header",
+                "hand-written row checkboxes and a bulk bar"
+            ],
+            "see_also": "ui.form-submit-action",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsGridAction",
+            "declared_by_short": "AsGridAction",
             "package": "semitexa/platform-ui"
         },
         {
@@ -914,6 +1079,35 @@
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiSlot",
             "declared_by_short": "UiSlot",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.tree-action",
+            "summary": "A kind of action an agent-composed screen may name \u2014 a link, a CRUD create or edit \u2014 validated for the visitor and resolved by the server.",
+            "use_when": "An agent-composed screen needs a control that does something the application already offers.",
+            "avoid_when": "The action is a write with side effects: give it a CRUD screen or a form, and link to that.",
+            "replaces": [
+                "letting a model put an arbitrary URL or handler name into a screen"
+            ],
+            "see_also": "ui.component-state",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiTreeAction",
+            "declared_by_short": "AsUiTreeAction",
+            "package": "semitexa/platform-ui"
+        },
+        {
+            "id": "ui.url-state",
+            "summary": "Keeps a component prop in the query string: restored and validated on page load, written back (push or replace) when an interaction changes it.",
+            "use_when": "A search term, filter, tab or page number should survive a reload and be shareable as a link.",
+            "avoid_when": "The value is private or large - URL state is visible, logged and limited in length.",
+            "replaces": [
+                "reading $_GET in a page handler and threading it into component props by hand",
+                "history.pushState calls in page JavaScript"
+            ],
+            "see_also": "ui.event-intent",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiUrl",
+            "declared_by_short": "UiUrl",
             "package": "semitexa/platform-ui"
         },
         {
