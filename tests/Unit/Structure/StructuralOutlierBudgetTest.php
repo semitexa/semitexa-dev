@@ -138,7 +138,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         // 932 -> 935 on 2026-10-04: the route's `exposure` (Public | Hug) is read
         // and passed through like sseGateModel. No new method.
-        'semitexa-core/src/Discovery/AttributeDiscovery.php' => [33, 935],
+        // 34/954 -> 32/881 on 2026-10-07: the route bucket key and the
+        // override-chain election moved to RouteOverrideChain.
+        'semitexa-core/src/Discovery/AttributeDiscovery.php' => [32, 881],
         'semitexa-media/src/Domain/Model/MediaVariant.php' => [33, 261],
         'semitexa-weave/src/Application/Service/GraphStore.php' => [32, 685],
         'semitexa-webhooks/src/Domain/Model/InboundDelivery.php' => [32, 122],
