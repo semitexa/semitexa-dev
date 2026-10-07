@@ -50,6 +50,9 @@ final class FormPlanBuilder
             if (!in_array($m[2], self::TYPES, true)) {
                 throw new \InvalidArgumentException(sprintf('Field "%s": type "%s" is not one of %s.', $m[1], $m[2], implode(', ', self::TYPES)));
             }
+            if (in_array($m[1], array_column($fields, 'name'), true)) {
+                throw new \InvalidArgumentException(sprintf('Field "%s" is declared twice.', $m[1]));
+            }
             $fields[] = ['name' => $m[1], 'type' => $m[2], 'required' => $m[3] === '!'];
         }
         if ($fields === []) {

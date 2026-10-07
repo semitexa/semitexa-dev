@@ -138,8 +138,10 @@ final class MakeCrudCommand extends BaseCommand
             if ($file instanceof \SplFileInfo && $file->getFilename() === $model . '.php'
                 && preg_match('/^namespace\s+([^;]+);/m', (string) file_get_contents($file->getPathname()), $m) === 1) {
                 $class = $m[1] . '\\' . $model;
-
-                return class_exists($class) ? $class : null;
+                // A same-named file that does not autoload (a legacy copy) must not hide the real model.
+                if (class_exists($class)) {
+                    return $class;
+                }
             }
         }
 

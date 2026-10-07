@@ -114,6 +114,14 @@ final class CrudAndFormPlanBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         FormPlanBuilder::parseFields('status:choice');
     }
+
+    #[Test]
+    public function make_form_refuses_a_field_name_declared_twice(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Field "email" is declared twice.');
+        FormPlanBuilder::parseFields('email:email,email:text');
+    }
 }
 
 #[FromTable(name: 'generated_invoices')]
