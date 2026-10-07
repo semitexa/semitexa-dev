@@ -120,6 +120,24 @@ final class RequestTracerTest extends TestCase
     }
 
     #[Test]
+    public function raw_bytes_in_a_span_do_not_cost_the_whole_trace(): void
+    {
+        // A BINARY(16) id bound to a query is not UTF-8. json_encode() refused
+        // the whole trace, and the request left no file at all.
+        $this->marker = '1';
+        $tracer = new RequestTracer();
+        $tracer->begin('request', ['method' => 'GET', 'path' => '/binary', 'marker' => '1']);
+        \Semitexa\Orm\Adapter\QueryRecorder::record('SELECT * FROM t WHERE id = :w0', ['w0' => "\x01\xff\xfe" . str_repeat("\x80", 13)], 1.0);
+        $tracer->end('request', ['http_status' => 200]);
+
+        $files = $this->traceFiles();
+        self::assertCount(1, $files);
+        $trace = json_decode((string) file_get_contents($files[0]), true);
+        self::assertIsArray($trace);
+        self::assertContains('orm.query', array_column($trace['events'], 'name'), 'the query with the binary binding is in the trace');
+    }
+
+    #[Test]
     public function a_recorded_request_names_its_span_classes_on_the_end_line(): void
     {
         $this->marker = '1';

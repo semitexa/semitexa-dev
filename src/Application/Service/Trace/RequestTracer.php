@@ -11,6 +11,7 @@ use Semitexa\Core\Environment;
 use Semitexa\Core\Pipeline\RecordingAwareTracerInterface;
 use Semitexa\Core\Pipeline\RequestTracerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Orm\Adapter\QueryRecorder;
 use Semitexa\Orm\OrmManager;
@@ -524,10 +525,16 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 'totalMs' => $buffer->sinceStartMs(),
                 'events' => $buffer->events(),
             ],
-            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+            // A bound parameter can be raw bytes (a BINARY(16) id): substituted,
+            // not allowed to sink the whole trace. Before this, json_encode()
+            // returned false and the request left no trace at all, and the
+            // request-cost probe reported it as unmeasured.
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
         );
 
         if ($payload === false) {
+            StaticLoggerBridge::warning('dev', 'Trace not written: it does not encode as JSON', ['error' => json_last_error_msg()]);
+
             return null;
         }
 
