@@ -525,10 +525,7 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 'totalMs' => $buffer->sinceStartMs(),
                 'events' => $buffer->events(),
             ],
-            // A bound parameter can be raw bytes (a BINARY(16) id): substituted,
-            // not allowed to sink the whole trace. Before this, json_encode()
-            // returned false and the request left no trace at all, and the
-            // request-cost probe reported it as unmeasured.
+            // A binding can be raw bytes (a BINARY(16) id): substituted, or the whole trace is lost.
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
         );
 
