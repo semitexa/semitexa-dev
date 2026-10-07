@@ -96,7 +96,7 @@ final class PageTimelineTest extends TestCase
         self::assertSame(substr(hash('sha256', 'sse_secretpage'), 0, 8), $rows[1]['page']);
         self::assertStringNotContainsString('sse_secretpage', $raw, 'a page\'s session id lets it subscribe: never in the pulse file');
         self::assertFileDoesNotExist($this->dir . '/journal-' . date('Ymd') . '.ndjson', 'pulses stay out of the journal');
-        self::assertSame([], glob($this->dir . '/timeline/' . '\*' . '*') ?: [], 'the server is not a page');
+        self::assertFileDoesNotExist($this->dir . '/timeline/' . PageTimeline::SERVER . '.ndjson', 'the server is not a page');
     }
 
     /**

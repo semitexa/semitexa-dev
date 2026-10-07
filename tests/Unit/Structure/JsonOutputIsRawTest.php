@@ -26,8 +26,12 @@ final class JsonOutputIsRawTest extends TestCase
     #[Test]
     public function every_command_prints_its_json_raw(): void
     {
+        $files = $this->sourceFiles();
+        // Outside the workspace layout (vendor/semitexa/dev) the glob finds nothing; an empty scan must not pass.
+        self::assertNotSame([], $files, 'The scan found no source files printing json_encode(); this guard ran on nothing.');
+
         $formatted = [];
-        foreach ($this->sourceFiles() as $path => $source) {
+        foreach ($files as $path => $source) {
             foreach (self::formattedJsonWrites($source) as $line) {
                 $formatted[] = $path . ':' . $line;
             }
