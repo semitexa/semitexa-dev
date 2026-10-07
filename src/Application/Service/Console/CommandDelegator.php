@@ -34,7 +34,7 @@ final class CommandDelegator
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => "target command '{$targetCommand}' not registered: " . $e->getMessage(),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return 1;
         }
 

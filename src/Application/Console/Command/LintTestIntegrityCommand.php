@@ -93,7 +93,7 @@ final class LintTestIntegrityCommand extends BaseCommand
                 'ok'       => $findings === [],
                 'findings' => array_map(static fn (TestChangeFinding $f): array => $f->toArray(), $findings),
                 'accepted' => array_map(static fn (TestChangeFinding $f): array => $f->toArray(), $accepted),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return $findings === [] ? self::SUCCESS : self::FAILURE;
         }

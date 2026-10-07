@@ -114,7 +114,7 @@ final class DevGraphEventCommand extends BaseCommand
                 'generated_at' => date('c'),
                 'event' => $description,
                 'next_command' => $next,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
@@ -203,7 +203,7 @@ final class DevGraphEventCommand extends BaseCommand
                     ['cmd' => 'ai:ask', 'args' => ['event', '--name=<EventClass>', '--json'], 'why' => 'drill into one event\'s listeners'],
                     ['cmd' => 'make:event-listener', 'args' => ['--module=<Module>', '--name=<Name>', '--event=<EventClass>', '--execution=Sync', '--dry-run', '--json'], 'why' => 'wire a new listener for an existing event'],
                 ],
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 

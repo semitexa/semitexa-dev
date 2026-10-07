@@ -54,7 +54,7 @@ final class AiPlanCommand extends BaseCommand
             'artifact' => 'semitexa-dev.ai-plan/v1',
             'status' => $exitCode === self::SUCCESS ? 'ok' : 'error',
             'records' => $records,
-        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
         return $exitCode;
     }
@@ -74,7 +74,7 @@ final class AiPlanCommand extends BaseCommand
                 'kind'  => 'error',
                 'error' => 'no recipe: pass one (see ai:task), or run inside a task started with'
                     . ' `ai:work start --recipe=...` and export SEMITEXA_AI_TRACE_ID=<task-id> (or pass --trace)',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
         $module = $input->getOption('module');
@@ -85,7 +85,7 @@ final class AiPlanCommand extends BaseCommand
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => "unknown recipe: {$recipeId}",
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
 
@@ -101,14 +101,14 @@ final class AiPlanCommand extends BaseCommand
             'reasons_count'  => count($assessment->reasons),
             'steps_count'    => count($assessment->required_steps),
             'files_in_scope' => count($files),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         foreach ($assessment->reasons as $reason) {
             $output->writeln(json_encode([
                 'kind'   => 'reason',
                 'note'   => $reason,
                 'action' => 'review',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($assessment->required_steps as $step) {
@@ -116,7 +116,7 @@ final class AiPlanCommand extends BaseCommand
                 'kind'   => 'step',
                 'note'   => $step,
                 'action' => 'run',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         $summary = sprintf(

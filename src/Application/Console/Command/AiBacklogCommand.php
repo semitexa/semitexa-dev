@@ -97,11 +97,11 @@ final class AiBacklogCommand extends BaseCommand
         ];
 
         if ($jsonMode) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 
-        $output->writeln(json_encode(['kind' => 'summary'] + $envelope, JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode(['kind' => 'summary'] + $envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::SUCCESS;
     }
 
@@ -172,7 +172,7 @@ final class AiBacklogCommand extends BaseCommand
         ];
 
         if ($jsonMode) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 
@@ -181,12 +181,12 @@ final class AiBacklogCommand extends BaseCommand
             'mode'       => $envelope['mode'],
             'epic_count' => $envelope['epic_count'],
             'task_count' => $envelope['task_count'],
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         foreach ($epicActions as $row) {
-            $output->writeln(json_encode($row, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($row, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         foreach ($taskActions as $row) {
-            $output->writeln(json_encode($row, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($row, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         return self::SUCCESS;
     }
@@ -256,12 +256,12 @@ final class AiBacklogCommand extends BaseCommand
                 'artifact' => 'semitexa.ai-work.backlog/v1',
                 'status'   => 'error',
                 'error'    => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         return self::FAILURE;
     }

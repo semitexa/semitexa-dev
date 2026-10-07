@@ -56,7 +56,7 @@ final class AiVerifyRulesCommand extends BaseCommand
         ));
 
         if ($json) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-rules/v1', 'runs' => $report['runs'], 'since' => $report['since'], 'rules' => $rules, 'retired' => $report['retired']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-rules/v1', 'runs' => $report['runs'], 'since' => $report['since'], 'rules' => $rules, 'retired' => $report['retired']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return self::SUCCESS;
         }

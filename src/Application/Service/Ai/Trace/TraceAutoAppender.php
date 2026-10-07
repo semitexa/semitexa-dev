@@ -130,6 +130,6 @@ final class TraceAutoAppender
      */
     private function emit(OutputInterface $output, string $kind, array $payload): void
     {
-        $output->writeln(json_encode(['kind' => $kind] + $payload, JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode(['kind' => $kind] + $payload, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
     }
 }

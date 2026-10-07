@@ -140,7 +140,7 @@ final class AiQualityCommand extends BaseCommand
     {
         $envelope = ['artifact' => 'semitexa-dev.ai-quality/v1'] + $envelope;
         if ($input->getOption('json')) {
-            $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
 
             return $exit;
         }

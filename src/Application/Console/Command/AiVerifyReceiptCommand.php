@@ -52,7 +52,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
         $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipt-check/v1', 'holds' => $holds] + $check, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipt-check/v1', 'holds' => $holds] + $check, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return $holds ? self::SUCCESS : self::FAILURE;
         }
@@ -91,7 +91,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
         $failed = count(array_filter($unread, static fn (array $r): bool => $r['verdict'] !== 'pass'));
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipts-unread/v1', 'hours' => (int) $hours, 'failed' => $failed, 'unread' => $unread], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipts-unread/v1', 'hours' => (int) $hours, 'failed' => $failed, 'unread' => $unread], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return self::SUCCESS;
         }
