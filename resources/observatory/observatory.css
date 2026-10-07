@@ -30,10 +30,12 @@ a{color:inherit;text-decoration:none}
 
 /* ---- frame ---- */
 .obs{display:grid;height:100dvh;grid-template-rows:auto 1fr auto;
-  grid-template-columns:320px minmax(0,1fr) 340px;
-  grid-template-areas:"head head head" "workers river ticker" "time time time";gap:10px;padding:10px 12px 12px}
+  /* Two columns: "Just finished" is a tab of the left sidebar, so the river
+     gets the width a third column used to take. */
+  grid-template-columns:320px minmax(0,1fr);
+  grid-template-areas:"head head" "workers river" "time time";gap:10px;padding:10px 12px 12px}
 @media (max-width:1100px){
-  .obs{grid-template-columns:260px minmax(0,1fr);grid-template-areas:"head head" "workers river" "ticker ticker" "time time";grid-template-rows:auto 1fr 180px auto}
+  .obs{grid-template-columns:260px minmax(0,1fr);grid-template-areas:"head head" "workers river" "time time";grid-template-rows:auto 1fr auto}
 }
 .panel{background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:14px;
   min-height:0;min-width:0;position:relative;backdrop-filter:blur(6px)}
@@ -55,14 +57,27 @@ html.cinematic .panel{background:color-mix(in srgb,var(--panel) 79%,transparent)
 .tr.sse{color:var(--sse);border-color:color-mix(in srgb,var(--sse) 50%,transparent)}
 .tr.polling{color:var(--dim)}
 .brand h1 span{color:var(--dim);font-weight:500}
-.tiles{display:flex;gap:8px;flex-wrap:wrap;flex:1}
-.tile{min-width:86px;padding:6px 10px 5px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
-.tile b{display:block;font:600 17px/1.1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.tile b small{font-size:10px;color:var(--dim);font-weight:500;margin-left:2px}
-.tile span{display:block;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
-.tile.hot b{color:var(--warn)}
-.tile.sse b{color:var(--sse)} .tile.job b{color:var(--job)}
-.controls{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.controls{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
+/* Settings: modes and display options, out of sight until asked for. */
+/* the header paints above the river so the popover is not drawn under it */
+.head{position:relative;z-index:30}
+.settings{position:relative}
+.settings>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;padding:7px 9px}
+.settings>summary::-webkit-details-marker{display:none}
+.settings[open]>summary{border-color:var(--http);color:var(--http)}
+.settings .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;min-width:210px;display:flex;flex-direction:column;gap:6px;padding:10px;
+  border:1px solid var(--line-2);border-radius:12px;background:var(--panel);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.settings .menu .btn{justify-content:space-between;width:100%}
+.settings .menu-h{font:700 9.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-top:4px}
+.settings .menu-h:first-child{margin-top:0}
+/* p95 and the error share, on the heading of the chart they summarise. */
+.time>h2{display:flex;align-items:baseline;gap:8px;right:0}
+.time .stats{margin-left:auto;display:inline-flex;gap:16px;text-transform:none;letter-spacing:0}
+.time .stat{display:inline-flex;align-items:baseline;gap:5px}
+.time .stat b{font:600 13px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--text)}
+.time .stat b small{font-size:10px;color:var(--dim);font-weight:500;margin-left:1px}
+.time .stat>span{font:500 10px/1 var(--mono);color:var(--faint)}
+.time .stat.hot b{color:var(--warn)}
 .btn{font:600 11.5px/1 var(--mono);padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel-2);color:var(--text);
   display:inline-flex;align-items:center;gap:7px;transition:border-color .15s,background .15s,transform .05s}
 .btn:hover{border-color:var(--http)} .btn:active{transform:translateY(1px)}
@@ -82,11 +97,13 @@ html.cinematic .panel{background:color-mix(in srgb,var(--panel) 79%,transparent)
 /* ---- workers ---- */
 .workers{grid-area:workers;display:flex;flex-direction:column;overflow:hidden}
 .wscroll{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column}
-.tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line)}
-.tabs button{flex:1;font:600 11px/1 var(--mono);padding:9px 6px;color:var(--dim);border-radius:8px 8px 0 0;border:1px solid transparent;border-bottom:0;display:inline-flex;justify-content:center;align-items:center;gap:6px;white-space:nowrap}
+/* Five tabs share a 320 px sidebar: tight padding, and a wrap rather than a
+   clip — a tab pushed past the edge of an overflow:hidden panel just vanished. */
+.tabs{display:flex;flex-wrap:wrap;gap:2px;padding:8px 6px 0;border-bottom:1px solid var(--line)}
+.tabs button{flex:1 1 auto;font:600 10.5px/1 var(--mono);padding:9px 3px;color:var(--dim);border-radius:8px 8px 0 0;border:1px solid transparent;border-bottom:0;display:inline-flex;justify-content:center;align-items:center;gap:4px;white-space:nowrap}
 .tabs button:hover{color:var(--text)}
 .tabs button.on{color:var(--text);background:var(--panel-2);border-color:var(--line)}
-.tabs button b{font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:9px;background:var(--line-2);color:var(--text)}
+.tabs button b{font-size:9.5px;font-weight:700;padding:2px 4px;border-radius:9px;background:var(--line-2);color:var(--text)}
 .tabs button b.bad{background:var(--danger);color:#fff}
 .pane{display:flex;flex-direction:column;min-height:0}
 .pane[hidden]{display:none}
@@ -183,29 +200,6 @@ i.k-queue{background:#34d399}
 .legend i.k-queue{background:#34d399}
 .legend i.k-replay{background:#f472b6}
 .caption{position:absolute;right:14px;bottom:10px;font:11px/1 var(--mono);color:var(--faint);pointer-events:none;text-align:right}
-/* Bottom-left, not top-left. At the default fit the card used to land on the
-   top-left corner of the SEMITEXA boundary and cover both its label and the
-   caption under it — the two lines that tell a first-time reader what the box
-   IS. The bottom-left is the one corner of this panel that is empty in both
-   directions: below the boundary, and inside it beneath CRON and QUEUE. */
-.spotlight{position:absolute;z-index:3;left:14px;bottom:34px;width:min(390px,calc(100% - 120px));padding:10px 14px 9px;border-radius:13px;
-  background:linear-gradient(135deg,color-mix(in srgb,var(--panel) 94%,transparent),color-mix(in srgb,var(--panel-2) 82%,transparent));
-  border:1px solid color-mix(in srgb,var(--http) 38%,var(--line));box-shadow:0 18px 60px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.05);
-  pointer-events:none;overflow:hidden;transition:border-color .25s,box-shadow .25s,opacity .25s,transform .25s}
-.spotlight::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 15%,rgba(91,157,255,.11) 48%,transparent 72%);transform:translateX(-110%);animation:scan 3.6s ease-in-out infinite}
-@keyframes scan{55%,100%{transform:translateX(110%)}}
-.spotlight.idle{opacity:.58;transform:translateY(4px);border-color:var(--line-2)}
-.spotlight.http{--spot:var(--http)}.spotlight.sse{--spot:var(--sse)}.spotlight.scheduler,.spotlight.job{--spot:var(--job)}.spotlight.queue{--spot:var(--queue)}.spotlight.replay{--spot:var(--replay)}
-.spotlight:not(.idle){border-color:color-mix(in srgb,var(--spot,var(--http)) 66%,var(--line));box-shadow:0 18px 70px rgba(0,0,0,.24),0 0 36px color-mix(in srgb,var(--spot,var(--http)) 15%,transparent)}
-.spot-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:5px;font:700 9.5px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
-.spot-beacon{display:flex;align-items:center;gap:7px;color:var(--spot,var(--http))}.spot-beacon i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor;animation:spotbeat .8s ease-in-out infinite alternate}
-@keyframes spotbeat{to{opacity:.35;transform:scale(.65)}}
-.spotlight>strong{display:block;font:700 16px/1.2 var(--mono);letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
-.spot-route{display:block;margin-top:3px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:500 11px/1.35 var(--mono)}
-.spot-meta{display:flex;gap:6px;margin-top:7px}.spot-meta span{padding:3px 7px;border-radius:5px;background:color-mix(in srgb,var(--panel-2) 75%,transparent);border:1px solid var(--line);font:600 9.5px/1 var(--mono);color:var(--dim)}
-.spot-meta span:first-child{color:var(--spot,var(--http));text-transform:uppercase}.spot-ph{height:4px;margin-top:7px;border-radius:3px;overflow:hidden;background:var(--line);display:flex}.spot-ph:empty{opacity:.35}.spot-ph i{height:100%;display:block}
-html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rgba(7,24,43,.82));backdrop-filter:blur(16px)}
-@media (max-width:1250px){.spotlight{width:300px}.spotlight>strong{font-size:14px}}
 .tip{position:absolute;z-index:5;max-width:340px;background:color-mix(in srgb,var(--panel) 96%,transparent);border:1px solid var(--line-2);
   border-radius:12px;padding:12px 14px;box-shadow:0 18px 50px rgba(0,0,0,.45);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
 .tip.show{opacity:1;transform:none}
@@ -232,9 +226,9 @@ html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rg
 .tip ul li{display:flex;justify-content:space-between;gap:10px}
 .tip ul li b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* ---- ticker ---- */
-.ticker{grid-area:ticker;display:flex;flex-direction:column;overflow:hidden}
+/* ---- ticker (the sidebar's Finished tab) ---- */
 .tlist{overflow:auto;flex:1;min-height:0;padding:0 6px 8px}
+#pane-finished{flex:1}
 .t{position:relative;display:grid;grid-template-columns:38px minmax(0,1fr) 30px 58px;gap:8px;align-items:center;padding:6px 8px;
   border-radius:8px;margin-bottom:2px;overflow:hidden;animation:slidein .35s ease-out}
 @keyframes slidein{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
@@ -518,8 +512,8 @@ html.cinematic .spotlight{background:linear-gradient(135deg,rgba(5,14,30,.92),rg
 .seg.mode kbd{font:600 9px/1 var(--mono);color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:1px 3px;margin-left:4px}
 .graph-host{grid-area:graph;min-height:0;min-width:0}
 .obs.mode-graph{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"head" "graph"}
-.obs.mode-graph>.workers,.obs.mode-graph>.river,.obs.mode-graph>.ticker,.obs.mode-graph>.time,
-.obs.mode-graph .tiles,.obs.mode-graph .controls>.btn:not(#b-full):not([data-action="explorer"]),.obs.mode-graph #speed{display:none}
+.obs.mode-graph>.workers,.obs.mode-graph>.river,.obs.mode-graph>.time,
+.obs.mode-graph .controls>.btn:not([data-action="explorer"]),.obs.mode-graph .settings .menu>:not(#b-full){display:none}
 @media (max-width:1100px){
   html.graph-mode body{overflow:auto}
   .obs.mode-graph{height:auto;min-height:100dvh;grid-template-rows:auto auto}

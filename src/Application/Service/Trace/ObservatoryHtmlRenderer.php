@@ -14,7 +14,8 @@ use Semitexa\ProjectGraph\Application\Service\Query\GraphViewerAssets;
  * Every process the framework runs — HTTP request, SSE session, scheduler
  * run, queue job — is a particle travelling through the real pipeline
  * stages, dwelling at each for the share of time that stage took. Workers on
- * the left, the ticker on the right, sixty seconds of history underneath.
+ * the left (the "just finished" ticker is one of their tabs), sixty seconds
+ * of history underneath.
  *
  * HTML from PHP, same discipline as the trace viewer: no Twig, no asset
  * pipeline, no external fonts. dev requires ssr only for the page-contributor
@@ -92,41 +93,42 @@ final class ObservatoryHtmlRenderer
   <header class="head panel">
     <div class="brand"><span class="dot" id="led"></span><h1>Semitexa <span>Observatory</span></h1><span class="tr" id="transport" title="transport">…</span>{$modeSwitch}</div>
     <!--
-      Five tiles, and each is the only place its number appears.
+      No number tiles here. Each one repeated a surface the panel already has:
+      requests per second and the latency points are the "Last 60 seconds"
+      chart, in flight is the Workers tab, and p95 and the error share now sit
+      on that chart's own heading, beside the picture they summarise. Fewer
+      numbers to read is the point — the header is for acting, not watching.
 
-      Three were dropped rather than rephrased, because they did not resemble
-      another surface — they WERE it. renderTiles() printed the live worker
-      count into this header and into the Workers tab badge from one variable,
-      the hung-coroutine count into here and the Coroutines badge from another,
-      and the query rate into here and the ORM · DB node from one call to
-      qps(). A reader looking for workers is already in the sidebar; a reader
-      looking at queries is already looking at the database.
+      Modes and display options live behind the gear: they are set once and
+      left alone, so they need not be read every time. Their keys still work.
     -->
-    <div class="tiles">
-      <div class="tile" id="t-rps"><b>–</b><span>requests</span></div>
-      <div class="tile" id="t-flight"><b>–</b><span>in flight</span></div>
-      <div class="tile" id="t-p50"><b>–</b><span>p50 · 60s</span></div>
-      <div class="tile" id="t-p95"><b>–</b><span>p95 · 60s</span></div>
-      <div class="tile" id="t-err"><b>–</b><span>errors · 60s</span></div>
-    </div>
     <div class="controls">
-      <button class="btn stage" id="b-stage" type="button"><i class="led"></i>stage <kbd>S</kbd></button>
-      <button class="btn demo" id="b-demo" type="button"><i class="led"></i>demo load <kbd>D</kbd></button>
-      <button class="btn cinema" id="b-cinema" type="button" title="presentation lighting and amplified process trails">cinema <kbd>C</kbd></button>
-      <span class="seg" id="speed" title="slow motion"><button type="button" class="on" data-v="1">1×</button><button type="button" data-v="0.5">½×</button><button type="button" data-v="0.25">¼×</button></span>
-      <button class="btn" id="b-fit" type="button" title="fit the whole picture">fit <kbd>0</kbd></button>
-      <button class="btn" id="b-explain" type="button">explain <kbd>E</kbd></button>
       <button class="btn" id="b-pause" type="button"><span>pause</span> <kbd>␣</kbd></button>
-      <button class="btn" id="b-full" type="button">⛶ <kbd>F</kbd></button>
       <button class="btn" data-action="explorer" type="button" title="find any route and call it">API explorer <kbd>A</kbd></button>
       <a class="link" href="/__trace">history →</a>
+      <a class="link" href="/__observatory/timeline">page timelines →</a>
+      <details class="settings" id="settings">
+        <summary class="btn icon" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></summary>
+        <div class="menu" role="menu">
+          <span class="menu-h">Recording</span>
+          <button class="btn stage" id="b-stage" type="button"><i class="led"></i>stage <kbd>S</kbd></button>
+          <button class="btn demo" id="b-demo" type="button"><i class="led"></i>demo load <kbd>D</kbd></button>
+          <span class="menu-h">View</span>
+          <button class="btn" id="b-explain" type="button">explain <kbd>E</kbd></button>
+          <button class="btn cinema" id="b-cinema" type="button" title="presentation lighting and amplified process trails">cinema <kbd>C</kbd></button>
+          <button class="btn" id="b-full" type="button">fullscreen <kbd>F</kbd></button>
+          <span class="menu-h">Speed</span>
+          <span class="seg" id="speed" title="slow motion"><button type="button" class="on" data-v="1">1×</button><button type="button" data-v="0.5">½×</button><button type="button" data-v="0.25">¼×</button></span>
+        </div>
+      </details>
     </div>
   </header>
 
   <section class="workers panel">
     <nav class="tabs">
       <button type="button" class="on" data-tab="workers">Workers <b id="tb-workers" hidden></b></button>
-      <button type="button" data-tab="coro">Coroutines <b id="tb-coro" hidden></b></button>
+      <button type="button" data-tab="finished">Finished <b id="tb-finished" hidden></b></button>
+      <button type="button" data-tab="coro" title="Coroutines">Coro <b id="tb-coro" hidden></b></button>
       <button type="button" data-tab="cron">Cron <b id="tb-cron" hidden></b></button>
       <button type="button" data-tab="system">System <b id="tb-system" hidden></b></button>
     </nav>
@@ -134,6 +136,10 @@ final class ObservatoryHtmlRenderer
       <div class="pane" id="pane-workers">
         <h2>Swoole workers <span class="sub">pid · in flight · 60 s</span></h2>
         <div class="wlist" id="wlist"><div class="empty">No worker has spoken yet.</div></div>
+      </div>
+      <div class="pane" id="pane-finished" hidden>
+        <h2>Just finished <span class="sub">newest first · click → waterfall</span></h2>
+        <div class="tlist" id="tlist"><div class="empty">Waiting for the first end line…</div></div>
       </div>
       <div class="pane" id="pane-coro" hidden>
         <h2>Coroutines <span class="sub">per worker snapshot</span></h2>
@@ -152,13 +158,6 @@ final class ObservatoryHtmlRenderer
 
   <section class="river panel" id="river">
     <canvas id="river-canvas"></canvas>
-    <div class="spotlight idle" id="spotlight">
-      <div class="spot-head"><span class="spot-beacon"><i></i><span id="spot-status">live process</span></span><span id="spot-stage">waiting</span></div>
-      <strong id="spot-title">Waiting for the next process…</strong>
-      <span class="spot-route" id="spot-route">Every light is backed by the process journal.</span>
-      <div class="spot-meta"><span id="spot-kind">—</span><span id="spot-worker">worker —</span><span id="spot-time">—</span></div>
-      <div class="spot-ph ph" id="spot-ph"></div>
-    </div>
     <div class="legend"><span><i class="k-http"></i>http</span><span><i class="k-sse"></i>sse</span><span><i class="k-scheduler"></i>scheduler</span><span><i class="k-queue"></i>queue</span><span><i class="k-replay"></i>replay</span></div>
     <div class="zoomctl">
       <button type="button" id="z-in" title="zoom in (+)">+</button>
@@ -170,13 +169,9 @@ final class ObservatoryHtmlRenderer
     <div class="tip" id="tip"></div>
   </section>
 
-  <section class="ticker panel">
-    <h2>Just finished <span class="sub">newest first · click → waterfall</span></h2>
-    <div class="tlist" id="tlist"><div class="empty">Waiting for the first end line…</div></div>
-  </section>
-
   <section class="time panel" id="time">
-    <h2>Last 60 seconds <span class="sub">duration · log scale · bars = finished per second</span></h2>
+    <h2>Last 60 seconds <span class="sub">duration · log scale · bars = finished per second</span>
+      <span class="stats"><span class="stat" id="t-p95"><b>–</b><span>p95</span></span><span class="stat" id="t-err"><b>–</b><span>errors</span></span></span></h2>
     <canvas id="tl-canvas"></canvas>
   </section>
   <dialog class="explorer-dialog" aria-label="API Explorer">
