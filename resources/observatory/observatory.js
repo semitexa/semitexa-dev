@@ -1512,7 +1512,13 @@ function boot() {
   // The settings popover closes when the eye leaves it: a click elsewhere, or Escape.
   const settings = $('#settings');
   document.addEventListener('click', e => { if (settings.open && !settings.contains(e.target)) settings.open = false; });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') settings.open = false; });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !settings.open) return;
+    // Focus inside the popover would be left on a hidden control: hand it back to the toggle.
+    const refocus = settings.contains(e.target);
+    settings.open = false;
+    if (refocus) settings.querySelector('summary')?.focus();
+  });
   $('#z-in').addEventListener('click', () => zoomAt(world.W / 2, world.H / 2, 1.25)); $('#z-out').addEventListener('click', () => zoomAt(world.W / 2, world.H / 2, 1 / 1.25)); $('#z-fit').addEventListener('click', fitView);
   document.querySelectorAll('.pan button').forEach(b => b.addEventListener('click', () => { const d = 120; S.view.x += +b.dataset.x * d; S.view.y += +b.dataset.y * d; clampView(); }));
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(pn => pn.hidden = pn.id !== 'pane-' + b.dataset.tab); if (b.dataset.tab === 'finished') { S.unseenFinished = 0; const f = $('#tb-finished'); if (f) f.hidden = true; } }));
