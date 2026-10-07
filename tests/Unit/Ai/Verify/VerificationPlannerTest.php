@@ -102,6 +102,7 @@ class VerificationPlannerTest extends TestCase
             // Deferred slot templates are rendered twice - Twig on the server,
             // semitexa-twig.js on the client - and anything outside the client
             // subset renders as an empty string with no error.
+            'lint:components',
             'lint:deferred-slots',
             'lint:deferred-twig',
             'lint:di',
@@ -175,9 +176,11 @@ class VerificationPlannerTest extends TestCase
             ),
         ], VerificationPlan::SCOPE_STANDARD);
 
-        // Only the cross-file one. lint:templates, lint:deferred-twig and
-        // lint:inline-script all read the file's own source, and there is none.
-        $this->assertSame(['lint:deferred-slots'], $this->lintCommandNames($plan));
+        // Only the cross-file ones. lint:templates, lint:deferred-twig and
+        // lint:inline-script all read the file's own source, and there is none;
+        // lint:components reads the tree, where a deleted template that called a
+        // component and one that declared it are both worth a look.
+        $this->assertSame(['lint:deferred-slots', 'lint:components'], $this->lintCommandNames($plan));
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
     }
 
@@ -200,7 +203,7 @@ class VerificationPlannerTest extends TestCase
         // Exactly that one, the way the deletion case above is asserted. The
         // vanished path is a template nobody can read any more, so a lint
         // that would open it is scheduled against a file that is not there.
-        $this->assertSame(['lint:deferred-slots'], $this->lintCommandNames($plan));
+        $this->assertSame(['lint:deferred-slots', 'lint:components'], $this->lintCommandNames($plan));
     }
 
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void

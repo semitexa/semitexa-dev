@@ -74,7 +74,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // request's tenant, and the class implements FeedStreamSinkInterface.
         // No new method; step 7 of the feeds design deletes the per-feed
         // held-open serve and should take this back down.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2098],
+        // 2098 -> 2103 on 2026-10-06 (ep-platform-live-state), recorded: the
+        // stream resumes (Last-Event-ID replay, done in ReplayingSseTransport —
+        // the resume method was moved there to keep the count at 100), the
+        // deferred door is handed the visitor's request, a subscribe carries
+        // its patches opt-in. No new method.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2103],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
@@ -97,11 +102,17 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 59/1147 -> 56/1062 on 2026-09-26: the WHERE builders moved into
         // WhereTrait so UPDATE/DELETE group OR conditions the same way SELECT
         // does (orm aadea92). Lowered, not left as room to regrow into.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [56, 1062],
+        // 56/1062 -> 57/1092 on 2026-10-06 (tk-rs-dashboard): countByDay(), one
+        // GROUP BY DATE() for a dashboard trend instead of a COUNT per day. It
+        // needs the private WHERE builder, so it cannot live outside this class.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1092],
         // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
         // (fail fast while the database is down) is wired through here, and
         // shutdown() now resets it so the next connect is a real attempt.
-        'semitexa-orm/src/OrmManager.php' => [41, 934],
+        // 41/934 -> 42/953 on 2026-10-06 (tk-rs-feed): query($resourceModelClass),
+        // a read with no domain model. It needs the private transaction-aware
+        // adapter, so it cannot live outside this class.
+        'semitexa-orm/src/OrmManager.php' => [42, 953],
         // A UI skill can now be raised AT a record: handleUiSkill takes the
         // planner's arguments, and the pipeline path keeps which step the first
         // UI skill came from instead of discarding it. Methods are unchanged —
@@ -207,10 +218,22 @@ final class StructuralOutlierBudgetTest extends TestCase
         // catch-alls now lets a coroutine cancellation keep unwinding (one line
         // each, SseSessionCoroutines::rethrowIfCancellation) instead of logging
         // it as a failed slot and carrying on in a cancelled coroutine.
-        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 709],
+        // 709 -> 769 on 2026-10-06, recorded: deferred components render
+        // concurrently (a session coroutine each, a channel, a spawn-failure
+        // guard and a pop timeout) and every render first establishes the
+        // page's visitor (tk-ls-kiss-visitor). The visitor itself was split out
+        // into KissVisitor and the per-instance render folded into its closure
+        // to keep the count at 14.
+        // 769 -> 774 the same day: each deferred component render is timed into
+        // the page's timeline (tk-ls-timeline; a no-op outside development).
+        'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 774],
         'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
         // 765 -> 764 on 2026-09-24: page finalization moved to PageDocumentFinalizer.
-        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [25, 764],
+        // 764 -> 786, 25 -> 26 on 2026-10-06, recorded: a page with no deferred
+        // slot stores its deferred request only after rendering, and only when
+        // a deferred component rendered (storeDeferredRequest, shared by both
+        // paths) — instead of serializing the context on every page.
+        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [26, 786],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
         // became a ring that keeps the LAST events, so the capped-trace notice
         // now has to say WHICH end was cut, and the root coroutine is read from
@@ -453,7 +476,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // property access. The capture logic itself lives in
         // ReplicationCapture; what landed here is the calls and why the lock
         // orders the clocks.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [37, 1016],
+        // 37/1016 -> 38/1031 on 2026-10-06 (tk-rs-crud-runtime): write(), one
+        // public resource-level write that insert/update/delete now share, so a
+        // CRUD screen over a model with no domain class keeps tenancy, version,
+        // relations and the change event. It needs the private write path.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [38, 1031],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over
@@ -461,7 +488,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // same work. The logic is TaskClaim's; what landed here is the call,
         // its refusal, and the option. No new method.
         'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 704],
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 933],
+        // 933 -> 936 on 2026-10-07: lint:components joined the plan — one row
+        // for the new component kind and one entry in each of the cross-file
+        // and all-lints lists (the template row only grew a name). Data, not
+        // logic: no method, no branch.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 936],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One
@@ -478,9 +509,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // answers — a try/catch around map + decorate. No new method.
         // 744 -> 659, 18 -> 16 on 2026-10-04: payload admission moved to
         // PayloadAdmission, shared by execute() and the new admit().
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [16, 659],
+        // 659 -> 676, 16 -> 17 on 2026-10-06, recorded: establishVisitor() —
+        // the visitor of an earlier request re-established for work done on
+        // KISS — and reExecute() re-establishing the session BEFORE its auth
+        // gate (a re-run used to resolve nobody; tk-ls-kiss-visitor).
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [17, 676],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
-        'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 818],
+        'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 806],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
     ];
 
