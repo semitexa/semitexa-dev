@@ -9,6 +9,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Dev\Application\Console\Command\AiObserveCommand;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 use Semitexa\Dev\Application\Service\Trace\ReplayRunner;
+use Semitexa\Dev\Application\Service\Trace\PageTimelineReader;
 use Semitexa\Dev\Application\Service\Trace\SourceSliceReader;
 use Semitexa\Dev\Application\Service\Trace\TraceReader;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
@@ -70,6 +71,7 @@ final class AiObserveCommandTest extends TestCase
             // own dependencies are exercised by ReplayGuardsTest and live runs.
             ReplayRunner::class => new ReplayRunner(),
             SourceSliceReader::class => new SourceSliceReader(),
+            PageTimelineReader::class => new PageTimelineReader(),
         ]));
         $app = new Application();
         $app->add($command);
