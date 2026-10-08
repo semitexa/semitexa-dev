@@ -8,6 +8,10 @@ Provides safe file generation utilities for scaffolding modules, payloads, handl
 
 This package is for **developer tooling only**. It does **not** own the production update lifecycle — package version detection, framework auto-deploy, remote bootstrap, and data patches live in [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md).
 
+## Install
+
+Included in every project created by the installer (https://semitexa.com/install.sh).
+
 ## Role in Semitexa
 
 Depends on `semitexa/core`. Used during development to generate boilerplate and to drive the agent workflow. Does not register as a module.
@@ -17,7 +21,7 @@ Depends on `semitexa/core`. Used during development to generate boilerplate and 
 - `SafeFileWriter` with conflict detection
 - `TemplateResolverInterface` for pluggable template sources
 - `NameInflectorInterface` for naming convention enforcement
-- `make:*` generators (`make:payload`, `make:handler`, `make:resource`, `make:page`, `make:module`, `make:service`, `make:contract`, `make:event-listener`, `make:command`)
+- `make:*` generators (`make:payload`, `make:handler`, `make:resource`, `make:page`, `make:module`, `make:service`, `make:contract`, `make:event-listener`, `make:command`, `make:crud`, `make:form`, `make:test`); generators are dry-run by default, `--write` writes the files
 - `ai:*` workflow + memory commands (`ai:orient`, `ai:task`, `ai:epic`, `ai:work`, `ai:context`, `ai:plan`, `ai:verify`, `ai:trace`, `ai:backlog`, `ai:invoke`, `ai:ask`)
 - `dev:graph:*` introspection commands
 - `logs:app` log inspection
@@ -31,3 +35,5 @@ Depends on `semitexa/core`. Used during development to generate boilerplate and 
 | Data patches (post-schema data work) | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `#[AsDataPatch]`, `update` |
 | Framework auto-deploy + package updates | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `update:packages:auto`, `update:packages:check` |
 | Remote first-deployment bootstrap (SSH) | [`semitexa/update`](https://github.com/semitexa/semitexa-update/blob/master/README.md) — `update:packages:bootstrap-remote` |
+
+Command reference: https://semitexa.com/docs/reference/commands-make and https://semitexa.com/docs/reference/commands-ai
