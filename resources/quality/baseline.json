@@ -19,7 +19,7 @@
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
         "requests.query-shapes": {
-            "total": 69,
+            "total": 70,
             "breakdown": {
                 "GET /demo/api/active-version": 3,
                 "GET /demo/api/schema-discovery": 3,
@@ -61,6 +61,7 @@
                 "GET /ui-playground/components/blocks": 1,
                 "GET /ui-playground/components/calendar": 1,
                 "GET /ui-playground/components/menus": 1,
+                "GET /ui-playground/foundation/colors": 1,
                 "GET /ui-playground/primitives/buttons": 2
             },
             "sees": "per GET route without path parameters: distinct SQL shapes (whitespace collapsed, IN lists folded) in one traced request",
@@ -1333,6 +1334,19 @@
                 }
             },
             "reason": "Demo API routes now read a page's categories and reviews in one query each (products + categories + reviews IN) instead of one per product; /playground gained the dashboard widgets (countByDay + count); the UI Playground buttons page gained the live-ping island (pings). No route repeats a statement (duplicate-queries 0)."
+        },
+        {
+            "at": "2026-10-08",
+            "metric": "requests.query-shapes",
+            "from": 69,
+            "to": 70,
+            "keys": {
+                "GET /ui-playground/foundation/colors": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "The release clone reads the tenant platform_settings row on this page (one SELECT, one shape); the workspace serves it without that read. The same settings read was 1 shape on most routes in the 2026-09-24 baseline. Recorded so the clone does not report it as a regression."
         }
     ]
 }
