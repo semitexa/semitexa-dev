@@ -323,7 +323,7 @@ final class AiTraceCommand extends BaseCommand
      */
     private function writeJson(OutputInterface $output, array $payload): void
     {
-        $output->writeln(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
     }
 
     private function relPath(string $abs): string

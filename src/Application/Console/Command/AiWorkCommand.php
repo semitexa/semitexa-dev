@@ -234,7 +234,7 @@ final class AiWorkCommand extends BaseCommand
                 'task_count'      => count($rows),
                 'hidden_by_scope' => $hiddenByScope,
                 'total_in_store'  => count($all),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 
@@ -246,9 +246,9 @@ final class AiWorkCommand extends BaseCommand
             'task_count'      => count($rows),
             'hidden_by_scope' => $hiddenByScope,
             'total_in_store'  => count($all),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         foreach ($rows as $row) {
-            $output->writeln(json_encode(['kind' => 'task'] + $row, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode(['kind' => 'task'] + $row, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         return self::SUCCESS;
     }
@@ -496,7 +496,7 @@ final class AiWorkCommand extends BaseCommand
         ];
 
         if ($jsonMode) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 
@@ -508,25 +508,25 @@ final class AiWorkCommand extends BaseCommand
             'trace_id'     => $snapshot->task->traceId,
             'tail_events'  => count($snapshot->tailEvents),
             'next_step'    => $snapshot->task->nextStep,
-        ], JSON_UNESCAPED_SLASHES));
-        $output->writeln(json_encode(['kind' => 'task'] + $snapshot->task->toArray(), JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+        $output->writeln(json_encode(['kind' => 'task'] + $snapshot->task->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         if ($snapshot->traceHeader !== null) {
-            $output->writeln(json_encode(['kind' => 'trace_header'] + $snapshot->traceHeader->toArray(), JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode(['kind' => 'trace_header'] + $snapshot->traceHeader->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         foreach ($snapshot->tailEvents as $event) {
-            $output->writeln(json_encode(['kind' => 'trace_event'] + $event->toArray(), JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode(['kind' => 'trace_event'] + $event->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         if ($snapshot->traceWarning !== null) {
             $output->writeln(json_encode([
                 'kind'    => 'warning',
                 'warning' => $snapshot->traceWarning,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         $output->writeln(json_encode([
             'kind'   => 'next',
             'action' => 'proceed',
             'hint'   => $snapshot->task->nextStep ?? 'no next_step recorded — inspect trace with ai:trace show --id=' . $snapshot->task->traceId,
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::SUCCESS;
     }
 
@@ -537,10 +537,10 @@ final class AiWorkCommand extends BaseCommand
                 'artifact'     => 'semitexa.ai-work.task/v1',
                 'task'         => $task->toArray(),
                 'next_command' => $this->buildTaskNextCommands($task),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
-        $output->writeln(json_encode(['kind' => $kind] + $task->toArray(), JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode(['kind' => $kind] + $task->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::SUCCESS;
     }
 
@@ -697,7 +697,7 @@ final class AiWorkCommand extends BaseCommand
         $record = $jsonMode
             ? ['artifact' => 'semitexa.ai-work.task/v1', 'status' => 'error']
             : ['kind' => 'error'];
-        $output->writeln(json_encode($record + ['error' => $message] + $details, JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode($record + ['error' => $message] + $details, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::FAILURE;
     }
 }

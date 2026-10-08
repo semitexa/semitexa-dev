@@ -94,6 +94,23 @@ final class ObservatoryContext
         return is_string($id) && $id !== '' ? $id : null;
     }
 
+    /**
+     * What is open on THIS coroutine — id, kind and name — or null when the
+     * code runs outside any journaled process: a worker timer, a background
+     * coroutine. Read-only, like {@see currentId()}.
+     *
+     * @return array{id: string, kind: string, name: string}|null
+     */
+    public static function current(): ?array
+    {
+        $record = self::get()['record'] ?? null;
+        if (!is_array($record) || !is_string($record['id'] ?? null) || $record['id'] === '') {
+            return null;
+        }
+
+        return ['id' => $record['id'], 'kind' => (string) ($record['kind'] ?? '?'), 'name' => (string) ($record['name'] ?? '?')];
+    }
+
     /** @return array{record: array<string, mixed>, open: int}|null */
     private static function get(): ?array
     {

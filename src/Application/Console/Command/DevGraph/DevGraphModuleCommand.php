@@ -81,7 +81,7 @@ final class DevGraphModuleCommand extends BaseCommand
                 'generated_at' => date('c'),
                 'module' => $description,
                 'next_command' => $this->buildNextCommands($description),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 

@@ -35,6 +35,7 @@ final class ChangedFileClassifier
         // falling through to KIND_PHP_OTHER — see ChangedFile::KIND_COMMAND for
         // why the catch-all could not carry it.
         '/Application/Console/Command/'        => ChangedFile::KIND_COMMAND,
+        '/Application/Component/'              => ChangedFile::KIND_COMPONENT,
     ];
 
     /**

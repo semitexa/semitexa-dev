@@ -40,6 +40,14 @@ final readonly class ChangedFile
      * directory reaches the same code and cannot reach the fixtures.
      */
     public const KIND_COMMAND      = 'command';
+    /**
+     * An SSR component class (`Application/Component/`). Its #[AsComponent]
+     * name is what templates call it by, so a rename here is a broken
+     * component('…') somewhere else — the reason it has a row of its own and
+     * does not fall to KIND_PHP_OTHER (see KIND_COMMAND for why that one
+     * cannot carry a lint).
+     */
+    public const KIND_COMPONENT    = 'component';
     public const KIND_TEMPLATE     = 'template';
     /**
      * Browser-side script shipped by a module or package.

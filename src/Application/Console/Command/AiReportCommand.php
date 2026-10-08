@@ -212,7 +212,7 @@ final class AiReportCommand extends BaseCommand
     private function emit(OutputInterface $output, bool $json, array $payload, string $text): int
     {
         if ($json) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa.ai-report/v1'] + $payload));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa.ai-report/v1'] + $payload), OutputInterface::OUTPUT_RAW);
         } else {
             $output->writeln($text);
         }
@@ -223,7 +223,7 @@ final class AiReportCommand extends BaseCommand
     private function fail(OutputInterface $output, bool $json, string $message): int
     {
         if ($json) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa.ai-report/v1', 'status' => 'error', 'error' => $message]));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa.ai-report/v1', 'status' => 'error', 'error' => $message]), OutputInterface::OUTPUT_RAW);
         } else {
             $output->writeln('<error>' . $message . '</error>');
         }

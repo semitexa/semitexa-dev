@@ -108,7 +108,7 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
                         : CapabilityIndex::hash(array_values($shippedCapabilities)),
                     'claimed_hash' => $shipped['content_hash'] ?? null,
                     'expected_hash' => $payload['content_hash'],
-                ], JSON_UNESCAPED_SLASHES));
+                ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             } else {
                 if ($matches) {
                     $output->writeln('<info>[OK]</info> Capability index is current.');
@@ -131,7 +131,7 @@ final class DevCapabilityIndexBuildCommand extends BaseCommand
                 'written' => $path,
                 'count' => $payload['count'],
                 'packages' => count($payload['packages']),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return Command::SUCCESS;
         }

@@ -42,7 +42,8 @@ final class VerificationPlanner
         // handler or a service can, so lint:mechanisms rides this row too — the
         // execution shape is what matters, not which directory it sits in.
         ChangedFile::KIND_LISTENER => ['lint:di', 'lint:scoping', 'lint:mechanisms'],
-        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di'],
+        // A payload declares routes: lint:transport-doors keeps /__ traffic to KISS and HUG.
+        ChangedFile::KIND_PAYLOAD  => ['lint:responses', 'lint:di', 'lint:transport-doors'],
         // A slot resource is where `deferred: true` is written, and the only
         // thing that makes it true is a template calling layout_slot_deferred.
         // The two live in different files, so a diff touching either one is
@@ -70,7 +71,8 @@ final class VerificationPlanner
         // package emission only: a nonce-less inline script in a package is a
         // defect no consumer can fix, and it fails in the BROWSER, never on the
         // server, so nothing else in this plan can see it.
-        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots'],
+        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components'],
+        ChangedFile::KIND_COMPONENT => ['lint:di', 'lint:components'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred.
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
@@ -95,6 +97,7 @@ final class VerificationPlanner
      */
     private const CROSS_FILE_LINTS = [
         'lint:deferred-slots',
+        'lint:components',
     ];
 
     private const ALL_LINTS = [
@@ -107,6 +110,8 @@ final class VerificationPlanner
         'lint:deferred-twig',
         'lint:inline-script',
         'lint:deferred-slots',
+        'lint:components',
+        'lint:transport-doors',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;

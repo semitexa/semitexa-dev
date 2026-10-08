@@ -142,6 +142,36 @@ final class ObservatoryReaderTest extends TestCase
         self::assertSame('last-done', $snap['recent'][0]['name'], 'a developer looks for what JUST happened');
     }
 
+    /**
+     * tk-dev-observe-tail-oom: `ai:observe tail` decoded the whole 5 MB window
+     * of each journal at once and ran a busy day out of its 128 MB.
+     */
+    #[Test]
+    public function tail_holds_only_the_rows_it_returns_and_find_reads_a_window_past_its_size(): void
+    {
+        $path = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        $handle = fopen($path, 'wb');
+        $padding = str_repeat('x', 400);
+        for ($i = 0; $i < 16_000; $i++) { // ~7 MB: past the 5 MB window
+            fwrite($handle, json_encode(['ts' => date('c'), 'event' => 'end', 'id' => 'p-1-' . $i, 'kind' => $i % 2 === 0 ? 'http' : 'job', 'name' => 'n' . $i, 'worker' => 1, 'context' => ['pad' => $padding]]) . "\n");
+        }
+        fclose($handle);
+        $reader = new ObservatoryReader();
+
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+        $rows = $reader->tailRecords(3, kind: 'job');
+        $grew = memory_get_peak_usage() - $before;
+
+        self::assertSame(['n15995', 'n15997', 'n15999'], array_column($rows, 'name'), 'the last ones, chronological, filtered');
+        self::assertLessThan(2_000_000, $grew, 'a line at a time, not the window decoded at once');
+        self::assertSame([], $reader->tailRecords(0));
+
+        self::assertSame('n15990', $reader->find('p-1-15990')['end']['name'] ?? null);
+        self::assertNull($reader->find('p-1-10')['end'], 'older than the window: not read');
+        self::assertCount(60, $reader->snapshot()['recent']);
+    }
+
     #[Test]
     public function corrupt_lines_are_skipped_not_fatal(): void
     {
@@ -168,7 +198,7 @@ final class ObservatoryReaderTest extends TestCase
         $first = $reader->stream(null);
         self::assertTrue($first['reset']);
         self::assertCount(2, $first['rows']);
-        self::assertSame(date('Ymd') . ':' . filesize($path), $first['cursor']);
+        self::assertSame(date('Ymd') . ':' . filesize($path) . ':p0', $first['cursor'], 'no pulse file yet: pulses start at 0');
 
         $quiet = $reader->stream($first['cursor']);
         self::assertFalse($quiet['reset']);
@@ -178,7 +208,7 @@ final class ObservatoryReaderTest extends TestCase
         file_put_contents($path, json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-1-b', 'kind' => 'sse', 'name' => '/kiss', 'worker' => 1]) . "\n", FILE_APPEND);
         $next = $reader->stream($quiet['cursor']);
         self::assertSame(['p-1-b'], array_column($next['rows'], 'id'));
-        self::assertSame(date('Ymd') . ':' . filesize($path), $next['cursor']);
+        self::assertSame(date('Ymd') . ':' . filesize($path) . ':p0', $next['cursor']);
     }
 
     #[Test]
@@ -213,4 +243,104 @@ final class ObservatoryReaderTest extends TestCase
         self::assertTrue($reader->stream('20200101:0')['reset'], 'a cursor from another day than yesterday is stale');
         self::assertTrue($reader->stream(date('Ymd') . ':999999')['reset'], 'a file shorter than the cursor was rotated or replaced');
     }
+
+    /**
+     * A restart kills every worker, and a killed worker writes no ends: the
+     * panel used to show each session of every earlier run as live — seven
+     * "open" KISS connections for one browser tab.
+     */
+    #[Test]
+    public function a_server_restart_ends_what_the_previous_run_held_open(): void
+    {
+        $now = date('c');
+        $this->journal([
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-7-old', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 7, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-7-legacy', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 7],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-7-test', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 7, 'host' => 'test'],
+            ['ts' => $now, 'event' => 'server-start', 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-7-new', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 7, 'host' => 'dev'],
+        ]);
+
+        $live = array_column((new ObservatoryReader())->snapshot()['live'], 'id');
+        sort($live);
+
+        self::assertSame(['p-7-new', 'p-7-test'], $live, 'another host\'s server start says nothing about this one');
+    }
+
+    #[Test]
+    public function a_worker_start_or_stop_ends_only_what_that_pid_held_open(): void
+    {
+        $now = date('c');
+        $this->journal([
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-18-a', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 18, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-19-a', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 19, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-20-a', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 20, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'worker-start', 'worker' => 18, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'worker-stop', 'worker' => 20, 'host' => 'dev', 'crashed' => true],
+        ]);
+
+        self::assertSame(['p-19-a'], array_column((new ObservatoryReader())->snapshot()['live'], 'id'));
+    }
+
+    #[Test]
+    public function find_names_the_marker_that_cut_a_process_and_prefers_a_real_end(): void
+    {
+        $now = date('c');
+        $this->journal([
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-18-cut', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 18, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'begin', 'id' => 'p-19-drained', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 19, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'worker-stop', 'worker' => 19, 'host' => 'dev'],
+            ['ts' => $now, 'event' => 'end', 'id' => 'p-19-drained', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 19, 'durationMs' => 5.0],
+            ['ts' => $now, 'event' => 'server-start', 'host' => 'dev'],
+        ]);
+        $reader = new ObservatoryReader();
+
+        self::assertSame('server-start', $reader->find('p-18-cut')['lost']['event'] ?? null);
+        self::assertNull($reader->find('p-19-drained')['lost'], 'it ended, after the stop marker: done, not lost');
+        self::assertNotNull($reader->find('p-19-drained')['end']);
+    }
+
+    #[Test]
+    public function stream_carries_new_pulses_and_a_cursor_from_before_pulses_starts_at_their_end(): void
+    {
+        $journal = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        $pulses = $this->dir . '/pulses-' . date('Ymd') . '.ndjson';
+        file_put_contents($journal, json_encode(['ts' => date('c'), 'event' => 'begin', 'id' => 'p-1-a', 'kind' => 'sse', 'name' => 'ssr.kiss', 'worker' => 1]) . "\n");
+        file_put_contents($pulses, json_encode(['ts' => date('c'), 'event' => 'signal', 'scope' => 'old']) . "\n");
+        $reader = new ObservatoryReader();
+
+        $first = $reader->stream(null);
+        self::assertSame(['begin'], array_column($first['rows'], 'event'), 'a bootstrap replays no pulses: they are news, not history');
+
+        file_put_contents($pulses, json_encode(['ts' => date('c'), 'event' => 'signal', 'scope' => 'ui_playground_wallet']) . "\n"
+            . json_encode(['ts' => date('c'), 'event' => 'push', 'page' => 'abcd1234']) . "\n", FILE_APPEND);
+        $next = $reader->stream($first['cursor']);
+        self::assertSame(['signal', 'push'], array_column($next['rows'], 'event'));
+        self::assertSame('ui_playground_wallet', $next['rows'][0]['scope']);
+        self::assertSame([], $reader->stream($next['cursor'])['rows'], 'each pulse is delivered once');
+
+        $legacy = $reader->stream(date('Ymd') . ':' . filesize($journal));
+        self::assertFalse($legacy['reset'], 'a cursor without its pulse part is still a cursor');
+        self::assertSame([], $legacy['rows']);
+        self::assertStringEndsWith(':p' . filesize($pulses), $legacy['cursor']);
+    }
+
+    #[Test]
+    public function a_pulse_backlog_too_big_to_be_news_is_skipped_not_replayed(): void
+    {
+        $journal = $this->dir . '/journal-' . date('Ymd') . '.ndjson';
+        $pulses = $this->dir . '/pulses-' . date('Ymd') . '.ndjson';
+        file_put_contents($journal, '');
+        file_put_contents($pulses, '');
+        $reader = new ObservatoryReader();
+        $cursor = $reader->stream(null)['cursor'];
+
+        $line = json_encode(['ts' => date('c'), 'event' => 'push', 'page' => 'abcd1234']) . "\n";
+        file_put_contents($pulses, str_repeat($line, (int) ceil(70000 / strlen($line))));
+        $after = $reader->stream($cursor);
+
+        self::assertSame([], $after['rows']);
+        self::assertStringEndsWith(':p' . filesize($pulses), $after['cursor']);
+    }
 }
+

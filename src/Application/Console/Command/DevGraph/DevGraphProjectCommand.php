@@ -20,19 +20,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'dev:graph:project', description: 'Show project overview: modules, routes, contracts, listeners')]
 final class DevGraphProjectCommand extends BaseCommand
 {
-    private ?AttributeDiscovery $attributeDiscovery;
-    private ?EventListenerRegistry $eventListenerRegistry;
-    private ?ModuleRegistry $moduleRegistry;
+    /** Built lazily by the getters below, as in DevGraphModuleCommand: nobody passed them in. */
+    private ?AttributeDiscovery $attributeDiscovery = null;
+    private ?EventListenerRegistry $eventListenerRegistry = null;
+    private ?ModuleRegistry $moduleRegistry = null;
     private ?ClassDiscovery $classDiscovery = null;
 
-    public function __construct(
-        ?AttributeDiscovery $attributeDiscovery = null,
-        ?EventListenerRegistry $eventListenerRegistry = null,
-        ?ModuleRegistry $moduleRegistry = null,
-    ) {
-        $this->attributeDiscovery = $attributeDiscovery;
-        $this->eventListenerRegistry = $eventListenerRegistry;
-        $this->moduleRegistry = $moduleRegistry;
+    public function __construct()
+    {
         parent::__construct('dev:graph:project');
     }
 
@@ -106,7 +101,7 @@ final class DevGraphProjectCommand extends BaseCommand
                     ['cmd' => 'routes:list', 'args' => ['--json'], 'why' => 'full route surface (' . count($routes) . ' routes)'],
                     ['cmd' => 'contracts:list', 'args' => ['--json'], 'why' => 'interface → implementation map'],
                 ],
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 

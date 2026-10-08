@@ -42,7 +42,7 @@ final class LintVarArtifactsCommand extends BaseCommand
         $offending = VarArtifactScan::offending([...$scanner->changedFiles(), ...VarArtifactScan::committable($this->getProjectRoot(), $named)]);
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['ok' => $offending === [], 'paths' => $offending], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $output->writeln((string) json_encode(['ok' => $offending === [], 'paths' => $offending], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return $offending === [] ? self::SUCCESS : self::FAILURE;
         }
