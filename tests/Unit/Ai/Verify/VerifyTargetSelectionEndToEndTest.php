@@ -150,6 +150,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                     'lint:responses',
                     'lint:scoping',
                     'lint:templates',
+                    'lint:transport-doors',
                 ],
             ],
         ];

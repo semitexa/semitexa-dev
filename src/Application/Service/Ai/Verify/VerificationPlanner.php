@@ -111,6 +111,7 @@ final class VerificationPlanner
         'lint:inline-script',
         'lint:deferred-slots',
         'lint:components',
+        'lint:transport-doors',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;

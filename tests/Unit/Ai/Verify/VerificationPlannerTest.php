@@ -116,6 +116,7 @@ class VerificationPlannerTest extends TestCase
             'lint:responses',
             'lint:scoping',
             'lint:templates',
+            'lint:transport-doors',
         ], $commands);
     }
 

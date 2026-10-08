@@ -19,6 +19,8 @@ final class TransportDoorPolicyTest extends TestCase
         yield 'ui event (2026-05)' => ['/__ui/event', ['POST']];
         yield 'ui dispatch (2026-05)' => ['/__ui/dispatch', ['POST']];
         yield 'a new stream' => ['/__ui/stream', ['GET']];
+        // Once pending, never again: a replacement on the old path inherits nothing.
+        yield 'form-doc back as POST' => ['/__ui/form-doc', ['POST']];
     }
 
     /** @param list<string> $methods */

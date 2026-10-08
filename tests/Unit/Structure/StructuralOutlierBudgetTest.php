@@ -494,7 +494,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // for the new component kind and one entry in each of the cross-file
         // and all-lints lists (the template row only grew a name). Data, not
         // logic: no method, no branch.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 936],
+        // 936 -> 937 on 2026-10-08: lint:transport-doors joined ALL_LINTS, so a
+        // broad run that promises every lint runs the KISS/HUG door guard too.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 937],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One
