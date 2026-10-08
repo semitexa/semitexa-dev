@@ -1,10 +1,12 @@
 {
     "_": "Per-package counts for the Semitexa semantic rules, measured across the whole tree. Clean packages are absent rather than listed as zero.",
-    "measured_at": "2026-09-30",
+    "measured_at": "2026-10-08",
     "command": "vendor/bin/phpstan analyse -c packages/semitexa-dev/config/phpstan-ai-verify.neon --error-format=json --no-progress packages/semitexa-*/src   (semitexa-ultimate excluded)",
-    "total": 50,
+    "total": 48,
     "deliberate": {
-        "2026-09-19 semitexa-orm 3 -> 4": "The semitexa.builtSqlFragment rule ships in this cut and found one call: CollectionQueryCompiler::applyCursor()'s whereRaw(), given implode(' OR ', $branches) — a keyset-pagination predicate assembled at runtime because the branch count depends on the sort spec. Every identifier goes through SqlIdentifier::quote() and every value is a bound '?', so it is safe in substance but not by CONSTRUCTION, which is what the rule checks. A dynamic OR-chain cannot be a literal, so nothing short of restructuring cursor pagination satisfies it — ORM work, not release work. Recorded here rather than baselined, for the same reason AcceptedViolations gives: the rule keeps firing and the gate keeps reporting it. PHPSTAN_CEILING 178 -> 179 in the same cut is this same one finding seen by the other gate."
+        "2026-09-19 semitexa-orm 3 -> 4": "The semitexa.builtSqlFragment rule ships in this cut and found one call: CollectionQueryCompiler::applyCursor()'s whereRaw(), given implode(' OR ', $branches) — a keyset-pagination predicate assembled at runtime because the branch count depends on the sort spec. Every identifier goes through SqlIdentifier::quote() and every value is a bound '?', so it is safe in substance but not by CONSTRUCTION, which is what the rule checks. A dynamic OR-chain cannot be a literal, so nothing short of restructuring cursor pagination satisfies it — ORM work, not release work. Recorded here rather than baselined, for the same reason AcceptedViolations gives: the rule keeps firing and the gate keeps reporting it. PHPSTAN_CEILING 178 -> 179 in the same cut is this same one finding seen by the other gate.",
+        "2026-10-08 semitexa-orm 1 -> 0": "Not a fix of the finding recorded on 2026-09-19: semitexa-orm 07f9ea8 put an inline `@phpstan-ignore semitexa.builtSqlFragment` with its reason on CollectionQueryCompiler::applyCursor(), so the rule no longer reports it. That reverses the choice above (keep it firing rather than silence it). Kept for this release because the reason is written at the call and the SQL is unchanged; revisit when cursor pagination is restructured.",
+        "2026-10-08 semitexa-platform-ui 1 -> 0": "A real fix: the platform-ui finding is gone from the code after the release-week cleanup."
     },
     "packages": {
         "semitexa-cache": 1,
@@ -12,9 +14,7 @@
         "semitexa-dev": 2,
         "semitexa-graphql": 3,
         "semitexa-ledger": 5,
-        "semitexa-orm": 1,
         "semitexa-os": 3,
-        "semitexa-platform-ui": 1,
         "semitexa-showcase-kit": 1,
         "semitexa-ssr": 1,
         "semitexa-tenancy": 2,
