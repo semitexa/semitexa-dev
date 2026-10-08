@@ -58,6 +58,13 @@ final class MakeCrudCommand extends BaseCommand
             return $rejected;
         }
 
+        // The generated screen is a semitexa/crud class, and its names follow
+        // that package's rules; without it there is nothing to generate for.
+        if (!class_exists(\Semitexa\Crud\Attribute\AsCrud::class)) {
+            $io->error('make:crud generates a semitexa/crud screen: composer require semitexa/crud');
+
+            return self::FAILURE;
+        }
         $inflector = new NameInflector();
         $module = $inflector->toStudly((string) $input->getOption('module'));
         $modelClass = $this->resolveModel((string) $input->getOption('model'), $module);

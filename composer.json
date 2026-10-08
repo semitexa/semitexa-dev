@@ -12,7 +12,6 @@
     "require": {
         "php": "^8.4",
         "semitexa/core": ">=2026.09.13.1915 || dev-master",
-        "semitexa/crud": "*",
         "semitexa/orm": "*",
         "semitexa/platform-ui": "*",
         "semitexa/project-graph": ">=2026.10.03.1952 || dev-master",
@@ -22,6 +21,9 @@
         "friendsofphp/php-cs-fixer": "^3.95",
         "phpunit/phpunit": "^10.0",
         "semitexa/testing": "*"
+    },
+    "suggest": {
+        "semitexa/crud": "make:crud generates its admin screens"
     },
     "autoload": {
         "psr-4": {
@@ -38,7 +40,6 @@
             "floors": {
                 "semitexa/ssr": "2026.09.27.0404",
                 "semitexa/project-graph": "2026.10.03.1952",
-                "semitexa/crud": "next",
                 "semitexa/platform-ui": "next",
                 "semitexa/core": "next"
             }
