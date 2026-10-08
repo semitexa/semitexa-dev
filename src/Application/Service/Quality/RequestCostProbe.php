@@ -306,7 +306,21 @@ final class RequestCostProbe
         return array_values(array_filter(
             array_map(static fn (mixed $e): array => is_array($e) && ($e['type'] ?? null) === 'query' ? (array) ($e['context'] ?? []) : [],
                 $events),
-            static fn (array $q): bool => $q !== [],
+            static fn (array $q): bool => $q !== [] && !self::isWorkerCacheRefill((string) ($q['sql'] ?? '')),
         ));
+    }
+
+    /**
+     * A query that refills a worker-local cache whose lifetime is a clock, not
+     * a page. platform-settings keeps each module's settings in a per-worker
+     * snapshot that lapses after 2 s (SettingsModuleSnapshots::TTL_SECONDS),
+     * so whichever request a worker serves after that reads platform_settings
+     * again. Counted, it landed on a different handful of routes every run
+     * (measured in the release clone: 5 of 6 requests to one page, spaced
+     * 1.2 s), and the release gate read it as regressions.
+     */
+    public static function isWorkerCacheRefill(string $sql): bool
+    {
+        return preg_match('/^\s*SELECT\b.*\bFROM\s+`?platform_settings`?\s/is', $sql . ' ') === 1;
     }
 }
