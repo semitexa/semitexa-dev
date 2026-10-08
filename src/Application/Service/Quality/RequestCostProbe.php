@@ -29,8 +29,8 @@ final class RequestCostProbe
 {
     private const TIMEOUT_S = 5.0;
 
-    /** The whole probe's ceiling: ~200 routes, measured twice each. */
-    private const BUDGET_S = 300;
+    /** The whole probe's ceiling: ~200 routes, three requests each (one warm-up, two measured). */
+    private const BUDGET_S = 450;
 
     /** @var array<string, list<array<string, mixed>>>|null path => query events, per probe run */
     private static ?array $cache = null;
