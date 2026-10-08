@@ -64,11 +64,17 @@ final class RequestCostProbe
                 $unmeasured[] = 'GET ' . $path;
                 continue;
             }
-            // Twice, and only the second counts. The first request pays for
-            // what happens once — a cold cache, a demo page seeding an empty
-            // table on GET — and that is not what the page costs.
+            // The first request pays for what happens once — a cold cache, a
+            // demo page seeding an empty table on GET — and that is not what
+            // the page costs. One warm request was not enough: with several
+            // workers the second can land on one whose per-worker cache is
+            // still cold, and a settings read then wandered between routes from
+            // run to run. Two warm requests; the cheaper one is the page.
             self::measureOnce($projectRoot, $base, $path);
-            $queries = self::measureOnce($projectRoot, $base, $path);
+            $queries = self::cheaper(
+                self::measureOnce($projectRoot, $base, $path),
+                self::measureOnce($projectRoot, $base, $path),
+            );
             if ($queries === null) {
                 $unmeasured[] = 'GET ' . $path;
                 continue;
@@ -82,6 +88,20 @@ final class RequestCostProbe
         self::$unmeasured = $unmeasured;
 
         return self::$cache = $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>>|null $a
+     * @param list<array<string, mixed>>|null $b
+     * @return list<array<string, mixed>>|null
+     */
+    private static function cheaper(?array $a, ?array $b): ?array
+    {
+        if ($a === null || $b === null) {
+            return $a ?? $b;
+        }
+
+        return count($b) < count($a) ? $b : $a;
     }
 
     /**
