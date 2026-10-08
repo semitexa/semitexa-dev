@@ -3,7 +3,7 @@
 .evidence-host{grid-area:evidence;min-height:0;min-width:0}
 .obs.mode-evidence{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"head" "evidence"}
 .obs.mode-evidence>.workers,.obs.mode-evidence>.river,.obs.mode-evidence>.ticker,.obs.mode-evidence>.time,
-.obs.mode-evidence .tiles,.obs.mode-evidence .controls>.btn:not(#b-full):not([data-action="explorer"]),.obs.mode-evidence #speed{display:none}
+.obs.mode-evidence .controls>.btn:not([data-action="explorer"]),.obs.mode-evidence .settings .menu>:not(#b-full){display:none}
 .evidence-host[hidden]{display:none}
 
 .ev{display:grid;grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto auto minmax(0,1fr) auto;

@@ -68,7 +68,7 @@ final class AiTaskCommand extends BaseCommand
                 'next'             => $this->buildNextHint($result),
                 'next_command'     => $this->buildNextCommands($result),
                 'alternatives'     => $result->alternatives,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             $this->appendToTrace($input, $output, $result, $description);
             return self::SUCCESS;
         }
@@ -142,7 +142,7 @@ final class AiTaskCommand extends BaseCommand
             'reason'           => $result->reason,
             'generator_steps'  => count($result->recipe->generator_chain),
             'alternatives'     => count($result->alternatives),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         foreach ($result->recipe->generator_chain as $i => $command) {
             $output->writeln(json_encode([
@@ -150,7 +150,7 @@ final class AiTaskCommand extends BaseCommand
                 'order'  => $i + 1,
                 'command' => $command,
                 'action' => 'run',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($result->recipe->arg_hints as $arg => $hint) {
@@ -158,7 +158,7 @@ final class AiTaskCommand extends BaseCommand
                 'kind'  => 'arg',
                 'name'  => $arg,
                 'hint'  => $hint,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($result->alternatives as $alt) {
@@ -166,14 +166,14 @@ final class AiTaskCommand extends BaseCommand
                 'kind'      => 'alternative',
                 'recipe'    => $alt['recipe_id'],
                 'score'     => $alt['score'],
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         $output->writeln(json_encode([
             'kind'   => 'next',
             'action' => 'invoke',
             'hint'   => $this->buildNextHint($result),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
     }
 
     /**

@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
+use Semitexa\Dev\Application\Service\Trace\PageTimelineReader;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryReader;
 use Semitexa\Dev\Application\Service\Trace\ReplayRunner;
 use Semitexa\Dev\Application\Service\Trace\EntryMethodCatalog;
@@ -36,7 +37,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 #[AsCommand(
     name: 'ai:observe',
-    description: 'Observatory for agents: ps (live snapshot) | tail (journal rows, --follow streams) | show --id (one process + its trace)',
+    description: 'Observatory for agents: ps (live snapshot) | tail (journal rows, --follow streams) | show --id (one process + its trace) | timeline [--id] (a page: its UI events, stream frames, re-runs)',
 )]
 final class AiObserveCommand extends BaseCommand
 {
@@ -52,6 +53,9 @@ final class AiObserveCommand extends BaseCommand
     #[InjectAsReadonly]
     protected SourceSliceReader $source;
 
+    #[InjectAsReadonly]
+    protected PageTimelineReader $timelines;
+
     public function __construct()
     {
         parent::__construct('ai:observe');
@@ -60,8 +64,8 @@ final class AiObserveCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addArgument('action', InputArgument::REQUIRED, 'ps | tail | show | replay | sandbox')
-            ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Process id (show, replay)')
+            ->addArgument('action', InputArgument::REQUIRED, 'ps | tail | show | replay | sandbox | timeline')
+            ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Process id (show, replay); a page\'s KISS session id (timeline)')
             ->addOption('mutate', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Override an input field, k=v; v parsed as JSON when it parses (replay, repeatable)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method of the route to run (sandbox)', 'GET')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Concrete request path, e.g. /items/7 (sandbox)')
@@ -82,7 +86,7 @@ final class AiObserveCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.ai-observe.error/v1',
                 'error' => 'observatory-disabled',
                 'hint' => 'The journal is off here: APP_ENV must be dev, or SEMITEXA_OBSERVATORY_MODE=monitor for journal-only production observability.',
-            ]));
+            ]), OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }
@@ -93,6 +97,7 @@ final class AiObserveCommand extends BaseCommand
             'show' => $this->show($input, $output),
             'replay' => $this->replay($input, $output),
             'sandbox' => $this->sandbox($input, $output),
+            'timeline' => $this->timeline($input, $output),
             default => $this->unknown($output),
         };
     }
@@ -141,7 +146,7 @@ final class AiObserveCommand extends BaseCommand
 
         $result = $this->replayRunner->replay($traceFile, $mutations);
         if (isset($result['error'])) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.ai-observe.error/v1'] + $result));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.ai-observe.error/v1'] + $result), OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }
@@ -151,7 +156,7 @@ final class AiObserveCommand extends BaseCommand
             $envelope['diff'] = $this->diffTraces($traceFile, $result['replay_trace']);
         }
 
-        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
 
         return $result['verdict'] === 'handler_threw' ? self::FAILURE : self::SUCCESS;
     }
@@ -178,7 +183,7 @@ final class AiObserveCommand extends BaseCommand
 
         $result = $this->replayRunner->sandbox((string) ($this->strOption($input, 'method') ?? 'GET'), $path, $data);
         if (isset($result['error'])) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.ai-observe.error/v1'] + $result));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.ai-observe.error/v1'] + $result), OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }
@@ -186,7 +191,7 @@ final class AiObserveCommand extends BaseCommand
         $output->writeln((string) json_encode(
             ['artifact' => 'semitexa-dev.ai-observe.sandbox/v1'] + $result,
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-        ));
+        ), OutputInterface::OUTPUT_RAW);
 
         return $result['verdict'] === 'handler_threw' ? self::FAILURE : self::SUCCESS;
     }
@@ -251,7 +256,7 @@ final class AiObserveCommand extends BaseCommand
             'artifact' => 'semitexa-dev.ai-observe.error/v1',
             'error' => $error,
             'hint' => $hint,
-        ]));
+        ]), OutputInterface::OUTPUT_RAW);
 
         return self::FAILURE;
     }
@@ -282,7 +287,7 @@ final class AiObserveCommand extends BaseCommand
             'next_command' => $next,
         ];
 
-        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
     }
@@ -294,7 +299,7 @@ final class AiObserveCommand extends BaseCommand
         $lines = max(1, min(500, (int) ($input->getOption('lines') ?: 50)));
 
         foreach ($this->reader->tailRecords($lines, $kind, $name) as $row) {
-            $output->writeln((string) json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $output->writeln((string) json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
         }
 
         if (!$input->getOption('follow')) {
@@ -355,7 +360,7 @@ final class AiObserveCommand extends BaseCommand
                 if ($name !== null && !str_contains((string) ($row['name'] ?? ''), $name)) {
                     continue;
                 }
-                $output->writeln((string) json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                $output->writeln((string) json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
             }
         }
 
@@ -370,7 +375,7 @@ final class AiObserveCommand extends BaseCommand
                 'artifact' => 'semitexa-dev.ai-observe.error/v1',
                 'error' => 'missing-id',
                 'hint' => 'ai:observe show --id=<process-id>; ids come from ps or tail.',
-            ]));
+            ]), OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }
@@ -382,7 +387,7 @@ final class AiObserveCommand extends BaseCommand
                 'error' => 'unknown-process',
                 'id' => $id,
                 'hint' => 'Not in the journal tail window. ai:observe ps lists what is visible.',
-            ]));
+            ]), OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }
@@ -392,7 +397,9 @@ final class AiObserveCommand extends BaseCommand
             'id' => $id,
             'begin' => $found['begin'],
             'end' => $found['end'],
-            'status' => $found['end'] !== null ? 'done' : 'live',
+            // lost: it never ended, but the process that ran it restarted, stopped or crashed.
+            'status' => $found['end'] !== null ? 'done' : ($found['lost'] !== null ? 'lost' : 'live'),
+            'lost' => $found['lost'],
         ];
 
         // Bytes on demand: the full span/query resolution only when this
@@ -431,7 +438,7 @@ final class AiObserveCommand extends BaseCommand
             ]];
         }
 
-        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $output->writeln((string) json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
     }
@@ -496,13 +503,33 @@ final class AiObserveCommand extends BaseCommand
         return $trace;
     }
 
+    /**
+     * A page's live timeline: without --id the pages seen lately, with it one
+     * page's events in order (dev only — the timeline is not kept in monitor
+     * mode).
+     */
+    private function timeline(InputInterface $input, OutputInterface $output): int
+    {
+        if (!ObservatoryMode::full()) {
+            return $this->fail($output, 'timeline-requires-dev', 'The page timeline is recorded in development only.');
+        }
+        $id = $this->strOption($input, 'id');
+        $lines = max(1, min(2000, (int) ($input->getOption('lines') ?: 200)));
+        $output->writeln((string) json_encode($id === null
+            ? ['artifact' => 'semitexa-dev.ai-observe.pages/v1', 'pages' => $this->timelines->pages()]
+            : ['artifact' => 'semitexa-dev.ai-observe.timeline/v1', 'session' => $id, 'events' => $this->timelines->events($id, $lines)],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
+
+        return self::SUCCESS;
+    }
+
     private function unknown(OutputInterface $output): int
     {
         $output->writeln((string) json_encode([
             'artifact' => 'semitexa-dev.ai-observe.error/v1',
             'error' => 'unknown-action',
             'hint' => 'Actions: ps | tail [--kind= --name= --lines= --follow --duration=] | show --id= [--source] | replay --id= [--mutate k=v]',
-        ]));
+        ]), OutputInterface::OUTPUT_RAW);
 
         return self::FAILURE;
     }

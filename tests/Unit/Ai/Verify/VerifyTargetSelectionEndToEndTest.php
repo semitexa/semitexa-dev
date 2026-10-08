@@ -76,6 +76,13 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 // writes a whole HTML document is where the OS apps put theirs.
                 ['lint:di', 'lint:handlers', 'lint:inline-script', 'lint:mechanisms'],
             ],
+            'component' => [
+                'Application/Component/ThingComponent.php',
+                ChangedFile::KIND_COMPONENT,
+                // Its #[AsComponent] name is what templates call it by: a
+                // rename here is a broken component('…') in some template.
+                ['lint:components', 'lint:di'],
+            ],
             'console command' => [
                 'Application/Console/Command/SyncCommand.php',
                 ChangedFile::KIND_COMMAND,
@@ -133,6 +140,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 'Domain/Contract/ThingRepositoryInterface.php',
                 ChangedFile::KIND_CONTRACT,
                 [
+                    'lint:components',
                     'lint:deferred-slots',
                     'lint:deferred-twig',
                     'lint:di',
@@ -142,6 +150,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                     'lint:responses',
                     'lint:scoping',
                     'lint:templates',
+                    'lint:transport-doors',
                 ],
             ],
         ];

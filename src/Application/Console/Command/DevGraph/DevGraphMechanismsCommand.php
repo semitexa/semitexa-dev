@@ -105,7 +105,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
                 'mechanisms' => $capabilities,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
             return Command::SUCCESS;
         }
@@ -279,7 +279,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
     private function refuse(InputInterface $input, OutputInterface $output, string $message): int
     {
         if ($input->getOption('json')) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa.dev.mechanisms/v1', 'error' => $message], JSON_UNESCAPED_SLASHES));
+            $output->writeln((string) json_encode(['artifact' => 'semitexa.dev.mechanisms/v1', 'error' => $message], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
             $output->writeln('<comment>' . OutputFormatter::escape($message) . '</comment>');
         }

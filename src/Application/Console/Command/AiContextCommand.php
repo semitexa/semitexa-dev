@@ -54,7 +54,7 @@ final class AiContextCommand extends BaseCommand
             'artifact' => 'semitexa-dev.ai-context/v1',
             'status' => $exitCode === self::SUCCESS ? 'ok' : 'error',
             'records' => $records,
-        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
         return $exitCode;
     }
@@ -70,7 +70,7 @@ final class AiContextCommand extends BaseCommand
                 'kind'  => 'error',
                 'error' => "unknown recipe: {$recipeId}",
                 'hint'  => 'list known recipes with: ai:task --help, or pick one from the README.',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
 
@@ -83,7 +83,7 @@ final class AiContextCommand extends BaseCommand
             'module'      => $module,
             'prior_art'   => count($items),
             'risk_hint'   => $recipe->default_risk,
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         $this->emitConventions($output, $recipe);
 
@@ -96,7 +96,7 @@ final class AiContextCommand extends BaseCommand
                 'score'  => $item->score,
                 'why'    => $item->why,
                 'action' => 'read',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         // "We stopped looking" must never be printed as "there is nothing".
@@ -111,7 +111,7 @@ final class AiContextCommand extends BaseCommand
                 // the RANKING and cannot make the scan reach further. Advice
                 // that does not work is worse than none.
                 'action' => 'read the listed prior art, then search the remaining root directly',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         if ($items === []) {
@@ -121,7 +121,7 @@ final class AiContextCommand extends BaseCommand
                     ? 'no prior art found in src/modules or packages/*/src — codebase may be greenfield for this recipe'
                     : 'no prior art found, but the scan was truncated — this is not evidence of greenfield',
                 'action' => 'none',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         $this->appendToTrace($input, $output, $recipe, $module, $items);
@@ -165,6 +165,6 @@ final class AiContextCommand extends BaseCommand
             'kind'     => 'convention',
             'signals'  => $recipe->context_signals,
             'note'     => 'files matching these path fragments are the canonical home for this recipe',
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
     }
 }

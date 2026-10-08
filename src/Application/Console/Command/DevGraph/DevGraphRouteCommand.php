@@ -97,7 +97,7 @@ final class DevGraphRouteCommand extends BaseCommand
                 'generated_at' => date('c'),
                 'route' => $description,
                 'next_command' => $this->buildNextCommands($description, $handlerClass),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 

@@ -11,6 +11,7 @@ use Semitexa\Core\Environment;
 use Semitexa\Core\Pipeline\RecordingAwareTracerInterface;
 use Semitexa\Core\Pipeline\RequestTracerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Orm\Adapter\QueryRecorder;
 use Semitexa\Orm\OrmManager;
@@ -524,10 +525,13 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
                 'totalMs' => $buffer->sinceStartMs(),
                 'events' => $buffer->events(),
             ],
-            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+            // A binding can be raw bytes (a BINARY(16) id): substituted, or the whole trace is lost.
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
         );
 
         if ($payload === false) {
+            StaticLoggerBridge::warning('dev', 'Trace not written: it does not encode as JSON', ['error' => json_last_error_msg()]);
+
             return null;
         }
 
@@ -618,6 +622,9 @@ final class RequestTracer implements RequestTracerInterface, RecordingAwareTrace
 
         $line = $record;
         unset($line['startedAtNs'], $line['suppressed']);
+        // The pid in `worker` is only an identity together with the host: a
+        // restart or another stack reuses the same small pids.
+        $line['host'] = ObservatoryJournal::host();
         ObservatoryJournal::write(['ts' => date('c'), 'event' => 'begin'] + $line);
         CoroutineSnapshot::maybeWrite();
     }

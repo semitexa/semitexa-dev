@@ -19,6 +19,8 @@ final class TransportDoorPolicyTest extends TestCase
         yield 'ui event (2026-05)' => ['/__ui/event', ['POST']];
         yield 'ui dispatch (2026-05)' => ['/__ui/dispatch', ['POST']];
         yield 'a new stream' => ['/__ui/stream', ['GET']];
+        // Once pending, never again: a replacement on the old path inherits nothing.
+        yield 'form-doc back as POST' => ['/__ui/form-doc', ['POST']];
     }
 
     /** @param list<string> $methods */
@@ -62,6 +64,8 @@ final class TransportDoorPolicyTest extends TestCase
     #[Test]
     public function every_pending_door_names_the_task_that_removes_it(): void
     {
+        // The last extra door went with tk-kh-form-doc-over-kiss.
+        self::assertArrayNotHasKey('/__ui/form-doc', TransportDoorPolicy::PENDING);
         foreach (TransportDoorPolicy::PENDING as $path => $task) {
             self::assertStringStartsWith('/__', $path);
             self::assertMatchesRegularExpression('/\Atk-[a-z0-9-]+\z/', $task);

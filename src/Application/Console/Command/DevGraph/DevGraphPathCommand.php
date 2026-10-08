@@ -68,7 +68,7 @@ final class DevGraphPathCommand extends BaseCommand
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => 'missing required option: --path',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::FAILURE;
         }
 
@@ -76,14 +76,14 @@ final class DevGraphPathCommand extends BaseCommand
         $envelope = $this->explain($projectRoot, $rawPath);
 
         if ($input->getOption('json')) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
         // Human-friendly fallback: render the same envelope as a short
         // structured summary. Keeps the field set identical so consumers
         // can choose either output.
-        $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+        $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), OutputInterface::OUTPUT_RAW);
         return Command::SUCCESS;
     }
 

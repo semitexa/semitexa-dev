@@ -59,7 +59,7 @@ final class LintTransportDoorsCommand extends BaseCommand
                 'ok' => $violations === [],
                 'violations' => $violations,
                 'pending' => $pending,
-            ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+            ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
             return $violations === [] ? Command::SUCCESS : Command::FAILURE;
         }
 

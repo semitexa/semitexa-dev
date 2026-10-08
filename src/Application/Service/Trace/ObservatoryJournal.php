@@ -48,6 +48,32 @@ final class ObservatoryJournal
     /** How a record is encoded on disk — shared with callers that size a line before writing it. */
     public const JSON_FLAGS = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
 
+    /**
+     * Markers of the processes that run requests, not of requests. A begin with
+     * no end is only "still running" while the process that opened it lives; a
+     * worker killed by a restart never writes its ends, so without these the
+     * panel showed every session of every previous run as live.
+     *
+     * - server-start: the server on this host started; everything it ran before is gone.
+     * - worker-start: a process with this pid started, so the earlier one with it is gone.
+     * - worker-stop:  the process with this pid stopped, or crashed.
+     */
+    public const EVENT_SERVER_START = 'server-start';
+    public const EVENT_WORKER_START = 'worker-start';
+    public const EVENT_WORKER_STOP = 'worker-stop';
+
+    /**
+     * Moments, not processes — no begin, no end, nothing stays open. They go
+     * to their own file ({@see pulse()}), never into the journal:
+     *
+     * - signal: the server published a scope invalidation (`scope`, and the
+     *           `origin` that asked: an ORM write, or the calling class).
+     * - push:   a page's stream received what a signal re-ran (`page` is a
+     *           short hash of the page, never its session id).
+     */
+    public const EVENT_SIGNAL = 'signal';
+    public const EVENT_PUSH = 'push';
+
     /** Journal files older than this are swept on the first write of a new day. */
     private const RETENTION_DAYS = 7;
 
@@ -119,6 +145,72 @@ final class ObservatoryJournal
         } catch (\Throwable) {
             // Observing must never fault the observed.
         }
+    }
+
+    /**
+     * One line written without keeping a handle — for the master and the
+     * manager. A handle they held would be inherited by every worker they fork,
+     * and flock on an inherited handle no longer keeps the workers apart.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function writeDetached(array $record): void
+    {
+        try {
+            $line = json_encode($record, self::JSON_FLAGS);
+            if ($line === false || strlen($line) > self::MAX_LINE_BYTES) {
+                return;
+            }
+            $dir = self::dir();
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            @file_put_contents($dir . '/journal-' . date('Ymd') . '.ndjson', $line . "\n", FILE_APPEND | LOCK_EX);
+        } catch (\Throwable) {
+            // Observing must never fault the observed.
+        }
+    }
+
+    /**
+     * Append one moment (a signal, a push) to today's pulse file.
+     *
+     * Its own file because there are many of them — one every few seconds per
+     * open page — and the journal's readers look at a bounded tail: in the
+     * journal they would push the begin of a long-lived session out of view.
+     * Pulses are for watching live, so they are kept for a day, not a week.
+     * Written detached: a worker's journal handle stays on the journal.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function pulse(array $record): void
+    {
+        try {
+            $line = json_encode($record, self::JSON_FLAGS);
+            if ($line === false || strlen($line) > self::MAX_LINE_BYTES) {
+                return;
+            }
+            $dir = self::dir();
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            @file_put_contents(self::pulsePath(date('Ymd')), $line . "\n", FILE_APPEND | LOCK_EX);
+        } catch (\Throwable) {
+            // Observing must never fault the observed.
+        }
+    }
+
+    public static function pulsePath(string $day): string
+    {
+        return self::dir() . '/pulses-' . $day . '.ndjson';
+    }
+
+    /**
+     * Which machine a line came from. A pid means something only on its own
+     * host, and the dev and test stacks share one var/observatory.
+     */
+    public static function host(): string
+    {
+        return (string) (gethostname() ?: 'unknown');
     }
 
     /**
@@ -259,6 +351,14 @@ final class ObservatoryJournal
         foreach (glob($dir . '/journal-*.ndjson') ?: [] as $file) {
             $day = substr(basename($file), 8, 8);
             if ($day !== '' && $day < $cutoff) {
+                @unlink($file);
+            }
+        }
+        // Pulses only ever feed a live view: yesterday's is the oldest worth keeping.
+        $pulseCutoff = date('Ymd', time() - 86400);
+        foreach (glob($dir . '/pulses-*.ndjson') ?: [] as $file) {
+            $day = substr(basename($file), 7, 8);
+            if ($day !== '' && $day < $pulseCutoff) {
                 @unlink($file);
             }
         }

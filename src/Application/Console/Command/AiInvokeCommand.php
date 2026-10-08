@@ -306,7 +306,7 @@ final class AiInvokeCommand extends BaseCommand
         if ($useHuman) {
             $this->renderHuman(new SymfonyStyle($input, $output), $envelope);
         } else {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
         }
 
         return $exitCode;
@@ -567,7 +567,7 @@ final class AiInvokeCommand extends BaseCommand
         $envelope['verdict'] = 'error';
         $envelope['stage']   = $stage;
         $envelope['error']   = $message;
-        $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
+        $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
         return self::FAILURE;
     }
 
@@ -631,7 +631,7 @@ final class AiInvokeCommand extends BaseCommand
             }
         } elseif (isset($envelope['resource'])) {
             $io->section('Resource (' . ($envelope['resource_class'] ?? '?') . ')');
-            $io->writeln(json_encode($envelope['resource'], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'null');
+            $io->writeln(json_encode($envelope['resource'], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'null', OutputInterface::OUTPUT_RAW);
         }
 
         $expectations = is_array($envelope['expectations'] ?? null) ? $envelope['expectations'] : null;

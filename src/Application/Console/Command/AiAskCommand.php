@@ -103,7 +103,7 @@ final class AiAskCommand extends BaseCommand
                 'kind'     => 'error',
                 'error'    => 'missing subject (and no --path provided to auto-select)',
                 'subjects' => array_keys(self::SUBJECT_MAP),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
         $target = self::SUBJECT_MAP[$subject] ?? null;
@@ -112,7 +112,7 @@ final class AiAskCommand extends BaseCommand
                 'kind'     => 'error',
                 'error'    => "unknown subject '{$subject}'",
                 'subjects' => array_keys(self::SUBJECT_MAP),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
 
@@ -121,7 +121,7 @@ final class AiAskCommand extends BaseCommand
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => 'Application not available — cannot dispatch subject',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::FAILURE;
         }
 

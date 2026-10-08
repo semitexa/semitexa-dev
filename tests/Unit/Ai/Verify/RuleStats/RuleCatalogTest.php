@@ -21,7 +21,7 @@ final class RuleCatalogTest extends TestCase
         self::assertGreaterThanOrEqual(28, $families['phpstan'] ?? 0);
         self::assertSame(13, $families['module_structure'] ?? 0);
         self::assertSame(2, $families['live_tenancy'] ?? 0);
-        self::assertSame(5, $families['ratchets'] ?? 0);
+        self::assertSame(6, $families['ratchets'] ?? 0); // 6th: JsonOutputIsRawTest (2026-10-07)
         foreach (['lint:di', 'lint:test-integrity', 'lint:var-artifacts', 'docs:instructions', 'docs:claims'] as $gate) {
             self::assertSame(1, $families[$gate] ?? 0, $gate);
         }

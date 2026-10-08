@@ -128,7 +128,7 @@ final class LogsAppCommand extends BaseCommand
                 'entries' => $entries,
                 'total' => count($entries),
                 'truncated' => false,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
@@ -138,7 +138,7 @@ final class LogsAppCommand extends BaseCommand
         }
 
         foreach ($rawLines as $line) {
-            $output->writeln($line);
+            $output->writeln($line, OutputInterface::OUTPUT_RAW);
         }
 
         return Command::SUCCESS;
@@ -186,7 +186,7 @@ final class LogsAppCommand extends BaseCommand
                 'log_dir' => $logDir,
                 'files' => $files,
                 'total' => count($files),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
@@ -366,12 +366,12 @@ final class LogsAppCommand extends BaseCommand
                 ],
                 'entries' => $entries,
                 'total' => count($entries),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
         foreach ($rawLines as $line) {
-            $io->writeln($line);
+            $io->writeln($line, OutputInterface::OUTPUT_RAW);
         }
 
         return Command::SUCCESS;

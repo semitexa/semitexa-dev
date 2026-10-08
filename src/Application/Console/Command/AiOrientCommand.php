@@ -138,7 +138,7 @@ final class AiOrientCommand extends BaseCommand
         if ($useHuman) {
             $this->renderHuman(new SymfonyStyle($input, $output), $envelope);
         } else {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
         }
 
         return self::SUCCESS;

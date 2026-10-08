@@ -78,6 +78,18 @@ final class ObservatoryGraphSurfaceTest extends TestCase
         self::assertStringContainsString('/__observatory/asset/graph-view.js', $html);
     }
 
+    #[Test]
+    public function settings_popover_is_a_plain_disclosure_not_an_aria_menu(): void
+    {
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_OBSERVATORY_MODE');
+
+        // Its children are ordinary buttons with no arrow-key model; role="menu" would promise one.
+        $html = $this->page();
+        self::assertStringContainsString('<details class="settings" id="settings">', $html);
+        self::assertStringNotContainsString('role="menu"', $html);
+    }
+
     private function monitorWithToken(): void
     {
         putenv('APP_ENV=prod');
