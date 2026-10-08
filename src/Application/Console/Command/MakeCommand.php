@@ -115,7 +115,7 @@ final class MakeCommand extends BaseCommand
             'steps'        => $stepResults,
         ];
         if ($jsonMode) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         $this->appendToTrace($input, $output, $recipe, $envelope, $stepResults);
@@ -194,7 +194,7 @@ final class MakeCommand extends BaseCommand
                 'command' => $commandName,
                 'exit'    => $exit,
                 'result'  => $decoded ?? $rawOutput,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } elseif (!$structuredOutput) {
             $io->section("Step {$stepNumber}/{$commandName}");
             if ($rawOutput !== '') {

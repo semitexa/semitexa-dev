@@ -35,6 +35,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
  */
 #[AsPublicPayload(
     path: '/__observatory/stream',
+    name: 'dev.observatory.stream',
     methods: ['GET'],
     responseWith: ResourceResponse::class,
     transport: TransportType::Sse,

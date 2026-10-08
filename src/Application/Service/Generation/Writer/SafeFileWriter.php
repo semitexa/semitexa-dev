@@ -297,11 +297,21 @@ final class SafeFileWriter implements FileWriterInterface
     private function publish(string $fullPath, string $content, bool $force): ?array
     {
         $dir = dirname($fullPath);
+        $missing = $dir;
+        while (!is_dir(dirname($missing)) && dirname($missing) !== $missing) {
+            $missing = dirname($missing);
+        }
+        $createsDir = !is_dir($dir);
         // `!mkdir && !is_dir` tolerates a concurrent writer creating the
         // directory first — mkdir returns false but the directory now exists,
         // which is not an error — while still failing on a real one.
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
             return ['reason' => 'mkdir_failed', 'detail' => "could not create directory {$dir}"];
+        }
+        if ($createsDir) {
+            for ($created = $dir; strlen($created) >= strlen($missing); $created = dirname($created)) {
+                $this->handOver($created);
+            }
         }
 
         $temp = $dir . '/.' . basename($fullPath) . '.' . bin2hex(random_bytes(6)) . '.tmp';
@@ -310,6 +320,8 @@ final class SafeFileWriter implements FileWriterInterface
             return ['reason' => 'write_failed', 'detail' => 'could not write the temporary file (permissions, disk full, or a directory in the way)'];
         }
         @chmod($temp, self::FILE_MODE);
+        // rename() and link() keep the owner, so the published file has it too.
+        $this->handOver($temp);
 
         if ($force) {
             // rename() replaces atomically: readers see the old file or the new
@@ -354,8 +366,30 @@ final class SafeFileWriter implements FileWriterInterface
             return ['reason' => 'write_failed', 'detail' => "could not write the whole of {$fullPath}"];
         }
         @chmod($fullPath, self::FILE_MODE);
+        $this->handOver($fullPath);
 
         return null;
+    }
+
+    /**
+     * A generator run as root (bin/semitexa execs into the running app
+     * container as root) used to leave files the developer could not edit
+     * without sudo. Give what it creates to whoever owns the project.
+     */
+    private function handOver(string $path): void
+    {
+        if (!function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            return;
+        }
+        $owner = @fileowner($this->basePath);
+        $group = @filegroup($this->basePath);
+        if ($owner === false || $owner === 0) {
+            return;
+        }
+        @chown($path, $owner);
+        if ($group !== false) {
+            @chgrp($path, $group);
+        }
     }
 
     /**

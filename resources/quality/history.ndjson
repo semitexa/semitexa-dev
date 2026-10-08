@@ -17,3 +17,4 @@
 {"at":"2026-09-28T10:29:09+00:00","metric":"tests.skip-calls","total":157,"event":"accept"}
 {"at":"2026-09-28T12:30:52+00:00","metric":"tests.skip-calls","total":158,"event":"accept"}
 {"at":"2026-09-28T18:55:00+00:00","metric":"requests.query-shapes","total":185,"event":"accept"}
+{"at":"2026-10-07T19:01:41+00:00","metric":"requests.query-shapes","total":69,"event":"accept"}

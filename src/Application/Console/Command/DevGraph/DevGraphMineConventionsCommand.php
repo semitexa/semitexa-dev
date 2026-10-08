@@ -53,7 +53,7 @@ final class DevGraphMineConventionsCommand extends BaseCommand
             'injections_total'  => $totalInjections,
             'dry_run'           => (bool) $input->getOption('dry-run'),
             'cache_path'        => $store->path(),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         foreach ($filtered as $module => $conv) {
             $recurring = $conv->recurringHandlerInjections();
@@ -63,7 +63,7 @@ final class DevGraphMineConventionsCommand extends BaseCommand
                 'handlers_sampled'    => $conv->handlers_sampled,
                 'injection_count'     => count($conv->handler_injections),
                 'recurring_injections' => count($recurring),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             foreach (array_slice($recurring, 0, 5) as $hi) {
                 $output->writeln(json_encode([
@@ -73,7 +73,7 @@ final class DevGraphMineConventionsCommand extends BaseCommand
                     'type'      => $hi->type,
                     'property'  => $hi->propertyName,
                     'frequency' => $hi->frequency,
-                ], JSON_UNESCAPED_SLASHES));
+                ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             }
         }
 
@@ -83,7 +83,7 @@ final class DevGraphMineConventionsCommand extends BaseCommand
                 'kind'   => 'persisted',
                 'path'   => $store->path(),
                 'action' => 'none',
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         return self::SUCCESS;

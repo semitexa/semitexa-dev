@@ -142,18 +142,18 @@ final class AiVerifyCommand extends BaseCommand
                         static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
                         array_values(array_filter(explode("\n", trim($traceOutput->fetch())))),
                     );
-                    $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+                    $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
                     return self::SUCCESS;
                 }
 
                 // The same two records a run WITH changes emits, so a consumer
                 // reads the scan out of one place regardless of the answer.
-                $output->writeln(json_encode(['kind' => 'dirty_scan'] + $scan, JSON_UNESCAPED_SLASHES));
+                $output->writeln(json_encode(['kind' => 'dirty_scan'] + $scan, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
                 $output->writeln((string) json_encode(
                     ['kind' => 'restart'] + $report->restartAdvice([]),
                     JSON_UNESCAPED_SLASHES,
-                ));
+                ), OutputInterface::OUTPUT_RAW);
                 $output->writeln(json_encode([
                     'kind' => 'verdict',
                     'verdict' => 'nothing_to_verify',
@@ -166,7 +166,7 @@ final class AiVerifyCommand extends BaseCommand
                     'completed' => $report->completed([]),
                     'counts' => $report->countByStatus([]),
                     'dirty_scan' => $scan,
-                ], JSON_UNESCAPED_SLASHES));
+                ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
                 $this->maybeAppendToTrace($input, $output, $emptyPlan, [], 'nothing_to_verify', $envelope);
 
@@ -225,7 +225,7 @@ final class AiVerifyCommand extends BaseCommand
                 static fn(string $line): mixed => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
                 array_values(array_filter(explode("\n", trim($traceOutput->fetch())))),
             );
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
             $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan);
             $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
@@ -646,7 +646,7 @@ final class AiVerifyCommand extends BaseCommand
             $output->writeln(json_encode(
                 ['kind' => 'dirty_scan'] + $dirtyScan,
                 JSON_UNESCAPED_SLASHES,
-            ));
+            ), OutputInterface::OUTPUT_RAW);
         }
 
         $output->writeln(json_encode([
@@ -655,41 +655,41 @@ final class AiVerifyCommand extends BaseCommand
             'effective_scope' => $plan->effectiveScope,
             'changed_files'   => count($plan->changedFiles),
             'targets'         => count($plan->targets),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         if ($impact !== null) {
             $output->writeln(json_encode([
                 'kind'   => 'impact',
                 'impact' => $impact->toSummary(),
                 'files'  => array_map(static fn ($f) => $f->toArray(), $impact->files),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($plan->expansions as $note) {
             $output->writeln(json_encode([
                 'kind' => 'expansion',
                 'note' => $note,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($plan->targets as $target) {
             $output->writeln(json_encode([
                 'kind'   => 'target',
                 'target' => $report->serializeTarget($target),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
 
         foreach ($results as $result) {
             $output->writeln(json_encode([
                 'kind'   => 'result',
                 'result' => $report->serializeResult($result),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             foreach ($result->diagnostics as $diagnostic) {
                 $output->writeln(json_encode([
                     'kind'      => 'violation',
                     'target_id' => $result->target->id,
                     ...$diagnostic,
-                ], JSON_UNESCAPED_SLASHES));
+                ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             }
         }
 
@@ -703,7 +703,7 @@ final class AiVerifyCommand extends BaseCommand
         $output->writeln((string) json_encode(
             ['kind' => 'restart'] + $report->restartAdvice($plan->changedFiles),
             JSON_UNESCAPED_SLASHES,
-        ));
+        ), OutputInterface::OUTPUT_RAW);
 
         $verdictLine = [
             'kind'    => 'verdict',
@@ -714,7 +714,7 @@ final class AiVerifyCommand extends BaseCommand
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
-        $output->writeln(json_encode($verdictLine, JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode($verdictLine, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
     }
 
     private function emitError(OutputInterface $output, string $message, bool $jsonMode): void
@@ -724,9 +724,9 @@ final class AiVerifyCommand extends BaseCommand
                 'artifact'     => 'semitexa-dev.verify-report/v1',
                 'generated_at' => date('c'), 'verdict' => 'fail',
                 'error'        => $message, // may carry a git ref or path that is not UTF-8
-            ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+            ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
             return;
         }
-        $output->writeln((string) json_encode(['kind' => 'error', 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+        $output->writeln((string) json_encode(['kind' => 'error', 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 }

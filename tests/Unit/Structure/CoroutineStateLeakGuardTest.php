@@ -55,6 +55,14 @@ final class CoroutineStateLeakGuardTest extends TestCase
         // clones it per coroutine into CoroutineLocal, precisely so mutating a
         // locale cannot escape the request that did it.
         'Translator::$localeContext',
+
+        // RESOLVERS, not a visitor: closures installed once at worker boot
+        // (UiPermissions::resolveFrom) that look the current request's auth
+        // context and authorizer up on EVERY call through
+        // RequestScopedContainer::forCurrentExecution. No request's value is
+        // ever stored; use() pins fixed ones for unit tests only.
+        'UiPermissions::$auth',
+        'UiPermissions::$authorizer',
     ];
 
     /**

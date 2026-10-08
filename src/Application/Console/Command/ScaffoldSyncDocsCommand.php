@@ -167,7 +167,7 @@ final class ScaffoldSyncDocsCommand extends BaseCommand
         }
 
         if ($asJson || !$input->isInteractive()) {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
+            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
         } else {
             $this->renderHuman(new SymfonyStyle($input, $output), $envelope, $checkOnly);
         }
@@ -299,7 +299,7 @@ final class ScaffoldSyncDocsCommand extends BaseCommand
             $output->writeln(json_encode([
                 'artifact' => 'semitexa.scaffold-sync-docs/v1',
                 'error'    => $message,
-            ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}');
+            ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
         } else {
             (new SymfonyStyle($input, $output))->error($message);
         }

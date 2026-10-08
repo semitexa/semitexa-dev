@@ -239,7 +239,7 @@ final class AiEvidenceCommand extends BaseCommand
     private function emit(OutputInterface $output, InputInterface $input, array $envelope, int $code): int
     {
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode($envelope + ['ok' => $code === self::SUCCESS], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $output->writeln((string) json_encode($envelope + ['ok' => $code === self::SUCCESS], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
 
             return $code;
         }

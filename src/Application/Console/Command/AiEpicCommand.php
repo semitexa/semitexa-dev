@@ -149,7 +149,7 @@ final class AiEpicCommand extends BaseCommand
                 'epic_count'       => count($rows),
                 'hidden_by_scope'  => $hiddenByScope,
                 'total_in_store'   => count($all),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
 
@@ -159,9 +159,9 @@ final class AiEpicCommand extends BaseCommand
             'epic_count'      => count($rows),
             'hidden_by_scope' => $hiddenByScope,
             'total_in_store'  => count($all),
-        ], JSON_UNESCAPED_SLASHES));
+        ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         foreach ($rows as $row) {
-            $output->writeln(json_encode(['kind' => 'epic'] + $row, JSON_UNESCAPED_SLASHES));
+            $output->writeln(json_encode(['kind' => 'epic'] + $row, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         return self::SUCCESS;
     }
@@ -236,10 +236,10 @@ final class AiEpicCommand extends BaseCommand
             $output->writeln(json_encode([
                 'artifact' => 'semitexa.ai-work.epic/v1',
                 'epic'     => $epic->toArray(),
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
-        $output->writeln(json_encode(['kind' => $kind] + $epic->toArray(), JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode(['kind' => $kind] + $epic->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::SUCCESS;
     }
 
@@ -266,12 +266,12 @@ final class AiEpicCommand extends BaseCommand
                 'artifact' => 'semitexa.ai-work.epic/v1',
                 'status'   => 'error',
                 'error'    => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
             $output->writeln(json_encode([
                 'kind'  => 'error',
                 'error' => $message,
-            ], JSON_UNESCAPED_SLASHES));
+            ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
         return self::FAILURE;
     }

@@ -47,6 +47,23 @@ final readonly class GenerationResult
         );
     }
 
+    /** @param list<string> $steps appended after the writer's own */
+    public function withNextSteps(array $steps): self
+    {
+        return new self(
+            command: $this->command,
+            status: $this->status,
+            created: $this->created,
+            skipped: $this->skipped,
+            conflicts: $this->conflicts,
+            next_steps: [...$this->next_steps, ...$steps],
+            replay_args: $this->replay_args,
+            verify: $this->verify,
+            lint: $this->lint,
+            errors: $this->errors,
+        );
+    }
+
     /**
      * @param list<string> $replayArgs
      */

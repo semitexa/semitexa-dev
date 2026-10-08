@@ -125,7 +125,7 @@ final class LintMechanismsCommand extends BaseCommand
                     ],
                     $findings,
                 ),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
             return $counts['actionable'] === 0 ? Command::SUCCESS : Command::FAILURE;
         }

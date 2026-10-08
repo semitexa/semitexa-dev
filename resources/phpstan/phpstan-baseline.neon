@@ -211,24 +211,6 @@ parameters:
 			path: packages/semitexa-core/src/Application/Console/Command/RoutesShowCommand.php
 
 		-
-			message: '#^Binary operation "\." between ''Testing Handler\: '' and mixed results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
-
-		-
-			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:get\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
-
-		-
-			message: '#^Parameter \#1 \$id of method Semitexa\\Core\\Container\\SemitexaContainer\:\:has\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
-
-		-
 			message: '#^Parameter \#1 \$object of function get_class expects object, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -238,12 +220,6 @@ parameters:
 			message: '#^Parameter \#2 \$handler of method Semitexa\\Core\\Application\\Console\\Command\\TestHandlerCommand\:\:inspectHandler\(\) expects object, mixed given\.$#'
 			identifier: argument.type
 			count: 1
-			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
-
-		-
-			message: '#^Parameter \#3 \$handlerClass of method Semitexa\\Core\\Application\\Console\\Command\\TestHandlerCommand\:\:inspectHandler\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 2
 			path: packages/semitexa-core/src/Application/Console/Command/TestHandlerCommand.php
 
 		-
@@ -395,24 +371,6 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: packages/semitexa-core/src/Cookie/CookieJarInterface.php
-
-		-
-			message: '#^Binary operation "\." between mixed and "\\000" results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
-
-		-
-			message: '#^Method Semitexa\\Core\\Discovery\\AttributeDiscovery\:\:selectRequestByOverrideChain\(\) has parameter \$candidates with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
-
-		-
-			message: '#^Method Semitexa\\Core\\Discovery\\AttributeDiscovery\:\:selectRequestByOverrideChain\(\) return type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-core/src/Discovery/AttributeDiscovery.php
 
 		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
@@ -775,72 +733,6 @@ parameters:
 			path: packages/semitexa-core/src/Queue/Message/QueuedEventListenerMessage.php
 
 		-
-			message: '#^Cannot access offset ''attempts'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''handler'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''handlerClass'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''maxRetries'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''queuedAt'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''requestClass'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''requestPayload'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''responseClass'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''responsePayload'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''retryDelay'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
-			message: '#^Cannot access offset ''sessionId'' on mixed\.$#'
-			identifier: offsetAccess.nonOffsetAccessible
-			count: 1
-			path: packages/semitexa-core/src/Queue/Message/QueuedHandlerMessage.php
-
-		-
 			message: '#^Method Semitexa\\Core\\Queue\\Message\\QueuedHandlerMessage\:\:__construct\(\) has parameter \$requestPayload with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -1144,18 +1036,6 @@ parameters:
 			message: '#^Instanceof between Semitexa\\Core\\Resource\\ResourceObjectInterface and Semitexa\\Core\\Resource\\ResourceObjectInterface will always evaluate to true\.$#'
 			identifier: instanceof.alwaysTrue
 			count: 2
-			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
-
-		-
-			message: '#^Method Semitexa\\Core\\Resource\\JsonLdResourceRenderer\:\:renderRefMany\(\) return type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
-
-		-
-			message: '#^Method Semitexa\\Core\\Resource\\JsonLdResourceRenderer\:\:renderUnion\(\) should return array\<int\<0, max\>\|string, mixed\>\|null but returns array\|null\.$#'
-			identifier: return.type
-			count: 1
 			path: packages/semitexa-core/src/Resource/JsonLdResourceRenderer.php
 
 		-
@@ -1478,12 +1358,6 @@ parameters:
 
 		-
 			message: '#^Method Semitexa\\Orm\\Adapter\\ConnectionPool\:\:getAvailable\(\) should return int but returns mixed\.$#'
-			identifier: return.type
-			count: 1
-			path: packages/semitexa-orm/src/Adapter/ConnectionPool.php
-
-		-
-			message: '#^Method Semitexa\\Orm\\Adapter\\ConnectionPool\:\:pop\(\) should return PDO but returns mixed\.$#'
 			identifier: return.type
 			count: 1
 			path: packages/semitexa-orm/src/Adapter/ConnectionPool.php
