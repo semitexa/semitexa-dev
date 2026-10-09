@@ -99,6 +99,13 @@ for root in $roots; do
             worktrees+=("$src|$wt")
             mounts+=(-v "$wt:$(mount_point "$entry"):ro")
             private+=("$name@$(git -C "$wt" rev-parse --short HEAD)")
+        else
+            # Neither released nor a checkout we can move to origin/master: the
+            # copy in vendor/ is whatever was last installed, and booting on it
+            # says nothing about what the host will pull.
+            printf '✗ %s: vendor/semitexa/%s is an installed copy, not a checkout — cannot pin it to origin/master, so not passing\n' "$root" "$name"
+            failed=1
+            continue 2
         fi
     done
 
