@@ -135,6 +135,10 @@ run_soft_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
 # that has silently rotted teaches a confidently shrinking subset of the
 # framework, which is worse than shipping none at all.
 run_soft_stage "capability-index-freshness" "$SCRIPT_DIR/release-capability-index-check.sh"
+# The sites that run on the framework boot on what we are about to ship. The
+# private semitexa.com packages were outside every gate until 2026-10-08, when a
+# feed the new core refused kept the host's auto-deploy rolling back for three days.
+run_soft_stage "downstream-discovery" "$SCRIPT_DIR/release-downstream-discovery.sh"
 # Refresh the clone's application code before the containers come up. The package
 # tree is pulled every release, but src/ was not — so a package change needing a
 # matching consumer-side change was smoke-tested against frozen app code. That is
