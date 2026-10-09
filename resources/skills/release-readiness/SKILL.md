@@ -59,6 +59,12 @@ Default assumptions:
   called `Request::getServedPath()` on 2026-09-18 while its floor named a core with no such method.
   The stage prints what each tagged package gained since its last tag and which dependents touch
   those classes, so the floor question is asked by the tool rather than remembered by a person
+- **the `downstream-discovery` stage boots the sites that run on the framework.** The private
+  semitexa.com packages (site, os-site, platform-site) live in `semitexa.portal`, outside every other
+  gate; on 2026-10-08 a feed the new core refused kept that host's auto-deploy rolling back for three
+  days while the site still answered 200. The stage runs the portal's real discovery in its own image,
+  released packages swapped for the clone's, private ones at `origin/master`. A missing checkout or
+  image fails it; `SEMITEXA_DOWNSTREAM_ROOTS=` (empty) is the only deliberate skip
 - the default is deliberate but **not silent**: a defaulted run prints a `[WARN]` naming the channel
   and how to pick beta, and every report says which of the three ways the channel was chosen —
   `(defaulted …)`, `(chosen at the prompt)` or `(explicitly passed)` — so "did anyone actually choose
