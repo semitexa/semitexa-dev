@@ -117,6 +117,8 @@ class VerificationPlannerTest extends TestCase
             'lint:scoping',
             'lint:templates',
             'lint:transport-doors',
+            // A UI contract example the runtime drops is refused here.
+            'lint:ui-contracts',
         ], $commands);
     }
 
@@ -181,7 +183,7 @@ class VerificationPlannerTest extends TestCase
         // lint:inline-script all read the file's own source, and there is none;
         // lint:components reads the tree, where a deleted template that called a
         // component and one that declared it are both worth a look.
-        $this->assertSame(['lint:deferred-slots', 'lint:components'], $this->lintCommandNames($plan));
+        $this->assertSame(['lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
     }
 
@@ -204,7 +206,7 @@ class VerificationPlannerTest extends TestCase
         // Exactly that one, the way the deletion case above is asserted. The
         // vanished path is a template nobody can read any more, so a lint
         // that would open it is scheduled against a file that is not there.
-        $this->assertSame(['lint:deferred-slots', 'lint:components'], $this->lintCommandNames($plan));
+        $this->assertSame(['lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
     }
 
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void

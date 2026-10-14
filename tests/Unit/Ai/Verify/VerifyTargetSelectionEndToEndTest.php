@@ -81,7 +81,8 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 ChangedFile::KIND_COMPONENT,
                 // Its #[AsComponent] name is what templates call it by: a
                 // rename here is a broken component('…') in some template.
-                ['lint:components', 'lint:di'],
+                // Its #[AsUiContract] examples are refused when invalid.
+                ['lint:components', 'lint:di', 'lint:ui-contracts'],
             ],
             'console command' => [
                 'Application/Console/Command/SyncCommand.php',
@@ -151,6 +152,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                     'lint:scoping',
                     'lint:templates',
                     'lint:transport-doors',
+                    'lint:ui-contracts',
                 ],
             ],
         ];
