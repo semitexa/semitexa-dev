@@ -306,10 +306,13 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
     {
         // Extension-decided, so the rule must not reach a stylesheet or a map.
         foreach (['packages/semitexa-platform-ui/src/Application/Static/css/ui.css', 'packages/x/src/Application/Static/js/ui.js.map'] as $path) {
-            $plan = $this->planner()->plan([(new ChangedFileClassifier())->classify($path)], VerificationPlan::SCOPE_STANDARD);
-            foreach ($plan->targets as $target) {
-                self::assertNotSame(VerificationTarget::TYPE_SYNTAX, $target->type, "{$path} must not get a syntax target");
-            }
+            $file = (new ChangedFileClassifier())->classify($path);
+            // The subject is pinned first, so an empty plan cannot pass vacuously.
+            self::assertSame($path, $file->path);
+            self::assertNotSame(ChangedFile::KIND_CLIENT_SCRIPT, $file->kind, "{$path} must not classify as a client script");
+            $plan = $this->planner()->plan([$file], VerificationPlan::SCOPE_STANDARD);
+            $syntax = array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_SYNTAX);
+            self::assertCount(0, $syntax, "{$path} must not get a syntax target");
         }
     }
 
