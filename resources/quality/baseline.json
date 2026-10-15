@@ -76,13 +76,13 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 160,
+            "total": 161,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 11,
+                "semitexa-core": 12,
                 "semitexa-dev": 33,
                 "semitexa-ledger": 4,
                 "semitexa-media": 1,
@@ -1360,6 +1360,19 @@
                 }
             },
             "reason": "platform-ui collab race harness (2 helpers): it registers a PHP SQL function to stage a real write race; the ultimate stack smoke's PHP gets pdo_sqlite from Swoole, which can register none, so the test skips there instead of failing. Everywhere else (dev, release clone) it runs and fails without the fix."
+        },
+        {
+            "at": "2026-10-15",
+            "metric": "tests.skip-calls",
+            "from": 160,
+            "to": 161,
+            "keys": {
+                "semitexa-core": {
+                    "from": 11,
+                    "to": 12
+                }
+            },
+            "reason": "semitexa-core RedisPoolRestartTest needs a real Redis to play a restart (CLIENT KILL); it skips only where no Redis is reachable, like the other Redis integration tests. It runs on the dev stack and in the release clone."
         }
     ]
 }
