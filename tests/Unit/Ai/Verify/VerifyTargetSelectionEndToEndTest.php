@@ -260,6 +260,62 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         self::assertSame([], $this->lintCommandNames($plan));
     }
 
+    /**
+     * The lint row above is withheld for packages/, which left a package's
+     * shipped JavaScript read by no check at all: a syntax error in ui-core.js
+     * planned module_structure and nothing else. Every client script, in a
+     * package or a module, at every scope, gets a syntax target that reads it.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function clientScriptProvider(): iterable
+    {
+        foreach ([
+            'package static js'     => 'packages/semitexa-platform-ui/src/Application/Static/js/ui-core.js',
+            'package resources js'  => 'packages/semitexa-platform-ui/resources/assets/js/ui-core.js',
+            'package module script' => 'packages/semitexa-ssr/src/Application/Static/js/island.mjs',
+            'module js'             => 'src/modules/Foo/src/Application/Static/js/disclosure.js',
+        ] as $label => $path) {
+            foreach ([VerificationPlan::SCOPE_MINIMAL, VerificationPlan::SCOPE_STANDARD, VerificationPlan::SCOPE_BROAD] as $scope) {
+                yield "{$label} @ {$scope}" => [$path, $scope];
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('clientScriptProvider')]
+    public function every_client_script_selects_a_syntax_check_that_reads_it(string $path, string $scope): void
+    {
+        $classified = (new ChangedFileClassifier())->classify($path);
+        self::assertSame(ChangedFile::KIND_CLIENT_SCRIPT, $classified->kind);
+
+        $plan = $this->planner()->plan([$classified], $scope);
+
+        $syntax = array_values(array_filter(
+            $plan->targets,
+            static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_SYNTAX,
+        ));
+        self::assertCount(1, $syntax, "no syntax target for {$path} at {$scope}");
+        self::assertSame("syntax:{$path}", $syntax[0]->id);
+        self::assertSame($path, $syntax[0]->filePath);
+        self::assertSame([$path], $syntax[0]->triggeredBy);
+    }
+
+    #[Test]
+    public function a_non_script_asset_gets_no_javascript_syntax_check(): void
+    {
+        // Extension-decided, so the rule must not reach a stylesheet or a map.
+        foreach (['packages/semitexa-platform-ui/src/Application/Static/css/ui.css', 'packages/x/src/Application/Static/js/ui.js.map'] as $path) {
+            $file = (new ChangedFileClassifier())->classify($path);
+            // The subject is pinned first, so an empty plan cannot pass vacuously.
+            self::assertSame($path, $file->path);
+            self::assertNotSame(ChangedFile::KIND_CLIENT_SCRIPT, $file->kind, "{$path} must not classify as a client script");
+            $plan = $this->planner()->plan([$file], VerificationPlan::SCOPE_STANDARD);
+            $syntax = array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_SYNTAX);
+            self::assertCount(0, $syntax, "{$path} must not get a syntax target");
+        }
+    }
+
     #[Test]
     public function every_kind_in_the_lint_map_is_covered_here(): void
     {

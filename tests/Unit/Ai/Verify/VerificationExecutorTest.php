@@ -121,6 +121,167 @@ class VerificationExecutorTest extends TestCase
         $this->assertSame($this->root, $runner->calls[0]['cwd']);
     }
 
+    public function test_js_syntax_target_runs_node_check_and_passes(): void
+    {
+        $rel = 'src/app.js';
+        file_put_contents($this->root . '/' . $rel, "const a = 1;\n");
+        $node = $this->fakeNode();
+
+        $runner = new RecordingProcessRunner(['exit' => 0, 'output' => '']);
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, '/usr/bin/php-fake', nodeBinary: $node))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
+        $this->assertSame([$node, '--no-experimental-detect-module', '--check', $this->root . '/' . $rel], $runner->calls[0]['command']);
+        $this->assertCount(1, $runner->calls);
+        $this->assertStringContainsString('classic script', $results[0]->signal);
+    }
+
+    public function test_js_that_is_not_a_classic_script_is_checked_as_a_module_from_an_mjs_copy(): void
+    {
+        // node 24's own module detection exits 0 on a broken ES module .js, so
+        // the module grammar is checked explicitly, from an .mjs copy.
+        $rel = 'src/app.js';
+        file_put_contents($this->root . '/' . $rel, "export const a = 1;\n");
+        $runner = new SequencedProcessRunner([
+            ['exit' => 1, 'output' => "SyntaxError: Unexpected token 'export'"],
+            ['exit' => 0, 'output' => ''],
+        ]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, nodeBinary: $this->fakeNode()))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
+        $this->assertStringContainsString('ES module', $results[0]->signal);
+        $this->assertCount(2, $runner->calls);
+        $copy = $runner->calls[1]['command'][2];
+        $this->assertSame('--check', $runner->calls[1]['command'][1]);
+        $this->assertStringEndsWith('.mjs', $copy);
+        $this->assertSame("export const a = 1;\n", $runner->seen[1], 'the module check must read the same source');
+        $this->assertFileDoesNotExist($copy, 'the staged copy is removed');
+    }
+
+    public function test_js_module_with_a_syntax_error_fails_with_the_module_error(): void
+    {
+        $rel = 'src/app.js';
+        file_put_contents($this->root . '/' . $rel, "export const a = 1;\nfunction x( {\n");
+        $runner = new SequencedProcessRunner([
+            ['exit' => 1, 'output' => "SyntaxError: Unexpected token 'export'"],
+            ['exit' => 1, 'output' => "@COPY@:2\n\nSyntaxError: Unexpected end of input\n\nNode.js v24.18.1\n"],
+        ]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, nodeBinary: $this->fakeNode()))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame("{$rel}:2 SyntaxError: Unexpected end of input", $results[0]->signal);
+    }
+
+    public function test_classic_script_with_a_syntax_error_fails_with_the_script_error(): void
+    {
+        $rel = 'src/app.js';
+        $abs = $this->root . '/' . $rel;
+        file_put_contents($abs, "(function () {\n");
+        $runner = new SequencedProcessRunner([
+            ['exit' => 1, 'output' => "{$abs}:1\nSyntaxError: Unexpected end of input\n"],
+            ['exit' => 1, 'output' => "@COPY@:1\nSyntaxError: Unexpected end of input (module)\n"],
+        ]);
+
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, nodeBinary: $this->fakeNode()))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame("{$rel}:1 SyntaxError: Unexpected end of input", $results[0]->signal);
+    }
+
+    public function test_js_syntax_error_fails_with_location_and_error_not_the_node_version(): void
+    {
+        $rel = 'src/app.mjs';
+        $abs = $this->root . '/' . $rel;
+        file_put_contents($abs, "function x( {\n");
+        $output = "{$abs}:2\n\n\n\nSyntaxError: Unexpected end of input\n    at wrapSafe (node:internal/modules/cjs/loader:1804:18)\n\nNode.js v24.18.1\n";
+
+        $runner = new RecordingProcessRunner(['exit' => 1, 'output' => $output]);
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, nodeBinary: $this->fakeNode()))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_FAIL, $results[0]->status);
+        $this->assertSame("{$rel}:2 SyntaxError: Unexpected end of input", $results[0]->signal);
+    }
+
+    public function test_js_syntax_without_node_is_incomplete_never_a_pass(): void
+    {
+        // A gate that cannot check must not pass: no node means the file was
+        // not read, and the verdict has to say so.
+        $rel = 'src/app.js';
+        file_put_contents($this->root . '/' . $rel, "const a = 1;\n");
+
+        $runner = new RecordingProcessRunner();
+        $results = (new VerificationExecutor(new Application(), $this->root, $runner, nodeBinary: $this->root . '/no-such-node'))
+            ->execute($this->planWith([$this->syntaxTarget($rel)]));
+
+        $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
+        $this->assertTrue($results[0]->required);
+        $this->assertFalse($results[0]->completed());
+        $this->assertStringContainsString('NOT checked', $results[0]->signal);
+        $this->assertSame([], $runner->calls);
+    }
+
+    /**
+     * Against the REAL node, because the defect being pinned is node's: on
+     * node 24 `node --check broken-esm.js` exits 0. A stubbed runner cannot
+     * notice the day that behaviour moves under this check.
+     */
+    public function test_real_node_fails_a_broken_es_module_js_and_passes_valid_ones(): void
+    {
+        $shell = new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner();
+        $executor = new VerificationExecutor(new Application(), $this->root, $shell);
+        $hasNode = (new \Semitexa\Dev\Application\Service\Ai\Verify\JavaScriptSyntaxCheck($shell, $this->root))->resolveNodeBinary() !== null;
+
+        $cases = [
+            'src/esm-broken.js'   => ["export const a = 1;\nfunction x( {\n", VerificationResult::STATUS_FAIL],
+            'src/classic-broken.js' => ["(function () {\n", VerificationResult::STATUS_FAIL],
+            'src/esm-ok.js'       => ["import { b } from './b.js';\nexport const a = b;\n", VerificationResult::STATUS_PASS],
+            'src/classic-ok.js'   => ["(function () { window.x = 1; })();\n", VerificationResult::STATUS_PASS],
+            'src/module-broken.mjs' => ["export const = 1;\n", VerificationResult::STATUS_FAIL],
+        ];
+        $targets = [];
+        foreach ($cases as $rel => [$source]) {
+            file_put_contents($this->root . '/' . $rel, $source);
+            $targets[] = $this->syntaxTarget($rel);
+        }
+
+        $results = $executor->execute($this->planWith($targets));
+
+        if (!$hasNode) {
+            // Without node nothing was read, and nothing may claim otherwise.
+            foreach ($results as $result) {
+                $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status, $result->signal);
+            }
+
+            return;
+        }
+        foreach (array_keys($cases) as $i => $rel) {
+            $this->assertSame($cases[$rel][1], $results[$i]->status, "{$rel}: {$results[$i]->signal}");
+        }
+        $this->assertStringContainsString('SyntaxError', $results[0]->signal);
+        $this->assertStringStartsWith('src/esm-broken.js:', $results[0]->signal);
+    }
+
+    private function syntaxTarget(string $rel): VerificationTarget
+    {
+        return new VerificationTarget(VerificationTarget::TYPE_SYNTAX, "syntax:{$rel}", 'r', [$rel], filePath: $rel);
+    }
+
+    private function fakeNode(): string
+    {
+        $node = $this->root . '/fake-node';
+        file_put_contents($node, "#!/bin/sh\nexit 0\n");
+        chmod($node, 0755);
+
+        return $node;
+    }
+
     public function test_syntax_target_incomplete_when_file_missing(): void
     {
         $runner = new RecordingProcessRunner();
@@ -534,5 +695,31 @@ final class RecordingProcessRunner implements ProcessRunner
     {
         $this->calls[] = ['command' => $command, 'cwd' => $cwd];
         return $this->stub;
+    }
+}
+
+/** Answers each call with the next stub; `@COPY@` is replaced by the file the call was given. */
+final class SequencedProcessRunner implements ProcessRunner
+{
+    /** @var list<array{command: list<string>, cwd: string}> */
+    public array $calls = [];
+
+    /** @var list<string|false> what the checked file held at the moment of each call */
+    public array $seen = [];
+
+    /** @param list<array{exit: int, output: string}> $stubs */
+    public function __construct(private array $stubs)
+    {
+    }
+
+    public function run(array $command, string $cwd): array
+    {
+        $this->calls[] = ['command' => $command, 'cwd' => $cwd];
+        $file = $command[count($command) - 1];
+        $this->seen[] = @file_get_contents($file);
+        $stub = array_shift($this->stubs) ?? ['exit' => 0, 'output' => ''];
+        $stub['output'] = str_replace('@COPY@', $file, $stub['output']);
+
+        return $stub;
     }
 }
