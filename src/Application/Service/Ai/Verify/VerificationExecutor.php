@@ -24,7 +24,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
  *
  *   - lint    → LintRunner (Application::find()->run(), plus the lint's RATIONALE on failure)
  *               (matches {@see \Semitexa\Dev\Application\Service\Generation\Verifier\PostWriteLinter})
- *   - syntax  → `php -l <file>`
+ *   - syntax  → `php -l <file>`; `node --check <file>` for client .js/.mjs
  *   - phpunit → `vendor/bin/phpunit --filter <class>`
  *
  * The executor never throws on target failure — failures show up in the
@@ -47,6 +47,9 @@ final class VerificationExecutor
         private readonly ?string $phpunitBinary = null,
         ?ModuleStructureSpecLoader $specLoader = null,
         ?PhpstanRunner $phpstanRunner = null,
+        // Null = look `node` up on PATH. A path that is not executable counts
+        // as absent, which is how a test pins the no-node verdict.
+        private readonly ?string $nodeBinary = null,
     ) {
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
         $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
@@ -115,6 +118,9 @@ final class VerificationExecutor
         $abs = $this->projectRoot . '/' . ltrim($rel, '/');
         if (!is_file($abs)) {
             return $this->skipped($target, "file no longer exists: {$rel}");
+        }
+        if (str_ends_with($rel, '.js') || str_ends_with($rel, '.mjs')) {
+            return (new JavaScriptSyntaxCheck($this->processRunner, $this->projectRoot, $this->nodeBinary))->check($target, $rel, $abs);
         }
         $php = $this->phpBinary ?? (PHP_BINARY ?: 'php');
         $r = $this->processRunner->run([$php, '-l', $abs], $this->projectRoot);

@@ -12,7 +12,7 @@ use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
  * Deterministic planner: changed file list + requested scope → VerificationPlan.
  *
  * Scope contract:
- *   - `minimal`  syntax only (`php -l` per changed .php file)
+ *   - `minimal`  syntax only (`php -l` per .php, `node --check` per client .js/.mjs)
  *   - `standard` syntax + kind-mapped lints + related test files
  *   - `broad`    all lints + syntax + related tests
  *
@@ -75,17 +75,11 @@ final class VerificationPlanner
         ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'],
         ChangedFile::KIND_COMPONENT => ['lint:di', 'lint:components', 'lint:ui-contracts'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
-        // a region fetched and injected instead of declared deferred.
+        // a region fetched and injected instead of declared deferred. (Parsing is a syntax target, see plan().)
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
-        // Not a catch-all row, and the reason is measured. lint:mechanisms scans
-        // ALL module PHP, so putting it on KIND_PHP_OTHER looks like the tidy
-        // way to cover every remaining kind — a module console command calling
-        // an LLM was the case raised. It wedges the suite: that kind is what the
-        // verify tooling's own fixtures classify as, so plans built in tests
-        // began executing a real shell-out lint and blocked at ~427/8500 with no
-        // CPU. Measured both ways before reverting. The three rows above cover
-        // where a prompt actually lives; a narrower kind for commands is the
-        // follow-up, not a row that stops the suite from finishing.
+        // No KIND_PHP_OTHER row, and the reason is measured: it wedged the
+        // suite at ~427/8500 — see ChangedFile::KIND_COMMAND, the narrower kind
+        // that replaced it.
     ];
 
     /**
@@ -169,11 +163,15 @@ final class VerificationPlanner
             // different status.
             $this->collectCrossFileLintsForVanishedPath($file, $effectiveScope, $lintsByCommand);
 
-            if (str_ends_with($file->path, '.php')) {
+            // Client JS is parsed wherever it lives: lint:mechanisms is withheld
+            // for packages/, so without this a package's shipped JS was read by
+            // no check at all and a syntax error in it could not fail a run.
+            $isScript = $file->kind === ChangedFile::KIND_CLIENT_SCRIPT;
+            if ($isScript || str_ends_with($file->path, '.php')) {
                 $syntaxTargets[$file->path] = new VerificationTarget(
                     type: VerificationTarget::TYPE_SYNTAX,
                     id: "syntax:{$file->path}",
-                    reason: 'php syntax check on changed file',
+                    reason: $isScript ? 'javascript syntax check on changed client script (node --check)' : 'php syntax check on changed file',
                     triggeredBy: [$file->path],
                     filePath: $file->path,
                 );
