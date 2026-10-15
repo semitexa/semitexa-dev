@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 158,
+            "total": 160,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -89,7 +89,7 @@
                 "semitexa-orm": 38,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
-                "semitexa-platform-ui": 2,
+                "semitexa-platform-ui": 4,
                 "semitexa-rbac": 1,
                 "semitexa-ssr": 28,
                 "semitexa-storage": 1,
@@ -1347,6 +1347,19 @@
                 }
             },
             "reason": "The release clone reads the tenant platform_settings row on this page (one SELECT, one shape); the workspace serves it without that read. The same settings read was 1 shape on most routes in the 2026-09-24 baseline. Recorded so the clone does not report it as a regression."
+        },
+        {
+            "at": "2026-10-15",
+            "metric": "tests.skip-calls",
+            "from": 158,
+            "to": 160,
+            "keys": {
+                "semitexa-platform-ui": {
+                    "from": 2,
+                    "to": 4
+                }
+            },
+            "reason": "platform-ui collab race harness (2 helpers): it registers a PHP SQL function to stage a real write race; the ultimate stack smoke's PHP gets pdo_sqlite from Swoole, which can register none, so the test skips there instead of failing. Everywhere else (dev, release clone) it runs and fails without the fix."
         }
     ]
 }
