@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": ">=2026.10.14.0919 || dev-master",
+        "semitexa/core": ">=2026.10.16.1744 || dev-master",
         "semitexa/orm": "*",
         "semitexa/platform-ui": ">=2026.10.14.0919 || dev-master",
         "semitexa/project-graph": ">=2026.10.03.1952 || dev-master",
@@ -41,7 +41,7 @@
                 "semitexa/ssr": "2026.09.27.0404",
                 "semitexa/project-graph": "2026.10.03.1952",
                 "semitexa/platform-ui": "2026.10.14.0919",
-                "semitexa/core": "next"
+                "semitexa/core": "2026.10.16.1744"
             }
         }
     },
