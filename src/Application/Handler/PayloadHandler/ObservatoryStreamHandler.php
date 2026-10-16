@@ -76,6 +76,8 @@ final class ObservatoryStreamHandler implements TypedHandlerInterface
         }
 
         $response = $pair[1];
+        // A stream from here: a leaving worker cancels it at once.
+        \Semitexa\Core\Server\InFlightRequests::streaming();
         $response->status(HttpStatus::Ok->value);
         $response->header('Content-Type', 'text/event-stream');
         $response->header('Cache-Control', 'no-cache');

@@ -79,7 +79,8 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the resume method was moved there to keep the count at 100), the
         // deferred door is handed the visitor's request, a subscribe carries
         // its patches opt-in. No new method.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2103],
+        // +1 on 2026-10-16: the stream tells the exit drain it is one (InFlightRequests::streaming()).
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2104],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
