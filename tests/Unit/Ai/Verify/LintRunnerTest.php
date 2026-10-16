@@ -89,6 +89,29 @@ final class LintRunnerTest extends TestCase
     }
 
     #[Test]
+    public function a_package_lint_is_skipped_when_its_package_is_not_installed(): void
+    {
+        $result = (new LintRunner(new Application(), static fn (string $package): bool => false))->run(
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:access', 'r', [], commandName: 'lint:access'),
+        );
+
+        self::assertSame(
+            [VerificationResult::STATUS_SKIPPED, 0, false, 'lint:access unavailable; semitexa/authorization is not installed, so its rules do not apply'],
+            [$result->status, $result->exitCode, $result->required, $result->signal],
+        );
+    }
+
+    #[Test]
+    public function a_package_lint_missing_while_its_package_is_installed_is_incomplete(): void
+    {
+        $result = (new LintRunner(new Application(), static fn (string $package): bool => $package === 'semitexa/authorization'))->run(
+            new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:access', 'r', [], commandName: 'lint:access'),
+        );
+
+        self::assertSame([VerificationResult::STATUS_INCOMPLETE, 'command lint:access is not registered'], [$result->status, $result->signal]);
+    }
+
+    #[Test]
     public function a_missing_required_lint_is_incomplete_not_a_pass(): void
     {
         $result = (new LintRunner(new Application()))->run(new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:gone', 'r', [], commandName: 'lint:gone'));
