@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Composer\InstalledVersions;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Command\LazyCommand;
@@ -23,9 +24,28 @@ use Symfony\Component\Console\Output\BufferedOutput;
  */
 final class LintRunner
 {
+    /**
+     * Lints a sibling package registers, keyed by command, valued by package.
+     * semitexa/dev does not require these packages, so a project without one
+     * has no such command and none of its rules to break: the gate is skipped.
+     * With the package installed a missing command is still a defect.
+     */
+    public const PACKAGE_LINTS = [
+        'lint:access' => 'semitexa/authorization',
+    ];
+
+    /** @var \Closure(string): bool */
+    private readonly \Closure $isInstalled;
+
+    /**
+     * @param (\Closure(string): bool)|null $isInstalled whether a Composer package is installed
+     */
     public function __construct(
         private readonly Application $application,
-    ) {}
+        ?\Closure $isInstalled = null,
+    ) {
+        $this->isInstalled = $isInstalled ?? static fn (string $package): bool => InstalledVersions::isInstalled($package);
+    }
 
     /**
      * @param bool $optional the command belongs to optional tooling (semitexa/docs):
@@ -46,6 +66,16 @@ final class LintRunner
                     status:   VerificationResult::STATUS_SKIPPED,
                     exitCode: 0,
                     signal:   "semitexa/docs command {$commandName} unavailable; optional documentation tooling",
+                    required: false,
+                );
+            }
+            $provider = self::PACKAGE_LINTS[$commandName] ?? null;
+            if ($provider !== null && !($this->isInstalled)($provider)) {
+                return new VerificationResult(
+                    target:   $target,
+                    status:   VerificationResult::STATUS_SKIPPED,
+                    exitCode: 0,
+                    signal:   "{$commandName} unavailable; {$provider} is not installed, so its rules do not apply",
                     required: false,
                 );
             }

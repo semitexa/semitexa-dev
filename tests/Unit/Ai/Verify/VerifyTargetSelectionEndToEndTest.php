@@ -113,7 +113,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             'payload' => [
                 'Application/Payload/Request/GetThingPayload.php',
                 ChangedFile::KIND_PAYLOAD,
-                ['lint:di', 'lint:responses', 'lint:transport-doors'],
+                ['lint:access', 'lint:di', 'lint:responses', 'lint:transport-doors'],
             ],
             'resource' => [
                 'Application/Resource/Response/ThingResource.php',
@@ -141,6 +141,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 'Domain/Contract/ThingRepositoryInterface.php',
                 ChangedFile::KIND_CONTRACT,
                 [
+                    'lint:access',
                     'lint:components',
                     'lint:deferred-slots',
                     'lint:deferred-twig',

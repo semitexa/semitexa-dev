@@ -102,6 +102,8 @@ class VerificationPlannerTest extends TestCase
             // Deferred slot templates are rendered twice - Twig on the server,
             // semitexa-twig.js on the client - and anything outside the client
             // subset renders as an empty string with no error.
+            // Every route payload's access attributes, before a request checks them.
+            'lint:access',
             'lint:components',
             'lint:deferred-slots',
             'lint:deferred-twig',
