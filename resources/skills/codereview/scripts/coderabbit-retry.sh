@@ -15,7 +15,10 @@
 #
 # A head is re-triggered at most once per CODERABBIT_RETRY_MIN_GAP_SECONDS
 # (default 1500 — just under the 30-minute timer, so every run may retry);
-# among eligible heads the least recently triggered goes first.
+# Among eligible heads a release-blocking PR goes first — one carrying
+# CODERABBIT_RETRY_PRIORITY_LABEL or named in CODERABBIT_RETRY_PRIORITY —
+# then the least recently triggered. Without that, never-triggered heads always
+# won and a release blocker waited three runs (2026-09-27).
 # A new push is a new head, so it starts fresh.
 #
 # Environment:
@@ -23,6 +26,10 @@
 #   CODERABBIT_RETRY_MATCH            status text that means "skipped, wake me"
 #                                     (case-insensitive ERE, default: rate limited)
 #   CODERABBIT_RETRY_MIN_GAP_SECONDS  per-head back-off (default: 1500)
+#   CODERABBIT_RETRY_PRIORITY_LABEL   PR label that jumps the queue
+#                                     (default: release-blocker; empty disables)
+#   CODERABBIT_RETRY_PRIORITY         PRs that jump the queue, space- or
+#                                     comma-separated owner/repo#number
 #   CODERABBIT_RETRY_STATE_DIR        where trigger times are kept
 #                                     (default: $XDG_STATE_HOME/semitexa/coderabbit-retry)
 set -euo pipefail
@@ -30,6 +37,8 @@ set -euo pipefail
 OWNER="${CODERABBIT_RETRY_OWNER:-semitexa}"
 MATCH="${CODERABBIT_RETRY_MATCH:-rate limited}"
 MIN_GAP="${CODERABBIT_RETRY_MIN_GAP_SECONDS:-1500}"
+PRIORITY_LABEL="${CODERABBIT_RETRY_PRIORITY_LABEL-release-blocker}"
+PRIORITY=" $(printf '%s' "${CODERABBIT_RETRY_PRIORITY:-}" | tr ',' ' ') "
 STATE_DIR="${CODERABBIT_RETRY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/semitexa/coderabbit-retry}"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
@@ -62,8 +71,12 @@ fi
 
 while read -r repo number; do
     [ -n "$repo" ] || continue
-    head=$(gh api "repos/$repo/pulls/$number" --jq 'if .draft then "" else .head.sha end' 2>/dev/null) || continue
+    # Labels ride along as a JSON array, so a label with spaces stays one token.
+    pr=$(gh api "repos/$repo/pulls/$number" \
+        --jq 'if .draft then "" else .head.sha + " " + ([.labels[].name] | tojson) end' 2>/dev/null) || continue
+    head=${pr%% *}
     [ -n "$head" ] || continue
+    labels=${pr#* }
     checked=$((checked + 1))
     status=$(gh api "repos/$repo/commits/$head/status" \
         --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | .description][0] // ""' 2>/dev/null) || continue
@@ -71,7 +84,12 @@ while read -r repo number; do
 
     last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)
     [ $((now - last)) -ge "$MIN_GAP" ] || continue
-    candidates+=("$last $repo $number $head")
+    rank=1
+    case "$PRIORITY" in *" $repo#$number "*) rank=0 ;; esac
+    if [ -n "$PRIORITY_LABEL" ] && printf '%s' "$labels" | grep -qF "\"$PRIORITY_LABEL\""; then
+        rank=0
+    fi
+    candidates+=("$rank $last $repo $number $head")
 done <<< "$prs"
 
 if [ "${#candidates[@]}" -eq 0 ]; then
@@ -79,10 +97,12 @@ if [ "${#candidates[@]}" -eq 0 ]; then
     exit 0
 fi
 
-read -r _ repo number head < <(printf '%s\n' "${candidates[@]}" | sort -n | head -n 1)
+read -r rank _ repo number head < <(printf '%s\n' "${candidates[@]}" | sort -k1,1n -k2,2n | head -n 1)
+why=""
+[ "$rank" -eq 0 ] && why=", release blocker"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-    log "dry-run: would trigger $repo#$number at ${head:0:7} (${#candidates[@]} waiting)"
+    log "dry-run: would trigger $repo#$number at ${head:0:7} (${#candidates[@]} waiting$why)"
     exit 0
 fi
 
@@ -90,4 +110,4 @@ gh pr comment "$number" -R "$repo" --body "@coderabbitai review" >/dev/null
 # The mark of the PR that was PICKED — not whichever the loop scanned last,
 # which recorded the retry against the wrong PR.
 printf '%s\n' "$now" > "$(mark_for "$repo" "$number" "$head")"
-log "triggered $repo#$number at ${head:0:7} (${#candidates[@]} waiting)"
+log "triggered $repo#$number at ${head:0:7} (${#candidates[@]} waiting$why)"
