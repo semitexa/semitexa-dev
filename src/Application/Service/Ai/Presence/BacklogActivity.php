@@ -113,14 +113,24 @@ final class BacklogActivity
     {
         $cursorFile = $this->projectRoot . '/' . self::CURSORS . '/' . $me->id;
         $cursor = is_file($cursorFile) ? (int) @file_get_contents($cursorFile) : null;
-        $read = $this->readFrom($cursor);
+        // The first read starts at the beginning: a tail could cut off what came
+        // after the session's previous command.
+        $read = $this->readFrom($cursor ?? 0);
         if ($read === null) {
             return null;
         }
+        // Written by root (a running container) and by the host user (a one-off
+        // run) alike, like the project's own presence store. A cursor that could
+        // not move would tell the same news on every command: say nothing instead.
         $dir = dirname($cursorFile);
-        if (is_dir($dir) || @mkdir($dir, 0o777, true)) {
-            @file_put_contents($cursorFile, (string) $read['end'], LOCK_EX);
+        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
+            return null;
         }
+        @chmod($dir, 0o777);
+        if (@file_put_contents($cursorFile, (string) $read['end'], LOCK_EX) === false) {
+            return null;
+        }
+        @chmod($cursorFile, 0o666);
         $rows = $read['rows'];
         if ($cursor === null) {
             // First read for this session: what happened since its previous command,

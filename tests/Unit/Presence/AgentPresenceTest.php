@@ -41,14 +41,13 @@ final class AgentPresenceTest extends TestCase
         $this->root = sys_get_temp_dir() . '/semitexa-presence-' . uniqid();
         mkdir($this->root, 0o755, true);
         $this->envBefore = getenv(AgentRegistry::ENV);
-        foreach ([AgentRegistry::DIR_ENV, AgentRegistry::HOST_ROOT_ENV] as $name) {
+        foreach ([AgentRegistry::DIR_ENV, AgentRegistry::HOST_ROOT_ENV, AgentRegistry::IMPLICIT_ENV] as $name) {
             $this->presenceEnv[$name] = getenv($name);
         }
     }
 
     protected function tearDown(): void
     {
-        putenv(AgentRegistry::IMPLICIT_ENV);
         foreach ($this->presenceEnv as $name => $value) {
             $value === false ? putenv($name) : putenv($name . '=' . $value);
         }
@@ -580,6 +579,13 @@ final class AgentPresenceTest extends TestCase
         // Same second as the read above: a time cursor dropped this.
         $feed->record('noted on task', 'tk-1', 'two');
         self::assertSame(['tk-1'], array_column($feed->unread($me) ?? [], 'id'));
+
+        // A first read is not limited to the tail: what came after the previous command is all there.
+        $late = $registry->join('codex', 'a session that has not read the feed yet');
+        file_put_contents($this->root . '/' . BacklogActivity::FILE, str_repeat(json_encode(['at' => gmdate('c'), 'by' => 'claude-ffffff', 'action' => 'noted on task', 'id' => 'tk-bulk', 'summary' => str_repeat('x', 150)]) . "\n", 500), FILE_APPEND);
+        // 500 bulk lines and both earlier changes: same second as the join, which is included.
+        self::assertCount(502, $feed->unread($late) ?? [], 'past the 64 KiB tail, nothing cut off');
+        self::assertCount(500, $feed->unread($me) ?? []);
 
         // A line still being written is left for the next read.
         file_put_contents($this->root . '/' . BacklogActivity::FILE, '{"at":"2026-10-17T07:00:00+00:00","by":"codex-abc123","action":"moved', FILE_APPEND);
