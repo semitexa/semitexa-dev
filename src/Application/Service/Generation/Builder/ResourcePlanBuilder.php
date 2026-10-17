@@ -20,7 +20,7 @@ final class ResourcePlanBuilder
     ) {}
 
     /**
-     * @param array{module: string, name: string, handle: string, template?: string, withTemplate: bool, withAssets: bool, dryRun: bool} $params
+     * @param array{module: string, name: string, handle: string, template?: string, withTemplate: bool, withAssets: bool, dryRun: bool, uiTree?: string} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -57,6 +57,9 @@ final class ResourcePlanBuilder
             $twigContent = $this->renderer->render($twigTemplate, [
                 'pageName' => $studlyName,
                 'kebabName' => $kebabName,
+                // An exported UI tree (make:page --ui-tree), indented into the
+                // page body; empty leaves the template exactly as it was.
+                'uiTree' => self::indent($params['uiTree'] ?? '', '        '),
             ]);
             $twigPath = "src/modules/{$module}/src/Application/View/templates/pages/{$kebabName}.html.twig";
             $files[] = new PlannedFile($twigPath, $twigContent, FileType::TwigTemplate);
@@ -95,5 +98,15 @@ final class ResourcePlanBuilder
             files: $files,
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    private static function indent(string $twig, string $pad): string
+    {
+        if (trim($twig) === '') {
+            return '';
+        }
+        $lines = explode("\n", rtrim($twig, "\n"));
+
+        return implode('', array_map(static fn (string $line): string => ($line === '' ? '' : $pad . $line) . "\n", $lines));
     }
 }

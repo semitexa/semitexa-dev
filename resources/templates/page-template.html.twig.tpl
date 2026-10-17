@@ -6,5 +6,5 @@
 {% block main %}
     <div class="page-{{kebabName}}">
         <h1>{{ title | default('{{pageName}}') }}</h1>
-    </div>
+{{uiTree}}    </div>
 {% endblock %}

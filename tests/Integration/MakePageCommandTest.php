@@ -75,6 +75,50 @@ class MakePageCommandTest extends TestCase
         $this->assertNotContains('src/modules/Website/tests/Unit/PricingHandlerTest.php', $paths);
     }
 
+    public function test_an_exported_ui_tree_is_indented_into_the_page_body(): void
+    {
+        $twig = $this->pageTemplate("<div data-ui-tree>{{ component('platform.card', { title: 'A' }, {\n    body: primitive('platform.badge', { text: 'B' }),\n}) }}</div>\n");
+
+        $this->assertStringContainsString(
+            "        <h1>{{ title | default('Pricing') }}</h1>\n"
+            . "        <div data-ui-tree>{{ component('platform.card', { title: 'A' }, {\n"
+            . "            body: primitive('platform.badge', { text: 'B' }),\n"
+            . "        }) }}</div>\n"
+            . "    </div>",
+            $twig,
+        );
+    }
+
+    public function test_without_a_ui_tree_the_template_is_unchanged(): void
+    {
+        $this->assertStringContainsString("        <h1>{{ title | default('Pricing') }}</h1>\n    </div>", $this->pageTemplate(''));
+        $this->assertSame($this->pageTemplate(''), $this->pageTemplate(null));
+    }
+
+    private function pageTemplate(?string $uiTree): string
+    {
+        $params = [
+            'module' => 'Website',
+            'name' => 'Pricing',
+            'path' => '/pricing',
+            'method' => 'GET',
+            'access' => 'public',
+            'withAssets' => false,
+            'withTest' => false,
+            'dryRun' => false,
+        ];
+        if ($uiTree !== null) {
+            $params['uiTree'] = $uiTree;
+        }
+        $plan = (new PagePlanBuilder(new NameInflector(), new TemplateResolver(), new TemplateRenderer()))->build($params);
+        foreach ($plan->files as $file) {
+            if (str_ends_with($file->path, '/pages/pricing.html.twig')) {
+                return $file->content;
+            }
+        }
+        $this->fail('No page template planned');
+    }
+
     public function test_generates_page_with_assets(): void
     {
         $builder = new PagePlanBuilder(

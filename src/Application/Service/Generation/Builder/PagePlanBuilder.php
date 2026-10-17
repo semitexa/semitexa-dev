@@ -28,7 +28,7 @@ final class PagePlanBuilder
     }
 
     /**
-     * @param array{module: string, name: string, path: string, method: string, layout?: string, access: string, withAssets: bool, withTest?: bool, dryRun: bool} $params
+     * @param array{module: string, name: string, path: string, method: string, layout?: string, access: string, withAssets: bool, withTest?: bool, dryRun: bool, uiTree?: string} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -62,6 +62,7 @@ final class PagePlanBuilder
             'withTemplate' => true,
             'withAssets' => $params['withAssets'],
             'dryRun' => false,
+            'uiTree' => $params['uiTree'] ?? '',
         ]);
 
         $allFiles = array_merge(
