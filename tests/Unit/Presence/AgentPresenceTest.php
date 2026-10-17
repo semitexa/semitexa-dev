@@ -33,17 +33,25 @@ final class AgentPresenceTest extends TestCase
 {
     private string $root;
     private string|false $envBefore;
+    /** @var array<string, string|false> what the container exported, put back after each test */
+    private array $presenceEnv = [];
 
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/semitexa-presence-' . uniqid();
         mkdir($this->root, 0o755, true);
         $this->envBefore = getenv(AgentRegistry::ENV);
+        foreach ([AgentRegistry::DIR_ENV, AgentRegistry::HOST_ROOT_ENV] as $name) {
+            $this->presenceEnv[$name] = getenv($name);
+        }
     }
 
     protected function tearDown(): void
     {
         putenv(AgentRegistry::IMPLICIT_ENV);
+        foreach ($this->presenceEnv as $name => $value) {
+            $value === false ? putenv($name) : putenv($name . '=' . $value);
+        }
         $this->envBefore === false ? putenv(AgentRegistry::ENV) : putenv(AgentRegistry::ENV . '=' . $this->envBefore);
         exec('rm -rf ' . escapeshellarg($this->root));
     }
@@ -554,5 +562,40 @@ final class AgentPresenceTest extends TestCase
             }
             ProjectRoot::reset();
         }
+    }
+
+    #[Test]
+    public function the_feed_is_read_by_cursor_so_nothing_in_the_same_second_is_lost_or_told_twice(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $me = $registry->join('claude', 'reading the feed by cursor');
+        $feed = new BacklogActivity($this->root);
+        putenv(AgentRegistry::ENV . '=codex-abc123');
+        $feed->record('started task', 'tk-1', 'one');
+
+        $first = $feed->unread($registry->get($me->id) ?? self::fail('session'));
+        self::assertSame(['tk-1'], array_column($first ?? [], 'id'), 'joined before it, so it is news');
+        self::assertSame([], $feed->unread($me), 'and told once');
+
+        // Same second as the read above: a time cursor dropped this.
+        $feed->record('noted on task', 'tk-1', 'two');
+        self::assertSame(['tk-1'], array_column($feed->unread($me) ?? [], 'id'));
+
+        // A line still being written is left for the next read.
+        file_put_contents($this->root . '/' . BacklogActivity::FILE, '{"at":"2026-10-17T07:00:00+00:00","by":"codex-abc123","action":"moved', FILE_APPEND);
+        self::assertSame([], $feed->unread($me));
+        file_put_contents($this->root . '/' . BacklogActivity::FILE, ' task","id":"tk-2","summary":"x"}' . "\n", FILE_APPEND);
+        self::assertSame(['tk-2'], array_column($feed->unread($me) ?? [], 'id'));
+    }
+
+    #[Test]
+    public function a_task_moved_to_another_epic_is_news(): void
+    {
+        $feed = new BacklogActivity($this->root);
+        $task = new Task('tk-a', 'ep-a', 'a task', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-a', gmdate('c'), gmdate('c'));
+        $feed->taskSaved($task, $task->with(epicId: 'ep-b'));
+
+        $rows = $feed->since('2000-01-01T00:00:00+00:00', null);
+        self::assertSame([['moved task', 'from epic ep-a to epic ep-b']], array_map(static fn (array $r): array => [$r['action'], $r['summary']], $rows));
     }
 }

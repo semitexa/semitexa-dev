@@ -336,9 +336,22 @@ final class AgentRegistry
         $this->refuseLink($file);
         if (!$shared) {
             @chmod($dir, 0o777);
+            JsonFile::writeAtomic($file, $session->toArray());
+            @chmod($file, 0o666);
+
+            return;
         }
-        JsonFile::writeAtomic($file, $session->toArray());
-        @chmod($file, $shared ? 0o600 : 0o666);
+        // Owner only from the first byte: a chmod after the rename left the
+        // session readable by others for a moment, and a store that existed
+        // with wider permissions was never narrowed.
+        @chmod($dir, 0o700);
+        $mask = umask(0o077);
+        try {
+            JsonFile::writeAtomic($file, $session->toArray());
+        } finally {
+            umask($mask);
+        }
+        @chmod($file, 0o600);
     }
 
     /**
