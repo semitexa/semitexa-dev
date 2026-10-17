@@ -78,6 +78,9 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
             'path' => $storage->nodes->findById($payload->id) === null ? null : ['id' => $payload->id, 'path' => $browser->pathToEntry($payload->id)],
             'search' => ['query' => $payload->q] + $browser->searchPage($payload->q),
             'findings' => $browser->findings(),
+            // The list is read off the flow nodes; only the opened flow is traced (~1 s, all of them ~40 s).
+            'flows' => ['flows' => $browser->flows()],
+            'flow' => $browser->flow($payload->id),
             default => $browser->summary() + ['stale' => $this->graph->isStale()],
         };
 

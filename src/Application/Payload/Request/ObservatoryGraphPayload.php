@@ -27,7 +27,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 )]
 final class ObservatoryGraphPayload
 {
-    public const VIEWS = ['summary', 'node', 'subgraph', 'path', 'search', 'findings', 'traces'];
+    public const VIEWS = ['summary', 'node', 'subgraph', 'path', 'search', 'findings', 'traces', 'flows', 'flow'];
 
     public string $view = 'summary';
 

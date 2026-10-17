@@ -4,7 +4,8 @@ import { test, expect, Page } from '@playwright/test';
  * The Observatory's Graph view, end to end, under the strict policy the
  * consumer serves (see observatory-csp.spec.ts for why that is the default
  * here): switch to it, walk a route down to its handler, find a class, focus
- * it in the DAG, follow a finding, and come in from a trace span.
+ * it in the DAG, follow a finding, open a traced flow, and come in from a
+ * trace span.
  *
  * Needs a project graph. A stack that never ran `ai:review-graph:generate`
  * must still get a page that SAYS so — that branch is asserted instead.
@@ -82,6 +83,17 @@ test('the graph view walks, searches, focuses and follows findings under a stric
         await finding.click();
         await expect(page.locator('.gv-detail h3')).not.toContainText('ObservatoryHandler');
     }
+
+    // Flows: the list filters, a flow opens traced, and a step focuses its node.
+    await page.locator('.gv-tabs button', { hasText: 'Flows' }).click();
+    await page.locator('.gv-flow-filter').fill('ObservatoryGraphFlow');
+    await page.locator('.gv-find', { hasText: 'ObservatoryGraphFlow' }).first().click();
+    await expect(page.locator('.gv-flow-name')).toHaveText('ObservatoryGraphFlow');
+    await expect(page.locator('.gv-flow-verdict')).toBeVisible();
+    await page.locator('.gv-find', { hasText: 'ObservatoryGraphHandler' }).first().click();
+    await expect(page.locator('.gv-detail h3')).toContainText('ObservatoryGraphHandler');
+    await page.locator('.gv-flow-back').click();
+    await expect(page.locator('.gv-flow-filter')).toHaveValue('ObservatoryGraphFlow');
 
     // Nothing was refused: no script, no stylesheet, no inline style.
     expect(errors.filter((e) => /Refused|inline style|pageerror/i.test(e))).toEqual([]);
