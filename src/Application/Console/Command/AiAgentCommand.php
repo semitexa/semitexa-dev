@@ -74,10 +74,12 @@ final class AiAgentCommand extends BaseCommand
         $self = $envelope['session']['id'] ?? (getenv(AgentRegistry::ENV) ?: null);
         $live = $registry->all(false, $now);
         $envelope['agents'] = array_map(
-            static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self],
+            static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self, 'elsewhere' => $s->project !== $registry->project()],
             (bool) $input->getOption('all') ? $registry->all(true, $now) : $live,
         );
-        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now);
+        // Matched as host paths: packages/semitexa-site here is not the portal's,
+        // but a portal agent that declared ../semitexa.dev/packages/x claims x here.
+        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now, $registry->project());
         $envelope['stack'] = (new StackEvents($root))->recent(5, $now);
 
         return $this->emit($output, $input, $envelope, self::SUCCESS);
@@ -92,13 +94,21 @@ final class AiAgentCommand extends BaseCommand
             array_values(array_map('strval', (array) $input->getOption('repo'))),
         );
 
+        $leave = ['cmd' => 'ai:agent', 'args' => ['leave', '--json'], 'why' => 'when you are done, so nobody waits on you'];
+        if ($registry->isImplicit()) {
+            // bin/semitexa derived this id from the agent itself and passes it on
+            // every command: an export would be lost anyway (Claude Code starts a
+            // fresh shell per command) and is not needed.
+            return ['action' => 'join', 'session' => $session->toArray(), 'recognised' => true, 'next_command' => [$leave]];
+        }
+
         return [
             'action' => 'join',
             'session' => $session->toArray(),
             'export' => 'export ' . AgentRegistry::ENV . '=' . $session->id,
             'next_command' => [
                 ['cmd' => 'export', 'args' => [AgentRegistry::ENV . '=' . $session->id], 'why' => 'every ai:* command then keeps you listed as live; without it you go quiet in 15 minutes'],
-                ['cmd' => 'ai:agent', 'args' => ['leave', '--json'], 'why' => 'when you are done, so nobody waits on you'],
+                $leave,
             ],
         ];
     }
@@ -157,6 +167,10 @@ final class AiAgentCommand extends BaseCommand
             $output->writeln('Joined. Run:  ' . $envelope['export']);
             $output->writeln('');
         }
+        if (isset($envelope['recognised'])) {
+            $output->writeln('Joined as ' . $envelope['session']['id'] . ': bin/semitexa recognises this agent on every command, no export needed.');
+            $output->writeln('');
+        }
         $output->writeln('Agents working now:');
         $agents = $envelope['agents'] ?? [];
         if ($agents === []) {
@@ -164,9 +178,10 @@ final class AiAgentCommand extends BaseCommand
         }
         foreach ($agents as $a) {
             $output->writeln(sprintf(
-                '  %s%-16s %s — %s%s',
+                '  %s%-16s %s%s — %s%s',
                 $a['you'] ? '* ' : '  ',
                 $a['id'],
+                $a['elsewhere'] ? '[' . basename((string) $a['project']) . '] ' : '',
                 $a['live'] ? ($a['silent_s'] < 60 ? 'now' : intdiv($a['silent_s'], 60) . ' min ago') : ($a['ended_at'] !== null ? 'left' : 'quiet'),
                 $a['intent'],
                 ($a['task'] !== null ? '  [task ' . $a['task'] . ']' : '') . ($a['repos'] !== [] ? '  (' . implode(', ', $a['repos']) . ')' : ''),

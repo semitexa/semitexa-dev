@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Trace;
 
-use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -88,7 +89,8 @@ final class TraceAutoAppender
         // Every command that reports to a trace is also a sign of life for the
         // agent running it (ai:task, ai:context, ai:plan, make, ai:verify,
         // ai:epic): the agent does not have to remember a separate heartbeat.
-        (new AgentRegistry(ProjectRoot::get()))->beat();
+        // And where it hears what the other agents changed in the backlog meanwhile.
+        BacklogActivity::announce($output, new AgentRegistry(ProjectRoot::get()), ProjectRoot::get());
 
         $id = $this->resolveTraceId($input);
         if ($id === null) {

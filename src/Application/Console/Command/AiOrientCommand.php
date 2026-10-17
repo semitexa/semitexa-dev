@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentDocsFreshness;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Core\Attribute\AsCommand;
@@ -88,9 +89,10 @@ final class AiOrientCommand extends BaseCommand
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
 
         $workingNow = $this->workingNow();
-        if ($workingNow['you'] === null) {
+        if ($workingNow['you'] === null || !($workingNow['you']['joined'] ?? true)) {
             // Joining is how the others see you; it is first because an agent
-            // that skips it is the one the others have to guess about.
+            // that skips it is the one the others have to guess about. One that
+            // bin/semitexa recognised is listed already, but with no intent.
             array_unshift($hints['commands'], [
                 'cmd'  => 'ai:agent',
                 'args' => ['join', '--name=<claude|codex|…>', '--intent="<what you are about to do>"', '--repo=<repo you will edit>', '--json'],
@@ -365,7 +367,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>, unreadable: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, project: string, unclaimed_fresh: list<string>, unreadable: list<string>}
      */
     private function workingNow(): array
     {
@@ -376,11 +378,14 @@ final class AiOrientCommand extends BaseCommand
         $live = $registry->all(false, $now);
         $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
         $radar = new WorkspaceActivity(ProjectRoot::get());
-        $activity = $radar->dirtyRepos($live, $now);
+        // Repo paths are matched as host paths: an agent that joined in another
+        // project and edits this one's packages claims them too.
+        $activity = $radar->dirtyRepos($live, $now, $registry->project());
 
         return [
             'you' => $you?->toArray(),
-            'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now)], $others),
+            // Agents of other projects on this machine too: they edit the same packages.
+            'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now), 'elsewhere' => $a->project !== $registry->project()], $others),
             'activity' => $activity,
             // false: git is not available here, so "no edits" means unknown, not clean.
             'activity_known' => $radar->gitAvailable(),
@@ -389,6 +394,10 @@ final class AiOrientCommand extends BaseCommand
             // The shared stack's last lifecycle events: a restart took the server
             // and everyone's one-off containers down, and this says whose it was.
             'stack' => (new StackEvents(ProjectRoot::get()))->recent(3, $now),
+            // A stale manual is how a whole project's agents missed "Say you are
+            // here": nothing updated AGENTS.md before 2026-10-17.
+            'agent_docs' => (new AgentDocsFreshness(ProjectRoot::get()))->agentsMd(),
+            'project' => $registry->project(),
             'unclaimed_fresh' => array_values(array_map(
                 static fn (array $r): string => $r['repo'],
                 array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
@@ -401,12 +410,13 @@ final class AiOrientCommand extends BaseCommand
     }
 
     /**
-     * @param array{agents: list<array<string, mixed>>, you: ?array<string, mixed>} $workingNow
+     * @param array{agents: list<array<string, mixed>>, you: ?array<string, mixed>, project: string} $workingNow
      */
     private function holderOf(string $taskId, array $workingNow): ?string
     {
         foreach ([...$workingNow['agents'], ...($workingNow['you'] !== null ? [$workingNow['you']] : [])] as $agent) {
-            if (($agent['task'] ?? null) === $taskId) {
+            // The rule TaskClaim enforces (AgentSession::holds): the task's backlog, not where the agent joined.
+            if (($agent['task'] ?? null) === $taskId && (($agent['task_project'] ?? null) ?: ($agent['project'] ?? '')) === $workingNow['project']) {
                 return (string) $agent['id'];
             }
         }
@@ -617,9 +627,30 @@ final class AiOrientCommand extends BaseCommand
 
         $wn = $envelope['working_now'];
         $io->section('Working now');
-        $io->writeln('  you: ' . ($wn['you'] !== null ? $wn['you']['id'] . ' — ' . $wn['you']['intent'] : 'not joined — run ai:agent join so the others can see you'));
+        $io->writeln('  you: ' . match (true) {
+            $wn['you'] === null => 'not joined — run ai:agent join so the others can see you',
+            !($wn['you']['joined'] ?? true) => $wn['you']['id'] . ' — listed, but not joined: run ai:agent join so the others know what you are doing',
+            default => $wn['you']['id'] . ' — ' . $wn['you']['intent'],
+        });
+        $docsWarning = match ($wn['agent_docs'] ?? AgentDocsFreshness::UNKNOWN) {
+            AgentDocsFreshness::BEHIND => 'AGENTS.md is an older framework version: run bin/semitexa update — the rules you just read may be stale',
+            AgentDocsFreshness::EDITED => 'AGENTS.md matches no framework version (edited here): bin/semitexa update leaves AGENTS.md.new to merge',
+            AgentDocsFreshness::MISSING => 'AGENTS.md is missing: run bin/semitexa update',
+            default => null,
+        };
+        if ($docsWarning !== null) {
+            $io->writeln('  ⚠ ' . $docsWarning);
+        }
         foreach ($wn['agents'] as $a) {
-            $io->writeln(sprintf('  %s (%s, %d min ago): %s%s', $a['id'], $a['agent'], intdiv((int) $a['silent_s'], 60), $a['intent'], $a['task'] !== null ? '  [task ' . $a['task'] . ']' : ''));
+            $io->writeln(sprintf(
+                '  %s (%s%s, %d min ago): %s%s',
+                $a['id'],
+                $a['agent'],
+                $a['elsewhere'] ? ', in ' . basename((string) $a['project']) : '',
+                intdiv((int) $a['silent_s'], 60),
+                $a['intent'],
+                $a['task'] !== null ? '  [task ' . $a['task'] . ']' : '',
+            ));
         }
         if ($wn['agents'] === []) {
             $io->writeln('  no other agent has joined');
