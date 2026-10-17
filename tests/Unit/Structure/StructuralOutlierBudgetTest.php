@@ -80,7 +80,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // deferred door is handed the visitor's request, a subscribe carries
         // its patches opt-in. No new method.
         // +1 on 2026-10-16: the stream tells the exit drain it is one (InFlightRequests::streaming()).
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2104],
+        // +3 on 2026-10-17, recorded: the deferred door's two closures say their frame is
+        // array<string, mixed> and assert the Swoole response; three phpstan errors, no new method.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2107],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
@@ -183,7 +185,8 @@ final class StructuralOutlierBudgetTest extends TestCase
         // delegates whose targets already declared the shape, so each missing
         // annotation was TWO errors: the annotation itself and the argument
         // type at the delegation. Six lines, twelve errors, no new methods.
-        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 213],
+        // +1 on 2026-10-17: the same @param on deliver(), the last delegate without it.
+        'semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php' => [31, 214],
         // 762 -> 216, 29 -> 10 on 2026-10-04: the per-feed held-open stream and
         // its subscribe/unsubscribe/re-hydrate header intake are gone — feeds
         // ride KISS and are controlled through HUG (FeedStreamControl).
