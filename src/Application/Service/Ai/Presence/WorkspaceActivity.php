@@ -25,13 +25,14 @@ final class WorkspaceActivity
 
     /**
      * @param list<AgentSession> $live
+     * @param string|null $hostProject this project's host path; with it, sessions of other projects claim repos by host path
      *
      * A repo git could not read is listed with readable=false rather than
      * dropped: dropping it is exactly the "clean" it cannot vouch for.
      *
      * @return list<array{repo: string, readable: bool, dirty: int, last_edit: string, fresh: bool, sample: list<string>, claimed_by: list<string>}>
      */
-    public function dirtyRepos(array $live = [], ?int $now = null): array
+    public function dirtyRepos(array $live = [], ?int $now = null, ?string $hostProject = null): array
     {
         $now ??= time();
         $out = [];
@@ -59,8 +60,9 @@ final class WorkspaceActivity
             $claimedBy = [];
             foreach ($live as $session) {
                 foreach ($session->repos as $declared) {
-                    if (rtrim($declared, '/') === $repo) {
+                    if ($this->claims($session, $declared, $repo, $hostProject)) {
                         $claimedBy[] = $session->id;
+                        break;
                     }
                 }
             }
@@ -133,5 +135,38 @@ final class WorkspaceActivity
         }
 
         return array_values(array_filter($output, static fn (string $l): bool => trim($l) !== ''));
+    }
+
+    /**
+     * A declared repo is relative to the project its session joined in. With
+     * the host path of this project known, both sides resolve to host paths:
+     * packages/semitexa-site of the portal is not this one's, and a portal
+     * agent that declared ../semitexa.dev/packages/semitexa-dev claims it here.
+     */
+    private function claims(AgentSession $session, string $declared, string $repo, ?string $hostProject): bool
+    {
+        if ($hostProject === null || $session->project === '' || $session->project === $hostProject) {
+            return rtrim($declared, '/') === $repo;
+        }
+        $theirs = str_starts_with($declared, '/') ? $declared : $session->project . '/' . $declared;
+
+        return self::normalize($theirs) === self::normalize($hostProject . '/' . $repo);
+    }
+
+    private static function normalize(string $path): string
+    {
+        $parts = [];
+        foreach (explode('/', $path) as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+            if ($part === '..') {
+                array_pop($parts);
+                continue;
+            }
+            $parts[] = $part;
+        }
+
+        return '/' . implode('/', $parts);
     }
 }

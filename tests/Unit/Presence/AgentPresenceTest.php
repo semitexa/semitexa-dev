@@ -381,4 +381,64 @@ final class AgentPresenceTest extends TestCase
         }
         self::assertSame(AgentDocsFreshness::UNKNOWN, (new AgentDocsFreshness($this->root, $this->root . '/none.json'))->agentsMd(), 'no manifest, nothing to say');
     }
+
+    #[Test]
+    public function the_projects_own_store_is_still_read_and_the_shared_one_is_owner_only(): void
+    {
+        $cwd = getcwd();
+        $project = $this->root . '/app';
+        $shared = $this->root . '/home/agents';
+        mkdir($project . '/src/modules', 0o755, true);
+        file_put_contents($project . '/composer.json', '{}');
+        // A session from before the machine-wide store, and a record there that names no project.
+        $old = (new AgentRegistry($project))->join('codex', 'joined before the shared store');
+        $legacy = $project . '/' . AgentRegistry::SUBDIR . '/' . $old->id . '.json';
+        $row = json_decode((string) file_get_contents($legacy), true);
+        unset($row['project'], $row['task_project'], $row['joined']);
+        file_put_contents($legacy, json_encode($row));
+        mkdir($shared, 0o700, true);
+        file_put_contents($shared . '/codex-ffffff.json', json_encode(['id' => 'codex-ffffff', 'agent' => 'codex', 'intent' => 'no project named', 'beat_at' => gmdate('c'), 'started_at' => gmdate('c'), 'ended_at' => null]));
+        putenv(AgentRegistry::DIR_ENV . '=' . $shared);
+        putenv(AgentRegistry::HOST_ROOT_ENV . '=/host/app');
+        try {
+            chdir($project);
+            ProjectRoot::reset();
+            $registry = new AgentRegistry($project);
+
+            self::assertSame('/host/app', $registry->get($old->id)?->project, 'a legacy session is still this project\'s');
+            self::assertEqualsCanonicalizing([$old->id, 'codex-ffffff'], array_map(static fn (AgentSession $s): string => $s->id, $registry->all()));
+            self::assertSame([$old->id], array_map(static fn (AgentSession $s): string => $s->id, $registry->ofThisProject($registry->all())), 'a project-less record in the shared store is nobody\'s');
+
+            $mine = $registry->join('claude', 'joining into the shared store');
+            self::assertSame(0o600, fileperms($shared . '/' . $mine->id . '.json') & 0o777);
+
+            symlink($this->root . '/elsewhere', $shared . '/.lock');
+            $this->expectException(\RuntimeException::class);
+            $registry->locked(static fn (): null => null);
+        } finally {
+            putenv(AgentRegistry::DIR_ENV);
+            putenv(AgentRegistry::HOST_ROOT_ENV);
+            if ($cwd !== false) {
+                chdir($cwd);
+            }
+            ProjectRoot::reset();
+        }
+    }
+
+    #[Test]
+    public function a_repo_is_claimed_by_host_path_across_projects(): void
+    {
+        $repo = $this->root . '/packages/semitexa-dev';
+        mkdir($repo, 0o755, true);
+        exec('git -C ' . escapeshellarg($repo) . ' init -q 2>&1');
+        file_put_contents($repo . '/x.php', '<?php');
+        $at = static fn (string $project, array $repos): AgentSession => new AgentSession('claude-' . substr(md5($project . implode($repos)), 0, 6), 'claude', 'editing', null, $repos, gmdate('c'), gmdate('c'), null, $project);
+
+        $visitor = $at('/h/portal', ['../dev/packages/semitexa-dev']);
+        $samePath = $at('/h/portal', ['packages/semitexa-dev']);
+        $local = $at('/h/dev', ['packages/semitexa-dev']);
+
+        $claimed = (new WorkspaceActivity($this->root))->dirtyRepos([$visitor, $samePath, $local], null, '/h/dev')[0]['claimed_by'];
+        self::assertEqualsCanonicalizing([$visitor->id, $local->id], $claimed, "the portal's own packages/semitexa-dev is not this one");
+    }
 }

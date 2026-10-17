@@ -47,6 +47,8 @@ final class AgentRegistry
 
     private readonly string $dir;
     private readonly string $project;
+    /** The project's own store, still read while the machine-wide one is used: sessions from before it. */
+    private readonly ?string $legacyDir;
 
     /**
      * @param string|null $dir the store; by default the machine-wide one when this is
@@ -56,8 +58,10 @@ final class AgentRegistry
     {
         $runsHere = self::isProcessRoot($projectRoot);
         $shared = $runsHere ? self::env(self::DIR_ENV) : null;
-        $this->dir = rtrim($dir ?? $shared ?? $projectRoot . '/' . self::SUBDIR, '/');
+        $own = $projectRoot . '/' . self::SUBDIR;
+        $this->dir = rtrim($dir ?? $shared ?? $own, '/');
         $this->project = ($runsHere ? self::env(self::HOST_ROOT_ENV) : null) ?? $projectRoot;
+        $this->legacyDir = $dir === null && $shared !== null && rtrim($shared, '/') !== $own ? $own : null;
     }
 
     /** The project this registry speaks for, as sessions record it. */
@@ -128,14 +132,22 @@ final class AgentRegistry
 
     public function get(string $id): ?AgentSession
     {
-        if (preg_match('/^[a-z0-9-]{1,40}$/', $id) !== 1 || !is_file($this->path($id))) {
+        if (preg_match('/^[a-z0-9-]{1,40}$/', $id) !== 1) {
             return null;
         }
-        try {
-            return AgentSession::fromArray(JsonFile::read($this->path($id)), $this->project);
-        } catch (\RuntimeException) {
-            return null;
+        foreach ($this->stores() as $store => $owner) {
+            $file = $store . '/' . $id . '.json';
+            if (!is_file($file)) {
+                continue;
+            }
+            try {
+                return AgentSession::fromArray(JsonFile::read($file), $owner);
+            } catch (\RuntimeException) {
+                return null;
+            }
         }
+
+        return null;
     }
 
     /**
@@ -238,17 +250,22 @@ final class AgentRegistry
     public function all(bool $includeGone = false, ?int $now = null): array
     {
         $now ??= time();
-        $out = [];
-        foreach (glob($this->dir . '/*.json') ?: [] as $file) {
-            try {
-                $session = AgentSession::fromArray(JsonFile::read($file), $this->project);
-            } catch (\RuntimeException) {
-                continue;
-            }
-            if ($includeGone || $session->isLive($now)) {
-                $out[] = $session;
+        $byId = [];
+        foreach ($this->stores() as $store => $owner) {
+            foreach (glob($store . '/*.json') ?: [] as $file) {
+                try {
+                    $session = AgentSession::fromArray(JsonFile::read($file), $owner);
+                } catch (\RuntimeException) {
+                    continue;
+                }
+                // A legacy session saved since then lives in both stores: the newer counts.
+                if (isset($byId[$session->id]) && strcmp($byId[$session->id]->beatAt, $session->beatAt) >= 0) {
+                    continue;
+                }
+                $byId[$session->id] = $session;
             }
         }
+        $out = array_values(array_filter($byId, static fn (AgentSession $s): bool => $includeGone || $s->isLive($now)));
         usort($out, static fn (AgentSession $a, AgentSession $b): int => strcmp($b->beatAt, $a->beatAt));
 
         return $out;
@@ -280,11 +297,15 @@ final class AgentRegistry
     public function locked(callable $fn): mixed
     {
         $dir = $this->dir;
-        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
+        if (!is_dir($dir) && !@mkdir($dir, $this->isShared() ? 0o700 : 0o777, true) && !is_dir($dir)) {
             throw new \RuntimeException("cannot create {$dir}");
         }
-        $handle = @fopen($dir . '/.lock', 'c');
-        @chmod($dir . '/.lock', 0o666);
+        $lock = $dir . '/.lock';
+        $this->refuseLink($lock);
+        $handle = @fopen($lock, 'c');
+        if (!$this->isShared()) {
+            @chmod($lock, 0o666);
+        }
         if ($handle === false || !flock($handle, LOCK_EX)) {
             throw new \RuntimeException("cannot lock {$dir}");
         }
@@ -302,13 +323,50 @@ final class AgentRegistry
         // container as root, a one-off container runs as the host user — so a
         // directory created by one must stay writable by the other, or the
         // second agent's heartbeats and claims fail silently.
+        //
+        // Not the machine-wide store: it sits in the user's home, the app runs
+        // as the host user, and another local user must not forge, end or take
+        // over sessions there — owner only, and never through a planted link.
         $dir = $this->dir;
-        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
+        $shared = $this->isShared();
+        if (!is_dir($dir) && !@mkdir($dir, $shared ? 0o700 : 0o777, true) && !is_dir($dir)) {
             throw new \RuntimeException("cannot create {$dir}");
         }
-        @chmod($dir, 0o777);
-        JsonFile::writeAtomic($this->path($session->id), $session->toArray());
-        @chmod($this->path($session->id), 0o666);
+        $file = $this->path($session->id);
+        $this->refuseLink($file);
+        if (!$shared) {
+            @chmod($dir, 0o777);
+        }
+        JsonFile::writeAtomic($file, $session->toArray());
+        @chmod($file, $shared ? 0o600 : 0o666);
+    }
+
+    /**
+     * Where sessions are read from, with the project a record that names none
+     * belongs to: in the machine-wide store nobody's (every project would
+     * otherwise claim it), in the project's own store this project's.
+     *
+     * @return array<string, string>
+     */
+    private function stores(): array
+    {
+        if (!$this->isShared()) {
+            return [$this->dir => $this->project];
+        }
+
+        return [$this->dir => ''] + ($this->legacyDir !== null ? [$this->legacyDir => $this->project] : []);
+    }
+
+    private function isShared(): bool
+    {
+        return $this->legacyDir !== null;
+    }
+
+    private function refuseLink(string $path): void
+    {
+        if (is_link($path)) {
+            throw new \RuntimeException("{$path} is a symbolic link; refusing to write presence through it");
+        }
     }
 
     private function path(string $id): string

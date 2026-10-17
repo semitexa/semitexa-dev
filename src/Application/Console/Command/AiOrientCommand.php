@@ -367,7 +367,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, unclaimed_fresh: list<string>, unreadable: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, project: string, unclaimed_fresh: list<string>, unreadable: list<string>}
      */
     private function workingNow(): array
     {
@@ -378,8 +378,9 @@ final class AiOrientCommand extends BaseCommand
         $live = $registry->all(false, $now);
         $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
         $radar = new WorkspaceActivity(ProjectRoot::get());
-        // Repo paths and task ids mean something only in their own project.
-        $activity = $radar->dirtyRepos($registry->ofThisProject($live), $now);
+        // Repo paths are matched as host paths: an agent that joined in another
+        // project and edits this one's packages claims them too.
+        $activity = $radar->dirtyRepos($live, $now, $registry->project());
 
         return [
             'you' => $you?->toArray(),
@@ -396,6 +397,7 @@ final class AiOrientCommand extends BaseCommand
             // A stale manual is how a whole project's agents missed "Say you are
             // here": nothing updated AGENTS.md before 2026-10-17.
             'agent_docs' => (new AgentDocsFreshness(ProjectRoot::get()))->agentsMd(),
+            'project' => $registry->project(),
             'unclaimed_fresh' => array_values(array_map(
                 static fn (array $r): string => $r['repo'],
                 array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
@@ -408,12 +410,13 @@ final class AiOrientCommand extends BaseCommand
     }
 
     /**
-     * @param array{agents: list<array<string, mixed>>, you: ?array<string, mixed>} $workingNow
+     * @param array{agents: list<array<string, mixed>>, you: ?array<string, mixed>, project: string} $workingNow
      */
     private function holderOf(string $taskId, array $workingNow): ?string
     {
         foreach ([...$workingNow['agents'], ...($workingNow['you'] !== null ? [$workingNow['you']] : [])] as $agent) {
-            if (($agent['task'] ?? null) === $taskId && !($agent['elsewhere'] ?? false)) {
+            // The rule TaskClaim enforces (AgentSession::holds): the task's backlog, not where the agent joined.
+            if (($agent['task'] ?? null) === $taskId && (($agent['task_project'] ?? null) ?: ($agent['project'] ?? '')) === $workingNow['project']) {
                 return (string) $agent['id'];
             }
         }

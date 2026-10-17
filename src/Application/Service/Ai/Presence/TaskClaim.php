@@ -44,6 +44,14 @@ final class TaskClaim
     {
         $self = $registry->current();
         $declared = getenv(AgentRegistry::ENV);
+        if ($self === null && $registry->isImplicit()) {
+            // bin/semitexa derived the id; unsetting it does nothing, it is derived again.
+            return sprintf(
+                'the presence store %s could not be written, so this claim would be recorded nowhere — fix its permissions, or set %s=0 to work without presence',
+                $registry->dir(),
+                AgentRegistry::IMPLICIT_ENV,
+            );
+        }
         if ($self === null && is_string($declared) && $declared !== '') {
             // The agent believes it is present; a claim made now would be
             // recorded nowhere and a second agent would get no refusal.

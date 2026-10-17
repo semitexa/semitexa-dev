@@ -77,8 +77,9 @@ final class AiAgentCommand extends BaseCommand
             static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self, 'elsewhere' => $s->project !== $registry->project()],
             (bool) $input->getOption('all') ? $registry->all(true, $now) : $live,
         );
-        // A repo path names a repo only in its own project: packages/semitexa-site here is not the portal's.
-        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($registry->ofThisProject($live), $now);
+        // Matched as host paths: packages/semitexa-site here is not the portal's,
+        // but a portal agent that declared ../semitexa.dev/packages/x claims x here.
+        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now, $registry->project());
         $envelope['stack'] = (new StackEvents($root))->recent(5, $now);
 
         return $this->emit($output, $input, $envelope, self::SUCCESS);
