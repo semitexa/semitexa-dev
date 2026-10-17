@@ -30,9 +30,36 @@ final class PayloadPlanBuilder
     ) {}
 
     private const EXPOSE_AS_GRAPHQL_FQCN = 'Semitexa\\Graphql\\Attribute\\ExposeAsGraphql';
+    private const VALIDATABLE_PAYLOAD_FQCN = 'Semitexa\\Core\\Contract\\ValidatablePayloadInterface';
+    private const PRESENCE_VALIDATION_TRAIT_FQCN = 'Semitexa\\Core\\Validation\\Trait\\PresenceValidationTrait';
 
     /**
-     * @param array{module: string, name: string, path: string, method: string, response: string, access: string, dryRun: bool, graphql?: bool, graphqlField?: ?string} $params
+     * Starter body for `validation=true`, shaped after the ValidationDemo
+     * payloads: one category trait in, an empty error map out.
+     */
+    private const VALIDATION_BODY = <<<'PHP'
+            use PresenceValidationTrait;
+
+            /**
+             * Cross-field validation, run once after hydration. Other category
+             * traits live next to PresenceValidationTrait in
+             * Semitexa\Core\Validation\Trait (String, Format, Choice, Collection, ...).
+             *
+             * @return array<string, list<string>>
+             */
+            public function validate(): array
+            {
+                $errors = [];
+
+                // $this->validateNotBlank($errors, 'name', $this->name);
+
+                return $errors;
+            }
+
+        PHP;
+
+    /**
+     * @param array{module: string, name: string, path: string, method: string, response: string, access: string, dryRun: bool, graphql?: bool, graphqlField?: ?string, validation?: bool} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -72,6 +99,17 @@ final class PayloadPlanBuilder
             $graphqlAttribute = $this->renderGraphqlAttribute($params['graphqlField'] ?? null);
         }
 
+        // Opt-in validation scaffold. Empty values collapse both placeholders,
+        // so the default output stays byte-identical.
+        $implements = '';
+        $validationBody = '';
+        if (!empty($params['validation'])) {
+            $imports[] = 'use ' . self::VALIDATABLE_PAYLOAD_FQCN . ';';
+            $imports[] = 'use ' . self::PRESENCE_VALIDATION_TRAIT_FQCN . ';';
+            $implements = ' implements ValidatablePayloadInterface';
+            $validationBody = self::VALIDATION_BODY;
+        }
+
         sort($imports);
 
         $template = $this->templateResolver->resolve('payload.php.tpl');
@@ -87,6 +125,8 @@ final class PayloadPlanBuilder
             // attribute line carries its OWN trailing newline so `class` stays on
             // the next line with no blank gap.
             'graphqlAttribute' => $graphqlAttribute,
+            'implements' => $implements,
+            'validationBody' => $validationBody,
         ], 'make:payload');
 
         $filePath = "src/modules/{$module}/src/Application/Payload/Request/{$payloadClass}.php";
