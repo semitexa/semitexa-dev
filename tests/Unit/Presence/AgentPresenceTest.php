@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Presence;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentDocsFreshness;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
 use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
@@ -358,5 +359,26 @@ final class AgentPresenceTest extends TestCase
         putenv(AgentRegistry::ENV . '=claude-a339fb');
         self::assertNull($registry->current(), 'an exported id of a missing session stays missing');
         self::assertSame([], $registry->all());
+    }
+
+    #[Test]
+    public function an_agents_md_the_framework_moved_past_or_that_was_edited_is_named(): void
+    {
+        // The portal's AGENTS.md was five months old and lacked "Say you are
+        // here": nothing ever updated it (2026-10-17).
+        $manifest = $this->root . '/manifest.json';
+        file_put_contents($manifest, json_encode(['files' => [[
+            'path' => 'AGENTS.md',
+            'current_sha256' => hash('sha256', "new manual\n"),
+            'previous_sha256' => [hash('sha256', "old manual\n")],
+        ]]]));
+        $docs = new AgentDocsFreshness($this->root, $manifest);
+
+        self::assertSame(AgentDocsFreshness::MISSING, $docs->agentsMd());
+        foreach (["new manual\n" => AgentDocsFreshness::CURRENT, "old manual\n" => AgentDocsFreshness::BEHIND, "old manual, edited\n" => AgentDocsFreshness::EDITED] as $content => $state) {
+            file_put_contents($this->root . '/AGENTS.md', $content);
+            self::assertSame($state, $docs->agentsMd());
+        }
+        self::assertSame(AgentDocsFreshness::UNKNOWN, (new AgentDocsFreshness($this->root, $this->root . '/none.json'))->agentsMd(), 'no manifest, nothing to say');
     }
 }

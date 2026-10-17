@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentDocsFreshness;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Core\Attribute\AsCommand;
@@ -366,7 +367,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, unclaimed_fresh: list<string>, unreadable: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, unclaimed_fresh: list<string>, unreadable: list<string>}
      */
     private function workingNow(): array
     {
@@ -392,6 +393,9 @@ final class AiOrientCommand extends BaseCommand
             // The shared stack's last lifecycle events: a restart took the server
             // and everyone's one-off containers down, and this says whose it was.
             'stack' => (new StackEvents(ProjectRoot::get()))->recent(3, $now),
+            // A stale manual is how a whole project's agents missed "Say you are
+            // here": nothing updated AGENTS.md before 2026-10-17.
+            'agent_docs' => (new AgentDocsFreshness(ProjectRoot::get()))->agentsMd(),
             'unclaimed_fresh' => array_values(array_map(
                 static fn (array $r): string => $r['repo'],
                 array_filter($activity, static fn (array $r): bool => $r['fresh'] && $r['claimed_by'] === []),
@@ -625,6 +629,15 @@ final class AiOrientCommand extends BaseCommand
             !($wn['you']['joined'] ?? true) => $wn['you']['id'] . ' — listed, but not joined: run ai:agent join so the others know what you are doing',
             default => $wn['you']['id'] . ' — ' . $wn['you']['intent'],
         });
+        $docsWarning = match ($wn['agent_docs'] ?? AgentDocsFreshness::UNKNOWN) {
+            AgentDocsFreshness::BEHIND => 'AGENTS.md is an older framework version: run bin/semitexa update — the rules you just read may be stale',
+            AgentDocsFreshness::EDITED => 'AGENTS.md matches no framework version (edited here): bin/semitexa update leaves AGENTS.md.new to merge',
+            AgentDocsFreshness::MISSING => 'AGENTS.md is missing: run bin/semitexa update',
+            default => null,
+        };
+        if ($docsWarning !== null) {
+            $io->writeln('  ⚠ ' . $docsWarning);
+        }
         foreach ($wn['agents'] as $a) {
             $io->writeln(sprintf(
                 '  %s (%s%s, %d min ago): %s%s',
