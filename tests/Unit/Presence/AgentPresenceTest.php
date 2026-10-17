@@ -483,10 +483,10 @@ final class AgentPresenceTest extends TestCase
         $recorded = json_decode((string) array_slice(file($file) ?: [], -1)[0], true);
         self::assertSame([$me->id, 'a title over lines'], [$recorded['by'], $recorded['summary']]);
 
-        // Rewind my last beat so the portal epic is news, then announce.
+        // Rewind my session so the portal epic is news, then announce.
         $path = $this->root . '/' . AgentRegistry::SUBDIR . '/' . $me->id . '.json';
         $row = json_decode((string) file_get_contents($path), true);
-        $row['beat_at'] = $since;
+        $row['started_at'] = $row['beat_at'] = $since;
         file_put_contents($path, json_encode($row));
         [$stdout, $stderr] = [fopen('php://memory', 'w+'), fopen('php://memory', 'w+')];
         $output = $this->consoleOutput($stdout, $stderr);
@@ -568,6 +568,8 @@ final class AgentPresenceTest extends TestCase
     {
         $registry = new AgentRegistry($this->root);
         $me = $registry->join('claude', 'reading the feed by cursor');
+        // Joined before every change below, so its first read counts them all whatever the clock does.
+        $late = $registry->join('codex', 'a session that has not read the feed yet');
         $feed = new BacklogActivity($this->root);
         putenv(AgentRegistry::ENV . '=codex-abc123');
         $feed->record('started task', 'tk-1', 'one');
@@ -581,9 +583,8 @@ final class AgentPresenceTest extends TestCase
         self::assertSame(['tk-1'], array_column($feed->unread($me) ?? [], 'id'));
 
         // A first read is not limited to the tail: what came after the previous command is all there.
-        $late = $registry->join('codex', 'a session that has not read the feed yet');
         file_put_contents($this->root . '/' . BacklogActivity::FILE, str_repeat(json_encode(['at' => gmdate('c'), 'by' => 'claude-ffffff', 'action' => 'noted on task', 'id' => 'tk-bulk', 'summary' => str_repeat('x', 150)]) . "\n", 500), FILE_APPEND);
-        // 500 bulk lines and both earlier changes: same second as the join, which is included.
+        // 500 bulk lines and both earlier changes, all after the join.
         self::assertCount(502, $feed->unread($late) ?? [], 'past the 64 KiB tail, nothing cut off');
         self::assertCount(500, $feed->unread($me) ?? []);
 
@@ -592,6 +593,24 @@ final class AgentPresenceTest extends TestCase
         self::assertSame([], $feed->unread($me));
         file_put_contents($this->root . '/' . BacklogActivity::FILE, ' task","id":"tk-2","summary":"x"}' . "\n", FILE_APPEND);
         self::assertSame(['tk-2'], array_column($feed->unread($me) ?? [], 'id'));
+    }
+
+    #[Test]
+    public function a_cursor_replaced_by_a_link_is_never_written_through(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $me = $registry->join('claude', 'reading the feed through a planted link');
+        $feed = new BacklogActivity($this->root);
+        $feed->record('started task', 'tk-1', 'one');
+        $dir = $this->root . '/' . BacklogActivity::CURSORS;
+        mkdir($dir, 0o777, true);
+        $victim = $this->root . '/victim';
+        file_put_contents($victim, 'untouched');
+        symlink($victim, $dir . '/' . $me->id);
+
+        self::assertNull($feed->unread($me), 'nothing told: the cursor cannot move');
+        self::assertSame('untouched', file_get_contents($victim));
+        self::assertSame('1777', substr(sprintf('%o', fileperms($dir)), -4), 'sticky: one user cannot swap the other\'s cursor');
     }
 
     #[Test]

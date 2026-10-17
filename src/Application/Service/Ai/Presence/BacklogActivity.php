@@ -122,20 +122,23 @@ final class BacklogActivity
         // Written by root (a running container) and by the host user (a one-off
         // run) alike, like the project's own presence store. A cursor that could
         // not move would tell the same news on every command: say nothing instead.
+        // Sticky, and never through a link: in a directory both users write, one
+        // must not swap the other's cursor for a link to a file it may not touch.
         $dir = dirname($cursorFile);
         if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
             return null;
         }
-        @chmod($dir, 0o777);
-        if (@file_put_contents($cursorFile, (string) $read['end'], LOCK_EX) === false) {
+        @chmod($dir, 0o1777);
+        if (is_link($cursorFile) || @file_put_contents($cursorFile, (string) $read['end'], LOCK_EX) === false) {
             return null;
         }
         @chmod($cursorFile, 0o666);
         $rows = $read['rows'];
         if ($cursor === null) {
-            // First read for this session: what happened since its previous command,
-            // that second included — told twice beats lost.
-            $from = strtotime($me->beatAt);
+            // First read for this session: what happened since it started, that
+            // second included — told twice beats lost. Not since its last beat: a
+            // first read whose cursor could not be written would move that boundary.
+            $from = strtotime($me->startedAt);
             $rows = array_filter($rows, static fn (array $r): bool => strtotime($r['at']) >= $from);
         }
 
