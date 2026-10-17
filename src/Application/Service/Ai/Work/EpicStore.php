@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 
 /**
  * File-backed store for epics under `<projectRoot>/var/ai-work/epics/`.
@@ -61,7 +62,15 @@ final class EpicStore
     public function save(Epic $epic): void
     {
         WorkId::assertValid($epic->id, 'epic id');
-        JsonFile::writeAtomic($this->pathFor($epic->id), $epic->toFileArray());
+        $path = $this->pathFor($epic->id);
+        try {
+            $before = is_file($path) ? Epic::fromArray(JsonFile::read($path)) : null;
+        } catch (\RuntimeException) {
+            $before = null;
+        }
+        JsonFile::writeAtomic($path, $epic->toFileArray());
+        // Where the backlog changes, the other agents hear of it.
+        (new BacklogActivity(ProjectRoot::get()))->epicSaved($before, $epic);
     }
 
     /**

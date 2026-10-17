@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Work;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 
 /**
  * File-backed store for tasks under `<projectRoot>/var/ai-work/tasks/`.
@@ -50,7 +51,15 @@ final class TaskStore
         WorkId::assertValid($task->id, 'task id');
         WorkId::assertValid($task->epicId, 'epic id');
         WorkId::assertValid($task->traceId, 'trace id');
-        JsonFile::writeAtomic($this->pathFor($task->id), $task->toArray());
+        $path = $this->pathFor($task->id);
+        try {
+            $before = is_file($path) ? Task::fromArray(JsonFile::read($path)) : null;
+        } catch (\RuntimeException) {
+            $before = null;
+        }
+        JsonFile::writeAtomic($path, $task->toArray());
+        // Where the backlog changes, the other agents hear of it.
+        (new BacklogActivity(ProjectRoot::get()))->taskSaved($before, $task);
     }
 
     /**

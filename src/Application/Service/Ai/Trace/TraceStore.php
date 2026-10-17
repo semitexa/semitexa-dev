@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Trace;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 
 /**
  * File-backed NDJSON trace store under `<projectRoot>/var/ai-traces/`.
@@ -130,6 +131,10 @@ final class TraceStore
             }
 
             flock($handle, LOCK_UN);
+            // A note is where an agent writes down what it found: the others hear of it.
+            if ($eventKind === TraceEventKind::NOTE && is_string($payload['note'] ?? null) && is_string($payload['task_id'] ?? null)) {
+                (new BacklogActivity(ProjectRoot::get()))->record('noted on task', $payload['task_id'], $payload['note']);
+            }
 
             return $event;
         } finally {

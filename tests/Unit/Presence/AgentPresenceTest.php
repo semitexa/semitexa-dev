@@ -6,13 +6,22 @@ namespace Semitexa\Dev\Tests\Unit\Presence;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\ConsoleSectionOutput;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Output\StreamOutput;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentDocsFreshness;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
+use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 
 /**
  * Two agents in one checkout used to learn about each other by collision —
@@ -440,5 +449,110 @@ final class AgentPresenceTest extends TestCase
 
         $claimed = (new WorkspaceActivity($this->root))->dirtyRepos([$visitor, $samePath, $local], null, '/h/dev')[0]['claimed_by'];
         self::assertEqualsCanonicalizing([$visitor->id, $local->id], $claimed, "the portal's own packages/semitexa-dev is not this one");
+    }
+
+    #[Test]
+    public function an_agent_hears_on_stderr_what_the_others_changed_in_the_backlog_since_its_last_command(): void
+    {
+        // A portal session opened an epic in this backlog about a defect it had
+        // found; the agent working here heard of it from the operator (2026-10-17).
+        $registry = new AgentRegistry($this->root);
+        $me = $registry->join('claude', 'working this backlog');
+        $portal = (new AgentRegistry($this->root . '/portal', $this->root . '/' . AgentRegistry::SUBDIR))->join('claude', 'releasing llms.txt');
+        $feed = new BacklogActivity($this->root);
+        $file = $this->root . '/' . BacklogActivity::FILE;
+
+        $line = static fn (string $at, ?string $by, string $action, string $id): string => json_encode(['at' => $at, 'by' => $by, 'action' => $action, 'id' => $id, 'summary' => 's']) . "\n";
+        file_put_contents($file, $line('2026-10-17T05:00:00+00:00', $portal->id, 'started epic', 'ep-before'));
+        $since = '2026-10-17T05:05:00+00:00';
+        file_put_contents($file, $line('2026-10-17T05:08:58+00:00', $portal->id, 'started epic', 'ep-llms-txt-site-contributors'), FILE_APPEND);
+        file_put_contents($file, $line('2026-10-17T05:09:00+00:00', $me->id, 'moved task', 'mine'), FILE_APPEND);
+        file_put_contents($file, $line('2026-10-17T05:09:01+00:00', null, 'noted on task', 'by-a-human'), FILE_APPEND);
+
+        self::assertSame(['ep-llms-txt-site-contributors', 'by-a-human'], array_column($feed->since($since, $me->id), 'id'), 'newer than my last command, and not mine');
+
+        putenv(AgentRegistry::ENV . '=' . $me->id);
+        $feed->record('started task', 'tk-new', "a   title\nover lines");
+        $recorded = json_decode((string) array_slice(file($file) ?: [], -1)[0], true);
+        self::assertSame([$me->id, 'a title over lines'], [$recorded['by'], $recorded['summary']]);
+
+        // Rewind my last beat so the portal epic is news, then announce.
+        $path = $this->root . '/' . AgentRegistry::SUBDIR . '/' . $me->id . '.json';
+        $row = json_decode((string) file_get_contents($path), true);
+        $row['beat_at'] = $since;
+        file_put_contents($path, json_encode($row));
+        [$stdout, $stderr] = [fopen('php://memory', 'w+'), fopen('php://memory', 'w+')];
+        $output = $this->consoleOutput($stdout, $stderr);
+        BacklogActivity::announce($output, $registry, $this->root);
+        rewind($stdout);
+        rewind($stderr);
+        $err = (string) stream_get_contents($stderr);
+
+        self::assertSame('', (string) stream_get_contents($stdout), 'never on stdout: JSON callers parse it');
+        self::assertStringContainsString('started epic ep-llms-txt-site-contributors', $err);
+        self::assertStringContainsString($portal->id . ' (portal)', $err);
+        self::assertStringNotContainsString('mine', $err);
+        self::assertNotSame($since, $registry->get($me->id)?->beatAt, 'and the agent is marked alive, so the same news is not told twice');
+    }
+
+    /**
+     * @param resource $stdout
+     * @param resource $stderr
+     */
+    private function consoleOutput($stdout, $stderr): ConsoleOutputInterface
+    {
+        return new class ($stdout, new StreamOutput($stderr)) extends StreamOutput implements ConsoleOutputInterface {
+            /** @param resource $stream */
+            public function __construct($stream, private OutputInterface $error)
+            {
+                parent::__construct($stream);
+            }
+
+            public function getErrorOutput(): OutputInterface
+            {
+                return $this->error;
+            }
+
+            public function setErrorOutput(OutputInterface $error): void
+            {
+                $this->error = $error;
+            }
+
+            public function section(): ConsoleSectionOutput
+            {
+                throw new \LogicException('not used');
+            }
+        };
+    }
+
+    #[Test]
+    public function the_backlog_is_echoed_where_it_is_written_whoever_writes_it(): void
+    {
+        $cwd = getcwd();
+        mkdir($this->root . '/src/modules', 0o755, true);
+        file_put_contents($this->root . '/composer.json', '{}');
+        try {
+            chdir($this->root);
+            ProjectRoot::reset();
+            $store = new TaskStore();
+            $task = new Task('tk-a', 'ep-a', 'a task', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-a', gmdate('c'), gmdate('c'));
+            $store->save($task);
+            $store->save($task->with(status: TaskStatus::IN_PROGRESS, nextStep: 'look at the handler'));
+            $store->save($task->with(status: TaskStatus::IN_PROGRESS, nextStep: 'look at the handler', updatedAt: gmdate('c')));
+            $traces = new TraceStore();
+            $traces->openOrCreate('tk-a');
+            $traces->append('tk-a', TraceEventKind::NOTE, "note on task 'tk-a'", ['task_id' => 'tk-a', 'note' => 'the defect is in the renderer']);
+            $traces->append('tk-a', TraceEventKind::VERIFY_RESULT, 'verify passed');
+
+            $rows = (new BacklogActivity($this->root))->since('2000-01-01T00:00:00+00:00', null);
+            self::assertSame(['started task', 'moved task', 'noted on task'], array_column($rows, 'action'), 'a save that moved nothing, and a verify, are not news');
+            self::assertSame('→ in_progress: look at the handler', $rows[1]['summary']);
+            self::assertSame('the defect is in the renderer', $rows[2]['summary']);
+        } finally {
+            if ($cwd !== false) {
+                chdir($cwd);
+            }
+            ProjectRoot::reset();
+        }
     }
 }

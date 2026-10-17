@@ -490,7 +490,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // otherwise) — the one place two agents in one checkout meet on the
         // same work. The logic is TaskClaim's; what landed here is the call,
         // its refusal, and the option. No new method.
-        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 704],
+        // 704 -> 707 on 2026-10-17: the command agents run most tells them what
+        // the other agents changed in the backlog (one call, two imports). The
+        // recording lives in the stores and BacklogActivity, not here.
+        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 707],
         // 933 -> 936 on 2026-10-07: lint:components joined the plan — one row
         // for the new component kind and one entry in each of the cross-file
         // and all-lints lists (the template row only grew a name). Data, not

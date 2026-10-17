@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
-use Semitexa\Core\Support\ProjectRoot;
-use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
+use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEvent;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
@@ -96,6 +98,7 @@ final class AiWorkCommand extends BaseCommand
     {
         $action = (string) $input->getArgument('action');
         $json = (bool) $input->getOption('json');
+        BacklogActivity::announce($output, new AgentRegistry(ProjectRoot::get()), ProjectRoot::get());
 
         return match ($action) {
             self::ACTION_START  => $this->start($input, $output, $json),
