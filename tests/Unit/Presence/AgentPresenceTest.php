@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Presence;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
 use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
@@ -216,5 +217,102 @@ final class AgentPresenceTest extends TestCase
 
         $codex = (new AgentRegistry($this->root))->join('codex', 'writing the demo article', ['packages/semitexa-demo']);
         self::assertSame([$codex->id], $activity->dirtyRepos([$codex])[0]['claimed_by']);
+    }
+
+    #[Test]
+    public function an_agent_of_another_project_is_seen_but_never_holds_this_projects_task(): void
+    {
+        // One machine-wide store, as bin/semitexa mounts it: a portal session
+        // edited the workspace's packages and backlog while the workspace said
+        // "nobody has joined" (2026-10-17).
+        $store = $this->root . '/store';
+        $portal = new AgentRegistry($this->root . '/portal', $store);
+        $dev = new AgentRegistry($this->root . '/dev', $store);
+        $theirs = $portal->join('claude', 'releasing the llms.txt contributors', ['packages/semitexa-site']);
+        $mine = $dev->join('claude', 'building the shared presence store');
+
+        $seen = array_map(static fn (AgentSession $s): string => $s->id, $dev->all());
+        sort($seen);
+        $expected = [$theirs->id, $mine->id];
+        sort($expected);
+        self::assertSame($expected, $seen, 'each project sees every agent on the machine');
+        self::assertSame($this->root . '/portal', $dev->get($theirs->id)?->project);
+        self::assertSame([$mine->id], array_map(static fn (AgentSession $s): string => $s->id, $dev->ofThisProject($dev->all())));
+
+        // Same task id, two backlogs: the portal's llms-2 is not this workspace's llms-2.
+        putenv(AgentRegistry::ENV . '=' . $theirs->id);
+        $portal->recordTask($portal->current() ?? self::fail('the portal session must be current'), 'llms-2');
+        self::assertNull($dev->holderOf('llms-2', $mine->id));
+        self::assertSame($theirs->id, $portal->holderOf('llms-2', null)?->id);
+    }
+
+    #[Test]
+    public function a_task_taken_in_another_projects_backlog_is_held_there_not_where_the_agent_joined(): void
+    {
+        // The portal session ran the workspace's bin/semitexa and took the
+        // workspace's llms-2: the claim must stop a workspace agent, not a portal one.
+        $store = $this->root . '/store';
+        $portal = new AgentRegistry($this->root . '/portal', $store);
+        $dev = new AgentRegistry($this->root . '/dev', $store);
+        $visitor = $portal->join('claude', 'releasing the llms.txt contributors');
+        $local = $dev->join('codex', 'working the workspace backlog');
+
+        $dev->recordTask($visitor, 'llms-2');
+
+        self::assertSame($visitor->id, $dev->holderOf('llms-2', $local->id)?->id);
+        self::assertNull($portal->holderOf('llms-2', null), "the portal's own llms-2 is free");
+
+        // A beat from the visitor's own project must not drop a task it holds elsewhere.
+        putenv(AgentRegistry::ENV . '=' . $visitor->id);
+        $portal->beat();
+        self::assertSame('llms-2', $portal->get($visitor->id)?->task);
+    }
+
+    #[Test]
+    public function a_record_written_before_sessions_named_a_project_belongs_to_its_store(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $session = $registry->join('codex', 'an agent from before the shared store');
+        $path = $this->root . '/' . AgentRegistry::SUBDIR . '/' . $session->id . '.json';
+        $row = json_decode((string) file_get_contents($path), true);
+        unset($row['project']);
+        file_put_contents($path, json_encode($row));
+
+        self::assertSame($this->root, $registry->get($session->id)?->project);
+        self::assertCount(1, $registry->ofThisProject($registry->all()));
+    }
+
+    #[Test]
+    public function only_the_project_the_process_runs_in_uses_the_mounted_store(): void
+    {
+        $cwd = getcwd();
+        $shared = $this->root . '/home/agents';
+        $project = $this->root . '/app';
+        mkdir($project . '/src/modules', 0o755, true);
+        file_put_contents($project . '/composer.json', '{}');
+        putenv(AgentRegistry::DIR_ENV . '=' . $shared);
+        putenv(AgentRegistry::HOST_ROOT_ENV . '=/home/dev/projects/app');
+        try {
+            // A scratch root (a test, a fixture) keeps its own store: it must not
+            // show up as a live agent to everyone on the machine.
+            $scratch = new AgentRegistry($this->root . '/scratch');
+            self::assertSame($this->root . '/scratch/' . AgentRegistry::SUBDIR, $scratch->dir());
+            self::assertSame($this->root . '/scratch', $scratch->project());
+
+            chdir($project);
+            ProjectRoot::reset();
+            $here = new AgentRegistry($project);
+            self::assertSame($shared, $here->dir());
+            self::assertSame('/home/dev/projects/app', $here->project(), 'inside the container every project is /var/www/html');
+            self::assertSame('/home/dev/projects/app', $here->join('claude', 'joining from inside a container')->project);
+            self::assertFileExists($shared . '/' . $here->all()[0]->id . '.json');
+        } finally {
+            putenv(AgentRegistry::DIR_ENV);
+            putenv(AgentRegistry::HOST_ROOT_ENV);
+            if ($cwd !== false) {
+                chdir($cwd);
+            }
+            ProjectRoot::reset();
+        }
     }
 }

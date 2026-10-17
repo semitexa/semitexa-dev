@@ -376,11 +376,13 @@ final class AiOrientCommand extends BaseCommand
         $live = $registry->all(false, $now);
         $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
         $radar = new WorkspaceActivity(ProjectRoot::get());
-        $activity = $radar->dirtyRepos($live, $now);
+        // Repo paths and task ids mean something only in their own project.
+        $activity = $radar->dirtyRepos($registry->ofThisProject($live), $now);
 
         return [
             'you' => $you?->toArray(),
-            'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now)], $others),
+            // Agents of other projects on this machine too: they edit the same packages.
+            'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now), 'elsewhere' => $a->project !== $registry->project()], $others),
             'activity' => $activity,
             // false: git is not available here, so "no edits" means unknown, not clean.
             'activity_known' => $radar->gitAvailable(),
@@ -406,7 +408,7 @@ final class AiOrientCommand extends BaseCommand
     private function holderOf(string $taskId, array $workingNow): ?string
     {
         foreach ([...$workingNow['agents'], ...($workingNow['you'] !== null ? [$workingNow['you']] : [])] as $agent) {
-            if (($agent['task'] ?? null) === $taskId) {
+            if (($agent['task'] ?? null) === $taskId && !($agent['elsewhere'] ?? false)) {
                 return (string) $agent['id'];
             }
         }
@@ -619,7 +621,15 @@ final class AiOrientCommand extends BaseCommand
         $io->section('Working now');
         $io->writeln('  you: ' . ($wn['you'] !== null ? $wn['you']['id'] . ' — ' . $wn['you']['intent'] : 'not joined — run ai:agent join so the others can see you'));
         foreach ($wn['agents'] as $a) {
-            $io->writeln(sprintf('  %s (%s, %d min ago): %s%s', $a['id'], $a['agent'], intdiv((int) $a['silent_s'], 60), $a['intent'], $a['task'] !== null ? '  [task ' . $a['task'] . ']' : ''));
+            $io->writeln(sprintf(
+                '  %s (%s%s, %d min ago): %s%s',
+                $a['id'],
+                $a['agent'],
+                $a['elsewhere'] ? ', in ' . basename((string) $a['project']) : '',
+                intdiv((int) $a['silent_s'], 60),
+                $a['intent'],
+                $a['task'] !== null ? '  [task ' . $a['task'] . ']' : '',
+            ));
         }
         if ($wn['agents'] === []) {
             $io->writeln('  no other agent has joined');

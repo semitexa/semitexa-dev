@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Presence;
 
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
 
 /**
- * Who is working in this workspace right now.
+ * Who is working on this machine right now.
  *
  * Several agents — Claude, Codex, anyone — share one checkout, one backlog and
  * one dev stack. Before this they could only infer each other: dirty files
@@ -16,17 +17,63 @@ use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
  * intent, every ai:* command it runs is a heartbeat, and any agent can list
  * the others.
  *
- * One JSON file per session under var/ai-work/agents/, beside the backlog it
- * describes, written atomically. A session nobody ended simply goes quiet and
- * stops counting as live after {@see AgentSession::LIVE_SECONDS}.
+ * One JSON file per session, written atomically. bin/semitexa mounts one
+ * store for every project on the machine (~/.semitexa/agents, beside the
+ * router registry) and names it in SEMITEXA_AGENTS_DIR: an agent started in a
+ * consumer project edits the workspace's packages and backlog too, and a
+ * per-project store hid it from everyone there (2026-10-17). Without the mount
+ * the store is the project's own var/ai-work/agents. Each session names its
+ * project: a task id or a repo path means something only in the project it
+ * came from, so claims and repo ownership never cross projects.
+ *
+ * A session nobody ended simply goes quiet and stops counting as live after
+ * {@see AgentSession::LIVE_SECONDS}.
  */
 final class AgentRegistry
 {
     public const SUBDIR = 'var/ai-work/agents';
     public const ENV = 'SEMITEXA_AGENT_SESSION';
+    /** The machine-wide store mounted into the container, set by docker-compose.yml. */
+    public const DIR_ENV = 'SEMITEXA_AGENTS_DIR';
+    /** The project's path on the host: inside the container every project is /var/www/html. */
+    public const HOST_ROOT_ENV = 'SEMITEXA_HOST_PROJECT_ROOT';
 
-    public function __construct(private readonly string $projectRoot)
+    private readonly string $dir;
+    private readonly string $project;
+
+    /**
+     * @param string|null $dir the store; by default the machine-wide one when this is
+     *        the project the process runs in, else (a scratch root: tests, fixtures) its own
+     */
+    public function __construct(string $projectRoot, ?string $dir = null)
     {
+        $runsHere = self::isProcessRoot($projectRoot);
+        $shared = $runsHere ? self::env(self::DIR_ENV) : null;
+        $this->dir = rtrim($dir ?? $shared ?? $projectRoot . '/' . self::SUBDIR, '/');
+        $this->project = ($runsHere ? self::env(self::HOST_ROOT_ENV) : null) ?? $projectRoot;
+    }
+
+    /** The project this registry speaks for, as sessions record it. */
+    public function project(): string
+    {
+        return $this->project;
+    }
+
+    public function dir(): string
+    {
+        return $this->dir;
+    }
+
+    /**
+     * Sessions of this registry's project only: what a task id or a repo path
+     * may be matched against.
+     *
+     * @param list<AgentSession> $sessions
+     * @return list<AgentSession>
+     */
+    public function ofThisProject(array $sessions): array
+    {
+        return array_values(array_filter($sessions, fn (AgentSession $s): bool => $s->project === $this->project));
     }
 
     /**
@@ -44,7 +91,7 @@ final class AgentRegistry
         }
 
         $now = gmdate('c');
-        $session = new AgentSession($agent . '-' . bin2hex(random_bytes(3)), $agent, $intent, null, array_values(array_unique($repos)), $now, $now);
+        $session = new AgentSession($agent . '-' . bin2hex(random_bytes(3)), $agent, $intent, null, array_values(array_unique($repos)), $now, $now, null, $this->project);
         $this->save($session);
 
         return $session;
@@ -56,7 +103,7 @@ final class AgentRegistry
             return null;
         }
         try {
-            return AgentSession::fromArray(JsonFile::read($this->path($id)));
+            return AgentSession::fromArray(JsonFile::read($this->path($id)), $this->project);
         } catch (\RuntimeException) {
             return null;
         }
@@ -81,7 +128,7 @@ final class AgentRegistry
      */
     public function recordTask(AgentSession $session, string $task): void
     {
-        $this->save($session->with(task: $task, beatAt: gmdate('c')));
+        $this->save($session->with(task: $task, beatAt: gmdate('c'), taskProject: $this->project));
     }
 
     /**
@@ -101,11 +148,12 @@ final class AgentRegistry
                 }
                 // A session that went quiet may have had its task taken over
                 // meanwhile; beating again must not make it a second holder.
-                $held = $task ?? $session->task;
+                // Only a task of this project's backlog can have been taken over here.
+                $held = $task ?? ($session->task !== null && $session->holds($session->task, $this->project) ? $session->task : null);
                 $lost = $held !== null && $this->holderOf($held, $session->id) !== null;
                 $this->save($lost
                     ? $session->with(clearTask: true, beatAt: gmdate('c'))
-                    : $session->with(task: $task, beatAt: gmdate('c')));
+                    : $session->with(task: $task, beatAt: gmdate('c'), taskProject: $task !== null ? $this->project : null));
             });
         } catch (\Throwable) {
         }
@@ -143,9 +191,9 @@ final class AgentRegistry
     {
         $now ??= time();
         $out = [];
-        foreach (glob($this->projectRoot . '/' . self::SUBDIR . '/*.json') ?: [] as $file) {
+        foreach (glob($this->dir . '/*.json') ?: [] as $file) {
             try {
-                $session = AgentSession::fromArray(JsonFile::read($file));
+                $session = AgentSession::fromArray(JsonFile::read($file), $this->project);
             } catch (\RuntimeException) {
                 continue;
             }
@@ -159,12 +207,13 @@ final class AgentRegistry
     }
 
     /**
-     * The live session other than $selfId that holds $task, if any.
+     * The live session other than $selfId that holds $task of this project's
+     * backlog, wherever that session joined.
      */
     public function holderOf(string $task, ?string $selfId, ?int $now = null): ?AgentSession
     {
         foreach ($this->all(false, $now) as $session) {
-            if ($session->task === $task && $session->id !== $selfId) {
+            if ($session->holds($task, $this->project) && $session->id !== $selfId) {
                 return $session;
             }
         }
@@ -182,7 +231,7 @@ final class AgentRegistry
      */
     public function locked(callable $fn): mixed
     {
-        $dir = $this->projectRoot . '/' . self::SUBDIR;
+        $dir = $this->dir;
         if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
             throw new \RuntimeException("cannot create {$dir}");
         }
@@ -205,7 +254,7 @@ final class AgentRegistry
         // container as root, a one-off container runs as the host user — so a
         // directory created by one must stay writable by the other, or the
         // second agent's heartbeats and claims fail silently.
-        $dir = $this->projectRoot . '/' . self::SUBDIR;
+        $dir = $this->dir;
         if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
             throw new \RuntimeException("cannot create {$dir}");
         }
@@ -216,6 +265,20 @@ final class AgentRegistry
 
     private function path(string $id): string
     {
-        return $this->projectRoot . '/' . self::SUBDIR . '/' . $id . '.json';
+        return $this->dir . '/' . $id . '.json';
+    }
+
+    private static function isProcessRoot(string $projectRoot): bool
+    {
+        $mine = realpath(ProjectRoot::get());
+
+        return $mine !== false && $mine === realpath($projectRoot);
+    }
+
+    private static function env(string $name): ?string
+    {
+        $value = getenv($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 }

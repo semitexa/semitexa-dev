@@ -74,10 +74,11 @@ final class AiAgentCommand extends BaseCommand
         $self = $envelope['session']['id'] ?? (getenv(AgentRegistry::ENV) ?: null);
         $live = $registry->all(false, $now);
         $envelope['agents'] = array_map(
-            static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self],
+            static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self, 'elsewhere' => $s->project !== $registry->project()],
             (bool) $input->getOption('all') ? $registry->all(true, $now) : $live,
         );
-        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now);
+        // A repo path names a repo only in its own project: packages/semitexa-site here is not the portal's.
+        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($registry->ofThisProject($live), $now);
         $envelope['stack'] = (new StackEvents($root))->recent(5, $now);
 
         return $this->emit($output, $input, $envelope, self::SUCCESS);
@@ -164,9 +165,10 @@ final class AiAgentCommand extends BaseCommand
         }
         foreach ($agents as $a) {
             $output->writeln(sprintf(
-                '  %s%-16s %s — %s%s',
+                '  %s%-16s %s%s — %s%s',
                 $a['you'] ? '* ' : '  ',
                 $a['id'],
+                $a['elsewhere'] ? '[' . basename((string) $a['project']) . '] ' : '',
                 $a['live'] ? ($a['silent_s'] < 60 ? 'now' : intdiv($a['silent_s'], 60) . ' min ago') : ($a['ended_at'] !== null ? 'left' : 'quiet'),
                 $a['intent'],
                 ($a['task'] !== null ? '  [task ' . $a['task'] . ']' : '') . ($a['repos'] !== [] ? '  (' . implode(', ', $a['repos']) . ')' : ''),

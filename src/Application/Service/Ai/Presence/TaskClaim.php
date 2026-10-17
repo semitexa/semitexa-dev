@@ -85,7 +85,7 @@ final class TaskClaim
         if ($holder !== null) {
             $registry->release($holder->id);
         }
-        if ($self !== null && $self->task === $taskId) {
+        if ($self !== null && $self->holds($taskId, $registry->project())) {
             $registry->release($self->id);
         }
 
