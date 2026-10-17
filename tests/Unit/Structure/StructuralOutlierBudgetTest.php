@@ -82,7 +82,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // +1 on 2026-10-16: the stream tells the exit drain it is one (InFlightRequests::streaming()).
         // +3 on 2026-10-17, recorded: the deferred door's two closures say their frame is
         // array<string, mixed> and assert the Swoole response; three phpstan errors, no new method.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2107],
+        // +14 on 2026-10-17, recorded (ep-make-it-work mw-2): a reconnect reuses the
+        // session id, so the held-open loop stops once a newer connection owns the
+        // session, deliver() queues locally only on the owning worker, and
+        // closeSession() reaps only the superseded connection's rows; no new method.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2123],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
