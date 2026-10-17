@@ -93,13 +93,21 @@ final class AiAgentCommand extends BaseCommand
             array_values(array_map('strval', (array) $input->getOption('repo'))),
         );
 
+        $leave = ['cmd' => 'ai:agent', 'args' => ['leave', '--json'], 'why' => 'when you are done, so nobody waits on you'];
+        if ($registry->isImplicit()) {
+            // bin/semitexa derived this id from the agent itself and passes it on
+            // every command: an export would be lost anyway (Claude Code starts a
+            // fresh shell per command) and is not needed.
+            return ['action' => 'join', 'session' => $session->toArray(), 'recognised' => true, 'next_command' => [$leave]];
+        }
+
         return [
             'action' => 'join',
             'session' => $session->toArray(),
             'export' => 'export ' . AgentRegistry::ENV . '=' . $session->id,
             'next_command' => [
                 ['cmd' => 'export', 'args' => [AgentRegistry::ENV . '=' . $session->id], 'why' => 'every ai:* command then keeps you listed as live; without it you go quiet in 15 minutes'],
-                ['cmd' => 'ai:agent', 'args' => ['leave', '--json'], 'why' => 'when you are done, so nobody waits on you'],
+                $leave,
             ],
         ];
     }
@@ -156,6 +164,10 @@ final class AiAgentCommand extends BaseCommand
         }
         if (isset($envelope['export'])) {
             $output->writeln('Joined. Run:  ' . $envelope['export']);
+            $output->writeln('');
+        }
+        if (isset($envelope['recognised'])) {
+            $output->writeln('Joined as ' . $envelope['session']['id'] . ': bin/semitexa recognises this agent on every command, no export needed.');
             $output->writeln('');
         }
         $output->writeln('Agents working now:');

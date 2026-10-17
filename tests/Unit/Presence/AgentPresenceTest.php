@@ -33,6 +33,7 @@ final class AgentPresenceTest extends TestCase
 
     protected function tearDown(): void
     {
+        putenv(AgentRegistry::IMPLICIT_ENV);
         $this->envBefore === false ? putenv(AgentRegistry::ENV) : putenv(AgentRegistry::ENV . '=' . $this->envBefore);
         exec('rm -rf ' . escapeshellarg($this->root));
     }
@@ -314,5 +315,48 @@ final class AgentPresenceTest extends TestCase
             }
             ProjectRoot::reset();
         }
+    }
+
+    #[Test]
+    public function an_agent_bin_semitexa_recognised_is_listed_from_its_first_command_without_joining(): void
+    {
+        // Claude Code starts a fresh shell per command, so the export join
+        // prints is lost and the session read as "nobody has joined" (2026-10-17).
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+
+        $me = $registry->current();
+        self::assertNotNull($me);
+        self::assertSame(['claude-a339fb', 'claude', false], [$me->id, $me->agent, $me->joined]);
+        self::assertSame(['claude-a339fb'], array_map(static fn (AgentSession $s): string => $s->id, $registry->all()));
+        self::assertNull(TaskClaim::claim($this->root, 'tk-x', TaskStatus::IN_PROGRESS, false), 'it can take a task like a joined agent');
+
+        $joined = $registry->join('claude', 'building implicit presence', ['packages/semitexa-dev']);
+        self::assertSame('claude-a339fb', $joined->id, 'joining names the session it already reports to');
+        self::assertTrue($joined->joined);
+        self::assertSame('tk-x', $joined->task, 'and keeps the task it holds');
+        self::assertCount(1, $registry->all());
+
+        $registry->leave($joined->id);
+        self::assertNotNull($registry->get($joined->id)?->endedAt, 'leave ends the session');
+        $again = $registry->current();
+        self::assertNotNull($again, 'an agent that left and runs commands again is working again');
+        self::assertNull($again->endedAt);
+    }
+
+    #[Test]
+    public function an_id_bin_semitexa_did_not_derive_is_not_registered_on_its_behalf(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        foreach (['codex-a339fb', 'claude-a339fb-x', 'claude-ended'] as $id) {
+            putenv(AgentRegistry::ENV . '=' . $id);
+            self::assertNull($registry->current(), "'{$id}' is not the shape bin/semitexa derives for claude");
+        }
+        putenv(AgentRegistry::IMPLICIT_ENV);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        self::assertNull($registry->current(), 'an exported id of a missing session stays missing');
+        self::assertSame([], $registry->all());
     }
 }

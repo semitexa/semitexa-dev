@@ -31,6 +31,7 @@ final readonly class AgentSession
         public ?string $endedAt = null,
         public string $project = '',
         public ?string $taskProject = null,
+        public bool $joined = true,
     ) {
     }
 
@@ -63,6 +64,7 @@ final readonly class AgentSession
             $endedAt ?? $this->endedAt,
             $this->project,
             $clearTask ? null : ($task !== null ? $taskProject : $this->taskProject),
+            $this->joined,
         );
     }
 
@@ -80,6 +82,7 @@ final readonly class AgentSession
             'ended_at' => $this->endedAt,
             'project' => $this->project,
             'task_project' => $this->taskProject,
+            'joined' => $this->joined,
         ];
     }
 
@@ -100,6 +103,7 @@ final readonly class AgentSession
             is_string($row['ended_at'] ?? null) ? $row['ended_at'] : null,
             is_string($row['project'] ?? null) && $row['project'] !== '' ? $row['project'] : $project,
             is_string($row['task_project'] ?? null) && $row['task_project'] !== '' ? $row['task_project'] : null,
+            ($row['joined'] ?? true) !== false,
         );
     }
 }

@@ -88,9 +88,10 @@ final class AiOrientCommand extends BaseCommand
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
 
         $workingNow = $this->workingNow();
-        if ($workingNow['you'] === null) {
+        if ($workingNow['you'] === null || !($workingNow['you']['joined'] ?? true)) {
             // Joining is how the others see you; it is first because an agent
-            // that skips it is the one the others have to guess about.
+            // that skips it is the one the others have to guess about. One that
+            // bin/semitexa recognised is listed already, but with no intent.
             array_unshift($hints['commands'], [
                 'cmd'  => 'ai:agent',
                 'args' => ['join', '--name=<claude|codex|…>', '--intent="<what you are about to do>"', '--repo=<repo you will edit>', '--json'],
@@ -619,7 +620,11 @@ final class AiOrientCommand extends BaseCommand
 
         $wn = $envelope['working_now'];
         $io->section('Working now');
-        $io->writeln('  you: ' . ($wn['you'] !== null ? $wn['you']['id'] . ' — ' . $wn['you']['intent'] : 'not joined — run ai:agent join so the others can see you'));
+        $io->writeln('  you: ' . match (true) {
+            $wn['you'] === null => 'not joined — run ai:agent join so the others can see you',
+            !($wn['you']['joined'] ?? true) => $wn['you']['id'] . ' — listed, but not joined: run ai:agent join so the others know what you are doing',
+            default => $wn['you']['id'] . ' — ' . $wn['you']['intent'],
+        });
         foreach ($wn['agents'] as $a) {
             $io->writeln(sprintf(
                 '  %s (%s%s, %d min ago): %s%s',

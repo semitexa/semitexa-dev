@@ -37,6 +37,13 @@ final class AgentRegistry
     public const DIR_ENV = 'SEMITEXA_AGENTS_DIR';
     /** The project's path on the host: inside the container every project is /var/www/html. */
     public const HOST_ROOT_ENV = 'SEMITEXA_HOST_PROJECT_ROOT';
+    /**
+     * Set by bin/semitexa beside a session id it derived itself (Claude Code's
+     * session id, an agent CLI ancestor) for an agent that exported none: the
+     * agent's name, and leave to register that session on first use.
+     */
+    public const IMPLICIT_ENV = 'SEMITEXA_AGENT_IMPLICIT';
+    public const UNJOINED_INTENT = 'not joined: said nothing about what it is doing';
 
     private readonly string $dir;
     private readonly string $project;
@@ -91,10 +98,32 @@ final class AgentRegistry
         }
 
         $now = gmdate('c');
-        $session = new AgentSession($agent . '-' . bin2hex(random_bytes(3)), $agent, $intent, null, array_values(array_unique($repos)), $now, $now, null, $this->project);
+        // An agent bin/semitexa already recognises keeps its id: joining names
+        // the session every one of its commands reports to, no export needed.
+        $implicit = $this->implicitId();
+        $before = $implicit !== null ? $this->get($implicit) : null;
+        $ongoing = $before !== null && $before->endedAt === null ? $before : null;
+        $session = new AgentSession(
+            $implicit ?? $agent . '-' . bin2hex(random_bytes(3)),
+            $agent,
+            $intent,
+            $ongoing?->task,
+            array_values(array_unique($repos)),
+            $ongoing->startedAt ?? $now,
+            $now,
+            null,
+            $this->project,
+            $ongoing?->taskProject,
+        );
         $this->save($session);
 
         return $session;
+    }
+
+    /** Whether the id this process reports to was derived by bin/semitexa, not exported. */
+    public function isImplicit(): bool
+    {
+        return $this->implicitId() !== null;
     }
 
     public function get(string $id): ?AgentSession
@@ -119,7 +148,26 @@ final class AgentRegistry
 
         // An ended session is not "you" any more: after `ai:agent leave` it
         // would otherwise still answer beats and claims it can no longer hold.
-        return $session !== null && $session->endedAt === null ? $session : null;
+        if ($session !== null && $session->endedAt === null) {
+            return $session;
+        }
+
+        // An agent bin/semitexa recognised but that never joined, or that left
+        // and is working again: it shows up from its first command.
+        $implicit = $this->implicitId();
+        if ($implicit === null) {
+            return null;
+        }
+        $now = gmdate('c');
+        $agent = (string) self::env(self::IMPLICIT_ENV);
+        $session = new AgentSession($implicit, $agent, self::UNJOINED_INTENT, null, [], $now, $now, null, $this->project, null, false);
+        try {
+            $this->save($session);
+        } catch (\RuntimeException) {
+            return null;
+        }
+
+        return $session;
     }
 
     /**
@@ -266,6 +314,21 @@ final class AgentRegistry
     private function path(string $id): string
     {
         return $this->dir . '/' . $id . '.json';
+    }
+
+    /**
+     * The exported session id when bin/semitexa derived it: shaped
+     * <agent>-<6 hex>, with the agent named in SEMITEXA_AGENT_IMPLICIT.
+     */
+    private function implicitId(): ?string
+    {
+        $agent = self::env(self::IMPLICIT_ENV);
+        $id = self::env(self::ENV);
+        if ($agent === null || $id === null || preg_match('/^[a-z][a-z0-9-]{0,15}$/', $agent) !== 1) {
+            return null;
+        }
+
+        return preg_match('/^' . preg_quote($agent, '/') . '-[0-9a-f]{6}$/', $id) === 1 ? $id : null;
     }
 
     private static function isProcessRoot(string $projectRoot): bool
