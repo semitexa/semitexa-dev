@@ -90,10 +90,24 @@ final class AiBacklogCommand extends BaseCommand
             'quality' => $this->hygiene->assessTask($t)->quality->value,
         ]);
 
+        // Advice, not a gate: a count with no command beside it (AGENTS.md §3).
+        $warnings = [];
+        foreach ($epics as $e) {
+            foreach ($this->hygiene->assessEpic($e)->warnings as $w) {
+                $warnings[$w][] = $e->id;
+            }
+        }
+        foreach ($tasks as $t) {
+            foreach ($this->hygiene->assessTask($t)->warnings as $w) {
+                $warnings[$w][] = $t->id;
+            }
+        }
+
         $envelope = [
             'artifact' => 'semitexa.ai-work.backlog-stats/v1',
             'epics'    => $epicStats,
             'tasks'    => $taskStats,
+            'warnings' => $warnings,
         ];
 
         if ($jsonMode) {

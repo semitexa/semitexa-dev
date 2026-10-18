@@ -18,12 +18,15 @@ final readonly class HygieneAssessment
 {
     /**
      * @param list<string> $issues
+     * @param list<string> $warnings advice that never changes the quality —
+     *        e.g. {@see NumberProvenance::WARNING}
      */
     public function __construct(
         public BacklogQuality $quality,
         public array $issues,
         public ?string $suggestedStatus,
         public ?string $suggestedAction,
+        public array $warnings = [],
     ) {}
 
     public function hasIssue(string $slug): bool

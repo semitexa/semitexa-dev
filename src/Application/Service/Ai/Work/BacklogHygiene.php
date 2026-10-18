@@ -102,7 +102,9 @@ final class BacklogHygiene
             default => [null, null],
         };
 
-        return new HygieneAssessment($quality, $issues, $suggestedStatus, $suggestedAction);
+        $warnings = $epic->status->isActive() && NumberProvenance::bare($epic->goal) ? [NumberProvenance::WARNING] : [];
+
+        return new HygieneAssessment($quality, $issues, $suggestedStatus, $suggestedAction, $warnings);
     }
 
     public function assessTask(Task $task): HygieneAssessment
@@ -146,8 +148,9 @@ final class BacklogHygiene
                 => [TaskStatus::DISCARDED->value, 'discard placeholder task'],
             default => [null, null],
         };
+        $warnings = $task->status->isActive() && NumberProvenance::bare($task->nextStep) ? [NumberProvenance::WARNING] : [];
 
-        return new HygieneAssessment($quality, $issues, $suggestedStatus, $suggestedAction);
+        return new HygieneAssessment($quality, $issues, $suggestedStatus, $suggestedAction, $warnings);
     }
 
     public function epicInScope(Epic $epic, HygieneAssessment $assessment, BacklogScope $scope): bool
