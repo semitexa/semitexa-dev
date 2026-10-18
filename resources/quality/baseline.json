@@ -91,13 +91,13 @@
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
                 "semitexa-rbac": 1,
-                "semitexa-ssr": 28,
+                "semitexa-ssr": 29,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
                 "semitexa-testing": 1,
                 "semitexa-theme": 1,
                 "semitexa-ultimate": 2,
-                "semitexa-update": 4,
+                "semitexa-update": 3,
                 "semitexa-webhooks": 15
             },
             "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
@@ -1373,6 +1373,23 @@
                 }
             },
             "reason": "semitexa-core RedisPoolRestartTest needs a real Redis to play a restart (CLIENT KILL); it skips only where no Redis is reachable, like the other Redis integration tests. It runs on the dev stack and in the release clone."
+        },
+        {
+            "at": "2026-10-18",
+            "metric": "tests.skip-calls",
+            "from": 161,
+            "to": 161,
+            "keys": {
+                "semitexa-ssr": {
+                    "from": 28,
+                    "to": 29
+                },
+                "semitexa-update": {
+                    "from": 4,
+                    "to": 3
+                }
+            },
+            "reason": "ssr SseAuthSessionMapOwnerTest runs its Lua compare-and-delete against the real Redis REDIS_HOST names and skips where none is reachable, the same guard as the semitexa-cache Redis integration tests; a stand-in for the script would test the stand-in."
         }
     ]
 }
