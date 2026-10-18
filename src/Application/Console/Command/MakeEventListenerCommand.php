@@ -10,12 +10,13 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\EventListenerPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
@@ -80,12 +81,13 @@ final class MakeEventListenerCommand extends BaseCommand
         ]);
 
         $module = $inflector->toStudly($input->getOption('module'));
+        $moduleNs = ModuleNamespace::of($module);
         $listenerClassName = $inflector->toStudly($input->getOption('name'));
-        $listenerFqcn = "Semitexa\\Modules\\{$module}\\Application\\Handler\\DomainListener\\{$listenerClassName}";
+        $listenerFqcn = "{$moduleNs}\\Application\\Handler\\DomainListener\\{$listenerClassName}";
         $eventInput = trim((string) $input->getOption('event'));
         $eventFqcn = str_contains($eventInput, '\\')
             ? ltrim($eventInput, '\\')
-            : "Semitexa\\Modules\\{$module}\\Domain\\Event\\" . $inflector->toStudly($eventInput);
+            : "{$moduleNs}\\Domain\\Event\\" . $inflector->toStudly($eventInput);
         $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'event', 'execution']);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());

@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class CommandPlanBuilder
@@ -25,6 +26,7 @@ final class CommandPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         // Single source of truth for command-class normalization. Handles
         // every input shape (sync, sync-command, sync_command, syncCommand,
         // SyncCommand, SYNC_COMMAND, synccommand) → SyncCommand, with no
@@ -33,7 +35,7 @@ final class CommandPlanBuilder
 
         // Canonical: Application/Console/Command/ — required by the
         // module-structure validator (see packages/semitexa-docs/docs/MODULE_STRUCTURE.md).
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Console\\Command";
+        $namespace = "{$moduleNs}\\Application\\Console\\Command";
 
         $imports = [
             'use Semitexa\\Core\\Attribute\\AsCommand;',

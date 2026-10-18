@@ -49,6 +49,7 @@ final class CommandPlanBuilderTest extends TestCase
         );
     }
 
+    // verify:accept-test-change a new module is generated under App\Modules, the canonical prefix (operator decision 18.10)
     #[Test]
     public function generated_namespace_matches_the_canonical_path(): void
     {
@@ -62,11 +63,11 @@ final class CommandPlanBuilderTest extends TestCase
 
         $content = $plan->files[0]->content;
         self::assertStringContainsString(
-            'namespace Semitexa\Modules\Catalog\Application\Console\Command;',
+            'namespace App\Modules\Catalog\Application\Console\Command;',
             $content,
         );
         self::assertStringNotContainsString(
-            'namespace Semitexa\Modules\Catalog\Application\Command;',
+            'namespace App\Modules\Catalog\Application\Command;',
             $content,
             'generator must not emit the deprecated Application\\Command namespace',
         );
@@ -140,6 +141,7 @@ final class CommandPlanBuilderTest extends TestCase
         ];
     }
 
+    // verify:accept-test-change a new module is generated under App\Modules, the canonical prefix (operator decision 18.10)
     /**
      * @dataProvider nameMatrix
      */
@@ -168,7 +170,7 @@ final class CommandPlanBuilderTest extends TestCase
 
         // 3. Namespace stays canonical
         self::assertStringContainsString(
-            'namespace Semitexa\Modules\Catalog\Application\Console\Command;',
+            'namespace App\Modules\Catalog\Application\Console\Command;',
             $file->content,
         );
 

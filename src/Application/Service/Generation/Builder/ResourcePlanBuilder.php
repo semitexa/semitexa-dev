@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class ResourcePlanBuilder
@@ -25,10 +26,11 @@ final class ResourcePlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $responseClass = $this->inflector->toResponseClass($params['name']);
         $kebabName = $this->inflector->toKebab($params['name']);
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response";
+        $namespace = "{$moduleNs}\\Application\\Resource\\Response";
         $templatePath = $params['template'] ?? "@project-layouts-{$module}/pages/{$kebabName}.html.twig";
 
         $imports = [

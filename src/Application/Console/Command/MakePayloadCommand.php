@@ -10,12 +10,13 @@ use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateDetector;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateGate;
 use Semitexa\Dev\Application\Service\Ai\Similarity\DuplicateQuery;
 use Semitexa\Dev\Application\Service\Ai\Similarity\SimilarityIndexBuilder;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
-use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
 use Semitexa\Dev\Application\Service\Generation\Builder\PayloadPlanBuilder;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
@@ -85,8 +86,9 @@ final class MakePayloadCommand extends BaseCommand
         ]);
 
         $module = $inflector->toStudly($input->getOption('module'));
+        $moduleNs = ModuleNamespace::of($module);
         $payloadClassName = $inflector->toPayloadClass($input->getOption('name'));
-        $payloadFqcn = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClassName}";
+        $payloadFqcn = "{$moduleNs}\\Application\\Payload\\Request\\{$payloadClassName}";
         $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'response', 'access', 'graphql-field'], ['graphql', 'with-validation']);
         $duplicateGate = new DuplicateGate();
         $detector = new DuplicateDetector((new SimilarityIndexBuilder($this->getProjectRoot()))->build());

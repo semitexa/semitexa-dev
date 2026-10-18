@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class PayloadPlanBuilder
@@ -76,9 +77,10 @@ final class PayloadPlanBuilder
         $payloadClass = $this->inflector->toPayloadClass($params['name']);
         $responseClass = $this->inflector->toResponseClass($params['response']);
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request";
-        $responseNamespace = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response";
+        $namespace = "{$moduleNs}\\Application\\Payload\\Request";
+        $responseNamespace = "{$moduleNs}\\Application\\Resource\\Response";
 
         $imports = [
             "use {$accessFqcn};",
