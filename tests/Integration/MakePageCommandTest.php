@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Console\Command\MakePageCommand;
 use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Tester\CommandTester;
 
 class MakePageCommandTest extends TestCase
 {
@@ -93,6 +96,35 @@ class MakePageCommandTest extends TestCase
     {
         $this->assertStringContainsString("        <h1>{{ title | default('Pricing') }}</h1>\n    </div>", $this->pageTemplate(''));
         $this->assertSame($this->pageTemplate(''), $this->pageTemplate(null));
+    }
+
+    public function test_an_unreadable_ui_tree_is_refused_in_the_generation_result_envelope(): void
+    {
+        $command = new MakePageCommand();
+        $command->setName('make:page');
+        $app = new Application();
+        $app->add($command);
+        $tester = new CommandTester($app->find('make:page'));
+
+        $exit = $tester->execute([
+            '--module' => 'UiPlayground',
+            '--name' => 'TreeRefusalProbe',
+            '--path' => '/tree-refusal-probe',
+            '--method' => 'GET',
+            '--ui-tree' => 'var/no-such-tree.json',
+            '--grant' => ['orders.view', 'orders.edit'],
+            '--json' => true,
+        ]);
+
+        $this->assertSame(1, $exit);
+        /** @var array<string, mixed> $envelope */
+        $envelope = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('semitexa-dev.generation-result/v1', $envelope['artifact']);
+        $this->assertSame('rejected', $envelope['result']['status']);
+        $this->assertSame('tree.unreadable', $envelope['result']['errors'][0]['reason']);
+        // Every grant replays, or the suggested re-run cannot export the tree.
+        $this->assertContains('--grant=orders.view', $envelope['result']['replay_args']);
+        $this->assertContains('--grant=orders.edit', $envelope['result']['replay_args']);
     }
 
     private function pageTemplate(?string $uiTree): string

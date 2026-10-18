@@ -26,8 +26,10 @@ final class ModuleNamespace
         $pattern = '/^namespace\s+(App|Semitexa)\\\\Modules\\\\' . preg_quote($module, '/') . '(?:\\\\|;)/m';
 
         foreach (self::phpFiles($dir) as $file) {
-            $head = @file_get_contents($file, false, null, 0, 4096);
-            if (is_string($head) && preg_match($pattern, $head, $match) === 1) {
+            // The whole file: a long license header or docblock can push the
+            // namespace declaration past any fixed-size head.
+            $source = @file_get_contents($file);
+            if (is_string($source) && preg_match($pattern, $source, $match) === 1) {
                 return $match[1] . '\\Modules\\' . $module;
             }
         }

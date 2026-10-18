@@ -18,6 +18,7 @@ use Semitexa\PlatformUi\Application\Service\Tree\UiTreeTwigExporter;
 use Semitexa\PlatformUi\Domain\Model\Tree\UiTreeError;
 use Semitexa\Ssr\Application\Service\Server\Lifecycle\WireCoreInstancesListener;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
+use Semitexa\Dev\Application\Service\Generation\Data\GenerationResult;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationExitCode;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationPreflight;
 use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRenderer;
@@ -85,6 +86,13 @@ final class MakePageCommand extends BaseCommand
         $renderer = new TemplateRenderer();
         $builder = new PagePlanBuilder($inflector, $resolver, $renderer);
         $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'path', 'method', 'layout', 'access', 'ui-tree'], ['with-assets', 'no-test']);
+        // --grant repeats, so it replays one argument per value: a tree that
+        // needed a permission to export needs it again on the --write run.
+        foreach ((array) $input->getOption('grant') as $grant) {
+            if (is_string($grant) && $grant !== '') {
+                $replayArgs[] = '--grant=' . $grant;
+            }
+        }
 
         $uiTree = '';
         $treeFile = $input->getOption('ui-tree');
@@ -92,8 +100,20 @@ final class MakePageCommand extends BaseCommand
             $exported = $this->exportUiTree($treeFile, (array) $input->getOption('grant'));
             if ($exported['twig'] === null) {
                 if ($input->getOption('json')) {
-                    $errors = array_map(static fn (UiTreeError $e): array => $e->toArray(), $exported['errors']);
-                    $output->writeln((string) json_encode(['command' => 'make:page', 'status' => 'refused', 'errors' => $errors], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), OutputInterface::OUTPUT_RAW);
+                    // The envelope every other refused generation uses, so a
+                    // caller reading result.status sees this one as rejected too.
+                    $refused = new GenerationResult(
+                        command: 'make:page',
+                        status: 'rejected',
+                        next_steps: ['Fix the UI tree errors listed under errors and re-run'],
+                        replay_args: $replayArgs,
+                        errors: array_map(static fn (UiTreeError $e): array => [
+                            'path' => $e->path,
+                            'reason' => $e->code,
+                            'detail' => self::uiTreeErrorDetail($e),
+                        ], $exported['errors']),
+                    );
+                    $output->writeln((new JsonResultFormatter())->formatRejection($refused, null, null), OutputInterface::OUTPUT_RAW);
                 } else {
                     $io->error('The UI tree was not exported; nothing was planned.');
                     foreach ($exported['errors'] as $error) {
@@ -324,6 +344,17 @@ final class MakePageCommand extends BaseCommand
         return $out;
     }
 
+    /** The message, what was expected against what came (when the error knows), then the hint. */
+    private static function uiTreeErrorDetail(UiTreeError $e): string
+    {
+        $detail = $e->message;
+        if ($e->expected !== null || $e->got !== null) {
+            $detail .= ' (expected ' . ($e->expected ?? '?') . ', got ' . ($e->got ?? '?') . ')';
+        }
+
+        return $e->hint === null ? $detail : $detail . ' ' . $e->hint;
+    }
+
     /**
      * Check a UI tree and write it out as Twig, the way ui:tree:render checks
      * and draws one: a one-shot command has no worker boot, so the listeners
@@ -345,9 +376,15 @@ final class MakePageCommand extends BaseCommand
             return ['twig' => null, 'errors' => [new UiTreeError('tree.no_runtime', '', 'The UI catalog is not available in this process.')]];
         }
         $context = new ServerLifecycleContext(server: null, workerId: null, environment: $environment, container: $this->container);
-        foreach ([new WireCoreInstancesListener(), new BootPlatformUiRegistryListener()] as $listener) {
-            $this->container->injectInto($listener);
-            $listener->handle($context);
+        // A boot that throws (a field type claiming a built-in name, say) is a
+        // tree that could not be checked: report it like any other refusal.
+        try {
+            foreach ([new WireCoreInstancesListener(), new BootPlatformUiRegistryListener()] as $listener) {
+                $this->container->injectInto($listener);
+                $listener->handle($context);
+            }
+        } catch (\Throwable $e) {
+            return ['twig' => null, 'errors' => [new UiTreeError('tree.no_runtime', '', 'The UI catalog failed to boot: ' . $e->getMessage())]];
         }
 
         UiPermissions::actAsHolding(UiPermissions::grantsOf($grants));

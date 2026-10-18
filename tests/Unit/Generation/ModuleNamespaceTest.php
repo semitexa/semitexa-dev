@@ -76,6 +76,14 @@ final class ModuleNamespaceTest extends TestCase
         self::assertSame('App\\Modules\\Hello', ModuleNamespace::of('Hello', $this->root));
     }
 
+    #[Test]
+    public function a_namespace_declared_after_a_long_header_is_still_found(): void
+    {
+        $this->classIn('Catalog', 'Domain/Model/Product.php', '/* ' . str_repeat('license text ', 800) . "*/\n\nnamespace Semitexa\\Modules\\Catalog\\Domain\\Model;");
+
+        self::assertSame('Semitexa\\Modules\\Catalog', ModuleNamespace::of('Catalog', $this->root));
+    }
+
     private function classIn(string $module, string $relative, string $namespace): void
     {
         $path = $this->root . '/src/modules/' . $module . '/src/' . $relative;

@@ -86,6 +86,9 @@ final class E2eSpecVerificationTest extends TestCase
         foreach (['../escape', '..', '.hidden'] as $run) {
             $malformed = (new E2eSpecResultCheck($this->root, $run))->check($this->target());
             self::assertSame(VerificationResult::STATUS_INCOMPLETE, $malformed->status, $run);
+            // The guard's own reason: without the run-id check these fall
+            // through to "the host filed no result", still incomplete.
+            self::assertStringContainsString('not started by bin/semitexa ai:verify', $malformed->signal, $run);
         }
     }
 
