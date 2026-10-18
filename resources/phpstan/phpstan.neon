@@ -31,6 +31,11 @@ parameters:
         - packages/semitexa-core/src
         - packages/semitexa-ssr/src
         - packages/semitexa-tenancy/src
+        # Not shipped code: one class per trait whose only users live outside
+        # these paths. A trait used zero times is reported and NOT analysed at
+        # all, so without them the validation and ORM traits were unchecked.
+        - packages/semitexa-core/tests/Analysis
+        - packages/semitexa-orm/tests/Analysis
 
     excludePaths:
         - vendor
