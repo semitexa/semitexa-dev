@@ -78,7 +78,8 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit a single JSON envelope instead of NDJSON')
-            ->addOption('impact', null, InputOption::VALUE_NONE, 'Annotate each changed file with a project-graph blast-radius band (low|medium|high). Read-only: does not change which checks run.');
+            ->addOption('impact', null, InputOption::VALUE_NONE, 'Annotate each changed file with a project-graph blast-radius band (low|medium|high). Read-only: does not change which checks run.')
+            ->addOption('list-e2e', null, InputOption::VALUE_NONE, 'Print the changed Playwright specs this plan would check, one per line, and run nothing (bin/semitexa runs them on the host first).');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -93,7 +94,7 @@ final class AiVerifyCommand extends BaseCommand
             return self::FAILURE;
         }
 
-        if ($paths === []) {
+        if ($paths === [] && !(bool) $input->getOption('list-e2e')) {
             // `--dirty` finding nothing is an ANSWER, not a misuse: the tree is
             // clean. Telling that caller to "pass --dirty" is advice they just
             // took, and failing the run would make `ai:verify --dirty` red on
@@ -191,6 +192,10 @@ final class AiVerifyCommand extends BaseCommand
 
         $planner = new VerificationPlanner($projectRoot, $classifier);
         $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'), is_string($input->getOption('git-ref')) && $input->getOption('git-ref') !== '' ? $input->getOption('git-ref') : null);
+        if ((bool) $input->getOption('list-e2e')) {
+            $output->writeln(implode("\n", array_map(static fn (VerificationTarget $t): string => (string) $t->filePath, array_values(array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_E2E)))), OutputInterface::OUTPUT_RAW);
+            return self::SUCCESS;
+        }
 
         $app = $this->getApplication();
         if ($app === null) {
