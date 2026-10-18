@@ -76,13 +76,13 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 161,
+            "total": 163,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 12,
+                "semitexa-core": 14,
                 "semitexa-dev": 33,
                 "semitexa-ledger": 4,
                 "semitexa-media": 1,
@@ -1390,6 +1390,32 @@
                 }
             },
             "reason": "ssr SseAuthSessionMapOwnerTest runs its Lua compare-and-delete against the real Redis REDIS_HOST names and skips where none is reachable, the same guard as the semitexa-cache Redis integration tests; a stand-in for the script would test the stand-in."
+        },
+        {
+            "at": "2026-10-18",
+            "metric": "tests.skip-calls",
+            "from": 161,
+            "to": 162,
+            "keys": {
+                "semitexa-core": {
+                    "from": 12,
+                    "to": 13
+                }
+            },
+            "reason": "semitexa-core WorkerExitLeftoverConnectionTest needs a real Swoole server and proc_open/posix_kill; it skips without them, like the sibling drain tests that guard on the Swoole extension"
+        },
+        {
+            "at": "2026-10-18",
+            "metric": "tests.skip-calls",
+            "from": 162,
+            "to": 163,
+            "keys": {
+                "semitexa-core": {
+                    "from": 13,
+                    "to": 14
+                }
+            },
+            "reason": "semitexa-core 13->14: AsyncJsonLoggerTest burst regression needs Swoole coroutines and hooked file I/O; core does not require ext-swoole, so it is guarded like every other Swoole test in core (WorkerExitDrainDiagnosticsTest, StandingCoroutinesTest)"
         }
     ]
 }
