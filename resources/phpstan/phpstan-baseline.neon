@@ -1963,30 +1963,6 @@ parameters:
 			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetCollectorStore.php
 
 		-
-			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry\:\:__construct\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \#2 \.\.\.\$arrays of function array_merge expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$attributes of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$dependencies of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects array\<string\>, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
 			message: '#^Parameter \$module of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -2069,18 +2045,6 @@ parameters:
 			identifier: identical.alwaysFalse
 			count: 1
 			path: packages/semitexa-ssr/src/Application/Service/Asset/StaticAssetHandler.php
-
-		-
-			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Async\\AsyncResourceSseServer\:\:deliver\(\) has parameter \$data with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Async/AsyncResourceSseServer.php
-
-		-
-			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Async\\SseAsyncResultDelivery\:\:deliverRaw\(\) has parameter \$data with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Async/SseAsyncResultDelivery.php
 
 		-
 			message: '#^Cannot access offset string on mixed\.$#'
@@ -2275,25 +2239,7 @@ parameters:
 			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
 
 		-
-			message: '#^Parameter \#1 \$handle of static method Semitexa\\Ssr\\Application\\Service\\Layout\\LayoutSlotRegistry\:\:getDeferredSlots\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
-
-		-
-			message: '#^Parameter \#1 \$handle of static method Semitexa\\Ssr\\Context\\IsomorphicContextStore\:\:setPageHandle\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
-
-		-
 			message: '#^Parameter \#1 \$haystack of function stripos expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
-
-		-
-			message: '#^Parameter \#1 \$string of function htmlspecialchars expects string, mixed given\.$#'
 			identifier: argument.type
 			count: 1
 			path: packages/semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php
@@ -2937,12 +2883,6 @@ parameters:
 
 		-
 			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredBlockPayload\:\:__construct\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-ssr/src/Domain/Model/DeferredBlockPayload.php
-
-		-
-			message: '#^Method Semitexa\\Ssr\\Domain\\Model\\DeferredBlockPayload\:\:toArray\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: packages/semitexa-ssr/src/Domain/Model/DeferredBlockPayload.php
