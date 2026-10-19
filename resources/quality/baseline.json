@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 169,
+            "total": 170,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -91,7 +91,7 @@
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
                 "semitexa-rbac": 1,
-                "semitexa-ssr": 29,
+                "semitexa-ssr": 30,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
                 "semitexa-testing": 1,
@@ -1494,6 +1494,19 @@
                 }
             },
             "reason": "semitexa-orm SeedingTest: a second skip, taken only when seeding_test_roles already exists in the configured database, so the test never drops a table it did not create (review orm#89)"
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 169,
+            "to": 170,
+            "keys": {
+                "semitexa-ssr": {
+                    "from": 29,
+                    "to": 30
+                }
+            },
+            "reason": "semitexa-ssr GuestStreamForgetsPreviousUserTest skips only without the Redis REDIS_HOST names, the same guard SseAuthSessionMapOwnerTest has; the dev container has it, so it runs"
         }
     ]
 }
