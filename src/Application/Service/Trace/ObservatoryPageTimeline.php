@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Service\Trace;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Server\PageTimelineSinkInterface;
 use Semitexa\Core\Server\PageTimeline;
+use Semitexa\Core\Support\AppendLine;
 
 /**
  * The Observatory's page timeline: one NDJSON file per page (its KISS session
@@ -67,7 +68,10 @@ final class ObservatoryPageTimeline implements PageTimelineSinkInterface
         }
         $line = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (is_string($line)) {
-            @file_put_contents($path, $line . "\n", FILE_APPEND | LOCK_EX);
+            // Tried, never waited for: a leaving worker parked in this lock was
+            // killed at max_wait_time with the requests it was answering (the
+            // soak, 2026-10-19; see AppendLine).
+            AppendLine::to($path, $line . "\n");
         }
     }
 

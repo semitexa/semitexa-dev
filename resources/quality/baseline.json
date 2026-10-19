@@ -76,13 +76,13 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 164,
+            "total": 165,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 14,
+                "semitexa-core": 15,
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 1,
@@ -1429,6 +1429,19 @@
                 }
             },
             "reason": "semitexa-dev 33 -> 34: ObservatoryJournalBurstTest (tk-observatory-journal-contended-lock-ex) runs its burst in a child process under SWOOLE_HOOK_ALL and skips only when Swoole or proc_open is missing; semitexa-dev does not require ext-swoole in composer.json, same guard as core AsyncJsonLoggerBurstTest. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 164,
+            "to": 165,
+            "keys": {
+                "semitexa-core": {
+                    "from": 14,
+                    "to": 15
+                }
+            },
+            "reason": "semitexa-core 14 -> 15: AsyncJsonLoggerLockHeldTest (tk-soak-recycle-drops-inflight) runs a hooked child process and skips only when Swoole or proc_open is missing, the same guard as AsyncJsonLoggerBurstTest; core does not require ext-swoole in composer.json. No assertion disabled."
         }
     ]
 }

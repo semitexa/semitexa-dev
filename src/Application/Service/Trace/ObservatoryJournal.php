@@ -142,8 +142,9 @@ final class ObservatoryJournal
             return;
         }
 
-        // flock keeps one line atomic across workers — the same guarantee
-        // FILE_APPEND|LOCK_EX gave. What is gone is opening and closing the
+        // One line is one O_APPEND write, which keeps it whole across workers;
+        // the lock, tried and never waited for, only keeps apart a writer that
+        // waits for it (writeDetached). What is gone is opening and closing the
         // file for EVERY line, which was the whole cost: on the bind-mounted
         // var/observatory, file_put_contents measured 8.94us against 2.30us
         // for this, and a root span writes two journal lines.
@@ -156,7 +157,10 @@ final class ObservatoryJournal
         // fflush to hold the lock across: a coroutine switching between
         // fwrite and fflush would leave every other coroutine in the worker
         // blocked on flock for the length of that gap.
-        if (@flock($stream, LOCK_EX)) {
+        // TRIED, not waited for (LOCK_NB): another worker process holding it
+        // made a leaving worker wait here past max_wait_time, and Swoole killed
+        // it with the requests it was answering (the soak, 2026-10-19).
+        if (@flock($stream, LOCK_EX | LOCK_NB)) {
             @fwrite($stream, $line . "\n");
             @flock($stream, LOCK_UN);
         } else {
