@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 166,
+            "total": 167,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -85,7 +85,7 @@
                 "semitexa-core": 15,
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
-                "semitexa-media": 1,
+                "semitexa-media": 2,
                 "semitexa-orm": 39,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
@@ -1455,6 +1455,19 @@
                 }
             },
             "reason": "semitexa-orm 38 -> 39: SeedingTest end-to-end case runs the real SeedRunner against MySQL (the upsert is MySQL-only, tk-orm-seed-sqlite) and skips only when MySQL is unreachable, the same guard as SchemaSyncLockTest; its three create() cases need no database and always run. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 166,
+            "to": 167,
+            "keys": {
+                "semitexa-media": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "semitexa-media MediaVariantGenerationTest skips only without the Imagick extension, the same guard ImagickPixelFloodTest has; the app image ships Imagick so it runs"
         }
     ]
 }
