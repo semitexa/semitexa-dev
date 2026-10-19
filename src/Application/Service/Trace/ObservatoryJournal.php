@@ -80,22 +80,31 @@ final class ObservatoryJournal
     /** The day whose sweep already ran in this process, so retention costs one glob per day. */
     private static ?string $sweptDay = null;
 
+    /** The held handles: one for the journal, one for the pulse file. */
+    private const SLOT_JOURNAL = 'journal';
+    private const SLOT_PULSE = 'pulse';
+
     /**
-     * @worker-scoped The open append handle. Infrastructure, not request state:
-     * it is the same file for every request this worker serves, so it is one of
+     * @worker-scoped The open append handles, by slot. Infrastructure, not
+     * request state: each is the same file for everything this process writes
+     * (a worker's requests, or a console process's own work), so it is one of
      * the cases where a static is the right shape rather than a coroutine leak.
-     * @var resource|null
+     * @var array<string, resource>
      */
-    private static $stream = null;
-
-    /** @worker-scoped The path {@see $stream} points at. */
-    private static string $streamPath = '';
+    private static array $stream = [];
 
     /**
-     * @worker-scoped When the handle was last confirmed to still be the file at
-     * {@see $streamPath}, as a unix timestamp.
+     * @worker-scoped The path each handle in {@see $stream} points at.
+     * @var array<string, string>
      */
-    private static int $streamCheckedAt = 0;
+    private static array $streamPath = [];
+
+    /**
+     * @worker-scoped When each handle was last confirmed to still be the file
+     * at its path, as a unix timestamp.
+     * @var array<string, int>
+     */
+    private static array $streamCheckedAt = [];
 
     /** @param array<string, mixed> $record */
     public static function write(array $record): void
@@ -108,42 +117,61 @@ final class ObservatoryJournal
 
             $dir = self::dir();
             $day = date('Ymd');
-            $stream = self::stream($dir . '/journal-' . $day . '.ndjson');
-            if ($stream === null) {
-                return;
-            }
-
-            // flock keeps one line atomic across workers — the same guarantee
-            // FILE_APPEND|LOCK_EX gave. What is gone is opening and closing the
-            // file for EVERY line, which was the whole cost: on the bind-mounted
-            // var/observatory, file_put_contents measured 8.94us against 2.30us
-            // for this, and a root span writes two lines.
-            //
-            // fflush is not optional: file_put_contents wrote through, and the
-            // panel reads the journal live. A buffered line is a line the live
-            // view does not have yet.
-            // ONE write inside the lock, exactly as file_put_contents did.
-            // Buffering is switched off when the handle opens, so there is no
-            // fflush to hold the lock across: a coroutine switching between
-            // fwrite and fflush would leave every other coroutine in the worker
-            // blocked on flock for the length of that gap.
-            if (@flock($stream, LOCK_EX)) {
-                @fwrite($stream, $line . "\n");
-                @flock($stream, LOCK_UN);
-            } else {
-                // STILL WRITTEN when the lock cannot be taken, deliberately.
-                // MAX_LINE_BYTES is 4000, under PIPE_BUF, and the handle is
-                // opened append-only — so a single unbuffered write is atomic
-                // on the filesystems this runs on. And the reader already skips
-                // a line it cannot decode, so the worst case of a torn line is
-                // one lost record. Dropping every line instead would lose all
-                // of them to avoid losing one.
-                @fwrite($stream, $line . "\n");
-            }
-
+            self::append(self::SLOT_JOURNAL, $dir . '/journal-' . $day . '.ndjson', $line);
             self::sweepOld($dir, $day);
         } catch (\Throwable) {
             // Observing must never fault the observed.
+        }
+    }
+
+    /**
+     * One line through the held handle of a slot.
+     *
+     * A KEPT handle, never one opened for the line. Under SWOOLE_HOOK_FILE a
+     * flock that has to wait is slow, about 23 ms per waiting coroutine, while
+     * flock on the one handle a process already holds does not wait at all.
+     * Measured 2026-10-19 on dev, 200 coroutines at once: 3.46 s through
+     * file_put_contents(FILE_APPEND|LOCK_EX), 0.004 s through a held handle.
+     * Every line is written on the request's own coroutine, so that wait was
+     * the request's latency.
+     */
+    private static function append(string $slot, string $path, string $line): void
+    {
+        $stream = self::stream($slot, $path);
+        if ($stream === null) {
+            return;
+        }
+
+        // One line is one O_APPEND write, which keeps it whole across workers;
+        // the lock, tried and never waited for, only keeps apart a writer that
+        // waits for it (writeDetached). What is gone is opening and closing the
+        // file for EVERY line, which was the whole cost: on the bind-mounted
+        // var/observatory, file_put_contents measured 8.94us against 2.30us
+        // for this, and a root span writes two journal lines.
+        //
+        // fflush is not optional: file_put_contents wrote through, and the
+        // panel reads the journal live. A buffered line is a line the live
+        // view does not have yet.
+        // ONE write inside the lock, exactly as file_put_contents did.
+        // Buffering is switched off when the handle opens, so there is no
+        // fflush to hold the lock across: a coroutine switching between
+        // fwrite and fflush would leave every other coroutine in the worker
+        // blocked on flock for the length of that gap.
+        // TRIED, not waited for (LOCK_NB): another worker process holding it
+        // made a leaving worker wait here past max_wait_time, and Swoole killed
+        // it with the requests it was answering (the soak, 2026-10-19).
+        if (@flock($stream, LOCK_EX | LOCK_NB)) {
+            @fwrite($stream, $line . "\n");
+            @flock($stream, LOCK_UN);
+        } else {
+            // STILL WRITTEN when the lock cannot be taken, deliberately.
+            // MAX_LINE_BYTES is 4000, under PIPE_BUF, and the handle is
+            // opened append-only — so a single unbuffered write is atomic
+            // on the filesystems this runs on. And the reader already skips
+            // a line it cannot decode, so the worst case of a torn line is
+            // one lost record. Dropping every line instead would lose all
+            // of them to avoid losing one.
+            @fwrite($stream, $line . "\n");
         }
     }
 
@@ -178,7 +206,9 @@ final class ObservatoryJournal
      * open page — and the journal's readers look at a bounded tail: in the
      * journal they would push the begin of a long-lived session out of view.
      * Pulses are for watching live, so they are kept for a day, not a week.
-     * Written detached: a worker's journal handle stays on the journal.
+     * Written through a held handle of its own, for the reason given at
+     * {@see append()}: a signal re-runs every page watching its scope, and
+     * their pushes all arrive at once.
      *
      * @param array<string, mixed> $record
      */
@@ -189,11 +219,7 @@ final class ObservatoryJournal
             if ($line === false || strlen($line) > self::MAX_LINE_BYTES) {
                 return;
             }
-            $dir = self::dir();
-            if (!is_dir($dir)) {
-                @mkdir($dir, 0775, true);
-            }
-            @file_put_contents(self::pulsePath(date('Ymd')), $line . "\n", FILE_APPEND | LOCK_EX);
+            self::append(self::SLOT_PULSE, self::pulsePath(date('Ymd')), $line);
         } catch (\Throwable) {
             // Observing must never fault the observed.
         }
@@ -263,9 +289,10 @@ final class ObservatoryJournal
      * @return resource|null null when the directory or file cannot be opened,
      *         which is not an error: observing must never fault the observed.
      */
-    private static function stream(string $path)
+    private static function stream(string $slot, string $path)
     {
-        if (self::$stream !== null && self::$streamPath === $path) {
+        $held = self::$stream[$slot] ?? null;
+        if ($held !== null && (self::$streamPath[$slot] ?? '') === $path) {
             // A HELD HANDLE CAN OUTLIVE ITS FILE. sweepOld() only removes days
             // older than the retention window, never today's — but an operator
             // deleting the journal, or anything rotating it by rename, leaves
@@ -277,21 +304,21 @@ final class ObservatoryJournal
             // be the single most expensive thing here. Once a second bounds the
             // blind window without showing up in the measurement at all.
             $now = time();
-            if ($now === self::$streamCheckedAt) {
-                return self::$stream;
+            if ($now === (self::$streamCheckedAt[$slot] ?? 0)) {
+                return $held;
             }
 
-            self::$streamCheckedAt = $now;
-            if (self::stillTheSameFile(self::$stream, $path)) {
-                return self::$stream;
+            self::$streamCheckedAt[$slot] = $now;
+            if (self::stillTheSameFile($held, $path)) {
+                return $held;
             }
         }
 
-        if (self::$stream !== null) {
-            @fclose(self::$stream);
-            self::$stream = null;
-            self::$streamPath = '';
-        }
+        // DROPPED, not fclose()d. Another coroutine of this worker may be
+        // between its flock and its fwrite on this very handle; closing it
+        // under that coroutine loses its line. The last reference going away
+        // closes the file.
+        unset(self::$stream[$slot], self::$streamPath[$slot]);
 
         $dir = dirname($path);
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -303,15 +330,27 @@ final class ObservatoryJournal
             return null;
         }
 
+        // ANOTHER COROUTINE MAY HAVE GOT HERE FIRST. fopen yields under
+        // SWOOLE_HOOK_FILE, so a burst on a cold worker sends every coroutine
+        // through the open at once. Each keeping its own handle is the slow
+        // case again: their flocks no longer belong to one handle and wait on
+        // each other. The first handle installed wins; this one is closed.
+        $installed = self::$stream[$slot] ?? null;
+        if ($installed !== null && (self::$streamPath[$slot] ?? '') === $path) {
+            @fclose($handle);
+
+            return $installed;
+        }
+
         // Unbuffered: the panel reads the journal LIVE, so a line sitting in a
         // PHP stream buffer is a line the live view does not have. This is what
         // file_put_contents gave for free, and it is also what lets the write
         // above be a single call inside the lock.
         @stream_set_write_buffer($handle, 0);
 
-        self::$stream = $handle;
-        self::$streamPath = $path;
-        self::$streamCheckedAt = time();
+        self::$stream[$slot] = $handle;
+        self::$streamPath[$slot] = $path;
+        self::$streamCheckedAt[$slot] = time();
 
         return $handle;
     }

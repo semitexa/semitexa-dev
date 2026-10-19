@@ -113,6 +113,7 @@ scripts/release-finalize.sh
 - finalize does NOT merge `develop`→`master`; if every `master` HEAD is already tagged, finalize is a no-op (zero new tags). Tell the user and offer to open develop→master PRs (e.g. via `/review-prep`) before retrying
 - it must always release `packages/semitexa-ultimate` and replace wildcard internal package constraints with exact released versions
 - it must update the same markdown release report with the final release result
+- after the tags it waits for the **Published install** run that the ultimate tag starts on GitHub (semitexa-ultimate `published-install.yml`, two jobs from public sources: a new install of the new ultimate, and an upgrade to it with `bin/semitexa update` from the release before, keeping the project's own page and edit; both end with every `semitexa/*` package at the version ultimate pins) and adds its verdict to the report. It cannot stop a release that is already tagged: a FAIL ends finalize with exit 1 and `RELEASED, BUT NEW INSTALLS FAIL`, a run it could not read with exit 2 and `UNVERIFIED` — neither is READY. `release-published-install.sh` alone (with `ULTIMATE_TAG=`) re-checks a release
 - only after that return the final readiness verdict
 
 4. Use the bundled post-merge step only as a recovery path when PRs were already merged outside the normal flow:

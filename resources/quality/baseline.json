@@ -76,17 +76,17 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 163,
+            "total": 169,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 14,
-                "semitexa-dev": 33,
+                "semitexa-core": 16,
+                "semitexa-dev": 34,
                 "semitexa-ledger": 4,
-                "semitexa-media": 1,
-                "semitexa-orm": 38,
+                "semitexa-media": 2,
+                "semitexa-orm": 40,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1416,6 +1416,84 @@
                 }
             },
             "reason": "semitexa-core 13->14: AsyncJsonLoggerTest burst regression needs Swoole coroutines and hooked file I/O; core does not require ext-swoole, so it is guarded like every other Swoole test in core (WorkerExitDrainDiagnosticsTest, StandingCoroutinesTest)"
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 163,
+            "to": 164,
+            "keys": {
+                "semitexa-dev": {
+                    "from": 33,
+                    "to": 34
+                }
+            },
+            "reason": "semitexa-dev 33 -> 34: ObservatoryJournalBurstTest (tk-observatory-journal-contended-lock-ex) runs its burst in a child process under SWOOLE_HOOK_ALL and skips only when Swoole or proc_open is missing; semitexa-dev does not require ext-swoole in composer.json, same guard as core AsyncJsonLoggerBurstTest. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 164,
+            "to": 165,
+            "keys": {
+                "semitexa-core": {
+                    "from": 14,
+                    "to": 15
+                }
+            },
+            "reason": "semitexa-core 14 -> 15: AsyncJsonLoggerLockHeldTest (tk-soak-recycle-drops-inflight) runs a hooked child process and skips only when Swoole or proc_open is missing, the same guard as AsyncJsonLoggerBurstTest; core does not require ext-swoole in composer.json. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 165,
+            "to": 166,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 38,
+                    "to": 39
+                }
+            },
+            "reason": "semitexa-orm 38 -> 39: SeedingTest end-to-end case runs the real SeedRunner against MySQL (the upsert is MySQL-only, tk-orm-seed-sqlite) and skips only when MySQL is unreachable, the same guard as SchemaSyncLockTest; its three create() cases need no database and always run. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 166,
+            "to": 167,
+            "keys": {
+                "semitexa-media": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "semitexa-media MediaVariantGenerationTest skips only without the Imagick extension, the same guard ImagickPixelFloodTest has; the app image ships Imagick so it runs"
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 167,
+            "to": 168,
+            "keys": {
+                "semitexa-core": {
+                    "from": 15,
+                    "to": 16
+                }
+            },
+            "reason": "semitexa-core WorkerMemoryWatchdogRecycleTest skips only without Swoole, proc_open or posix_kill, the same guard WorkerExitLeftoverConnectionTest has; the app image has all three so it runs"
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 168,
+            "to": 169,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 39,
+                    "to": 40
+                }
+            },
+            "reason": "semitexa-orm SeedingTest: a second skip, taken only when seeding_test_roles already exists in the configured database, so the test never drops a table it did not create (review orm#89)"
         }
     ]
 }

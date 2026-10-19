@@ -69,6 +69,21 @@ final class ObservatoryJournalWriteTest extends TestCase
         parent::tearDown();
     }
 
+    // verify:accept-test-change the held handles became one per file (journal, pulse), so the
+    // statics these reach into are maps by slot; what each test asserts is unchanged.
+    private static function forgetHandleChecks(): void
+    {
+        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, []);
+    }
+
+    /** @return resource|null */
+    private static function journalHandle()
+    {
+        $handles = (new \ReflectionProperty(ObservatoryJournal::class, 'stream'))->getValue();
+
+        return is_array($handles) ? ($handles['journal'] ?? null) : null;
+    }
+
     private function journalPath(?string $dir = null): string
     {
         return ($dir ?? $this->dir) . '/journal-' . date('Ymd') . '.ndjson';
@@ -161,7 +176,7 @@ final class ObservatoryJournalWriteTest extends TestCase
         self::assertFileExists($this->journalPath());
 
         unlink($this->journalPath());
-        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+        self::forgetHandleChecks();
 
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
 
@@ -174,14 +189,15 @@ final class ObservatoryJournalWriteTest extends TestCase
     public function an_intact_journal_keeps_its_handle(): void
     {
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-one']);
-        $handle = (new \ReflectionProperty(ObservatoryJournal::class, 'stream'))->getValue();
+        $handle = self::journalHandle();
+        self::assertIsResource($handle, 'no journal handle is held — the comparison below would pass on null');
 
-        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+        self::forgetHandleChecks();
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-two']);
 
         self::assertSame(
             $handle,
-            (new \ReflectionProperty(ObservatoryJournal::class, 'stream'))->getValue(),
+            self::journalHandle(),
             'reopening a healthy file would throw away the whole point of keeping it open',
         );
     }
@@ -201,7 +217,7 @@ final class ObservatoryJournalWriteTest extends TestCase
         // reopen; with it the path exists and only the inode differs, so this
         // is the case that separates identity from existence.
         touch($this->journalPath());
-        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+        self::forgetHandleChecks();
 
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
 
@@ -228,7 +244,7 @@ final class ObservatoryJournalWriteTest extends TestCase
 
         $path = escapeshellarg($this->journalPath());
         exec('mv ' . $path . ' ' . escapeshellarg($this->journalPath() . '.1') . ' && touch ' . $path);
-        (new \ReflectionProperty(ObservatoryJournal::class, 'streamCheckedAt'))->setValue(null, 0);
+        self::forgetHandleChecks();
 
         ObservatoryJournal::write(['event' => 'begin', 'id' => 'p-after']);
 

@@ -86,7 +86,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // session id, so the held-open loop stops once a newer connection owns the
         // session, deliver() queues locally only on the owning worker, and
         // closeSession() reaps only the superseded connection's rows; no new method.
-        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2123],
+        // +1 on 2026-10-19, recorded (tk-soak-recycle-drops-inflight, found by the 72h
+        // soak): the held-open loop ends when the worker drains (its condition, no new
+        // line) and its teardown is spared by the drain (one call); no new method.
+        'semitexa-ssr/src/Application/Service/Async/SseServer.php' => [100, 2124],
         // 1128 -> 1131 on 2026-09-17, recorded rather than trimmed. NO new
         // method: resolveTenantColumnName() stopped chaining
         // `tenantColumn()?->columnName ?? throw` and names the null case in an
