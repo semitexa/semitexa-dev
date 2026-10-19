@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\MakePageCommand;
 use Semitexa\Dev\Application\Service\Generation\Builder\PagePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
@@ -132,7 +133,8 @@ class MakePageCommandTest extends TestCase
         // A directly constructed command has no container: the tree is readable,
         // so the refusal has to come from the runtime check, not the file check.
         $relative = 'var/tmp/make-page-tree-' . bin2hex(random_bytes(4)) . '.json';
-        $absolute = dirname(__DIR__, 4) . '/' . $relative;
+        // The root the command resolves, wherever this package is checked out.
+        $absolute = ProjectRoot::get() . '/' . $relative;
         @mkdir(dirname($absolute), 0o755, true);
         file_put_contents($absolute, '{"component":"platform.card","props":{"title":"A"}}');
 
