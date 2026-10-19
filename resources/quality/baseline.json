@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 165,
+            "total": 166,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -86,7 +86,7 @@
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 1,
-                "semitexa-orm": 38,
+                "semitexa-orm": 39,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1442,6 +1442,19 @@
                 }
             },
             "reason": "semitexa-core 14 -> 15: AsyncJsonLoggerLockHeldTest (tk-soak-recycle-drops-inflight) runs a hooked child process and skips only when Swoole or proc_open is missing, the same guard as AsyncJsonLoggerBurstTest; core does not require ext-swoole in composer.json. No assertion disabled."
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 165,
+            "to": 166,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 38,
+                    "to": 39
+                }
+            },
+            "reason": "semitexa-orm 38 -> 39: SeedingTest end-to-end case runs the real SeedRunner against MySQL (the upsert is MySQL-only, tk-orm-seed-sqlite) and skips only when MySQL is unreachable, the same guard as SchemaSyncLockTest; its three create() cases need no database and always run. No assertion disabled."
         }
     ]
 }
