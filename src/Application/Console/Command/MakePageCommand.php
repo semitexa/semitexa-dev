@@ -370,10 +370,20 @@ final class MakePageCommand extends BaseCommand
         if (!is_string($document)) {
             return ['twig' => null, 'errors' => [new UiTreeError('tree.unreadable', '', "No tree could be read from {$file}.")]];
         }
-        $environment = $this->container->get(Environment::class);
-        $exporter = $this->container->get(UiTreeTwigExporter::class);
-        if (!$this->container instanceof SemitexaContainer || !$environment instanceof Environment || !$exporter instanceof UiTreeTwigExporter) {
-            return ['twig' => null, 'errors' => [new UiTreeError('tree.no_runtime', '', 'The UI catalog is not available in this process.')]];
+        $noRuntime = ['twig' => null, 'errors' => [new UiTreeError('tree.no_runtime', '', 'The UI catalog is not available in this process.')]];
+        // Filled by the container at boot: a directly constructed command has no
+        // container, and one that cannot resolve the services is no runtime either.
+        if (!isset($this->container) || !$this->container instanceof SemitexaContainer) {
+            return $noRuntime;
+        }
+        try {
+            $environment = $this->container->get(Environment::class);
+            $exporter = $this->container->get(UiTreeTwigExporter::class);
+        } catch (\Throwable) {
+            return $noRuntime;
+        }
+        if (!$environment instanceof Environment || !$exporter instanceof UiTreeTwigExporter) {
+            return $noRuntime;
         }
         $context = new ServerLifecycleContext(server: null, workerId: null, environment: $environment, container: $this->container);
         // A boot that throws (a field type claiming a built-in name, say) is a

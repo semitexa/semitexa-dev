@@ -127,6 +127,41 @@ class MakePageCommandTest extends TestCase
         $this->assertContains('--grant=orders.edit', $envelope['result']['replay_args']);
     }
 
+    public function test_a_readable_ui_tree_without_a_runtime_is_refused_not_thrown(): void
+    {
+        // A directly constructed command has no container: the tree is readable,
+        // so the refusal has to come from the runtime check, not the file check.
+        $relative = 'var/tmp/make-page-tree-' . bin2hex(random_bytes(4)) . '.json';
+        $absolute = dirname(__DIR__, 4) . '/' . $relative;
+        @mkdir(dirname($absolute), 0o755, true);
+        file_put_contents($absolute, '{"component":"platform.card","props":{"title":"A"}}');
+
+        try {
+            $command = new MakePageCommand();
+            $command->setName('make:page');
+            $app = new Application();
+            $app->add($command);
+            $tester = new CommandTester($app->find('make:page'));
+
+            $exit = $tester->execute([
+                '--module' => 'UiPlayground',
+                '--name' => 'TreeRuntimeProbe',
+                '--path' => '/tree-runtime-probe',
+                '--method' => 'GET',
+                '--ui-tree' => $relative,
+                '--json' => true,
+            ]);
+
+            $this->assertSame(1, $exit);
+            /** @var array<string, mixed> $envelope */
+            $envelope = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('rejected', $envelope['result']['status']);
+            $this->assertSame('tree.no_runtime', $envelope['result']['errors'][0]['reason']);
+        } finally {
+            @unlink($absolute);
+        }
+    }
+
     private function pageTemplate(?string $uiTree): string
     {
         $params = [
