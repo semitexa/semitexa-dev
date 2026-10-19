@@ -5,9 +5,11 @@
 # (semitexa-ultimate .github/workflows/published-install.yml), and writes its
 # verdict into the release report.
 #
-# The run installs from public sources only — semitexa.com/install.sh, the
-# semitexa/installer image, Packagist — waits for Packagist to list the new
-# ultimate version and requires the project to install exactly what it pins.
+# The run has two jobs, both from public sources only — semitexa.com/install.sh,
+# the semitexa/installer image, Packagist: a NEW project installs exactly what
+# the new ultimate pins, and a project on the release BEFORE, with code and an
+# edit of its own, runs `bin/semitexa update` to it and keeps both. Its
+# verdict is the run's, so either job failing fails it.
 # Every gate before this one checks the release clone; this is the only one
 # that checks what a newcomer gets.
 #
@@ -73,10 +75,10 @@ if [ -n "${REPORT_PATH:-}" ] && [ -f "$REPORT_PATH" ]; then
     {
         printf '\n## Published install\n\n'
         printf -- '- Verdict: **%s**\n' "$verdict"
-        printf -- '- What it checks: install.sh from semitexa.com, the semitexa/installer image and semitexa/ultimate `%s` from Packagist, as a newcomer runs them; every semitexa/* package installed at the version ultimate pins\n' "$TAG"
+        printf -- '- What it checks: a new install of semitexa/ultimate `%s` (install.sh from semitexa.com, the semitexa/installer image, Packagist), and an upgrade to it from the release before with `bin/semitexa update`; both end with every semitexa/* package at the version ultimate pins\n' "$TAG"
         printf -- '- Run: %s\n' "${url:-none found}"
         if [ "$status_code" -eq 1 ]; then
-            printf -- '- The release is tagged and published: new installs of `%s` are broken until a fix is released.\n' "$TAG"
+            printf -- '- The release is tagged and published: new installs of `%s`, or upgrades to it (see which job failed), are broken until a fix is released.\n' "$TAG"
         fi
     } >> "$REPORT_PATH"
 fi
