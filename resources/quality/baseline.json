@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 168,
+            "total": 169,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -86,7 +86,7 @@
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
-                "semitexa-orm": 39,
+                "semitexa-orm": 40,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1481,6 +1481,19 @@
                 }
             },
             "reason": "semitexa-core WorkerMemoryWatchdogRecycleTest skips only without Swoole, proc_open or posix_kill, the same guard WorkerExitLeftoverConnectionTest has; the app image has all three so it runs"
+        },
+        {
+            "at": "2026-10-19",
+            "metric": "tests.skip-calls",
+            "from": 168,
+            "to": 169,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 39,
+                    "to": 40
+                }
+            },
+            "reason": "semitexa-orm SeedingTest: a second skip, taken only when seeding_test_roles already exists in the configured database, so the test never drops a table it did not create (review orm#89)"
         }
     ]
 }
