@@ -98,8 +98,9 @@ scripts/pr-reply.sh <repo-slug> <pr-number> <id> "<reply body>" --kind=issue
 
 CodeRabbit skips, and never queues, a review that hits its rate limit: the head gets
 a "Review rate limited" status. `scripts/coderabbit-retry.sh` posts `@coderabbitai review`
-on ONE such PR per run (least recently triggered first; a head is re-triggered at most
-once per run). On the operator's workstation a systemd user timer runs it every 30 minutes:
+on ONE such PR per run (a release blocker first — label `release-blocker` or
+`CODERABBIT_RETRY_PRIORITY=owner/repo#N` — then least recently triggered; a head is
+re-triggered at most once per run). On the operator's workstation a systemd user timer runs it every 30 minutes:
 `systemctl --user list-timers semitexa-coderabbit-retry.timer`, log in
 `~/.local/state/semitexa/coderabbit-retry.log`. So a "Review rate limited" head is
 not a reason to trigger by hand. Check the log first; `--dry-run` shows what it would do.

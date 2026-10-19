@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class ResourcePlanBuilder
@@ -20,15 +21,16 @@ final class ResourcePlanBuilder
     ) {}
 
     /**
-     * @param array{module: string, name: string, handle: string, template?: string, withTemplate: bool, withAssets: bool, dryRun: bool} $params
+     * @param array{module: string, name: string, handle: string, template?: string, withTemplate: bool, withAssets: bool, dryRun: bool, uiTree?: string} $params
      */
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $responseClass = $this->inflector->toResponseClass($params['name']);
         $kebabName = $this->inflector->toKebab($params['name']);
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Resource\\Response";
+        $namespace = "{$moduleNs}\\Application\\Resource\\Response";
         $templatePath = $params['template'] ?? "@project-layouts-{$module}/pages/{$kebabName}.html.twig";
 
         $imports = [
@@ -57,6 +59,9 @@ final class ResourcePlanBuilder
             $twigContent = $this->renderer->render($twigTemplate, [
                 'pageName' => $studlyName,
                 'kebabName' => $kebabName,
+                // An exported UI tree (make:page --ui-tree), indented into the
+                // page body; empty leaves the template exactly as it was.
+                'uiTree' => self::indent($params['uiTree'] ?? '', '        '),
             ]);
             $twigPath = "src/modules/{$module}/src/Application/View/templates/pages/{$kebabName}.html.twig";
             $files[] = new PlannedFile($twigPath, $twigContent, FileType::TwigTemplate);
@@ -95,5 +100,15 @@ final class ResourcePlanBuilder
             files: $files,
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    private static function indent(string $twig, string $pad): string
+    {
+        if (trim($twig) === '') {
+            return '';
+        }
+        $lines = explode("\n", rtrim($twig, "\n"));
+
+        return implode('', array_map(static fn (string $line): string => ($line === '' ? '' : $pad . $line) . "\n", $lines));
     }
 }

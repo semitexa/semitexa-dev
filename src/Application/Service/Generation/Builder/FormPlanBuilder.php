@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 use Semitexa\Dev\Application\Service\Generation\Support\FieldDeclarationWriter;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\PlatformUi\Domain\Model\Field\Field;
 
@@ -68,12 +69,13 @@ final class FormPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $name = $this->inflector->toStudly($params['name']);
         $kebab = $this->inflector->toKebab($name);
         $className = $name . 'FormAction';
         $actionName = $this->inflector->toKebab($module) . '.' . $kebab;
         $title = ucfirst(strtolower(trim((string) preg_replace('/(?<!^)[A-Z]/', ' $0', $name))));
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Service\\Submit";
+        $namespace = "{$moduleNs}\\Application\\Service\\Submit";
 
         $writer = new FieldDeclarationWriter();
         $declarations = [];

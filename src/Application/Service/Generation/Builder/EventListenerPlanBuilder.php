@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class EventListenerPlanBuilder
@@ -25,11 +26,12 @@ final class EventListenerPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $className = $this->inflector->toStudly($params['name']);
         [$eventImport, $eventClass] = $this->resolveEventReference($module, $params['event']);
         $execution = $this->inflector->toStudly($params['execution']);
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Handler\\DomainListener";
+        $namespace = "{$moduleNs}\\Application\\Handler\\DomainListener";
 
         $imports = [
             'use Semitexa\\Core\\Attribute\\AsEventListener;',
@@ -64,6 +66,7 @@ final class EventListenerPlanBuilder
      */
     private function resolveEventReference(string $module, string $event): array
     {
+        $moduleNs = ModuleNamespace::of($module);
         $event = trim($event);
 
         if (str_contains($event, '\\')) {
@@ -75,6 +78,6 @@ final class EventListenerPlanBuilder
 
         $eventClass = $this->inflector->toStudly($event);
 
-        return ["Semitexa\\Modules\\{$module}\\Domain\\Event\\{$eventClass}", $eventClass];
+        return ["{$moduleNs}\\Domain\\Event\\{$eventClass}", $eventClass];
     }
 }

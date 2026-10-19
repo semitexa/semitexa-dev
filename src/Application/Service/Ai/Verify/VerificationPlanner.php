@@ -298,7 +298,7 @@ final class VerificationPlanner
             );
         }
 
-        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope));
+        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope), ...E2eSpecTargets::of($changedFiles, $effectiveScope));
 
         // Not at minimal scope: `docs:reference` regenerates the whole
         // reference (class discovery across every package plus a console boot)

@@ -40,7 +40,7 @@
             "floors": {
                 "semitexa/ssr": "2026.09.27.0404",
                 "semitexa/project-graph": "2026.10.17.0511",
-                "semitexa/platform-ui": "2026.10.14.0919",
+                "semitexa/platform-ui": "next",
                 "semitexa/core": "2026.10.16.1744"
             }
         }

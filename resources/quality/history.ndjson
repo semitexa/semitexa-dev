@@ -21,3 +21,6 @@
 {"at": "2026-10-08T07:00:00+00:00", "metric": "requests.query-shapes", "total": 70, "event": "accept"}
 {"at":"2026-10-15T22:24:14+00:00","metric":"tests.skip-calls","total":160,"event":"accept"}
 {"at":"2026-10-15T23:03:54+00:00","metric":"tests.skip-calls","total":161,"event":"accept"}
+{"at":"2026-10-18T11:26:14+00:00","metric":"tests.skip-calls","total":161,"event":"accept"}
+{"at":"2026-10-18T14:11:29+00:00","metric":"tests.skip-calls","total":162,"event":"accept"}
+{"at":"2026-10-18T16:08:18+00:00","metric":"tests.skip-calls","total":163,"event":"accept"}

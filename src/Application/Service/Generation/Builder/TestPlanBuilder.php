@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 /**
@@ -57,6 +58,7 @@ final class TestPlanBuilder
 
     private function payloadTest(string $module, string $name): PlannedFile
     {
+        $moduleNs = ModuleNamespace::of($module);
         $payloadClass = $this->inflector->toPayloadClass($name);
         $className = $payloadClass . 'ContractTest';
         $namespace = "App\\Tests\\Modules\\{$module}\\Integration";
@@ -64,7 +66,7 @@ final class TestPlanBuilder
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
-            "use Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClass};",
+            "use {$moduleNs}\\Application\\Payload\\Request\\{$payloadClass};",
             'use Semitexa\\Testing\\Traits\\TestsPayloads;',
         ];
         sort($imports);
@@ -87,6 +89,7 @@ final class TestPlanBuilder
 
     private function handlerTest(string $module, string $name): PlannedFile
     {
+        $moduleNs = ModuleNamespace::of($module);
         $handlerClass = $this->inflector->toHandlerClass($name);
         $payloadClass = $this->inflector->toPayloadClass($name);
         $resourceClass = $this->inflector->toResponseClass($name);
@@ -102,9 +105,9 @@ final class TestPlanBuilder
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
             'use Semitexa\\Core\\Contract\\TypedHandlerInterface;',
-            "use Semitexa\\Modules\\{$module}\\Application\\Handler\\PayloadHandler\\{$handlerClass};",
-            "use Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\{$payloadClass};",
-            "use Semitexa\\Modules\\{$module}\\Application\\Resource\\Response\\{$resourceClass};",
+            "use {$moduleNs}\\Application\\Handler\\PayloadHandler\\{$handlerClass};",
+            "use {$moduleNs}\\Application\\Payload\\Request\\{$payloadClass};",
+            "use {$moduleNs}\\Application\\Resource\\Response\\{$resourceClass};",
         ];
         sort($imports);
 

@@ -36,6 +36,8 @@ final readonly class VerificationTarget
     public const TYPE_SKILL_COPIES     = 'skill_copies';
     public const TYPE_SCAFFOLD_DRIFT   = 'scaffold_drift';
     public const TYPE_DOCS             = 'docs';
+    /** A changed Playwright spec, run on the host; see {@see E2eSpecTargets}. */
+    public const TYPE_E2E              = 'e2e';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled

@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
 final class ContractPlanBuilder
@@ -25,6 +26,7 @@ final class ContractPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $name = $this->inflector->toStudly($params['name']);
         $implName = $this->inflector->toStudly($params['implementation']);
 
@@ -33,8 +35,8 @@ final class ContractPlanBuilder
             $interfaceClass .= 'Interface';
         }
 
-        $contractNamespace = "Semitexa\\Modules\\{$module}\\Domain\\Contract";
-        $implNamespace = "Semitexa\\Modules\\{$module}\\Domain\\Service";
+        $contractNamespace = "{$moduleNs}\\Domain\\Contract";
+        $implNamespace = "{$moduleNs}\\Domain\\Service";
 
         // Interface file
         $interfaceTemplate = $this->templateResolver->resolve('contract-interface.php.tpl');

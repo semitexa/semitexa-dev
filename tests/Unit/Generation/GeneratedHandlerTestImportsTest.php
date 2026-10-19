@@ -38,17 +38,18 @@ final class GeneratedHandlerTestImportsTest extends TestCase
         self::fail('make:test planned no Unit handler test');
     }
 
+    // verify:accept-test-change a new module is generated under App\Modules, the canonical prefix (operator decision 18.10)
     #[Test]
     public function the_payload_and_the_response_are_imported(): void
     {
         $content = $this->handlerTest();
 
         self::assertStringContainsString(
-            'use Semitexa\\Modules\\AuditModule\\Application\\Payload\\Request\\AuditCheckPayload;',
+            'use App\\Modules\\AuditModule\\Application\\Payload\\Request\\AuditCheckPayload;',
             $content,
         );
         self::assertStringContainsString(
-            'use Semitexa\\Modules\\AuditModule\\Application\\Resource\\Response\\AuditCheckResponse;',
+            'use App\\Modules\\AuditModule\\Application\\Resource\\Response\\AuditCheckResponse;',
             $content,
         );
     }

@@ -183,6 +183,84 @@ class MakePayloadCommandTest extends TestCase
         $this->assertPhpSyntaxValid($content);
     }
 
+    public function test_validation_flag_scaffolds_validatable_payload(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ContactForm',
+            'path' => '/contact',
+            'method' => 'POST',
+            'response' => 'ContactAccepted',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'validation' => true,
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        $this->assertStringContainsString('use Semitexa\\Core\\Contract\\ValidatablePayloadInterface;', $content);
+        $this->assertStringContainsString('use Semitexa\\Core\\Validation\\Trait\\PresenceValidationTrait;', $content);
+        $this->assertStringContainsString("class ContactFormPayload implements ValidatablePayloadInterface\n{\n    use PresenceValidationTrait;\n", $content);
+        $this->assertStringContainsString('public function validate(): array', $content);
+        $this->assertStringContainsString('return $errors;', $content);
+        $this->assertStringEndsWith("    }\n}\n", $content);
+        $this->assertPhpSyntaxValid($content);
+    }
+
+    public function test_validation_flag_composes_with_graphql_marker(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ProductBySlug',
+            'path' => '/products/{slug}',
+            'method' => 'GET',
+            'response' => 'Product',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'graphql' => true,
+            'validation' => true,
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        $this->assertStringContainsString("#[ExposeAsGraphql]\nclass ProductBySlugPayload implements ValidatablePayloadInterface\n", $content);
+        $this->assertPhpSyntaxValid($content);
+    }
+
+    public function test_default_output_has_no_validation_scaffold(): void
+    {
+        $builder = new PayloadPlanBuilder(
+            new NameInflector(),
+            new TemplateResolver(),
+            new TemplateRenderer(),
+        );
+
+        $plan = $builder->build([
+            'module' => 'Shop',
+            'name' => 'ProductBySlug',
+            'path' => '/products/{slug}',
+            'method' => 'GET',
+            'response' => 'Product',
+            'access' => PayloadPlanBuilder::ACCESS_PUBLIC,
+            'dryRun' => false,
+        ]);
+
+        $content = $plan->files[0]->content;
+        $this->assertStringNotContainsString('ValidatablePayloadInterface', $content);
+        $this->assertStringNotContainsString('validate()', $content);
+        $this->assertStringContainsString("class ProductBySlugPayload\n{\n}\n", $content);
+    }
+
     public function test_unknown_access_type_is_rejected(): void
     {
         $builder = new PayloadPlanBuilder(

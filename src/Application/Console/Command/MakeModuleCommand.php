@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Generation\Support\GenerationOutcomeRendere
 use Semitexa\Dev\Application\Service\Generation\Builder\ModulePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\JsonResultFormatter;
 use Semitexa\Dev\Application\Service\Generation\Support\LlmHintsFormatter;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\ReplayArgBuilder;
 use Semitexa\Dev\Application\Service\Generation\Verifier\PostWriteLinter;
@@ -192,7 +193,7 @@ final class MakeModuleCommand extends BaseCommand
         }
 
         return [
-            sprintf('Module namespace: Semitexa\\Modules\\%s', $module),
+            sprintf('Module namespace: %s', ModuleNamespace::of($module)),
             sprintf('Source root: src/modules/%s/src', $module),
             sprintf('Tests root: src/modules/%s/tests', $module),
             'All directories follow the standard convention and are auto-discovered.',

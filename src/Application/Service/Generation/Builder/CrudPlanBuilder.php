@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 use Semitexa\Dev\Application\Service\Generation\Support\FieldDeclarationWriter;
 use Semitexa\Dev\Application\Service\Generation\Support\ModelFieldInference;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\Orm\Metadata\ResourceModelMetadata;
 
@@ -33,6 +34,7 @@ final class CrudPlanBuilder
     public function build(array $params): GenerationPlan
     {
         $module = $this->inflector->toStudly($params['module']);
+        $moduleNs = ModuleNamespace::of($module);
         $name = $this->inflector->toStudly($params['name']);
         $metadata = $params['metadata'];
         $className = $name . 'Crud';
@@ -71,7 +73,7 @@ final class CrudPlanBuilder
             (new ModelFieldInference())->fields($metadata),
         );
 
-        $namespace = "Semitexa\\Modules\\{$module}\\Application\\Payload\\Request\\Crud";
+        $namespace = "{$moduleNs}\\Application\\Payload\\Request\\Crud";
         $files = [
             new PlannedFile(
                 "src/modules/{$module}/src/Application/Payload/Request/Crud/{$className}.php",
