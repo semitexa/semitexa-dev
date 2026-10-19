@@ -1963,42 +1963,6 @@ parameters:
 			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetCollectorStore.php
 
 		-
-			message: '#^Parameter \$module of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$path of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$position of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$priority of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects int, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$scope of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
-			message: '#^Parameter \$type of class Semitexa\\Ssr\\Application\\Service\\Asset\\AssetEntry constructor expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 2
-			path: packages/semitexa-ssr/src/Application/Service/Asset/AssetEntry.php
-
-		-
 			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Asset\\AssetManager\:\:getVersion\(\) should return string but returns mixed\.$#'
 			identifier: return.type
 			count: 1
