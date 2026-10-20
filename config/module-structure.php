@@ -605,6 +605,15 @@ $codeRoot[] = $rule(
     rationale: 'Framework configuration types (EnvValueResolver, RegistryConfig). Leaf — no subdirectories. Drift filenames rejected.',
 );
 
+// Feature — file-only leaf: feature flag contract, registry, default and in-memory flags.
+$codeRoot[] = $rule(
+    path: 'Feature',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Feature flags (FeatureFlagsInterface, FeatureFlag, FeatureFlagRegistry, the default and in-memory flags). Leaf; #[AsFeatureFlag] lives in Attribute/.',
+);
+
 // RateLimit — file-only leaf: the limiter, its decision and key, the counter stores.
 $codeRoot[] = $rule(
     path: 'RateLimit',
@@ -1208,6 +1217,7 @@ $packageSpecificCodeRoot = [
             'Csrf',
             'Error',
             'Event',
+            'Feature',
             'Http',
             'Lifecycle',
             'Locale',
