@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 174,
+            "total": 175,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -92,6 +92,7 @@
                 "semitexa-platform-ui": 4,
                 "semitexa-platform-user": 2,
                 "semitexa-rbac": 1,
+                "semitexa-scheduler": 1,
                 "semitexa-ssr": 30,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
@@ -1560,6 +1561,19 @@
                 }
             },
             "reason": "semitexa-orm 40->41: SchemaSyncRoundTripTest runs model -> apply -> empty diff on SQLite always and on MySQL when configured; the MySQL case skips once without MySQL or when its table exists. It found SQLite re-migrating decimal/json/datetime columns on every sync"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 174,
+            "to": 175,
+            "keys": {
+                "semitexa-scheduler": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "semitexa-scheduler 0->1: SchedulerWorkerEndToEndTest drives the real worker loop (claim, run, finalize, retry, race, expired lease) on MySQL; one skip, only without MySQL. It found dispatchAt() returning an empty run id"
         }
     ]
 }
