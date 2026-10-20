@@ -657,9 +657,16 @@ $codeRoot[] = $rule(
 // Http — files at root + Exception/ + Response/ subdirectories.
 $codeRoot[] = $rule(
     path: 'Http',
-    allowedDirectories: ['Exception', 'Response'],
+    allowedDirectories: ['Client', 'Exception', 'Response'],
     allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
-    rationale: 'HTTP wrappers (semitexa-core). PascalCase class files at root + Exception/ + Response/ sub-trees.',
+    rationale: 'HTTP wrappers (semitexa-core). PascalCase class files at root + Client/ + Exception/ + Response/ sub-trees.',
+);
+$codeRoot[] = $rule(
+    path: 'Http/Client',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'The outbound HTTP client: its interface, request/response/options values, retry policy, the curl client and the test fake. Leaf.',
 );
 $codeRoot[] = $rule(
     path: 'Http/Exception',
