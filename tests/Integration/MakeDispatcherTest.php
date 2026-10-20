@@ -142,6 +142,17 @@ class MakeDispatcherTest extends TestCase
         $this->assertStringContainsString('Unknown recipe', $tester->getDisplay());
     }
 
+    /** --arg=force=1 reached every step's --force behind the flag that decides it (MCP review). */
+    public function test_rejects_an_arg_that_would_set_a_flag_of_make_itself(): void
+    {
+        $app = new Application();
+        $app->add($this->newMakeCommand());
+        $tester = new CommandTester($app->find('make'));
+        $exit = $tester->execute(['--recipe' => 'add_html_page', '--arg' => ['module=Blog', 'force=1', 'override-duplicate=1'], '--json' => true]);
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('--arg cannot set force, override-duplicate: that is a flag of make itself, set with its own option.', $tester->getDisplay());
+    }
+
     public function test_rejects_recipe_with_empty_generator_chain(): void
     {
         $app = new Application();

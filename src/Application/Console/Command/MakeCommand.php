@@ -40,6 +40,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'make', description: 'Recipe-driven scaffold dispatcher — runs a recipe\'s generator_chain end-to-end')]
 final class MakeCommand extends BaseCommand
 {
+    /**
+     * The flags of make itself. A step copies every --arg its command declares,
+     * so --arg=force=1 turned --force on behind the flag that decides it, and
+     * a caller that offers --arg but not --force (an MCP tool) was bypassed.
+     */
+    public const RESERVED_ARGS = ['write', 'force', 'override-duplicate', 'dry-run', 'json', 'ndjson', 'llm-hints', 'trace'];
+
     #[InjectAsReadonly]
     protected TraceAutoAppender $traceAppender;
 
@@ -78,6 +85,14 @@ final class MakeCommand extends BaseCommand
         }
 
         $sharedArgs = $this->parseArgs((array) $input->getOption('arg'));
+        $reserved = array_values(array_intersect(array_keys($sharedArgs), self::RESERVED_ARGS));
+        if ($reserved !== []) {
+            return GenerationPreflight::reject($input, $output, 'make', GenerationPreflight::REASON_INVALID_OPTION, sprintf(
+                '--arg cannot set %s: %s.',
+                implode(', ', $reserved),
+                'that is a flag of make itself, set with its own option',
+            ));
+        }
         $write = (bool) $input->getOption('write');
         $force = (bool) $input->getOption('force');
         $override = (bool) $input->getOption('override-duplicate');
