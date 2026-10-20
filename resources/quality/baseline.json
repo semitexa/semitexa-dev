@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 173,
+            "total": 174,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -86,7 +86,7 @@
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
-                "semitexa-orm": 40,
+                "semitexa-orm": 41,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1547,6 +1547,19 @@
                 }
             },
             "reason": "semitexa-core 16->17: RedisRateLimitStoreTest proves the rate-limit Lua script on a real Redis; it skips once, only when no Redis answers (same guard as RedisPoolRestartTest)"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 173,
+            "to": 174,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 40,
+                    "to": 41
+                }
+            },
+            "reason": "semitexa-orm 40->41: SchemaSyncRoundTripTest runs model -> apply -> empty diff on SQLite always and on MySQL when configured; the MySQL case skips once without MySQL or when its table exists. It found SQLite re-migrating decimal/json/datetime columns on every sync"
         }
     ]
 }
