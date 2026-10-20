@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 171,
+            "total": 172,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -90,7 +90,7 @@
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
-                "semitexa-platform-user": 1,
+                "semitexa-platform-user": 2,
                 "semitexa-rbac": 1,
                 "semitexa-ssr": 30,
                 "semitexa-storage": 1,
@@ -1521,6 +1521,19 @@
                 }
             },
             "reason": "semitexa-platform-user 0->1: PasswordResetTokenStoreMySqlTest proves the single-use claim's UPDATE row count on real MySQL (the flow test runs on SQLite); it skips once, only without MySQL or without the orm:sync'ed table - same shape as orm SeedingTest"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 171,
+            "to": 172,
+            "keys": {
+                "semitexa-platform-user": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "semitexa-platform-user 1->2: PlatformUserStaleWriteMySqlTest proves the row_version optimistic lock refuses a sign-in's stale full-row write after a password change, on real MySQL; one skip, only without MySQL or the synced table"
         }
     ]
 }
