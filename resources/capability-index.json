@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-10-20T17:50:17+00:00",
-    "source_version": "dev-master@9e5dcd1",
-    "count": 78,
+    "generated_at": "2026-10-20T21:34:06+00:00",
+    "source_version": "dev-master@dd20c8c",
+    "count": 79,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -53,7 +53,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "872a3b02ce30b2813a295e1bf5fb152a7afdc07c2d34814b4f32df3984e5f8bf",
+    "content_hash": "fbb6d35d1659135891fb0fdeb82bb289ce310330c3a4e9bada78b9a9a70c13c1",
     "capabilities": [
         {
             "id": "api.external",
@@ -569,6 +569,21 @@
             "declared_by": "Semitexa\\Search\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/search"
+        },
+        {
+            "id": "settings.feature-flags",
+            "summary": "Feature flags declared in code (#[AsFeatureFlag]), overridden per site or per user, with percentage rollouts.",
+            "use_when": "A feature ships switched off, rolls out to a share of users, or is turned on for one site or one user without a deploy.",
+            "avoid_when": "A kill switch that must act within a second: a flip reaches every worker within 2 s, not at once.",
+            "replaces": [
+                "a hard-coded featureFlags array per tenant",
+                "an env variable per feature, changed by redeploying"
+            ],
+            "see_also": "bin/semitexa feature:list, feature:set; FeatureFlagsInterface; Twig feature()",
+            "kind": "package",
+            "declared_by": "Semitexa\\Platform\\Settings\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/platform-settings"
         },
         {
             "id": "settings.store",
