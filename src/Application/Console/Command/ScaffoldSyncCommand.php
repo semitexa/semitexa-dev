@@ -43,6 +43,7 @@ final class ScaffoldSyncCommand extends BaseCommand
         'Dockerfile' => 'Dockerfile',
         'docker-compose.yml' => 'docker-compose.yml',
         'docker-compose.ollama.yml' => 'docker-compose.ollama.yml',
+        'docker-compose.worker.yml' => 'docker-compose.worker.yml',
         // NOTE: no '.gitignore' => 'gitignore' mapping — the non-dot copy in
         // ultimate was removed as orphan drift (no installer reads it; see
         // ultimate config/module-structure.php).

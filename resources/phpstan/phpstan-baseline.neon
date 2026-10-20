@@ -631,12 +631,6 @@ parameters:
 			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
 
 		-
-			message: '#^Parameter \#1 \$class of function class_exists expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-core/src/Pipeline/PipelineExecutor.php
-
-		-
 			message: '#^Parameter \#1 \$instance of method Semitexa\\Core\\Pipeline\\PipelineExecutor\:\:invokeListener\(\) expects object, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -819,12 +813,6 @@ parameters:
 		-
 			message: '#^Method Semitexa\\Core\\Queue\\QueueDispatcher\:\:enqueue\(\) has parameter \$handlerMeta with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
-
-		-
-			message: '#^Parameter \#1 \$name of static method Semitexa\\Core\\Queue\\QueueTransportRegistry\:\:create\(\) expects string, mixed given\.$#'
-			identifier: argument.type
 			count: 1
 			path: packages/semitexa-core/src/Queue/QueueDispatcher.php
 

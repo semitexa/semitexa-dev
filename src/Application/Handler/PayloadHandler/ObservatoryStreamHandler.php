@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Core\Server\AfterResponse;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryStreamPayload;
 use Semitexa\Dev\Application\Service\Trace\CoroutineSnapshot;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
@@ -105,6 +106,9 @@ final class ObservatoryStreamHandler implements TypedHandlerInterface
         if (!$this->write($response, 'hello', ['transport' => 'sse', 'worker' => getmypid()])) {
             return;
         }
+        // The response is out, the coroutine stays until the panel leaves:
+        // work the request deferred stops waiting for that.
+        AfterResponse::holdOpen();
 
         while (true) {
             // A client that left is noticed on the next tick, not on the next

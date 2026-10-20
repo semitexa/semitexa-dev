@@ -85,7 +85,8 @@ compose() {
         docker-compose.redis.yml \
         docker-compose.nats.yml \
         docker-compose.rabbitmq.yml \
-        docker-compose.ollama.yml
+        docker-compose.ollama.yml \
+        docker-compose.worker.yml
     do
         [ -f "$RELEASE_ROOT/$overlay" ] && args+=(-f "$RELEASE_ROOT/$overlay")
     done
