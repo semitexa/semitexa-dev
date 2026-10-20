@@ -76,13 +76,13 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 172,
+            "total": 173,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 16,
+                "semitexa-core": 17,
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
@@ -1534,6 +1534,19 @@
                 }
             },
             "reason": "semitexa-platform-user 1->2: PlatformUserStaleWriteMySqlTest proves the row_version optimistic lock refuses a sign-in's stale full-row write after a password change, on real MySQL; one skip, only without MySQL or the synced table"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 172,
+            "to": 173,
+            "keys": {
+                "semitexa-core": {
+                    "from": 16,
+                    "to": 17
+                }
+            },
+            "reason": "semitexa-core 16->17: RedisRateLimitStoreTest proves the rate-limit Lua script on a real Redis; it skips once, only when no Redis answers (same guard as RedisPoolRestartTest)"
         }
     ]
 }
