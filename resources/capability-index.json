@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-10-07T07:49:08+00:00",
-    "source_version": "dev-master@cb78c52",
-    "count": 77,
+    "generated_at": "2026-10-20T17:50:17+00:00",
+    "source_version": "dev-master@9e5dcd1",
+    "count": 78,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -20,6 +20,7 @@
         "semitexa/llm",
         "semitexa/locale",
         "semitexa/mail",
+        "semitexa/mcp",
         "semitexa/media",
         "semitexa/music",
         "semitexa/orm",
@@ -52,7 +53,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "430dec75e56c7badbf727e51c1ad7daa5009de6863f497766a54c6cc9a089ff6",
+    "content_hash": "872a3b02ce30b2813a295e1bf5fb152a7afdc07c2d34814b4f32df3984e5f8bf",
     "capabilities": [
         {
             "id": "api.external",
@@ -401,6 +402,21 @@
             "declared_by": "Semitexa\\Mail\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/mail"
+        },
+        {
+            "id": "mcp.server",
+            "summary": "A Model Context Protocol server through which a coding agent (Claude Code, Cursor, Claude Desktop) learns the project, generates code the framework expects and checks what it changed.",
+            "use_when": "An AI agent builds or changes this Semitexa project and should use the framework's own tools and checks rather than guessing its conventions.",
+            "avoid_when": "Nobody works on the project through an agent, or outside dev: its tools change the project.",
+            "replaces": [
+                "a hand-written MCP server wrapping bin/semitexa commands",
+                "pasting framework conventions into every agent session"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Mcp\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/mcp"
         },
         {
             "id": "media.assets",
