@@ -42,6 +42,7 @@ INFRA_FILES=(
     docker-compose.redis.yml
     docker-compose.nats.yml
     docker-compose.ollama.yml
+    docker-compose.worker.yml
 )
 
 changed=()
@@ -169,6 +170,7 @@ rebuild_clone_images() {
             docker-compose.redis.yml \
             docker-compose.nats.yml \
             docker-compose.ollama.yml \
+            docker-compose.worker.yml \
             docker-compose.test.yml
         do
             [ -f "$RELEASE_ROOT/$overlay" ] && build_args+=(-f "$overlay")
