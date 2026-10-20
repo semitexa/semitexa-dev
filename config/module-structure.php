@@ -623,6 +623,15 @@ $codeRoot[] = $rule(
     rationale: 'Rate limiting (RateLimiter, RateLimitDecision, RateLimitKey, the counter stores). Leaf — no subdirectories; the #[RateLimit] attribute lives in Attribute/.',
 );
 
+// Security — file-only leaf: the app secret, encryption, signed URLs.
+$codeRoot[] = $rule(
+    path: 'Security',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Secrets and what is keyed from them (AppSecret, EncrypterInterface, SodiumEncrypter, UrlSigner, SignedUrlListener). Leaf — no subdirectories; #[RequiresSignedUrl] lives in Attribute/.',
+);
+
 // Redis — file-only leaf with adapter-name prefix pattern.
 $codeRoot[] = $rule(
     path: 'Redis',
@@ -1229,6 +1238,7 @@ $packageSpecificCodeRoot = [
             'Registry',
             'Request',
             'Resource',
+            'Security',
             'Server',
             'Session',
             'Support',
