@@ -605,6 +605,15 @@ $codeRoot[] = $rule(
     rationale: 'Framework configuration types (EnvValueResolver, RegistryConfig). Leaf — no subdirectories. Drift filenames rejected.',
 );
 
+// RateLimit — file-only leaf: the limiter, its decision and key, the counter stores.
+$codeRoot[] = $rule(
+    path: 'RateLimit',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Rate limiting (RateLimiter, RateLimitDecision, RateLimitKey, the counter stores). Leaf — no subdirectories; the #[RateLimit] attribute lives in Attribute/.',
+);
+
 // Redis — file-only leaf with adapter-name prefix pattern.
 $codeRoot[] = $rule(
     path: 'Redis',
@@ -1198,6 +1207,7 @@ $packageSpecificCodeRoot = [
             'Log',
             'PHPStan',
             'Queue',
+            'RateLimit',
             'Redis',
             'Registry',
             'Request',

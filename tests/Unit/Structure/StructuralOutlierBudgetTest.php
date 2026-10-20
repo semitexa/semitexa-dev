@@ -184,7 +184,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // while the app goes on dropping X-Forwarded-Proto. The shape test now
         // lives beside the matcher that has to agree with it, and
         // ipMatchesEntry() calls it first so the two cannot drift.
-        'semitexa-core/src/Request.php' => [34, 541],
+        'semitexa-core/src/Request.php' => [33, 470],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
