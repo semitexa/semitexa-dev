@@ -243,7 +243,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 769 -> 774 the same day: each deferred component render is timed into
         // the page's timeline (tk-ls-timeline; a no-op outside development).
         'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 774],
-        'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
+        // 842 -> 862 on 2026-10-22, recorded: the pool joins an open test
+        // transaction (pop, push, discard) — every Co\run() leaves the hooks on,
+        // so in a test process it serves plain CLI code, and its own
+        // connections committed. The logic lives in SharedTestTransaction.
+        'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 862],
         // 765 -> 764 on 2026-09-24: page finalization moved to PageDocumentFinalizer.
         // 764 -> 786, 25 -> 26 on 2026-10-06, recorded: a page with no deferred
         // slot stores its deferred request only after rendering, and only when
