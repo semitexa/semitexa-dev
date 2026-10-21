@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-10-20T21:34:06+00:00",
-    "source_version": "dev-master@dd20c8c",
-    "count": 79,
+    "generated_at": "2026-10-21T13:18:33+00:00",
+    "source_version": "dev-master@f5c7104",
+    "count": 82,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -23,6 +23,7 @@
         "semitexa/mcp",
         "semitexa/media",
         "semitexa/music",
+        "semitexa/notifications",
         "semitexa/orm",
         "semitexa/os",
         "semitexa/platform-settings",
@@ -53,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "fbb6d35d1659135891fb0fdeb82bb289ce310330c3a4e9bada78b9a9a70c13c1",
+    "content_hash": "0ad1341d6d851f24a00e820e84ebbb63c18cd3da0ea478452c80513e264105c6",
     "capabilities": [
         {
             "id": "api.external",
@@ -432,6 +433,50 @@
             "declared_by": "Semitexa\\Media\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/media"
+        },
+        {
+            "id": "notifications.channel",
+            "summary": "A new way of reaching a notification's recipients - a chat bot, a push service, an SMS gateway - that every notification can name in via().",
+            "use_when": "Recipients should hear about something somewhere the built-in mail and inbox channels do not reach.",
+            "avoid_when": "Only one place in the code ever sends there - call that client directly.",
+            "replaces": [
+                "a chat or SMS client call pasted next to every mail send",
+                "an if-per-channel block deciding where each event goes"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Notifications\\Attribute\\AsNotificationChannel",
+            "declared_by_short": "AsNotificationChannel",
+            "package": "semitexa/notifications"
+        },
+        {
+            "id": "notifications.inbox",
+            "summary": "A per-recipient, tenant-scoped inbox of stored notifications with unread counts and mark-as-read.",
+            "use_when": "The UI shows a bell, a notification list or an unread badge.",
+            "avoid_when": "The record is an audit trail rather than something a person reads - keep it in its own table.",
+            "replaces": [
+                "a hand-made notifications table with read flags and its own queries"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Notifications\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/notifications"
+        },
+        {
+            "id": "notifications.send",
+            "summary": "One notification delivered to its recipients over several channels (mail, a database inbox, your own), honouring each recipient's opt-outs and reporting what was sent, skipped or failed.",
+            "use_when": "Something happened that a person should hear about, and where they hear it depends on the event and on their own settings.",
+            "avoid_when": "The message is a one-off transactional mail with no inbox copy and no opt-out - send it through MailServiceInterface.",
+            "replaces": [
+                "a mail send plus a hand-written inbox INSERT in each handler that reports an event",
+                "a per-user settings column checked before every send"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Notifications\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/notifications"
         },
         {
             "id": "orm.persistence",
