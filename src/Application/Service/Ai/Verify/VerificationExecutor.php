@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 use Semitexa\Core\Discovery\ClassDiscovery;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\ChangedLineTypeCheck;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
@@ -37,6 +38,7 @@ final class VerificationExecutor
     private readonly ModuleStructureSpecLoader $specLoader;
 
     private readonly PhpstanRunner $phpstanRunner;
+    private readonly ?ChangedLineTypeCheck $typeCheck;
     private readonly LintRunner $lintRunner;
 
     public function __construct(
@@ -50,9 +52,12 @@ final class VerificationExecutor
         // Null = look `node` up on PATH. A path that is not executable counts
         // as absent, which is how a test pins the no-node verdict.
         private readonly ?string $nodeBinary = null,
+        ?ChangedLineTypeCheck $typeCheck = null,
     ) {
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
         $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
+        // A test that hands in its own PhpstanRunner gets no second, real PHPStan run.
+        $this->typeCheck = $typeCheck ?? ($phpstanRunner === null ? new ChangedLineTypeCheck($projectRoot, $this->processRunner) : null);
         $this->lintRunner = new LintRunner($application);
     }
 
@@ -436,6 +441,9 @@ final class VerificationExecutor
         }
 
         $result = $this->phpstanRunner->run($existing);
+        if ($this->typeCheck !== null) {
+            $result = ChangedLineTypeCheck::merge($result, $this->typeCheck->run($existing));
+        }
 
         return new VerificationResult(
             target:      $target,

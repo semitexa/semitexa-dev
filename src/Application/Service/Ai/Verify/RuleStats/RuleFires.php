@@ -76,7 +76,9 @@ final class RuleFires
             $check = self::text($violation['check'] ?? null);
             $rule = $violation['identifier'] ?? $violation['code'] ?? $violation['rule'] ?? null;
             // Lint and docs violations name the command, already counted above.
-            if (is_string($rule) && $rule !== '' && $check !== 'lint' && $check !== 'docs') {
+            // The level-5 type pass reports PHPStan's own identifiers, none of
+            // them a project rule: counted, they would read as retired rules.
+            if (is_string($rule) && $rule !== '' && $check !== 'lint' && $check !== 'docs' && $check !== 'phpstan_types') {
                 $fired[] = $rule;
             }
         }

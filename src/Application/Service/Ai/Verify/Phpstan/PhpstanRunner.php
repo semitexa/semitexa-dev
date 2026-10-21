@@ -32,6 +32,10 @@ final class PhpstanRunner
         private readonly ProcessRunner $processRunner = new ShellProcessRunner(),
         private readonly ?string $phpstanBinary = null,
         private readonly ?string $configPath = null,
+        // A level over the config's own (ChangedLineTypeCheck runs level 5),
+        // and the name its diagnostics and signal carry.
+        private readonly ?int $level = null,
+        private readonly string $check = 'phpstan_di',
     ) {}
 
     /**
@@ -87,6 +91,7 @@ final class PhpstanRunner
             '--error-format=json',
             '-c',
             $config,
+            ...($this->level === null ? [] : ['--level=' . $this->level]),
             ...$relativePaths,
         ];
 
@@ -125,9 +130,10 @@ final class PhpstanRunner
             : PhpstanRunResult::STATUS_FAIL;
 
         $signal = $unresolved === []
-            ? 'phpstan_di → 0 violations'
+            ? $this->check . ' → 0 violations'
             : sprintf(
-                'phpstan_di → %d violation(s); first: %s %s',
+                '%s → %d violation(s); first: %s %s',
+                $this->check,
                 count($unresolved),
                 $unresolved[0]['identifier'] ?? 'phpstan.error',
                 $unresolved[0]['path'] ?? '?',
@@ -242,6 +248,9 @@ final class PhpstanRunner
     /** @param list<array<string, mixed>> $diagnostics */
     private function error(string $signal, int $exit = 1, array $diagnostics = []): PhpstanRunResult
     {
+        // Named when it is not the DI pass, so a merged signal says which run failed.
+        $signal = $this->check === 'phpstan_di' ? $signal : $this->check . ': ' . $signal;
+
         return new PhpstanRunResult(PhpstanRunResult::STATUS_ERROR, $diagnostics, $signal, $exit === 0 ? 1 : $exit);
     }
 
@@ -307,7 +316,7 @@ final class PhpstanRunner
                     $identifier  = $this->namespaceBrokenFqcn($rawIdentifier, $messageText);
                     $tip         = isset($msg['tip']) && is_string($msg['tip']) ? $msg['tip'] : '';
                     $rows[] = [
-                        'check'         => 'phpstan_di',
+                        'check'         => $this->check,
                         'severity'      => 'error',
                         'rule'          => $identifier,
                         'identifier'    => $identifier,
@@ -334,7 +343,7 @@ final class PhpstanRunner
                     continue;
                 }
                 $rows[] = [
-                    'check'         => 'phpstan_di',
+                    'check'         => $this->check,
                     'severity'      => 'error',
                     'rule'          => 'phpstan.error',
                     'identifier'    => 'phpstan.error',
