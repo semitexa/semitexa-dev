@@ -48,7 +48,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // body to the first labelable thing inside it, which is a move-up
         // button — the same class of defect as the Trix toolbar the
         // condition was written for, so it belongs in the same comment.
-        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 764],
+        // 764 -> 748 on 2026-10-21: the console's strings moved to locale
+        // catalogs; the metadata label table left for ContentSeoLabels and
+        // the appearance-note constant folded into its one use.
+        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 748],
         // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
         // now arrive as a Closure resolved AFTER the connection caps, so an
         // over-cap attempt no longer pays for a full graphql document execution
