@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 176,
+            "total": 180,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -86,7 +86,7 @@
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
-                "semitexa-orm": 41,
+                "semitexa-orm": 45,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1588,6 +1588,32 @@
                 }
             },
             "reason": "semitexa-workflow WorkflowInstanceTenantLookupTest skips without the workflow_instances table (MySQL integration test of the tenant-scoped subject lookup)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 176,
+            "to": 178,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 41,
+                    "to": 43
+                }
+            },
+            "reason": "orm QueryAdapterJoinsTransactionTest: the MySQL rollback case skips when the database is not MySQL or unreachable (SQLite case always runs)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 178,
+            "to": 180,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 43,
+                    "to": 45
+                }
+            },
+            "reason": "orm QueryAdapterJoinsTransactionTest: MySQL and coroutine-pool cases skip without MySQL or Swoole (SQLite case always runs)"
         }
     ]
 }
