@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 180,
+            "total": 181,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -101,7 +101,7 @@
                 "semitexa-ultimate": 2,
                 "semitexa-update": 3,
                 "semitexa-webhooks": 15,
-                "semitexa-workflow": 1
+                "semitexa-workflow": 2
             },
             "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
             "blind": "whether a skip actually fires at runtime, and skips expressed as #[Requires*] attributes or early returns"
@@ -1614,6 +1614,19 @@
                 }
             },
             "reason": "orm QueryAdapterJoinsTransactionTest: MySQL and coroutine-pool cases skip without MySQL or Swoole (SQLite case always runs)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 180,
+            "to": 181,
+            "keys": {
+                "semitexa-workflow": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "workflow WorkflowInstanceTenantLookupTest: the new-index probe uses MySQL DDL and skips on other drivers"
         }
     ]
 }
