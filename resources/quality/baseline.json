@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 175,
+            "total": 176,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -100,7 +100,8 @@
                 "semitexa-theme": 1,
                 "semitexa-ultimate": 2,
                 "semitexa-update": 3,
-                "semitexa-webhooks": 15
+                "semitexa-webhooks": 15,
+                "semitexa-workflow": 1
             },
             "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
             "blind": "whether a skip actually fires at runtime, and skips expressed as #[Requires*] attributes or early returns"
@@ -1574,6 +1575,19 @@
                 }
             },
             "reason": "semitexa-scheduler 0->1: SchedulerWorkerEndToEndTest drives the real worker loop (claim, run, finalize, retry, race, expired lease) on MySQL; one skip, only without MySQL. It found dispatchAt() returning an empty run id"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 175,
+            "to": 176,
+            "keys": {
+                "semitexa-workflow": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "semitexa-workflow WorkflowInstanceTenantLookupTest skips without the workflow_instances table (MySQL integration test of the tenant-scoped subject lookup)"
         }
     ]
 }
