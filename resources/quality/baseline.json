@@ -2,13 +2,8 @@
     "_": "Quality metrics: lower is better. Written only by `ai:quality record` (never raises) and `ai:quality accept --reason` (raises, and says why below). Do not edit by hand.",
     "metrics": {
         "packages.without-tests": {
-            "total": 4,
-            "breakdown": {
-                "semitexa-files": 1,
-                "semitexa-music": 1,
-                "semitexa-showcase-kit": 1,
-                "semitexa-theme-sky": 1
-            },
+            "total": 0,
+            "breakdown": [],
             "sees": "packages under packages/ that have PHP in src/ and no *Test.php under tests/",
             "blind": "how well a package is tested: one trivial test takes a package off the list"
         },

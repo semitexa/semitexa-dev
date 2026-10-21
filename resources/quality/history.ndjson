@@ -41,3 +41,4 @@
 {"at":"2026-10-21T05:51:52+00:00","metric":"tests.skip-calls","total":180,"event":"accept"}
 {"at":"2026-10-21T06:55:12+00:00","metric":"tests.skip-calls","total":181,"event":"accept"}
 {"at":"2026-10-21T08:11:49+00:00","metric":"tests.skip-calls","total":182,"event":"accept"}
+{"at":"2026-10-21T19:17:57+00:00","metric":"packages.without-tests","total":0,"event":"record"}
