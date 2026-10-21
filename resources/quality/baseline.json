@@ -76,7 +76,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 181,
+            "total": 182,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -93,6 +93,7 @@
                 "semitexa-platform-user": 2,
                 "semitexa-rbac": 1,
                 "semitexa-scheduler": 1,
+                "semitexa-search": 1,
                 "semitexa-ssr": 30,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
@@ -1627,6 +1628,19 @@
                 }
             },
             "reason": "workflow WorkflowInstanceTenantLookupTest: the new-index probe uses MySQL DDL and skips on other drivers"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 181,
+            "to": 182,
+            "keys": {
+                "semitexa-search": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "search LlmSearchQueryPlannerTest: the unlimited-provider case needs semitexa/llm (suggest-only) and skips without it"
         }
     ]
 }
