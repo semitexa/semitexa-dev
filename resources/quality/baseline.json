@@ -71,7 +71,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 182,
+            "total": 183,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -81,7 +81,7 @@
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
-                "semitexa-orm": 45,
+                "semitexa-orm": 46,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
@@ -1636,6 +1636,19 @@
                 }
             },
             "reason": "search LlmSearchQueryPlannerTest: the unlimited-provider case needs semitexa/llm (suggest-only) and skips without it"
+        },
+        {
+            "at": "2026-10-22",
+            "metric": "tests.skip-calls",
+            "from": 182,
+            "to": 183,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 45,
+                    "to": 46
+                }
+            },
+            "reason": "semitexa-orm: DatabaseQueueTransportTest::a_message_still_inside_another_transaction_does_not_hold_up_the_queue tests InnoDB row-lock behaviour of the claim; there is no equivalent on SQLite, so it skips off MySQL (tk-orm-ssr-audit)"
         }
     ]
 }
