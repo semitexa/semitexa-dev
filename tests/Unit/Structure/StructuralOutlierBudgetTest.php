@@ -147,7 +147,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-scheduler/src/Domain/Model/ScheduledRun.php' => [53, 352],
         'semitexa-scheduler/src/Domain/Model/ScheduleDefinition.php' => [37, 248],
         'semitexa-workflow/src/Domain/Model/WorkflowInstance.php' => [36, 208],
-        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
+        // 1272 -> 1275 on 2026-10-27, NO new method: the injected
+        // OsConsoleAccess, so the planner's manifest leaves out a window the
+        // person's role is refused (an editor was proposed Prompts).
+        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1275],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         // 932 -> 935 on 2026-10-04: the route's `exposure` (Public | Hug) is read
         // and passed through like sseGateModel. No new method.
