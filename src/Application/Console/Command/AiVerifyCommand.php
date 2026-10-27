@@ -191,7 +191,7 @@ final class AiVerifyCommand extends BaseCommand
         /** @var list<ChangedFile> $changed */
 
         $planner = new VerificationPlanner($projectRoot, $classifier);
-        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'), is_string($input->getOption('git-ref')) && $input->getOption('git-ref') !== '' ? $input->getOption('git-ref') : null);
+        $plan = $planner->plan($changed, $scope, (bool) $input->getOption('all'), $baseRef = is_string($input->getOption('git-ref')) && $input->getOption('git-ref') !== '' ? $input->getOption('git-ref') : null);
         if ((bool) $input->getOption('list-e2e')) {
             $output->writeln(implode("\n", array_map(static fn (VerificationTarget $t): string => (string) $t->filePath, array_values(array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_E2E)))), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
@@ -202,7 +202,7 @@ final class AiVerifyCommand extends BaseCommand
             $this->emitError($output, 'Application not available — cannot dispatch lint commands', $jsonMode);
             return self::FAILURE;
         }
-        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()));
+        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()), baseRef: $baseRef);
         // What the targets are about to check: a file edited before the receipt is written must not ride on this verdict.
         $treeBefore = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->fingerprintOf(array_map(static fn (ChangedFile $f): string => $f->path, $plan->changedFiles));
         $results = $executor->execute($plan);

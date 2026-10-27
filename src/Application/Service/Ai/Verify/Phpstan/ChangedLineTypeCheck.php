@@ -24,7 +24,9 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner;
  * (`::send()`, `::$queue`, `::LIMIT`). Callers in files that are not analysed
  * stay unseen.
  *
- * Changed lines come from `git diff -U0 HEAD` in the file's own repository.
+ * Changed lines come from `git diff -U0 <base>` in the file's own repository:
+ * HEAD, or the ref ai:verify --git-ref measures the change against (against
+ * HEAD a committed change has no changed line, and its errors went unseen).
  * A file git does not track is new: all of it changed. So is one whose
  * changes git cannot tell (outside any repository, a failed diff), and a
  * renamed one (the diff cannot pair it): a gate that cannot narrow reports
@@ -39,6 +41,7 @@ final class ChangedLineTypeCheck
         private readonly string $projectRoot,
         private readonly ProcessRunner $processRunner = new ShellProcessRunner(),
         private readonly ?PhpstanRunner $phpstan = null,
+        private readonly string $baseRef = 'HEAD',
     ) {}
 
     /** @param list<string> $relativePaths */
@@ -72,7 +75,9 @@ final class ChangedLineTypeCheck
             }
             $message = (string) ($d['message'] ?? '');
             foreach ($names as $name) {
-                if (str_contains($message, $name)) {
+                // Whole names: ::$id is in "::$idempotencyKey" too, and an
+                // older error on that one is not this change's.
+                if (preg_match('/' . preg_quote($name, '/') . '(?!\w)/', $message) === 1) {
                     return true;
                 }
             }
@@ -197,10 +202,11 @@ final class ChangedLineTypeCheck
         $git = ['git', '-c', 'safe.directory=*', '--literal-pathspecs', '-C', $dir];
 
         // Not a repository, or a file git does not track: every line is new.
-        if ($this->processRunner->run([...$git, 'ls-files', '--error-unmatch', '--', basename($abs)], $dir)['exit'] !== 0) {
+        // A ref that reads as an option is no base either (GitRefChanges refuses it too).
+        if (str_starts_with($this->baseRef, '-') || $this->processRunner->run([...$git, 'ls-files', '--error-unmatch', '--', basename($abs)], $dir)['exit'] !== 0) {
             return null;
         }
-        $diff = $this->processRunner->run([...$git, 'diff', '-U0', '--no-color', '--no-ext-diff', '--text', 'HEAD', '--', basename($abs)], $dir);
+        $diff = $this->processRunner->run([...$git, 'diff', '-U0', '--no-color', '--no-ext-diff', '--text', $this->baseRef, '--', basename($abs)], $dir);
         if ($diff['exit'] !== 0) {
             return null;
         }

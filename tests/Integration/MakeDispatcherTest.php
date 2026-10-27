@@ -153,6 +153,48 @@ class MakeDispatcherTest extends TestCase
         $this->assertStringContainsString('--arg cannot set force, override-duplicate: that is a flag of make itself, set with its own option.', $tester->getDisplay());
     }
 
+    /**
+     * dry-run and llm-hints are no flags of make (review): each step declares
+     * them, and make refused them saying they were make's own. dry-run can
+     * only keep a step from writing; llm-hints changes what it prints.
+     */
+    public function test_a_step_option_make_does_not_have_is_forwarded(): void
+    {
+        $seen = [];
+        $app = new Application();
+        $app->add($this->newMakeCommand());
+        foreach (['make:page'] as $name) {
+            $app->add(new class($name, $seen) extends Command {
+                public function __construct(string $name, private array &$log) {
+                    parent::__construct($name);
+                }
+                protected function configure(): void {
+                    $this
+                        ->addOption('module', null, InputOption::VALUE_REQUIRED)
+                        ->addOption('write', null, InputOption::VALUE_NONE)
+                        ->addOption('dry-run', null, InputOption::VALUE_NONE)
+                        ->addOption('llm-hints', null, InputOption::VALUE_NONE)
+                        ->addOption('json', null, InputOption::VALUE_NONE);
+                }
+                protected function execute(InputInterface $input, OutputInterface $output): int {
+                    $this->log[] = [
+                        'write'     => (bool) $input->getOption('write'),
+                        'dry-run'   => (bool) $input->getOption('dry-run'),
+                        'llm-hints' => (bool) $input->getOption('llm-hints'),
+                    ];
+                    $output->writeln('{"status":"dry_run"}');
+                    return self::SUCCESS;
+                }
+            });
+        }
+
+        $tester = new CommandTester($app->find('make'));
+        $exit = $tester->execute(['--recipe' => 'add_html_page', '--arg' => ['module=Blog', 'dry-run=1', 'llm-hints=1'], '--write' => true, '--json' => true]);
+
+        $this->assertSame(0, $exit, $tester->getDisplay());
+        $this->assertSame([['write' => true, 'dry-run' => true, 'llm-hints' => true]], $seen);
+    }
+
     public function test_rejects_recipe_with_empty_generator_chain(): void
     {
         $app = new Application();

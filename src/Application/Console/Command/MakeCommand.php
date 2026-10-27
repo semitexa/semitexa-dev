@@ -45,7 +45,7 @@ final class MakeCommand extends BaseCommand
      * so --arg=force=1 turned --force on behind the flag that decides it, and
      * a caller that offers --arg but not --force (an MCP tool) was bypassed.
      */
-    public const RESERVED_ARGS = ['write', 'force', 'override-duplicate', 'dry-run', 'json', 'ndjson', 'llm-hints', 'trace'];
+    public const RESERVED_ARGS = ['write', 'force', 'override-duplicate', 'json', 'ndjson', 'trace'];
 
     #[InjectAsReadonly]
     protected TraceAutoAppender $traceAppender;

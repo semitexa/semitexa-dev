@@ -82,6 +82,35 @@ final class ChangedLineTypeCheckTest extends TestCase
         self::assertSame([40], array_column($result->diagnostics, 'line'), 'sendAll() was not declared on a changed line');
     }
 
+    /** Line 12 declares $id: an older error on $idempotencyKey is not this change's (review). */
+    #[Test]
+    public function a_declared_name_matches_only_as_a_whole_name(): void
+    {
+        $result = $this->check([
+            [self::EDITED, 40, 'property.notFound', 'Access to an undefined property App\\Edited::$idempotencyKey.'],
+            [self::EDITED, 41, 'property.notFound', 'Access to an undefined property App\\Edited::$id.'],
+        ])->run([self::EDITED]);
+
+        self::assertSame([41], array_column($result->diagnostics, 'line'));
+    }
+
+    /**
+     * ai:verify --git-ref=<ref> on a clean branch: against HEAD a committed
+     * change has no changed line, and its errors were dropped (review).
+     */
+    #[Test]
+    public function the_changed_lines_are_measured_against_the_requested_ref(): void
+    {
+        $errors = [[self::EDITED, 12, 'argument.type']];
+
+        $againstRef = $this->check($errors, committed: true, baseRef: 'origin/develop')->run([self::EDITED]);
+        $againstHead = $this->check($errors, committed: true)->run([self::EDITED]);
+
+        self::assertSame(PhpstanRunResult::STATUS_FAIL, $againstRef->status);
+        self::assertSame([12], array_column($againstRef->diagnostics, 'line'));
+        self::assertSame(PhpstanRunResult::STATUS_PASS, $againstHead->status, 'the working tree is clean against HEAD');
+    }
+
     #[Test]
     public function what_level_0_already_reported_is_not_reported_twice(): void
     {
@@ -112,17 +141,18 @@ final class ChangedLineTypeCheckTest extends TestCase
     }
 
     /**
-     * Edited.php is tracked, its change one hunk at lines 10-12; Added.php is
-     * not tracked. PHPStan reports $errors.
+     * Edited.php is tracked, its change one hunk at lines 10-12 against HEAD
+     * or, $committed, against origin/develop only; Added.php is not tracked.
+     * PHPStan reports $errors.
      *
      * @param list<array{0: string, 1: int, 2: string, 3?: string}> $errors
      */
-    private function check(array $errors): ChangedLineTypeCheck
+    private function check(array $errors, bool $committed = false, string $baseRef = 'HEAD'): ChangedLineTypeCheck
     {
         $root = sys_get_temp_dir() . '/changed-line-type-check';
         @mkdir($root . '/packages/semitexa-x/src', 0777, true);
-        // Line 11 declares send(): a changed line.
-        file_put_contents($root . '/' . self::EDITED, str_repeat("\n", 10) . "    public function send(int \$x): void {}\n" . str_repeat("\n", 40));
+        // Lines 11 and 12 declare send() and $id: changed lines.
+        file_put_contents($root . '/' . self::EDITED, str_repeat("\n", 10) . "    public function send(int \$x): void {}\n    private int \$id;\n" . str_repeat("\n", 40));
         $files = [];
         foreach ($errors as $error) {
             [$path, $line, $identifier] = $error;
@@ -131,8 +161,8 @@ final class ChangedLineTypeCheckTest extends TestCase
         }
         $phpstanOutput = (string) json_encode(['totals' => ['errors' => 0, 'file_errors' => count($errors)], 'files' => $files, 'errors' => []]);
 
-        $process = new class ($phpstanOutput, $errors === [] ? 0 : 1) implements ProcessRunner {
-            public function __construct(private readonly string $phpstanOutput, private readonly int $phpstanExit) {}
+        $process = new class ($phpstanOutput, $errors === [] ? 0 : 1, $committed) implements ProcessRunner {
+            public function __construct(private readonly string $phpstanOutput, private readonly int $phpstanExit, private readonly bool $committed) {}
 
             public function run(array $command, string $cwd): array
             {
@@ -142,6 +172,11 @@ final class ChangedLineTypeCheckTest extends TestCase
                 $file = end($command);
                 if (in_array('ls-files', $command, true)) {
                     return ['exit' => $file === 'Edited.php' ? 0 : 1, 'output' => ''];
+                }
+
+                // Committed: nothing differs from HEAD, the hunk is against origin/develop.
+                if ($this->committed && !in_array('origin/develop', $command, true)) {
+                    return ['exit' => 0, 'output' => ''];
                 }
 
                 return ['exit' => 0, 'output' => "diff --git a/src/Edited.php b/src/Edited.php\n@@ -10,1 +10,3 @@ class Edited\n-old\n+a\n+b\n+c\n"];
@@ -155,6 +190,6 @@ final class ChangedLineTypeCheckTest extends TestCase
             configPath: __FILE__,
             level: ChangedLineTypeCheck::LEVEL,
             check: 'phpstan_types',
-        ));
+        ), $baseRef);
     }
 }

@@ -53,11 +53,13 @@ final class VerificationExecutor
         // as absent, which is how a test pins the no-node verdict.
         private readonly ?string $nodeBinary = null,
         ?ChangedLineTypeCheck $typeCheck = null,
+        // What the change is measured against (ai:verify --git-ref); null: HEAD.
+        ?string $baseRef = null,
     ) {
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
         $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
         // A test that hands in its own PhpstanRunner gets no second, real PHPStan run.
-        $this->typeCheck = $typeCheck ?? ($phpstanRunner === null ? new ChangedLineTypeCheck($projectRoot, $this->processRunner) : null);
+        $this->typeCheck = $typeCheck ?? ($phpstanRunner === null ? new ChangedLineTypeCheck($projectRoot, $this->processRunner, baseRef: $baseRef ?? 'HEAD') : null);
         $this->lintRunner = new LintRunner($application);
     }
 
