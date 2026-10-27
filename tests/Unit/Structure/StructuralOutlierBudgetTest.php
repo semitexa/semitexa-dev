@@ -500,7 +500,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // public resource-level write that insert/update/delete now share, so a
         // CRUD screen over a model with no domain class keeps tenancy, version,
         // relations and the change event. It needs the private write path.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [38, 1031],
+        // 38/1031 -> 39/1043 on 2026-10-27: boundPrimaryKey(). Delete, soft
+        // delete, the version and tenant pre-checks and the cascades bound a
+        // UUID key as its text against BINARY(16) and matched nothing
+        // (platform_user's delete never worked); ten sites now bind it as
+        // insert and update do, through one method saying why.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [39, 1043],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over
