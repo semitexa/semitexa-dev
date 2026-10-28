@@ -80,6 +80,16 @@ while read -r repo number; do
     checked=$((checked + 1))
     status=$(gh api "repos/$repo/commits/$head/status" \
         --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | .description][0] // ""' 2>/dev/null) || continue
+    # CodeRabbit now reports as a check run ("Review rate limited" in its
+    # title) and sets no commit status: read alone, the status found nothing,
+    # and every run logged "none waiting" while a dozen reviews were skipped.
+    # Every page: a head with more check runs than one page holds can have
+    # CodeRabbit's on a later one. --jq runs once per page, so the first
+    # match is taken after it; sed reads to the end, and gh is not cut off.
+    if [ -z "$status" ]; then
+        status=$(gh api --paginate "repos/$repo/commits/$head/check-runs?per_page=100" \
+            --jq '.check_runs[] | select(.name | test("coderabbit"; "i")) | (.output.title // "")' 2>/dev/null | sed -n 1p) || continue
+    fi
     printf '%s' "$status" | grep -qiE "$MATCH" || continue
 
     last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)

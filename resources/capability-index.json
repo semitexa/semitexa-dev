@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-10-07T07:49:08+00:00",
-    "source_version": "dev-master@cb78c52",
-    "count": 77,
+    "generated_at": "2026-10-21T13:18:33+00:00",
+    "source_version": "dev-master@f5c7104",
+    "count": 82,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -20,8 +20,10 @@
         "semitexa/llm",
         "semitexa/locale",
         "semitexa/mail",
+        "semitexa/mcp",
         "semitexa/media",
         "semitexa/music",
+        "semitexa/notifications",
         "semitexa/orm",
         "semitexa/os",
         "semitexa/platform-settings",
@@ -52,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "430dec75e56c7badbf727e51c1ad7daa5009de6863f497766a54c6cc9a089ff6",
+    "content_hash": "0ad1341d6d851f24a00e820e84ebbb63c18cd3da0ea478452c80513e264105c6",
     "capabilities": [
         {
             "id": "api.external",
@@ -403,6 +405,21 @@
             "package": "semitexa/mail"
         },
         {
+            "id": "mcp.server",
+            "summary": "A Model Context Protocol server through which a coding agent (Claude Code, Cursor, Claude Desktop) learns the project, generates code the framework expects and checks what it changed.",
+            "use_when": "An AI agent builds or changes this Semitexa project and should use the framework's own tools and checks rather than guessing its conventions.",
+            "avoid_when": "Nobody works on the project through an agent, or outside dev: its tools change the project.",
+            "replaces": [
+                "a hand-written MCP server wrapping bin/semitexa commands",
+                "pasting framework conventions into every agent session"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Mcp\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/mcp"
+        },
+        {
             "id": "media.assets",
             "summary": "Image-first asset management: uploads, async derived variants, tenant quotas and delivery URLs.",
             "use_when": "Users upload images that must be resized, cropped or served in several formats.",
@@ -416,6 +433,50 @@
             "declared_by": "Semitexa\\Media\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/media"
+        },
+        {
+            "id": "notifications.channel",
+            "summary": "A new way of reaching a notification's recipients - a chat bot, a push service, an SMS gateway - that every notification can name in via().",
+            "use_when": "Recipients should hear about something somewhere the built-in mail and inbox channels do not reach.",
+            "avoid_when": "Only one place in the code ever sends there - call that client directly.",
+            "replaces": [
+                "a chat or SMS client call pasted next to every mail send",
+                "an if-per-channel block deciding where each event goes"
+            ],
+            "see_also": "",
+            "kind": "mechanism",
+            "declared_by": "Semitexa\\Notifications\\Attribute\\AsNotificationChannel",
+            "declared_by_short": "AsNotificationChannel",
+            "package": "semitexa/notifications"
+        },
+        {
+            "id": "notifications.inbox",
+            "summary": "A per-recipient, tenant-scoped inbox of stored notifications with unread counts and mark-as-read.",
+            "use_when": "The UI shows a bell, a notification list or an unread badge.",
+            "avoid_when": "The record is an audit trail rather than something a person reads - keep it in its own table.",
+            "replaces": [
+                "a hand-made notifications table with read flags and its own queries"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Notifications\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/notifications"
+        },
+        {
+            "id": "notifications.send",
+            "summary": "One notification delivered to its recipients over several channels (mail, a database inbox, your own), honouring each recipient's opt-outs and reporting what was sent, skipped or failed.",
+            "use_when": "Something happened that a person should hear about, and where they hear it depends on the event and on their own settings.",
+            "avoid_when": "The message is a one-off transactional mail with no inbox copy and no opt-out - send it through MailServiceInterface.",
+            "replaces": [
+                "a mail send plus a hand-written inbox INSERT in each handler that reports an event",
+                "a per-user settings column checked before every send"
+            ],
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Notifications\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/notifications"
         },
         {
             "id": "orm.persistence",
@@ -553,6 +614,21 @@
             "declared_by": "Semitexa\\Search\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/search"
+        },
+        {
+            "id": "settings.feature-flags",
+            "summary": "Feature flags declared in code (#[AsFeatureFlag]), overridden per site or per user, with percentage rollouts.",
+            "use_when": "A feature ships switched off, rolls out to a share of users, or is turned on for one site or one user without a deploy.",
+            "avoid_when": "A kill switch that must act within a second: a flip reaches every worker within 2 s, not at once.",
+            "replaces": [
+                "a hard-coded featureFlags array per tenant",
+                "an env variable per feature, changed by redeploying"
+            ],
+            "see_also": "bin/semitexa feature:list, feature:set; FeatureFlagsInterface; Twig feature()",
+            "kind": "package",
+            "declared_by": "Semitexa\\Platform\\Settings\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/platform-settings"
         },
         {
             "id": "settings.store",

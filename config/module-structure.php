@@ -605,6 +605,33 @@ $codeRoot[] = $rule(
     rationale: 'Framework configuration types (EnvValueResolver, RegistryConfig). Leaf — no subdirectories. Drift filenames rejected.',
 );
 
+// Feature — file-only leaf: feature flag contract, registry, default and in-memory flags.
+$codeRoot[] = $rule(
+    path: 'Feature',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Feature flags (FeatureFlagsInterface, FeatureFlag, FeatureFlagRegistry, the default and in-memory flags). Leaf; #[AsFeatureFlag] lives in Attribute/.',
+);
+
+// RateLimit — file-only leaf: the limiter, its decision and key, the counter stores.
+$codeRoot[] = $rule(
+    path: 'RateLimit',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Rate limiting (RateLimiter, RateLimitDecision, RateLimitKey, the counter stores). Leaf — no subdirectories; the #[RateLimit] attribute lives in Attribute/.',
+);
+
+// Security — file-only leaf: the app secret, encryption, signed URLs.
+$codeRoot[] = $rule(
+    path: 'Security',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'Secrets and what is keyed from them (AppSecret, EncrypterInterface, SodiumEncrypter, UrlSigner, SignedUrlListener). Leaf — no subdirectories; #[RequiresSignedUrl] lives in Attribute/.',
+);
+
 // Redis — file-only leaf with adapter-name prefix pattern.
 $codeRoot[] = $rule(
     path: 'Redis',
@@ -648,9 +675,16 @@ $codeRoot[] = $rule(
 // Http — files at root + Exception/ + Response/ subdirectories.
 $codeRoot[] = $rule(
     path: 'Http',
-    allowedDirectories: ['Exception', 'Response'],
+    allowedDirectories: ['Client', 'Exception', 'Response'],
     allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
-    rationale: 'HTTP wrappers (semitexa-core). PascalCase class files at root + Exception/ + Response/ sub-trees.',
+    rationale: 'HTTP wrappers (semitexa-core). PascalCase class files at root + Client/ + Exception/ + Response/ sub-trees.',
+);
+$codeRoot[] = $rule(
+    path: 'Http/Client',
+    mode: ModuleStructureRule::MODE_LEAF_FILES_ONLY,
+    allowedFilePatterns: ['/^[A-Z][A-Za-z0-9_]*\.php$/'],
+    excludedFilePatterns: ['/(Helper|Helpers|Util|Utils|Manager|Managers|Misc|Common)\.php$/'],
+    rationale: 'The outbound HTTP client: its interface, request/response/options values, retry policy, the curl client and the test fake. Leaf.',
 );
 $codeRoot[] = $rule(
     path: 'Http/Exception',
@@ -1192,16 +1226,19 @@ $packageSpecificCodeRoot = [
             'Csrf',
             'Error',
             'Event',
+            'Feature',
             'Http',
             'Lifecycle',
             'Locale',
             'Log',
             'PHPStan',
             'Queue',
+            'RateLimit',
             'Redis',
             'Registry',
             'Request',
             'Resource',
+            'Security',
             'Server',
             'Session',
             'Support',

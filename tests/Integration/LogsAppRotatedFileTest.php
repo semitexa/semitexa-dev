@@ -124,4 +124,30 @@ final class LogsAppRotatedFileTest extends TestCase
         $files = json_decode(trim($jsonDisplay), true)['files'];
         self::assertNotNull($files[0]['lines_estimate'], 'JSON still reports the estimate');
     }
+
+    /**
+     * REGRESSION (review). Under LOG_SINK=stderr a note was printed and the
+     * app.log an earlier file-sink run left was read all the same: old lines
+     * as today's log, and the note in front of the --json document.
+     */
+    public function test_the_stderr_sink_reads_no_stale_file_and_keeps_json_parseable(): void
+    {
+        file_put_contents($this->root . '/var/log/app.log', "[2026-01-01 00:00:00] app.ERROR: stale line\n");
+        $before = getenv('LOG_SINK');
+        putenv('LOG_SINK=stderr');
+
+        try {
+            [$exit, $display] = $this->invoke(['--json' => true]);
+            [$textExit, $text] = $this->invoke([]);
+        } finally {
+            putenv($before === false ? 'LOG_SINK' : 'LOG_SINK=' . $before);
+        }
+
+        self::assertSame(0, $exit);
+        $note = 'LOG_SINK=stderr: the application log goes to stderr, not to a file. Read it with `docker compose logs app` (queue and scheduler lines: `docker compose logs worker`) or your runtime\'s log viewer, or set LOG_SINK=both.';
+        self::assertSame(['command' => 'logs:app', 'sink' => 'stderr', 'file' => null, 'entries' => [], 'total' => 0, 'note' => $note], json_decode(trim($display), true));
+        self::assertSame(0, $textExit);
+        self::assertStringContainsString('LOG_SINK=stderr: the application log goes to stderr', (string) preg_replace('/\s+/', ' ', $text));
+        self::assertStringNotContainsString('stale line', $text);
+    }
 }

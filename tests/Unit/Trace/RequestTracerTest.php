@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Trace;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryContext;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryJournal;
 use Semitexa\Dev\Application\Service\Trace\RequestTracer;
 use Semitexa\Dev\Application\Service\Trace\TraceBuffer;
 use Semitexa\Dev\Application\Service\Trace\TraceContext;
@@ -175,11 +176,18 @@ final class RequestTracerTest extends TestCase
         $this->marker = '1';
         $tracer = new RequestTracer();
         $tracer->begin('request', ['method' => 'GET', 'path' => '/big', 'marker' => '1']);
-        $tracer->begin('payload.hydrate_and_validate', ['payload' => 'App\\HubPayload']);
-        $tracer->end('payload.hydrate_and_validate');
+        // About 900 bytes of class names against about 500 bytes of room: one
+        // class (some 30 bytes) left a window the line's own variable fields
+        // (duration, trace path) could cross either way, and the test flaked.
+        $classes = [];
+        for ($i = 0; $i < 20; $i++) {
+            $classes[] = 'App\\Modules\\Catalogue\\Payload\\HubPayload' . $i;
+            $tracer->begin('payload.hydrate_and_validate', ['payload' => end($classes)]);
+            $tracer->end('payload.hydrate_and_validate');
+        }
         // Scrubbed to 200 characters each, but the number of keys is not capped.
         $context = [];
-        for ($i = 0; $i < 18; $i++) {
+        for ($i = 0; $i < 15; $i++) {
             $context['k' . $i] = str_repeat('x', 400);
         }
         $tracer->end('request', $context);
@@ -188,6 +196,11 @@ final class RequestTracerTest extends TestCase
         self::assertCount(1, $end, 'the end line must still be written');
         self::assertArrayHasKey('trace', $end[0]);
         self::assertArrayNotHasKey('classes', $end[0]);
+        self::assertGreaterThan(
+            ObservatoryJournal::MAX_LINE_BYTES,
+            strlen((string) json_encode($end[0] + ['classes' => $classes], ObservatoryJournal::JSON_FLAGS)),
+            'the precondition: with the classes the line would not fit',
+        );
     }
 
     #[Test]

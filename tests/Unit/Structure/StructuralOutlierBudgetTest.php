@@ -48,7 +48,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // body to the first labelable thing inside it, which is a move-up
         // button — the same class of defect as the Trix toolbar the
         // condition was written for, so it belongs in the same comment.
-        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 764],
+        // 764 -> 748 on 2026-10-21: the console's strings moved to locale
+        // catalogs; the metadata label table left for ContentSeoLabels and
+        // the appearance-note constant folded into its one use.
+        'semitexa-cms/src/Application/Service/ContentEditorPage.php' => [15, 748],
         // 2082 -> 2087 on 2026-09-06: serveResourceStream()'s initial frame may
         // now arrive as a Closure resolved AFTER the connection caps, so an
         // over-cap attempt no longer pays for a full graphql document execution
@@ -144,7 +147,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-scheduler/src/Domain/Model/ScheduledRun.php' => [53, 352],
         'semitexa-scheduler/src/Domain/Model/ScheduleDefinition.php' => [37, 248],
         'semitexa-workflow/src/Domain/Model/WorkflowInstance.php' => [36, 208],
-        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1272],
+        // 1272 -> 1275 on 2026-10-27, NO new method: the injected
+        // OsConsoleAccess, so the planner's manifest leaves out a window the
+        // person's role is refused (an editor was proposed Prompts).
+        'semitexa-os/src/Application/Service/SkillLoopRunner.php' => [35, 1275],
         'semitexa-webhooks/src/Domain/Model/OutboundDelivery.php' => [35, 155],
         // 932 -> 935 on 2026-10-04: the route's `exposure` (Public | Hug) is read
         // and passed through like sseGateModel. No new method.
@@ -184,7 +190,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // while the app goes on dropping X-Forwarded-Proto. The shape test now
         // lives beside the matcher that has to agree with it, and
         // ipMatchesEntry() calls it first so the two cannot drift.
-        'semitexa-core/src/Request.php' => [34, 541],
+        'semitexa-core/src/Request.php' => [33, 470],
         // 206 -> 207: one @param line for the same Closure-or-array contract.
         // +6/+2 lines on 2026-09-13, ep-phpstan-baseline-burndown: `@param
         // array<...>` on methods that had none. These are DOCBLOCKS, and they
@@ -240,7 +246,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 769 -> 774 the same day: each deferred component render is timed into
         // the page's timeline (tk-ls-timeline; a no-op outside development).
         'semitexa-ssr/src/Application/Service/DeferredBlockOrchestrator.php' => [14, 774],
-        'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 842],
+        // 842 -> 862 on 2026-10-22, recorded: the pool joins an open test
+        // transaction (pop, push, discard) — every Co\run() leaves the hooks on,
+        // so in a test process it serves plain CLI code, and its own
+        // connections committed. The logic lives in SharedTestTransaction.
+        'semitexa-orm/src/Adapter/ConnectionPool.php' => [27, 862],
         // 765 -> 764 on 2026-09-24: page finalization moved to PageDocumentFinalizer.
         // 764 -> 786, 25 -> 26 on 2026-10-06, recorded: a page with no deferred
         // slot stores its deferred request only after rendering, and only when
@@ -493,7 +503,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // public resource-level write that insert/update/delete now share, so a
         // CRUD screen over a model with no domain class keeps tenancy, version,
         // relations and the change event. It needs the private write path.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [38, 1031],
+        // 38/1031 -> 39/1043 on 2026-10-27: boundPrimaryKey(). Delete, soft
+        // delete, the version and tenant pre-checks and the cascades bound a
+        // UUID key as its text against BINARY(16) and matched nothing
+        // (platform_user's delete never worked); ten sites now bind it as
+        // insert and update do, through one method saying why.
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [39, 1043],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over

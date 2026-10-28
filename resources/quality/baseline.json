@@ -2,13 +2,8 @@
     "_": "Quality metrics: lower is better. Written only by `ai:quality record` (never raises) and `ai:quality accept --reason` (raises, and says why below). Do not edit by hand.",
     "metrics": {
         "packages.without-tests": {
-            "total": 4,
-            "breakdown": {
-                "semitexa-files": 1,
-                "semitexa-music": 1,
-                "semitexa-showcase-kit": 1,
-                "semitexa-theme-sky": 1
-            },
+            "total": 0,
+            "breakdown": [],
             "sees": "packages under packages/ that have PHP in src/ and no *Test.php under tests/",
             "blind": "how well a package is tested: one trivial test takes a package off the list"
         },
@@ -76,21 +71,24 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 170,
+            "total": 183,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 6,
                 "semitexa-cms": 1,
-                "semitexa-core": 16,
+                "semitexa-core": 17,
                 "semitexa-dev": 34,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
-                "semitexa-orm": 40,
+                "semitexa-orm": 46,
                 "semitexa-os": 1,
                 "semitexa-platform-settings": 3,
                 "semitexa-platform-ui": 4,
+                "semitexa-platform-user": 2,
                 "semitexa-rbac": 1,
+                "semitexa-scheduler": 1,
+                "semitexa-search": 1,
                 "semitexa-ssr": 30,
                 "semitexa-storage": 1,
                 "semitexa-tenancy": 1,
@@ -98,7 +96,8 @@
                 "semitexa-theme": 1,
                 "semitexa-ultimate": 2,
                 "semitexa-update": 3,
-                "semitexa-webhooks": 15
+                "semitexa-webhooks": 15,
+                "semitexa-workflow": 2
             },
             "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
             "blind": "whether a skip actually fires at runtime, and skips expressed as #[Requires*] attributes or early returns"
@@ -1507,6 +1506,149 @@
                 }
             },
             "reason": "semitexa-ssr GuestStreamForgetsPreviousUserTest skips only without the Redis REDIS_HOST names, the same guard SseAuthSessionMapOwnerTest has; the dev container has it, so it runs"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 170,
+            "to": 171,
+            "keys": {
+                "semitexa-platform-user": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "semitexa-platform-user 0->1: PasswordResetTokenStoreMySqlTest proves the single-use claim's UPDATE row count on real MySQL (the flow test runs on SQLite); it skips once, only without MySQL or without the orm:sync'ed table - same shape as orm SeedingTest"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 171,
+            "to": 172,
+            "keys": {
+                "semitexa-platform-user": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "semitexa-platform-user 1->2: PlatformUserStaleWriteMySqlTest proves the row_version optimistic lock refuses a sign-in's stale full-row write after a password change, on real MySQL; one skip, only without MySQL or the synced table"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 172,
+            "to": 173,
+            "keys": {
+                "semitexa-core": {
+                    "from": 16,
+                    "to": 17
+                }
+            },
+            "reason": "semitexa-core 16->17: RedisRateLimitStoreTest proves the rate-limit Lua script on a real Redis; it skips once, only when no Redis answers (same guard as RedisPoolRestartTest)"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 173,
+            "to": 174,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 40,
+                    "to": 41
+                }
+            },
+            "reason": "semitexa-orm 40->41: SchemaSyncRoundTripTest runs model -> apply -> empty diff on SQLite always and on MySQL when configured; the MySQL case skips once without MySQL or when its table exists. It found SQLite re-migrating decimal/json/datetime columns on every sync"
+        },
+        {
+            "at": "2026-10-20",
+            "metric": "tests.skip-calls",
+            "from": 174,
+            "to": 175,
+            "keys": {
+                "semitexa-scheduler": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "semitexa-scheduler 0->1: SchedulerWorkerEndToEndTest drives the real worker loop (claim, run, finalize, retry, race, expired lease) on MySQL; one skip, only without MySQL. It found dispatchAt() returning an empty run id"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 175,
+            "to": 176,
+            "keys": {
+                "semitexa-workflow": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "semitexa-workflow WorkflowInstanceTenantLookupTest skips without the workflow_instances table (MySQL integration test of the tenant-scoped subject lookup)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 176,
+            "to": 178,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 41,
+                    "to": 43
+                }
+            },
+            "reason": "orm QueryAdapterJoinsTransactionTest: the MySQL rollback case skips when the database is not MySQL or unreachable (SQLite case always runs)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 178,
+            "to": 180,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 43,
+                    "to": 45
+                }
+            },
+            "reason": "orm QueryAdapterJoinsTransactionTest: MySQL and coroutine-pool cases skip without MySQL or Swoole (SQLite case always runs)"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 180,
+            "to": 181,
+            "keys": {
+                "semitexa-workflow": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "workflow WorkflowInstanceTenantLookupTest: the new-index probe uses MySQL DDL and skips on other drivers"
+        },
+        {
+            "at": "2026-10-21",
+            "metric": "tests.skip-calls",
+            "from": 181,
+            "to": 182,
+            "keys": {
+                "semitexa-search": {
+                    "from": 0,
+                    "to": 1
+                }
+            },
+            "reason": "search LlmSearchQueryPlannerTest: the unlimited-provider case needs semitexa/llm (suggest-only) and skips without it"
+        },
+        {
+            "at": "2026-10-22",
+            "metric": "tests.skip-calls",
+            "from": 182,
+            "to": 183,
+            "keys": {
+                "semitexa-orm": {
+                    "from": 45,
+                    "to": 46
+                }
+            },
+            "reason": "semitexa-orm: DatabaseQueueTransportTest::a_message_still_inside_another_transaction_does_not_hold_up_the_queue tests InnoDB row-lock behaviour of the claim; there is no equivalent on SQLite, so it skips off MySQL (tk-orm-ssr-audit)"
         }
     ]
 }

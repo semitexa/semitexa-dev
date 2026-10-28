@@ -31,3 +31,15 @@
 {"at":"2026-10-19T16:46:48+00:00","metric":"tests.skip-calls","total":168,"event":"accept"}
 {"at":"2026-10-19T18:06:54+00:00","metric":"tests.skip-calls","total":169,"event":"accept"}
 {"at":"2026-10-19T20:05:46+00:00","metric":"tests.skip-calls","total":170,"event":"accept"}
+{"at":"2026-10-20T19:34:43+00:00","metric":"tests.skip-calls","total":171,"event":"accept"}
+{"at":"2026-10-20T19:51:37+00:00","metric":"tests.skip-calls","total":172,"event":"accept"}
+{"at":"2026-10-20T20:15:12+00:00","metric":"tests.skip-calls","total":173,"event":"accept"}
+{"at":"2026-10-20T22:26:40+00:00","metric":"tests.skip-calls","total":174,"event":"accept"}
+{"at":"2026-10-20T22:34:55+00:00","metric":"tests.skip-calls","total":175,"event":"accept"}
+{"at":"2026-10-21T01:22:25+00:00","metric":"tests.skip-calls","total":176,"event":"accept"}
+{"at":"2026-10-21T05:39:10+00:00","metric":"tests.skip-calls","total":178,"event":"accept"}
+{"at":"2026-10-21T05:51:52+00:00","metric":"tests.skip-calls","total":180,"event":"accept"}
+{"at":"2026-10-21T06:55:12+00:00","metric":"tests.skip-calls","total":181,"event":"accept"}
+{"at":"2026-10-21T08:11:49+00:00","metric":"tests.skip-calls","total":182,"event":"accept"}
+{"at":"2026-10-21T19:17:57+00:00","metric":"packages.without-tests","total":0,"event":"record"}
+{"at":"2026-10-22T21:25:17+00:00","metric":"tests.skip-calls","total":183,"event":"accept"}

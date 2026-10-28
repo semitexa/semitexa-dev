@@ -6,6 +6,8 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Environment;
+use Semitexa\Core\Log\LogSink;
 use Semitexa\Core\Server\SwooleLogRotation;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -65,6 +67,37 @@ final class LogsAppCommand extends BaseCommand
         }
 
         $filePath = $logDir . '/' . $filename;
+        if ($fileKey === 'app') {
+            // Where the logger writes: LOG_FILE, under the project root even
+            // when it starts with a slash, as AsyncJsonLogger resolves it.
+            $configured = (string) Environment::getEnvValue('LOG_FILE', '');
+            if ($configured !== '') {
+                $filePath = $root . '/' . ltrim($configured, '/');
+                $filename = basename($filePath);
+            }
+        }
+
+        // LOG_SINK=stderr sends the application log to the container's log
+        // collector and writes no file: an empty answer here would read as a
+        // silent application, and a file left from an earlier LOG_SINK=file
+        // run as today's log. Neither is read; where the log is, is said.
+        if ($fileKey === 'app' && LogSink::fromEnv(Environment::getEnvValue('LOG_SINK')) === LogSink::Stderr) {
+            $where = 'LOG_SINK=stderr: the application log goes to stderr, not to a file. Read it with `docker compose logs app` (queue and scheduler lines: `docker compose logs worker`) or your runtime\'s log viewer, or set LOG_SINK=both.';
+            if ($input->getOption('json')) {
+                $output->writeln((string) json_encode([
+                    'command' => 'logs:app',
+                    'sink' => 'stderr',
+                    'file' => null,
+                    'entries' => [],
+                    'total' => 0,
+                    'note' => $where,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
+            } else {
+                $io->note($where);
+            }
+
+            return Command::SUCCESS;
+        }
 
         // With SWOOLE_LOG_ROTATION on (the default), Swoole writes to
         // 'swoole.log.<date>' and leaves 'swoole.log' as an empty placeholder.
