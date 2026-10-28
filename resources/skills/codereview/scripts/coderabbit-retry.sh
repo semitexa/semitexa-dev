@@ -80,6 +80,13 @@ while read -r repo number; do
     checked=$((checked + 1))
     status=$(gh api "repos/$repo/commits/$head/status" \
         --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | .description][0] // ""' 2>/dev/null) || continue
+    # CodeRabbit now reports as a check run ("Review rate limited" in its
+    # title) and sets no commit status: read alone, the status found nothing,
+    # and every run logged "none waiting" while a dozen reviews were skipped.
+    if [ -z "$status" ]; then
+        status=$(gh api "repos/$repo/commits/$head/check-runs" \
+            --jq '[.check_runs[] | select(.name | test("coderabbit"; "i")) | (.output.title // "")][0] // ""' 2>/dev/null) || continue
+    fi
     printf '%s' "$status" | grep -qiE "$MATCH" || continue
 
     last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)
