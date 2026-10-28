@@ -21,6 +21,8 @@ final class DeepContextEventTraceTest extends TestCase
 {
     private string $root;
 
+    private string|false $transport = false;
+
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/semitexa-deep-ctx-' . uniqid();
@@ -29,6 +31,11 @@ final class DeepContextEventTraceTest extends TestCase
         putenv('APP_ENV=dev');
         putenv('SEMITEXA_TRACE_DIR=' . $this->root . '/trace');
         putenv('SEMITEXA_OBSERVATORY_DIR=' . $this->root . '/observatory');
+        // The queue job below dead-letters (its handler does not exist), and
+        // a dead letter that cannot be written now throws: on the stack's
+        // default transport that is NATS, unreachable from a test run.
+        $this->transport = getenv('EVENTS_TRANSPORT');
+        putenv('EVENTS_TRANSPORT=in-memory');
     }
 
     protected function tearDown(): void
@@ -37,6 +44,7 @@ final class DeepContextEventTraceTest extends TestCase
         putenv('APP_ENV');
         putenv('SEMITEXA_TRACE_DIR');
         putenv('SEMITEXA_OBSERVATORY_DIR');
+        putenv($this->transport === false ? 'EVENTS_TRANSPORT' : 'EVENTS_TRANSPORT=' . $this->transport);
         foreach (glob($this->root . '/*/*') ?: [] as $f) {
             @unlink($f);
         }
