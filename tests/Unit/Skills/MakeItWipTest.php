@@ -64,6 +64,24 @@ final class MakeItWipTest extends TestCase
         self::assertSame([2, ['ERROR gh search prs failed for owner semitexa; nothing is known about what is open']], [$status, $out]);
     }
 
+    /** GitHub names are case-insensitive, so a differently cased name is the same busy repository. */
+    #[Test]
+    public function a_repository_named_in_another_case_is_the_same_repository(): void
+    {
+        [$status, $out] = $this->wip(['semitexa/semitexa-core 200'], ['--can-open', 'Semitexa/Semitexa-Core']);
+
+        self::assertSame([1, ['no: Semitexa/Semitexa-Core already has semitexa/semitexa-core#200 in review']], [$status, $out]);
+    }
+
+    /** A mistyped option was read as "list" and answered a --can-open question with exit 0. */
+    #[Test]
+    public function an_unknown_option_is_refused(): void
+    {
+        self::assertSame([2, ['unknown option: --can_open (usage: wip.sh [--can-open <repo>])']], $this->wip([], ['--can_open', 'semitexa-orm']));
+        self::assertSame([2, ['usage: wip.sh --can-open <repo>']], $this->wip([], ['--can-open']));
+        self::assertSame([2, ['usage: wip.sh [--can-open <repo>]']], $this->wip([], ['', 'x']));
+    }
+
     /**
      * Runs scripts/wip.sh against a fake gh that answers the search as the real
      * one does after --jq, or fails it when $open is null.
@@ -74,10 +92,14 @@ final class MakeItWipTest extends TestCase
      */
     private function wip(?array $open, array $args, int $wip = 3): array
     {
-        $this->dir = sys_get_temp_dir() . '/make-it-wip-' . bin2hex(random_bytes(4));
-        mkdir($this->dir . '/bin', 0o755, true);
+        if ($this->dir === '') {
+            $this->dir = sys_get_temp_dir() . '/make-it-wip-' . bin2hex(random_bytes(4));
+            mkdir($this->dir . '/bin', 0o755, true);
+        }
         $answer = $open === null ? 'exit 1' : 'printf %s ' . escapeshellarg(implode("\n", $open) . "\n");
-        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \"\$1\" in\n  search) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
+        // Only a search for OPEN pull requests is answered: one without --state=open
+        // would count merged PRs as taking a slot.
+        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n  ' search prs '*' --state=open '*) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
         chmod($this->dir . '/bin/gh', 0o755);
 
         $script = dirname(__DIR__, 3) . '/resources/skills/make-it/scripts/wip.sh';

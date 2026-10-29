@@ -66,15 +66,7 @@ while read -r slug number unresolved; do
             --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none||" elif .state == "pending" then "in_progress||\(.description)" else "completed|\(.state)|\(.description)" end')"
     fi
     IFS='|' read -r cr_status cr_conclusion cr_title <<<"$review"
-    # "Outside diff range" findings live in review bodies, not threads: a review
-    # carrying them counts until a comment of ours names its id (pr-reply.sh
-    # --kind=review writes that reference).
-    owner="${slug%%/*}"
-    name="${slug#*/}"
-    outside="$(gh api graphql -f query="{repository(owner:\"$owner\",name:\"$name\"){pullRequest(number:$number){reviews(last:40){nodes{author{login} databaseId body}} comments(last:100){nodes{author{login} body}}}}}" \
-        --jq '.data.repository.pullRequest as $p | [$p.comments.nodes[] | select(.author.login != "coderabbitai") | .body] as $mine
-            | [$p.reviews.nodes[] | select(.author.login == "coderabbitai" and (.body | test("Outside diff range")))
-               | select(.databaseId | tostring as $i | [$mine[] | contains($i)] | any | not)] | length')"
+    outside="$(outside_unanswered "$slug" "$number")"
 
     verdict="$(merge_verdict "$unresolved" "$outside" "${cr_status:-none}" "$cr_conclusion" "$cr_title" "$merge_state")"
 

@@ -25,6 +25,14 @@ set -euo pipefail
 OWNER="${MAKE_IT_OWNER:-semitexa}"
 WIP="${MAKE_IT_WIP:-3}"
 
+# Checked before the search: a mistyped option read as "list" answered a
+# --can-open question with exit 0.
+case "${1:-}" in
+    '') (( $# == 0 )) || { echo "usage: wip.sh [--can-open <repo>]" >&2; exit 2; } ;;
+    --can-open) (( $# == 2 )) && [ -n "$2" ] || { echo "usage: wip.sh --can-open <repo>" >&2; exit 2; } ;;
+    *) echo "unknown option: $1 (usage: wip.sh [--can-open <repo>])" >&2; exit 2 ;;
+esac
+
 if ! open=$(gh search prs --owner="$OWNER" --state=open --limit 1000 \
     --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"'); then
     echo "ERROR gh search prs failed for owner $OWNER; nothing is known about what is open"
@@ -44,10 +52,12 @@ if [ "${1:-}" != "--can-open" ]; then
     exit 0
 fi
 
-want=${2:?usage: wip.sh --can-open <repo>}
+want=$2
 case "$want" in */*) ;; *) want="$OWNER/$want" ;; esac
+# GitHub names are case-insensitive: Semitexa/Semitexa-Core is the same repo.
 for pr in ${prs[@]+"${prs[@]}"}; do
-    if [ "${pr%#*}" = "$want" ]; then
+    repo=${pr%#*}
+    if [ "${repo,,}" = "${want,,}" ]; then
         echo "no: $want already has $pr in review"
         exit 1
     fi

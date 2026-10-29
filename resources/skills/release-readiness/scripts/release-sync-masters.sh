@@ -31,7 +31,9 @@ for source_repo in "$DEV_ROOT"/packages/*; do
     # repo on develop only) stopped the whole cut here on 2026-10-29, after a
     # clone that could not be aligned. It joins the release set once its first
     # develop->master PR is merged.
-    if ! git ls-remote --exit-code --heads "$remote_url" master >/dev/null 2>&1; then
+    has_master="$(remote_has_master "$remote_url")" || \
+        fail "Cannot read the branches of $repo_name's origin"
+    if [ "$has_master" = no ]; then
         warn "$repo_name: origin has no master branch -- not released yet, left out of this release"
         continue
     fi

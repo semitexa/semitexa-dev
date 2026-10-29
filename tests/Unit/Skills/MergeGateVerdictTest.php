@@ -29,6 +29,7 @@ final class MergeGateVerdictTest extends TestCase
         yield 'no review on this head' => [['0', '0', 'none', '', '', 'CLEAN'], 'WAIT:coderabbit-none'];
         yield 'the old commit status still counts' => [['0', '0', 'completed', 'success', 'Review completed', 'CLEAN'], 'READY'];
         yield 'reviewed but blocked' => [['0', '0', 'completed', 'success', 'Finished', 'UNSTABLE'], 'WAIT:merge-state-UNSTABLE'];
+        yield 'a review that failed is no pass' => [['0', '0', 'completed', 'failure', 'Finished', 'CLEAN'], 'WAIT:coderabbit-failure'];
     }
 
     /** @param list<string> $args */
@@ -43,5 +44,96 @@ final class MergeGateVerdictTest extends TestCase
         ), $out, $status);
 
         self::assertSame([0, [$verdict]], [$status, $out]);
+    }
+
+    /**
+     * The count of "Outside diff range" findings nobody answered, read to the
+     * end of both lists: it read the last 40 reviews and 100 comments, so a
+     * finding on an earlier page, or its answer, was not seen.
+     */
+    #[Test]
+    public function an_unanswered_finding_outside_the_diff_is_counted_across_pages(): void
+    {
+        // Review 101 is answered on the second page of comments, 202 and 303 nowhere.
+        [$status, $out, $calls] = $this->outside(reviews: [['101'], ['202', '303']], comments: [['555'], ['101']]);
+
+        self::assertSame([0, ['2']], [$status, $out]);
+        self::assertSame([
+            'api --paginate repos/semitexa/semitexa-dev/pulls/163/reviews?per_page=100',
+            'api --paginate repos/semitexa/semitexa-dev/issues/163/comments?per_page=100',
+        ], $calls, 'every page of both lists, CodeRabbit\'s reviews and everyone else\'s comments');
+    }
+
+    #[Test]
+    public function every_finding_answered_counts_none(): void
+    {
+        [$status, $out] = $this->outside(reviews: [['101', '202']], comments: [['202', '101']]);
+
+        self::assertSame([0, ['0']], [$status, $out]);
+    }
+
+    /** "Nothing unanswered" read from a failed request would merge past a finding. */
+    #[Test]
+    public function a_failed_read_fails_instead_of_counting_none(): void
+    {
+        [$status] = $this->outside(reviews: null, comments: [[]]);
+
+        self::assertSame(1, $status);
+    }
+
+    private string $dir = '';
+
+    protected function tearDown(): void
+    {
+        if ($this->dir !== '') {
+            exec('rm -rf ' . escapeshellarg($this->dir));
+        }
+    }
+
+    /**
+     * outside_unanswered against a fake gh that prints, page after page, what
+     * the real one prints after --jq: the ids of CodeRabbit's reviews with
+     * such a finding, and the ids named in other people's comments. null fails.
+     *
+     * @param list<list<string>>|null $reviews
+     * @param list<list<string>> $comments
+     * @return array{int, list<string>, list<string>}
+     */
+    private function outside(?array $reviews, array $comments): array
+    {
+        $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
+        mkdir($this->dir . '/bin', 0o755, true);
+        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\necho \"\$1 \$2 \$3\" >> " . escapeshellarg($this->dir . '/calls') . "\ncase \"\$3\" in\n  */reviews*) " . self::pages($reviews) . " ;;\n  */comments*) " . self::pages($comments) . " ;;\n  *) exit 1 ;;\nesac\n");
+        chmod($this->dir . '/bin/gh', 0o755);
+
+        $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
+        exec(sprintf(
+            'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
+            escapeshellarg($this->dir . '/bin'),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && outside_unanswered semitexa/semitexa-dev 163'),
+        ), $out, $status);
+        $calls = is_file($this->dir . '/calls') ? file($this->dir . '/calls', FILE_IGNORE_NEW_LINES) : [];
+
+        return [$status, $out, $calls ?: []];
+    }
+
+    /**
+     * The shell that prints the pages one after another, or fails for null.
+     *
+     * @param list<list<string>>|null $pages
+     */
+    private static function pages(?array $pages): string
+    {
+        if ($pages === null) {
+            return 'exit 1';
+        }
+        $out = '';
+        foreach ($pages as $page) {
+            foreach ($page as $line) {
+                $out .= $line . "\n";
+            }
+        }
+
+        return 'printf %s ' . escapeshellarg($out);
     }
 }
