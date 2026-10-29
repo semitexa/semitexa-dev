@@ -26,6 +26,16 @@ for source_repo in "$DEV_ROOT"/packages/*; do
     remote_url="$(git -C "$source_repo" remote get-url origin 2>/dev/null || true)"
     [ -n "$remote_url" ] || fail "Missing origin remote for $source_repo"
 
+    # A package that has never had a master has never been released: tags go
+    # on master, so it has nothing to tag yet. semitexa-notifications (a new
+    # repo on develop only) stopped the whole cut here on 2026-10-29, after a
+    # clone that could not be aligned. It joins the release set once its first
+    # develop->master PR is merged.
+    if ! git ls-remote --exit-code --heads "$remote_url" master >/dev/null 2>&1; then
+        warn "$repo_name: origin has no master branch -- not released yet, left out of this release"
+        continue
+    fi
+
     info "Cloning missing release repo: $repo_name"
     git clone "$remote_url" "$target_repo" >/dev/null 2>&1 || fail "Failed to clone $repo_name into $target_repo"
     git -C "$target_repo" checkout -B master origin/master >/dev/null 2>&1 || \

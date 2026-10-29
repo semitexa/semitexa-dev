@@ -11,18 +11,12 @@
 # rate-limited review has no comments either, and simply disappears from it.
 # This lists ALL open PRs, so none can go missing between fixing and merging.
 #
-# READY means all of:
-#   - no unresolved actionable comment (pr-review.sh's own count)
-#   - the PRIMARY reviewer passed the CURRENT head. Greptile is primary
-#     (2026-09-27): its check run must have completed with success or neutral;
-#     a run not started yet is waited for, and a skipped run counts only if
-#     CodeRabbit completed on that head. CodeRabbit is secondary: a review it
-#     is running is waited for, but "Review rate limited" or no status no
-#     longer blocks. Repos in GREPTILE_DISABLED_REPOS require CodeRabbit's
-#     "success / Review completed" (a success that says "Review rate limited"
-#     is a skipped review, not a pass).
-#   - still no unresolved comment when recounted after the gates above passed
-#   - GitHub mergeStateStatus is CLEAN
+# READY is merge-gate.sh's merge_verdict(): no unresolved actionable comment
+# (pr-review.sh's own count), no "Outside diff range" finding left unanswered
+# in a CodeRabbit review body, CodeRabbit finished on the CURRENT head ("Review
+# rate limited" is a skipped review, not a pass), and mergeStateStatus CLEAN;
+# the comment count is taken again once everything else has passed. Greptile
+# stopped reviewing on 2026-10-14 and is no longer waited for.
 # Anything else is FIX:<n> or WAIT:<reason>. A merge uses --merge (a merge
 # commit, as every develop->master merge in these repos) and
 # --match-head-commit, so a push landing between the check and the merge
@@ -34,11 +28,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Repos where Greptile is deliberately not installed (no PRs happen there).
-# Everywhere else a missing Greptile run means "not started yet", never "absent".
-GREPTILE_DISABLED_REPOS="${GREPTILE_DISABLED_REPOS:-semitexa/apart-space semitexa/dev-sandbox semitexa/release-tooling semitexa/semi}"
-# An unfinished Greptile run older than this is treated as abandoned.
-GREPTILE_STALE_SECONDS="${GREPTILE_STALE_SECONDS:-1800}"
+# shellcheck source=merge-gate.sh
+. "$SCRIPT_DIR/merge-gate.sh"
 MERGE=0
 # One option at most: `--merge --help` must not merge while ignoring the rest.
 if (( $# > 1 )); then
@@ -48,7 +39,7 @@ fi
 case "${1:-}" in
     --merge) MERGE=1 ;;
     '') ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -65,83 +56,27 @@ waiting=0
 while read -r slug number unresolved; do
     meta="$(gh pr view "$number" -R "$slug" --json headRefOid,mergeStateStatus --jq '"\(.headRefOid) \(.mergeStateStatus)"')"
     read -r head merge_state <<<"$meta"
-    # The combined status holds the LATEST status per context; the plain
-    # statuses list is paginated at 30, so a busy head could hide CodeRabbit.
-    status="$(gh api "repos/$slug/commits/$head/status?per_page=100" \
-        --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none|no CodeRabbit status" else "\(.state)|\(.description)" end')"
-    state="${status%%|*}"
-    desc="${status#*|}"
-    # A second reviewer, when installed, reports as a check run. Its findings
-    # land as line comments (counted above); an unfinished run means more may come.
-    # Paginated: the endpoint pages at 30, and a run on a later page read as
-    # "none" would skip the wait. filter=all, because the default (latest)
-    # drops an older run in the same suite. A head can carry several runs:
-    # the most recently started run decides, so an old failed run cannot block
-    # a head that a later run passed. An OLDER run still going also makes the
-    # PR wait — it may still post findings — but only while it is recent: a
-    # run that has been "in progress" for longer than any review takes is
-    # abandoned, and must not block the merge forever. A queued run has no
-    # started_at yet, so it is dated by created_at.
-    greptile_runs="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100&filter=all" \
-        --jq '.check_runs[] | select(.name | test("greptile"; "i")) | "\(.started_at // .created_at // "")|\(.status)|\(.conclusion // "")"' \
-        | sort -r)"
-    greptile_run=""
-    now="$(date -u +%s)"
-    while IFS= read -r run; do
-        [[ -z "$run" ]] && continue
-        started="${run%%|*}"
-        run="${run#*|}"
-        if [[ -z "$greptile_run" ]]; then
-            greptile_run="$run"
-            [[ "${run%%|*}" != "completed" ]] && break
-            continue
-        fi
-        if [[ "${run%%|*}" != "completed" ]]; then
-            started_at="$(date -u -d "$started" +%s 2>/dev/null || echo 0)"
-            if (( now - started_at < GREPTILE_STALE_SECONDS )); then
-                greptile_run="$run"
-                break
-            fi
-        fi
-    done <<<"$greptile_runs"
-    greptile_status="${greptile_run%%|*}"
-    greptile_conclusion="${greptile_run#*|}"
-
-    coderabbit_passed=0
-    [[ "$state" == "success" && "$desc" == "Review completed" ]] && coderabbit_passed=1
-    greptile_enabled=1
-    [[ " $GREPTILE_DISABLED_REPOS " == *" $slug "* ]] && greptile_enabled=0
-
-    if (( unresolved > 0 )); then
-        verdict="FIX:$unresolved"
-    elif (( ! greptile_enabled )) && (( ! coderabbit_passed )); then
-        # This repo has no Greptile: CodeRabbit is the only reviewer and must pass.
-        verdict="WAIT:$desc"
-    elif (( ! greptile_enabled )) && [[ "$merge_state" != "CLEAN" ]]; then
-        verdict="WAIT:merge-state-$merge_state"
-    elif (( ! greptile_enabled )); then
-        verdict="READY"
-    elif [[ -z "$greptile_run" ]]; then
-        # Greptile is installed here but has not started on this head yet — a
-        # missing run is a pending review, not an absent reviewer.
-        verdict="WAIT:greptile-not-started"
-    elif [[ "$state" == "pending" ]]; then
-        # Secondary reviewer mid-review: its findings are still worth waiting for.
-        verdict="WAIT:coderabbit-$desc"
-    elif [[ "$greptile_status" != "completed" ]]; then
-        verdict="WAIT:greptile-$greptile_status"
-    elif [[ "$greptile_conclusion" == "skipped" ]] && (( ! coderabbit_passed )); then
-        # A skipped run reviewed nothing; then only a completed CodeRabbit
-        # review stands behind this head.
-        verdict="WAIT:greptile-skipped"
-    elif [[ ! "$greptile_conclusion" =~ ^(success|neutral|skipped)$ ]]; then
-        # A failed or cancelled run posted nothing: no comments is not a pass.
-        verdict="WAIT:greptile-${greptile_conclusion:-no-conclusion}"
-    elif [[ "$merge_state" != "CLEAN" ]]; then
-        verdict="WAIT:merge-state-$merge_state"
-    else
-        verdict="READY"
+    # CodeRabbit reports as a check run on the head; an older head may carry
+    # the commit status it used to set. Paginated: a head with more runs than
+    # one page holds can have CodeRabbit's on a later one.
+    review="$(gh api --paginate "repos/$slug/commits/$head/check-runs?per_page=100" \
+        --jq '.check_runs[] | select(.name | test("coderabbit"; "i")) | "\(.status)|\(.conclusion // "")|\(.output.title // "")"' | sed -n 1p)"
+    if [[ -z "$review" ]]; then
+        review="$(gh api "repos/$slug/commits/$head/status?per_page=100" \
+            --jq '[.statuses[] | select(.context == "CodeRabbit")][0] | if . == null then "none||" elif .state == "pending" then "in_progress||\(.description)" else "completed|\(.state)|\(.description)" end')"
     fi
+    IFS='|' read -r cr_status cr_conclusion cr_title <<<"$review"
+    # "Outside diff range" findings live in review bodies, not threads: a review
+    # carrying them counts until a comment of ours names its id (pr-reply.sh
+    # --kind=review writes that reference).
+    owner="${slug%%/*}"
+    name="${slug#*/}"
+    outside="$(gh api graphql -f query="{repository(owner:\"$owner\",name:\"$name\"){pullRequest(number:$number){reviews(last:40){nodes{author{login} databaseId body}} comments(last:100){nodes{author{login} body}}}}}" \
+        --jq '.data.repository.pullRequest as $p | [$p.comments.nodes[] | select(.author.login != "coderabbitai") | .body] as $mine
+            | [$p.reviews.nodes[] | select(.author.login == "coderabbitai" and (.body | test("Outside diff range")))
+               | select(.databaseId | tostring as $i | [$mine[] | contains($i)] | any | not)] | length')"
+
+    verdict="$(merge_verdict "$unresolved" "$outside" "${cr_status:-none}" "$cr_conclusion" "$cr_title" "$merge_state")"
 
     # The comment count above was taken before this PR's reviewers were seen
     # finished; findings posted in between would be missed. Recount now that
