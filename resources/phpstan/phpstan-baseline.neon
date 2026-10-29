@@ -865,12 +865,6 @@ parameters:
 			path: packages/semitexa-core/src/Queue/QueueWorker.php
 
 		-
-			message: '#^Parameter \#2 \$payload of method Semitexa\\Core\\Queue\\QueueTransportInterface\:\:publish\(\) expects string, string\|false given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-core/src/Queue/QueueWorker.php
-
-		-
 			message: '#^While loop condition is always true\.$#'
 			identifier: while.alwaysTrue
 			count: 1
