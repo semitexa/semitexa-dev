@@ -86,7 +86,7 @@ the last report): then merged, opened, waiting, and why.
   the code with the released provider. A comment saying "this method does not
   exist" is checked against the provider's `develop` before anyone acts on it.
 - **The merge gate** is the codereview skill's: CodeRabbit finished on the
-  current head, no unresolved thread, no unanswered "Outside diff range" finding
+  current head, no unresolved thread, no unanswered "Outside diff range" or "Follow-up" finding
   in a review body, and a clean merge state. "Review rate limited" is not finished.
 - **Release rule.** Finalize dates `next` floors with a commit on `develop`, and
   that commit has to fast-forward `master`. A repository with a `next` floor

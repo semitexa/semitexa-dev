@@ -12,7 +12,7 @@
 # This lists ALL open PRs, so none can go missing between fixing and merging.
 #
 # READY is merge-gate.sh's merge_verdict(): no unresolved actionable comment
-# (pr-review.sh's own count), no "Outside diff range" finding left unanswered
+# (pr-review.sh's own count), no "Outside diff range" or "Follow-up" finding left unanswered
 # in a CodeRabbit review body, CodeRabbit finished on the CURRENT head ("Review
 # rate limited" is a skipped review, not a pass), and mergeStateStatus CLEAN;
 # the comment count is taken again once everything else has passed. Greptile
