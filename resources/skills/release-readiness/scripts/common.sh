@@ -109,6 +109,16 @@ project_name() {
     basename "$1"
 }
 
+# Whether the repository at <url> has a master branch: prints yes or no, and
+# fails when the query itself failed (network, auth). Only an answer saying
+# "no master" may leave a package out of a release; a failed query read as
+# one would drop a package that has a master.
+remote_has_master() {
+    local ref
+    ref="$(git ls-remote --heads "$1" refs/heads/master 2>/dev/null)" || return 1
+    if [ -n "$ref" ]; then echo yes; else echo no; fi
+}
+
 assert_release_root() {
     [ "$RELEASE_ROOT" = "/home/taras/Documents/Projects/semitexa.rls" ] || \
         fail "This skill is pinned to /home/taras/Documents/Projects/semitexa.rls in v1"

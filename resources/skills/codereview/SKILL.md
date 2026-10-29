@@ -99,7 +99,7 @@ scripts/pr-reply.sh <repo-slug> <pr-number> <id> "<reply body>" --kind=issue
 CodeRabbit skips, and never queues, a review that hits its rate limit: the head gets
 a "Review rate limited" status. `scripts/coderabbit-retry.sh` posts `@coderabbitai review`
 on ONE such PR per run (a release blocker first — label `release-blocker` or
-`CODERABBIT_RETRY_PRIORITY=owner/repo#N` — then least recently triggered; a head is
+`CODERABBIT_RETRY_PRIORITY=owner/repo#N` — then the one that has waited longest since its last trigger or skip; a head is
 re-triggered at most once per run). On the operator's workstation a systemd user timer runs it every 30 minutes:
 `systemctl --user list-timers semitexa-coderabbit-retry.timer`, log in
 `~/.local/state/semitexa/coderabbit-retry.log`. So a "Review rate limited" head is
@@ -123,27 +123,27 @@ their own language (merged / fixed / waiting, with SHAs), not questions.
    `flock var/semitexa-review.lock composer phpstan`, run from the project
    root (same for phpunit in the app container).
 2. **Merge sweep.** `scripts/pr-merge-sweep.sh` lists every open PR with a
-   verdict; `--merge` merges the READY ones: 0 unresolved comments, the
-   primary reviewer passed the current head, mergeState CLEAN. **Greptile is
-   the primary reviewer** (since 2026-09-27: minutes per review, no rate
-   limit, and it found the real bugs CodeRabbit missed that day); its check
-   run must complete successfully. CodeRabbit is secondary: a review it is
-   running is waited for, but rate limiting no longer blocks a merge. A repo
-   without Greptile still needs CodeRabbit "Review completed". Findings from
-   both are fixed and answered the same way. When the two contradict each
-   other on the same line round after round, decide once, say why in the
-   thread, and stop moving the line. Use it, not
-   `pr-process.sh`, to decide merges: the fix queue drops a PR with no
-   comments, so a PR waiting on a rate-limited review is invisible there.
-3. **Wait, don't poke.** A fix push starts a review by itself (Greptile
-   reviews every push within minutes). CodeRabbit's "Review rate limited" heads
-   are woken one per 30 minutes by the retry timer (below); a PR that waited
-   through two timer runs may get one `@coderabbitai review` by hand (a skipped
-   trigger costs nothing). `@greptileai review` re-requests Greptile. Set a
-   recurring wake-up for yourself a few minutes after each timer run — read
-   its phase from `systemctl --user list-timers semitexa-coderabbit-retry.timer`
-   (it drifts, e.g. after a reboot); in Claude Code a `CronCreate` job — and on
-   each tick: sweep, merge what is READY, fix what came back, report.
+   verdict; `--merge` merges the READY ones. READY (`scripts/merge-gate.sh`):
+   no unresolved comment, no "Outside diff range" finding left unanswered in a
+   CodeRabbit review body, CodeRabbit finished on the current head, mergeState
+   CLEAN. **CodeRabbit is the reviewer**; Greptile stopped reviewing on
+   2026-10-14 and is no longer waited for. "Review rate limited" is a skipped
+   review, not a pass. An outside-diff finding is answered once with
+   `pr-reply.sh … --kind=review <review id>`: the reply names the id, and that
+   is what clears it. When the bot contradicts itself on the same line round
+   after round, decide once, say why in the thread, and stop moving the line.
+   Use the sweep, not `pr-process.sh`, to decide merges: the fix queue drops a
+   PR with no comments, so a PR waiting on a rate-limited review is invisible
+   there.
+3. **Wait, don't poke.** A fix push starts a review by itself. CodeRabbit's
+   "Review rate limited" heads are woken one per 30 minutes by the retry timer
+   (below), the one that has waited longest first; a PR that waited through two
+   timer runs may get one `@coderabbitai review` by hand (a skipped trigger
+   costs nothing). Set a recurring wake-up for yourself a few minutes after each
+   timer run — read its phase from
+   `systemctl --user list-timers semitexa-coderabbit-retry.timer` (it drifts,
+   e.g. after a reboot); in Claude Code a `CronCreate` job — and on each tick:
+   sweep, merge what is READY, fix what came back, report.
 4. **Stop** when the sweep says `No open PRs.`: cancel the wake-up and give a
    final report — what merged, what was rejected and why, what was found beyond
    the comments, and what is knowingly left open.
