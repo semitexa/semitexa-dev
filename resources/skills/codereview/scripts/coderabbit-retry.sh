@@ -17,9 +17,12 @@
 # (default 1500 — just under the 30-minute timer, so every run may retry);
 # Among eligible heads a release-blocking PR goes first — one carrying
 # CODERABBIT_RETRY_PRIORITY_LABEL or named in CODERABBIT_RETRY_PRIORITY —
-# then the least recently triggered. Without that, never-triggered heads always
-# won and a release blocker waited three runs (2026-09-27).
-# A new push is a new head, so it starts fresh.
+# then the one that has waited longest: the earliest "last attention", the
+# later of its last trigger and the moment CodeRabbit skipped its head.
+# Without the blocker rule a release blocker waited three runs (2026-09-27).
+# Ranked by trigger time alone, every never-triggered head tied at 0 and the
+# repository name broke the tie: a PR pushed to again and again kept winning,
+# and workflow#26 waited a whole evening behind docs and ultimate (2026-10-28).
 #
 # Environment:
 #   CODERABBIT_RETRY_OWNER            GitHub org/user to scan (default: semitexa)
@@ -78,8 +81,9 @@ while read -r repo number; do
     [ -n "$head" ] || continue
     labels=${pr#* }
     checked=$((checked + 1))
+    # "<epoch the status was set> <its text>": when CodeRabbit skipped the head.
     status=$(gh api "repos/$repo/commits/$head/status" \
-        --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | .description][0] // ""' 2>/dev/null) || continue
+        --jq '[.statuses[] | select(.context | test("coderabbit"; "i")) | "\(.updated_at | fromdate) \(.description // "")"][0] // ""' 2>/dev/null) || continue
     # CodeRabbit now reports as a check run ("Review rate limited" in its
     # title) and sets no commit status: read alone, the status found nothing,
     # and every run logged "none waiting" while a dozen reviews were skipped.
@@ -88,18 +92,23 @@ while read -r repo number; do
     # match is taken after it; sed reads to the end, and gh is not cut off.
     if [ -z "$status" ]; then
         status=$(gh api --paginate "repos/$repo/commits/$head/check-runs?per_page=100" \
-            --jq '.check_runs[] | select(.name | test("coderabbit"; "i")) | (.output.title // "")' 2>/dev/null | sed -n 1p) || continue
+            --jq '.check_runs[] | select(.name | test("coderabbit"; "i")) | "\((.completed_at // .started_at // "") | if . == "" then 0 else fromdate end) \(.output.title // "")"' 2>/dev/null | sed -n 1p) || continue
     fi
+    skipped=${status%% *}
+    case "$skipped" in ''|*[!0-9]*) skipped=0 ;; esac
+    status=${status#* }
     printf '%s' "$status" | grep -qiE "$MATCH" || continue
 
     last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)
     [ $((now - last)) -ge "$MIN_GAP" ] || continue
+    # Last attention: a trigger, or the skip itself. The oldest waited longest.
+    seen=$(( last > skipped ? last : skipped ))
     rank=1
     case "$PRIORITY" in *" $repo#$number "*) rank=0 ;; esac
     if [ -n "$PRIORITY_LABEL" ] && printf '%s' "$labels" | grep -qF "\"$PRIORITY_LABEL\""; then
         rank=0
     fi
-    candidates+=("$rank $last $repo $number $head")
+    candidates+=("$rank $seen $repo $number $head")
 done <<< "$prs"
 
 if [ "${#candidates[@]}" -eq 0 ]; then
