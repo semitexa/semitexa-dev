@@ -76,9 +76,24 @@ final class MergeGateVerdictTest extends TestCase
     #[Test]
     public function a_failed_read_fails_instead_of_counting_none(): void
     {
-        [$status] = $this->outside(reviews: null, comments: [[]]);
+        self::assertSame(1, $this->outside(reviews: null, comments: [[]])[0], 'the reviews');
+        self::assertSame(1, $this->outside(reviews: [['101']], comments: null)[0], 'the comments');
+    }
 
-        self::assertSame(1, $status);
+    /**
+     * CodeRabbit writes body findings under "Outside diff range", and since
+     * 2026-10-29 also as "Follow-up findings": semitexa-dev#163 merged past
+     * two of those, because only the first was matched.
+     */
+    #[Test]
+    public function both_kinds_of_review_body_finding_are_read(): void
+    {
+        $this->outside(reviews: [[]], comments: [[]]);
+
+        self::assertSame(
+            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up findings"))) | .id',
+            (string) file_get_contents($this->dir . '/reviews-filter'),
+        );
     }
 
     private string $dir = '';
@@ -93,17 +108,18 @@ final class MergeGateVerdictTest extends TestCase
     /**
      * outside_unanswered against a fake gh that prints, page after page, what
      * the real one prints after --jq: the ids of CodeRabbit's reviews with
-     * such a finding, and the ids named in other people's comments. null fails.
+     * such a finding, and the ids named in other people's comments; the filter
+     * it was given for the reviews is kept in reviews-filter. null fails.
      *
      * @param list<list<string>>|null $reviews
-     * @param list<list<string>> $comments
+     * @param list<list<string>>|null $comments
      * @return array{int, list<string>, list<string>}
      */
-    private function outside(?array $reviews, array $comments): array
+    private function outside(?array $reviews, ?array $comments): array
     {
         $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
         mkdir($this->dir . '/bin', 0o755, true);
-        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\necho \"\$1 \$2 \$3\" >> " . escapeshellarg($this->dir . '/calls') . "\ncase \"\$3\" in\n  */reviews*) " . self::pages($reviews) . " ;;\n  */comments*) " . self::pages($comments) . " ;;\n  *) exit 1 ;;\nesac\n");
+        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\necho \"\$1 \$2 \$3\" >> " . escapeshellarg($this->dir . '/calls') . "\ncase \"\$3\" in\n  */reviews*) printf %s \"\$5\" > " . escapeshellarg($this->dir . '/reviews-filter') . "; " . self::pages($reviews) . " ;;\n  */comments*) " . self::pages($comments) . " ;;\n  *) exit 1 ;;\nesac\n");
         chmod($this->dir . '/bin/gh', 0o755);
 
         $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';

@@ -24,6 +24,8 @@ set -euo pipefail
 
 OWNER="${MAKE_IT_OWNER:-semitexa}"
 WIP="${MAKE_IT_WIP:-3}"
+# Digits only, and no leading zero: bash arithmetic reads 010 as 8 and 08 as an error.
+[[ "$WIP" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "ERROR MAKE_IT_WIP must be a whole number without leading zeros, got: $WIP" >&2; exit 2; }
 
 # Checked before the search: a mistyped option read as "list" answered a
 # --can-open question with exit 0.
@@ -44,6 +46,11 @@ while read -r repo number; do
     [ -n "$repo" ] && prs+=("$repo#$number")
 done <<< "$open"
 count=${#prs[@]}
+# The search returns at most 1000: a full page may have left PRs out.
+if [ "$count" -ge 1000 ]; then
+    echo "ERROR gh search prs returned its 1000-result limit for owner $OWNER; nothing is known about what is open"
+    exit 2
+fi
 free=$(( WIP > count ? WIP - count : 0 ))
 
 if [ "${1:-}" != "--can-open" ]; then

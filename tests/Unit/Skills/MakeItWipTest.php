@@ -82,6 +82,24 @@ final class MakeItWipTest extends TestCase
         self::assertSame([2, ['usage: wip.sh [--can-open <repo>]']], $this->wip([], ['', 'x']));
     }
 
+    /** Bash arithmetic reads 010 as 8 and stops on "three" with no slot state printed. */
+    #[Test]
+    public function a_slot_limit_that_is_not_a_plain_number_is_refused(): void
+    {
+        foreach (['three', '010', '-1'] as $wip) {
+            self::assertSame([2, ['ERROR MAKE_IT_WIP must be a whole number without leading zeros, got: ' . $wip]], $this->wip([], [], wip: $wip), $wip);
+        }
+    }
+
+    /** A search that came back full (1000) may have left open PRs out of the list. */
+    #[Test]
+    public function a_search_at_its_result_limit_says_nothing_is_known(): void
+    {
+        $open = array_map(static fn (int $n): string => 'semitexa/semitexa-x ' . $n, range(1, 1000));
+
+        self::assertSame([2, ['ERROR gh search prs returned its 1000-result limit for owner semitexa; nothing is known about what is open']], $this->wip($open, ['--can-open', 'semitexa-orm']));
+    }
+
     /**
      * Runs scripts/wip.sh against a fake gh that answers the search as the real
      * one does after --jq, or fails it when $open is null.
@@ -90,7 +108,7 @@ final class MakeItWipTest extends TestCase
      * @param list<string> $args
      * @return array{int, list<string>}
      */
-    private function wip(?array $open, array $args, int $wip = 3): array
+    private function wip(?array $open, array $args, int|string $wip = 3): array
     {
         if ($this->dir === '') {
             $this->dir = sys_get_temp_dir() . '/make-it-wip-' . bin2hex(random_bytes(4));
@@ -104,9 +122,9 @@ final class MakeItWipTest extends TestCase
 
         $script = dirname(__DIR__, 3) . '/resources/skills/make-it/scripts/wip.sh';
         exec(sprintf(
-            'env -i PATH=%s:/usr/bin:/bin MAKE_IT_WIP=%d bash %s %s 2>&1',
+            'env -i PATH=%s:/usr/bin:/bin MAKE_IT_WIP=%s bash %s %s 2>&1',
             escapeshellarg($this->dir . '/bin'),
-            $wip,
+            escapeshellarg((string) $wip),
             escapeshellarg($script),
             implode(' ', array_map('escapeshellarg', $args)),
         ), $out, $status);
