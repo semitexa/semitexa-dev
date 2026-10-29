@@ -115,9 +115,10 @@ final class MakeItWipTest extends TestCase
             mkdir($this->dir . '/bin', 0o755, true);
         }
         $answer = $open === null ? 'exit 1' : 'printf %s ' . escapeshellarg(implode("\n", $open) . "\n");
-        // Only a search for OPEN pull requests is answered: one without --state=open
-        // would count merged PRs as taking a slot.
-        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n  ' search prs '*' --state=open '*) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
+        // Only a search for OPEN pull requests, up to the 1000 the guard expects, is
+        // answered: without --state=open merged PRs take slots; with a lower limit
+        // (gh's default is 30) the list is cut short and the guard never fires.
+        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n  ' search prs '*' --state=open --limit 1000 '*) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
         chmod($this->dir . '/bin/gh', 0o755);
 
         $script = dirname(__DIR__, 3) . '/resources/skills/make-it/scripts/wip.sh';

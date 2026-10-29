@@ -12,8 +12,8 @@
 # passed here as status completed. "none" means no result on this head at all.
 #
 # READY needs every one of: no unresolved thread, no finding left unanswered
-# in a review body ("Outside diff range", or the "Follow-up findings" block
-# CodeRabbit writes since 2026-10-29) (those live outside the threads and
+# in a review body ("Outside diff range", or the "Follow-up findings" /
+# "Follow-up Comments" blocks CodeRabbit writes since 2026-10-29) (those live outside the threads and
 # passed as clean when only threads were counted), a finished review, and a
 # CLEAN merge state. "Review rate limited" is a skipped review, never a pass.
 merge_verdict() {
@@ -39,9 +39,10 @@ merge_verdict() {
 }
 
 # The findings in review bodies nobody answered on <owner/repo> PR <n>:
-# "Outside diff range", and "Follow-up findings" (CodeRabbit's newer block for
-# the same thing — semitexa-dev#163 merged past two of them on 2026-10-29,
-# because only the first was matched). Those live in review bodies, not threads: a CodeRabbit review carrying them
+# "Outside diff range", and "Follow-up findings" / "Follow-up Comments"
+# (CodeRabbit's newer blocks for the same thing — semitexa-dev#163 merged past
+# two of them on 2026-10-29 because only the first was matched, and #164's own
+# review used the second heading the same night). Those live in review bodies, not threads: a CodeRabbit review carrying them
 # counts until a comment of someone else names its id (pr-reply.sh
 # --kind=review writes a link to it). Both lists are read to the end: a PR
 # with more reviews or comments than one page hid the later ones (40 reviews
@@ -49,7 +50,7 @@ merge_verdict() {
 outside_unanswered() {
     local slug=$1 number=$2 reviews answered
     reviews="$(gh api --paginate "repos/$slug/pulls/$number/reviews?per_page=100" \
-        --jq '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up findings"))) | .id')" || return 1
+        --jq '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)"; "i"))) | .id')" || return 1
     answered="$(gh api --paginate "repos/$slug/issues/$number/comments?per_page=100" \
         --jq '.[] | select(.user.login != "coderabbitai[bot]") | (.body // "") | scan("[0-9]{6,}")')" || return 1
     outside_count "$reviews" "$answered"

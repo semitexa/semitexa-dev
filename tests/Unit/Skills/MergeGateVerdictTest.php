@@ -82,8 +82,9 @@ final class MergeGateVerdictTest extends TestCase
 
     /**
      * CodeRabbit writes body findings under "Outside diff range", and since
-     * 2026-10-29 also as "Follow-up findings": semitexa-dev#163 merged past
-     * two of those, because only the first was matched.
+     * 2026-10-29 also as "Follow-up findings" or "Follow-up Comments":
+     * semitexa-dev#163 merged past two of those, because only the first was
+     * matched.
      */
     #[Test]
     public function both_kinds_of_review_body_finding_are_read(): void
@@ -91,7 +92,7 @@ final class MergeGateVerdictTest extends TestCase
         $this->outside(reviews: [[]], comments: [[]]);
 
         self::assertSame(
-            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up findings"))) | .id',
+            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)"; "i"))) | .id',
             (string) file_get_contents($this->dir . '/reviews-filter'),
         );
     }
