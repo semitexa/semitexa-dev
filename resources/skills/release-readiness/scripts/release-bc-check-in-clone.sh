@@ -20,6 +20,8 @@ inside="/var/www/html/${PWD#"$RELEASE_ROOT"/}"
 tool=/var/www/html/var/tools/roave
 
 if ! compose exec -T app test -x "$tool/vendor/bin/roave-backward-compatibility-check"; then
+    # Composer refuses a --working-dir that does not exist yet.
+    compose exec -T app mkdir -p "$tool"
     compose exec -T app composer require --no-interaction --no-progress --working-dir="$tool" \
         'roave/backward-compatibility-check:^8.27' >&2
 fi
