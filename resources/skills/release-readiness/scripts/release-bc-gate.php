@@ -82,7 +82,10 @@ foreach ($packageDirs as $packageDir) {
         continue; // nothing promised at that tag
     }
     foreach (breaks($packageDir, $tag, $check, $problems) as $description) {
-        $verdict = judge($description, $surface, $today, static fn (string $key): array => shippedIn($packageDir, $key, $tag, $problems));
+        // By reference: what shippedIn() cannot read must reach the exit code.
+        $verdict = judge($description, $surface, $today, static function (string $key) use ($packageDir, $tag, &$problems): array {
+            return shippedIn($packageDir, $key, $tag, $problems);
+        });
         if ($verdict === null) {
             continue; // not on the @api surface
         }
@@ -271,6 +274,9 @@ function shippedIn(string $packageDir, string $key, string $previousTag, array &
 {
     $until = cutDate($previousTag);
     $listed = git($packageDir, ['tag', '--list', '20*'], $status);
+    if ($status !== 0) {
+        $problems[] = basename($packageDir) . ": its tags could not be listed to date the deprecation of {$key}";
+    }
     $tags = [];
     foreach ($status === 0 ? array_filter(array_map('trim', explode("\n", $listed))) : [] as $tag) {
         $date = cutDate($tag);
@@ -336,6 +342,12 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
 
         return [];
     }
+    if ($status === 3 && $report['errors'] === []) {
+        // "Breaks found", and none listed: nothing here can be judged.
+        $problems[] = basename($packageDir) . ': roave said it found breaks and listed none';
+
+        return [];
+    }
     $descriptions = [];
     foreach ($report['errors'] as $i => $error) {
         if (!is_array($error) || !is_string($error['description'] ?? null) || trim($error['description']) === '') {
@@ -395,22 +407,25 @@ function judge(string $description, array $surface, \DateTimeImmutable $today, c
         if ($class === null) {
             return null;
         }
-        $keys = array_key_exists($class, $surface)
-            ? [$class]
-            : array_values(array_filter(array_keys($surface), static fn (string $k): bool => str_starts_with($k, $class . '::')));
-        $whole = !array_key_exists($class, $surface);
+        $members = array_values(array_filter(array_keys($surface), static fn (string $k): bool => str_starts_with($k, $class . '::')));
+        // A class deleted takes every promised member with it, a member added after
+        // the class was deprecated included; a change to the class itself (a method
+        // added to an interface) is the class's alone.
+        $deleted = preg_match('/has been deleted|was removed/i', $description) === 1;
+        $keys = array_key_exists($class, $surface) ? ($deleted ? [$class, ...$members] : [$class]) : $members;
+        $whole = $deleted || !array_key_exists($class, $surface);
     }
     $reasons = [];
     foreach ($keys as $key) {
         $written = $surface[$key];
         if ($written === null) {
             // Named only when the break is a whole class taking a promised member with it.
-            return [false, ($whole ? $key . ' ' : '') . '@api and never deprecated'];
+            return [false, ($whole && $key !== $class ? $key . ' ' : '') . '@api and never deprecated'];
         }
         [$in, $shipped] = $shippedIn($key);
         $days = (int) $shipped->diff($today)->format('%r%a');
         if ($days < WINDOW_DAYS) {
-            return [false, "@api, deprecated {$written}, shipped in {$in}: only {$days} of " . WINDOW_DAYS . ' days ago'];
+            return [false, ($whole && $key !== $class ? $key . ' ' : '') . "@api, deprecated {$written}, shipped in {$in}: only {$days} of " . WINDOW_DAYS . ' days ago'];
         }
         $reasons[] = "deprecated {$written}, shipped in {$in}, {$days} days ago";
     }

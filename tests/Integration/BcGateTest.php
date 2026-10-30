@@ -126,6 +126,38 @@ final class BcGateTest extends TestCase
         ]], [$status, $out]);
     }
 
+    /** A member added to a class after the class was deprecated was promised only since it appeared. */
+    #[Test]
+    public function a_deleted_class_is_judged_by_each_promised_member(): void
+    {
+        $this->released(laterMethod: "    public function later(): int { return 3; }\n", classDoc: '@deprecated 2026.07.01 Use Time instead.');
+
+        [$status, $out] = $this->gate(['Class Semitexa\\Core\\Clock has been deleted']);
+
+        self::assertSame([1, ['[BREAK] semitexa-core (since 2026.10.20.0900): Class Semitexa\\Core\\Clock has been deleted — Semitexa\\Core\\Clock::later @api, deprecated 2026.07.01, shipped in 2026.10.20.0900: only 11 of 90 days ago']], [$status, $out]);
+    }
+
+    /** What the shipping history could not read reached no exit code: the break was allowed. */
+    #[Test]
+    public function an_unreadable_older_release_fails_the_gate_instead_of_dating_from_it(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        file_put_contents($dir . '/composer.json', '{"name":"semitexa/core"}');
+        file_put_contents($dir . '/src/Broken.php', "<?php\nfinal class {\n");
+        $this->git($dir, ['init -q', 'config user.email t@example.test', 'config user.name T', 'add -A', 'commit -q -m early']);
+        $this->git($dir, ['tag -a -m cut 2026.05.01.0900'], '2026-05-01T09:00:00Z');
+        unlink($dir . '/src/Broken.php');
+        file_put_contents($dir . '/src/Clock.php', "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Clock\n{\n    /** @deprecated 2026.07.01 Use now() instead. */\n    public function old(): int { return 1; }\n}\n");
+        $this->git($dir, ['add -A', 'commit -q -m released']);
+        $this->git($dir, ['tag -a -m cut 2026.07.01.0900'], '2026-07-01T09:00:00Z');
+        $this->git($dir, ['commit -q --allow-empty -m after']);
+
+        [$status, $out] = $this->gate([self::BREAKS[0]]);
+
+        self::assertSame(1, $status);
+        self::assertContains('[UNCHECKED] semitexa-core: src/Broken.php at 2026.05.01.0900 does not parse (Syntax error, unexpected \'{\', expecting T_STRING on line 2)', $out);
+    }
+
     #[Test]
     public function a_global_namespace_api_class_is_on_the_surface(): void
     {
@@ -168,6 +200,7 @@ final class BcGateTest extends TestCase
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave did not check it (exit 2)']], $this->gate(null));
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['nope' => 1]]]));
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['description' => '  ']]]));
+        self::assertSame([1, ['[UNCHECKED] semitexa-core: roave said it found breaks and listed none']], $this->gate([], ['errors' => []]));
     }
 
     /**
@@ -178,10 +211,10 @@ final class BcGateTest extends TestCase
      *
      * @param array<string, string> $extra more files at the first tag
      */
-    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = ''): void
+    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = '', string $classDoc = ''): void
     {
         $dir = $this->root . '/packages/semitexa-core';
-        $mark = $api ? '/** @api */' : '';
+        $mark = $api ? ($classDoc !== '' ? "/**\n * @api\n * {$classDoc}\n */" : '/** @api */') : '';
         $clock = static fn (string $doc): string => "<?php\nnamespace Semitexa\\Core;\n{$mark}\nfinal class Clock\n{\n    public function now(): int { return 0; }\n    {$doc}\n    public function old(): int { return 1; }\n}\n";
         file_put_contents($dir . '/composer.json', '{"name":"semitexa/core"}');
         file_put_contents($dir . '/src/Clock.php', $clock($deprecatedLater ? '' : $oldDoc));
