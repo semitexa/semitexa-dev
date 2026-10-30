@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Integration;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -122,11 +123,23 @@ final class UpgradeNotesReportTest extends TestCase
         self::assertSame(['## semitexa/core (since 2026.10.29.1052)', '', '- `Semitexa\Core\Clock` — 2026.10.30 Use Time.'], array_slice($out, 4, 3));
     }
 
-    /** A manifest it cannot read gave the section the directory's name, and the notes passed. */
-    #[Test]
-    public function a_package_manifest_that_cannot_be_read_fails_the_notes(): void
+    /**
+     * A manifest it cannot read gave the section the directory's name, and the notes
+     * passed; with nothing deprecated it was not read at all.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function afterTheTag(): iterable
     {
-        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], ['Clock.php' => "<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.10.30 Use Time. */\nfinal class Clock {}\n"]);
+        yield 'with a deprecation' => ["<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.10.30 Use Time. */\nfinal class Clock {}\n"];
+        yield 'without one' => ["<?php\nnamespace Semitexa\\Core;\nfinal class Clock { public function now(): int { return 0; } }\n"];
+    }
+
+    #[Test]
+    #[DataProvider('afterTheTag')]
+    public function a_package_manifest_that_cannot_be_read_fails_the_notes(string $now): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], ['Clock.php' => $now]);
         // A dangling link: there, and unreadable even to root.
         $manifest = $this->root . '/packages/semitexa-core/composer.json';
         unlink($manifest);

@@ -72,9 +72,11 @@ foreach ($packageDirs as $packageDir) {
     if ($tag === null) {
         continue; // never released (or unreadable, recorded): nothing in it was promised yet
     }
+    // Read for every released package, not only one with news: an unreadable manifest fails the run either way.
+    $name = packageName($packageDir, $unread);
     $added = addedDeprecations($packageDir, $tag, $unread);
     if ($added !== []) {
-        $sections[packageName($packageDir, $unread)] = ['since' => $tag, 'added' => $added];
+        $sections[$name] = ['since' => $tag, 'added' => $added];
     }
 }
 ksort($sections);
