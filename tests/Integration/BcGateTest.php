@@ -109,7 +109,7 @@ final class BcGateTest extends TestCase
     public function a_mark_a_few_spaces_in_is_a_mark_and_further_in_is_prose(): void
     {
         $this->released(extra: [
-            'Box.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n *  @api\n */\nfinal class Box\n{\n    public function open(): void {}\n}\n",
+            'Box.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n *    @api\n */\nfinal class Box\n{\n    public function open(): void {}\n}\n",
             'Note.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n * Mark it so:\n *\n *     @api\n */\nfinal class Note\n{\n    public function read(): void {}\n}\n",
         ]);
 
