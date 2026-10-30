@@ -107,6 +107,37 @@ final class UpgradeNotesReportTest extends TestCase
         self::assertSame('Not read, so not in the notes: ' . $dir . '/src/Broken.php', end($out));
     }
 
+    /** Rerun after the release is tagged, the stage compared the tree with itself and found nothing. */
+    #[Test]
+    public function the_tag_of_this_release_is_not_the_one_compared_with(): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], ['Clock.php' => "<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.10.30 Use Time. */\nfinal class Clock {}\n"]);
+        // Annotated and dated later, so it is the newest tag by creation date, as it is after the cut.
+        exec(sprintf('GIT_COMMITTER_DATE=2030-01-01T00:00:00Z git -C %s -c user.email=t@example.test -c user.name=T tag -a -m cut 2026.10.31.0900 2>&1', escapeshellarg($this->root . '/packages/semitexa-core')), $tagged, $exit);
+        self::assertSame(0, $exit, implode("\n", $tagged));
+
+        [$status, $out] = $this->notes();
+
+        self::assertSame(0, $status);
+        self::assertSame(['## semitexa/core (since 2026.10.29.1052)', '', '- `Semitexa\Core\Clock` — 2026.10.30 Use Time.'], array_slice($out, 4, 3));
+    }
+
+    /** A manifest it cannot read gave the section the directory's name, and the notes passed. */
+    #[Test]
+    public function a_package_manifest_that_cannot_be_read_fails_the_notes(): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], ['Clock.php' => "<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.10.30 Use Time. */\nfinal class Clock {}\n"]);
+        // A dangling link: there, and unreadable even to root.
+        $manifest = $this->root . '/packages/semitexa-core/composer.json';
+        unlink($manifest);
+        symlink($this->root . '/nowhere.json', $manifest);
+
+        [$status, $out] = $this->notes();
+
+        self::assertSame(1, $status);
+        self::assertSame('Not read, so not in the notes: ' . $manifest, end($out));
+    }
+
     #[Test]
     public function a_release_without_deprecations_says_so(): void
     {
@@ -146,8 +177,11 @@ final class UpgradeNotesReportTest extends TestCase
     private function notes(): array
     {
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-upgrade-notes.php';
-        // The parser comes from this project's autoloader; a release clone has its own.
-        $autoload = dirname(__DIR__, 4) . '/vendor/autoload.php';
+        // The parser comes from the autoloader running this test (a release clone has its
+        // own): vendor/composer/ClassLoader.php sits two levels under vendor/autoload.php.
+        $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
+        self::assertIsString($loader);
+        $autoload = dirname($loader, 2) . '/autoload.php';
         exec(sprintf('RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s php %s --version=2026.10.31.0900 2>&1', escapeshellarg($this->root), escapeshellarg($autoload), escapeshellarg($script)), $out, $status);
 
         return [$status, $out];

@@ -63,16 +63,18 @@ if ($packageDirs === false) {
 $sections = [];
 $unread = [];
 foreach ($packageDirs as $packageDir) {
-    if (!is_dir($packageDir . '/.git') || !is_file($packageDir . '/composer.json')) {
+    // No manifest at all: not a package. One that is there and cannot be read is recorded later.
+    $manifest = $packageDir . '/composer.json';
+    if (!is_dir($packageDir . '/.git') || (!file_exists($manifest) && !is_link($manifest))) {
         continue;
     }
-    $tag = latestTag($packageDir, $unread);
+    $tag = latestTag($packageDir, $version, $unread);
     if ($tag === null) {
         continue; // never released (or unreadable, recorded): nothing in it was promised yet
     }
     $added = addedDeprecations($packageDir, $tag, $unread);
     if ($added !== []) {
-        $sections[packageName($packageDir)] = ['since' => $tag, 'added' => $added];
+        $sections[packageName($packageDir, $unread)] = ['since' => $tag, 'added' => $added];
     }
 }
 ksort($sections);
@@ -136,20 +138,34 @@ function git(string $dir, array $arguments, ?int &$status = null): string
     return substr($output, 0, $cut);
 }
 
-function packageName(string $packageDir): string
-{
-    $manifest = json_decode((string) file_get_contents($packageDir . '/composer.json'), true);
-
-    return is_array($manifest) && is_string($manifest['name'] ?? null) ? $manifest['name'] : basename($packageDir);
-}
-
 /**
- * The newest release tag, by creation date; null when there is none, or when
- * the listing failed (then recorded in $unread).
+ * The package's Composer name; an unreadable manifest is recorded, and the
+ * directory name stands in so the section is still printed.
  *
  * @param list<string> $unread
  */
-function latestTag(string $packageDir, array &$unread): ?string
+function packageName(string $packageDir, array &$unread): string
+{
+    $source = @file_get_contents($packageDir . '/composer.json');
+    $manifest = is_string($source) ? json_decode($source, true) : null;
+    if (!is_array($manifest) || !is_string($manifest['name'] ?? null)) {
+        $unread[] = $packageDir . '/composer.json';
+
+        return basename($packageDir);
+    }
+
+    return $manifest['name'];
+}
+
+/**
+ * The newest release tag before this release, by creation date: the tag this
+ * release is cut as is skipped, so a rerun after tagging still compares with
+ * the release before; null when there is none, or when the listing failed
+ * (then recorded in $unread).
+ *
+ * @param list<string> $unread
+ */
+function latestTag(string $packageDir, string $version, array &$unread): ?string
 {
     $out = git($packageDir, ['tag', '--sort=-creatordate', '--list', '20*'], $status);
     if ($status !== 0) {
@@ -157,7 +173,7 @@ function latestTag(string $packageDir, array &$unread): ?string
 
         return null;
     }
-    $tags = array_values(array_filter(array_map('trim', explode("\n", $out))));
+    $tags = array_values(array_filter(array_map('trim', explode("\n", $out)), static fn (string $t): bool => $t !== '' && $t !== $version));
 
     return $tags[0] ?? null;
 }
