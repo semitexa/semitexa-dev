@@ -96,6 +96,9 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate(['Class Semitexa\\Core\\Kit has been deleted']);
 
         self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Class Semitexa\\Core\\Kit has been deleted — Semitexa\\Core\\Kit::use @api and never deprecated']], [$status, $out]);
+
+        // Made final, it is still there: no promised member changed.
+        self::assertSame([0, ['No break on the @api surface.']], $this->gate(['Class Semitexa\\Core\\Kit became final']));
     }
 
     /** Only the break's subject is judged: an @api class named as a type in someone else's signature is not. */

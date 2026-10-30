@@ -412,6 +412,9 @@ function judge(string $description, array $surface, \DateTimeImmutable $today, c
         // the class was deprecated included; a change to the class itself (a method
         // added to an interface) is the class's alone.
         $deleted = preg_match('/has been deleted|was removed/i', $description) === 1;
+        if (!array_key_exists($class, $surface) && !$deleted) {
+            return null; // a change to a class that is not promised itself (made final, say) changes no promised member
+        }
         $keys = array_key_exists($class, $surface) ? ($deleted ? [$class, ...$members] : [$class]) : $members;
         $whole = $deleted || !array_key_exists($class, $surface);
     }
