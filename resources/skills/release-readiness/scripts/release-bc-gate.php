@@ -82,7 +82,7 @@ foreach ($packageDirs as $packageDir) {
         continue; // nothing promised at that tag
     }
     foreach (breaks($packageDir, $tag, $check, $problems) as $description) {
-        $verdict = judge($description, $surface, $today);
+        $verdict = judge($description, $surface, $today, static fn (string $key): array => shippedIn($packageDir, $key, $tag, $problems));
         if ($verdict === null) {
             continue; // not on the @api surface
         }
@@ -165,17 +165,11 @@ function previousTag(string $packageDir, string $version, array &$problems): ?st
 
 /**
  * What was promised at $tag: every class-like marked @api, and every member of
- * one that is public or marked itself (a promoted property too), each with its
- * deprecation, or null when it was not deprecated.
- *
- * The 90 days count from the first release that carried the deprecation, as
- * the contract says, not from the date written in it: a backdated date would
- * shorten the notice. That release is the first tag containing the commit
- * that added the @deprecated line; when it cannot be found, the previous tag,
- * the latest it can have shipped in.
+ * one that is public or marked itself (a promoted property too), each with the
+ * date its deprecation gives, or null when it was not deprecated.
  *
  * @param list<string> $problems
- * @return array<string, array{written: string, shipped: \DateTimeImmutable, in: string}|null> "Class" or "Class::member"
+ * @return array<string, string|null> "Class" or "Class::member" => deprecation date written, or null
  */
 function surfaceAt(string $packageDir, string $tag, array &$problems): array
 {
@@ -189,13 +183,37 @@ function surfaceAt(string $packageDir, string $tag, array &$problems): array
 
         return [];
     }
+    $symbols = symbolsAt($packageDir, $tag, $problems);
+    $surface = [];
+    foreach ($symbols['api'] as $key) {
+        $surface[$key] = $symbols['deprecated'][$key] ?? null;
+    }
+
+    return $surface;
+}
+
+/**
+ * Every class-like and member in src at $tag: which are on the @api surface,
+ * and which are deprecated (a member of a deprecated class is), with the date
+ * written. Read once per tag.
+ *
+ * @param list<string> $problems
+ * @return array{api: list<string>, deprecated: array<string, string>}
+ */
+function symbolsAt(string $packageDir, string $tag, array &$problems): array
+{
+    /** @var array<string, array{api: list<string>, deprecated: array<string, string>}> $cache */
+    static $cache = [];
+    if (isset($cache[$packageDir . '@' . $tag])) {
+        return $cache[$packageDir . '@' . $tag];
+    }
+    $symbols = ['api' => [], 'deprecated' => []];
     $files = git($packageDir, ['ls-tree', '-r', '--name-only', $tag, '--', 'src'], $status);
     if ($status !== 0) {
         $problems[] = basename($packageDir) . ": its sources at {$tag} could not be listed";
 
-        return [];
+        return $symbols;
     }
-    $surface = [];
     foreach (array_filter(explode("\n", $files), static fn (string $f): bool => str_ends_with($f, '.php')) as $file) {
         $source = git($packageDir, ['show', $tag . ':' . $file], $show);
         if ($show !== 0) {
@@ -215,19 +233,59 @@ function surfaceAt(string $packageDir, string $tag, array &$problems): array
             }
             $name = $class->namespacedName->toString();
             $classIsApi = hasTag($class->getDocComment(), 'api');
-            $classDeprecation = deprecation($packageDir, $tag, $file, $class->getDocComment());
+            $classWritten = deprecatedSince($class->getDocComment());
             if ($classIsApi) {
-                $surface[$name] = $classDeprecation;
+                $symbols['api'][] = $name;
+            }
+            if ($classWritten !== null) {
+                $symbols['deprecated'][$name] = $classWritten;
             }
             foreach (members($class) as [$member, $doc, $public]) {
+                $key = $name . '::' . $member;
                 if (hasTag($doc, 'api') || ($classIsApi && $public)) {
-                    $surface[$name . '::' . $member] = deprecation($packageDir, $tag, $file, $doc) ?? $classDeprecation;
+                    $symbols['api'][] = $key;
+                }
+                $written = deprecatedSince($doc) ?? $classWritten;
+                if ($written !== null) {
+                    $symbols['deprecated'][$key] = $written;
                 }
             }
         }
     }
 
-    return $surface;
+    return $cache[$packageDir . '@' . $tag] = $symbols;
+}
+
+/**
+ * The release that first shipped the deprecation of $key: the earliest tag,
+ * by its version's date, at which that very declaration is deprecated. The
+ * 90 days count from it, as the contract says; not from the date written in
+ * the tag, which could be backdated, and not from another declaration that
+ * happens to carry the same line. The previous tag when none is found (the
+ * latest the deprecation can have shipped in).
+ *
+ * @param list<string> $problems
+ * @return array{string, \DateTimeImmutable}
+ */
+function shippedIn(string $packageDir, string $key, string $previousTag, array &$problems): array
+{
+    $until = cutDate($previousTag);
+    $listed = git($packageDir, ['tag', '--list', '20*'], $status);
+    $tags = [];
+    foreach ($status === 0 ? array_filter(array_map('trim', explode("\n", $listed))) : [] as $tag) {
+        $date = cutDate($tag);
+        if ($date !== null && $until !== null && $date <= $until) {
+            $tags[$tag] = $date;
+        }
+    }
+    uksort($tags, static fn (string $a, string $b): int => [$tags[$a], $a] <=> [$tags[$b], $b]);
+    foreach ($tags as $tag => $date) {
+        if (isset(symbolsAt($packageDir, $tag, $problems)['deprecated'][$key])) {
+            return [$tag, $date];
+        }
+    }
+
+    return [$previousTag, $until ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))];
 }
 
 /**
@@ -280,7 +338,7 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
     }
     $descriptions = [];
     foreach ($report['errors'] as $i => $error) {
-        if (!is_array($error) || !is_string($error['description'] ?? null)) {
+        if (!is_array($error) || !is_string($error['description'] ?? null) || trim($error['description']) === '') {
             // A break it cannot read is not a break it can clear.
             $problems[] = basename($packageDir) . ": roave reported break #{$i} without a description";
             continue;
@@ -295,83 +353,82 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
  * Whether one break touches the promised surface, and if so whether it may
  * ship: [allowed, why], or null when it touches nothing promised.
  *
- * Roave names a member as Class#method(), Class#$property or Class::CONSTANT,
- * a method added to an interface as "Method m() was added to interface Class",
- * and a removed class by its name alone. Every class the surface knows is
- * looked for by name (global-namespace ones too); a class removed whole takes
+ * The break is judged by its subject only: the class before `#` or `::` in
+ * roave's description (Class#method(), Class#$property, Class::CONSTANT), or,
+ * for a class-level break ("Class X has been deleted", "Method m() was added to
+ * interface X"), the surface class it names. A class named only as a type in
+ * someone else's signature is not the subject. A class removed whole takes
  * every promised member with it.
  *
- * @param array<string, array{written: string, shipped: \DateTimeImmutable, in: string}|null> $surface
+ * @param array<string, string|null> $surface
+ * @param callable(string): array{string, \DateTimeImmutable} $shippedIn
  * @return array{bool, string}|null
  */
-function judge(string $description, array $surface, \DateTimeImmutable $today): ?array
+function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn): ?array
 {
     $classes = [];
     foreach (array_keys($surface) as $key) {
         $classes[explode('::', $key, 2)[0]] = true;
     }
-    // The longest name that appears, so App\Clock is not taken for Clock.
-    uksort($classes, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
-    foreach (array_keys($classes) as $class) {
-        if (preg_match('/(?<![\w\\\\])' . preg_quote($class, '/') . '(?:#(\$?\w+)|::(\w+))?(?![\w\\\\])/', $description, $m) !== 1) {
-            continue;
+    if (preg_match('/([A-Za-z_\\\\][\w\\\\]*)(?:#(\$?\w+)|::(\w+))/', $description, $m) === 1) {
+        $class = ltrim($m[1], '\\');
+        $member = ($m[2] ?? '') !== '' ? $m[2] : $m[3];
+        if (array_key_exists($class . '::' . $member, $surface)) {
+            $keys = [$class . '::' . $member];
+        } elseif (array_key_exists($class, $surface)) {
+            $keys = [$class];
+        } else {
+            return null; // the subject is not promised, whatever its signature mentions
         }
-        $member = ($m[1] ?? '') !== '' ? $m[1] : (($m[2] ?? '') !== '' ? $m[2] : null);
-        $keys = $member !== null && array_key_exists($class . '::' . $member, $surface)
-            ? [$class . '::' . $member]
-            : (array_key_exists($class, $surface) ? [$class] : array_values(array_filter(array_keys($surface), static fn (string $k): bool => str_starts_with($k, $class . '::'))));
-        if ($keys === []) {
-            continue;
-        }
-        $reasons = [];
-        foreach ($keys as $key) {
-            $deprecation = $surface[$key];
-            if ($deprecation === null) {
-                // Named only when the break is a whole class taking a promised member with it.
-                return [false, ($member === null && $key !== $class ? $key . ' ' : '') . '@api and never deprecated'];
+        $whole = false;
+    } else {
+        // The longest name that appears, so App\Clock is not taken for Clock.
+        $names = array_keys($classes);
+        usort($names, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+        $class = null;
+        foreach ($names as $name) {
+            if (preg_match('/(?<![\w\\\\])' . preg_quote($name, '/') . '(?![\w\\\\])/', $description) === 1) {
+                $class = $name;
+                break;
             }
-            $days = (int) $deprecation['shipped']->diff($today)->format('%r%a');
-            if ($days < WINDOW_DAYS) {
-                return [false, "@api, deprecated {$deprecation['written']}, shipped in {$deprecation['in']}: only {$days} of " . WINDOW_DAYS . ' days ago'];
-            }
-            $reasons[] = "deprecated {$deprecation['written']}, shipped in {$deprecation['in']}, {$days} days ago";
         }
-
-        return [true, implode('; ', array_unique($reasons))];
-    }
-
-    return null;
-}
-
-/**
- * A docblock's deprecation as the gate counts it: the date written, and the
- * first release that shipped the @deprecated line (see surfaceAt()).
- *
- * @return array{written: string, shipped: \DateTimeImmutable, in: string}|null
- */
-function deprecation(string $packageDir, string $tag, string $file, ?Doc $doc): ?array
-{
-    if ($doc === null || preg_match('/^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)(@deprecated\b[^\n]*?)[ \t]*(?:\*\/)?$/m', $doc->getText(), $m) !== 1) {
-        return null;
-    }
-    $line = trim($m[1]);
-    $written = preg_match('/^@deprecated[ \t]+(\S+)/', $line, $w) === 1 ? $w[1] : '';
-    $in = $tag;
-    $added = git($packageDir, ['log', '--reverse', '--format=%H', '-S', $line, $tag, '--', $file], $status);
-    $commit = $status === 0 ? strtok($added, "\n") : false;
-    if (is_string($commit)) {
-        $tags = git($packageDir, ['tag', '--contains', $commit, '--sort=creatordate', '--list', '20*'], $tagStatus);
-        $first = $tagStatus === 0 ? strtok($tags, "\n") : false;
-        if (is_string($first) && cutDate($first) !== null) {
-            $in = $first;
+        if ($class === null) {
+            return null;
         }
+        $keys = array_key_exists($class, $surface)
+            ? [$class]
+            : array_values(array_filter(array_keys($surface), static fn (string $k): bool => str_starts_with($k, $class . '::')));
+        $whole = !array_key_exists($class, $surface);
     }
-    $shipped = cutDate($in);
+    $reasons = [];
+    foreach ($keys as $key) {
+        $written = $surface[$key];
+        if ($written === null) {
+            // Named only when the break is a whole class taking a promised member with it.
+            return [false, ($whole ? $key . ' ' : '') . '@api and never deprecated'];
+        }
+        [$in, $shipped] = $shippedIn($key);
+        $days = (int) $shipped->diff($today)->format('%r%a');
+        if ($days < WINDOW_DAYS) {
+            return [false, "@api, deprecated {$written}, shipped in {$in}: only {$days} of " . WINDOW_DAYS . ' days ago'];
+        }
+        $reasons[] = "deprecated {$written}, shipped in {$in}, {$days} days ago";
+    }
 
-    return $shipped === null ? null : ['written' => $written !== '' ? $written : '(no date)', 'shipped' => $shipped, 'in' => $in];
+    return [true, implode('; ', array_unique($reasons))];
 }
 
 function hasTag(?Doc $doc, string $tag): bool
 {
     return $doc !== null && preg_match('/^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@' . $tag . '\b/m', $doc->getText()) === 1;
+}
+
+/** The date a @deprecated tag gives ('(no date)' without one), or null without the tag. */
+function deprecatedSince(?Doc $doc): ?string
+{
+    if ($doc === null || preg_match('/^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@deprecated\b[ \t]*(\S*)/m', $doc->getText(), $m) !== 1) {
+        return null;
+    }
+
+    return $m[1] !== '' && $m[1] !== '*/' ? $m[1] : '(no date)';
 }

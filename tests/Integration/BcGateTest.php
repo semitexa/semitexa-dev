@@ -98,6 +98,34 @@ final class BcGateTest extends TestCase
         self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Class Semitexa\\Core\\Kit has been deleted — Semitexa\\Core\\Kit::use @api and never deprecated']], [$status, $out]);
     }
 
+    /** Only the break's subject is judged: an @api class named as a type in someone else's signature is not. */
+    #[Test]
+    public function a_break_is_judged_by_its_subject_not_by_the_types_it_names(): void
+    {
+        $this->released(extra: ['Kit.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Kit\n{\n    /** @api */\n    public function use(): void {}\n    public function helper(): void {}\n}\n"]);
+
+        [$status, $out] = $this->gate([
+            'The return type of Semitexa\\Core\\Inner#gone() changed from Semitexa\\Core\\Clock to string',
+            'Method Semitexa\\Core\\Kit#helper() was removed',
+        ]);
+
+        self::assertSame([0, ['No break on the @api surface.']], [$status, $out], 'Inner is not @api, and Kit::helper() is not the promised Kit::use()');
+    }
+
+    /** A second declaration with the same @deprecated line shipped later: its own release counts, not the first one's. */
+    #[Test]
+    public function each_declaration_counts_from_its_own_release(): void
+    {
+        $this->released(oldDoc: '/** @deprecated 2026.07.01 Use now() instead. */', laterMethod: "    /** @deprecated 2026.07.01 Use now() instead. */\n    public function older(): int { return 2; }\n");
+
+        [$status, $out] = $this->gate(['Method Semitexa\\Core\\Clock#older() was removed', self::BREAKS[0]]);
+
+        self::assertSame([1, [
+            '[ALLOWED] semitexa-core (since 2026.10.20.0900): Method Semitexa\\Core\\Clock#old() was removed — deprecated 2026.07.01, shipped in 2026.07.01.0900, 122 days ago',
+            '[BREAK] semitexa-core (since 2026.10.20.0900): Method Semitexa\\Core\\Clock#older() was removed — @api, deprecated 2026.07.01, shipped in 2026.10.20.0900: only 11 of 90 days ago',
+        ]], [$status, $out]);
+    }
+
     #[Test]
     public function a_global_namespace_api_class_is_on_the_surface(): void
     {
@@ -139,16 +167,18 @@ final class BcGateTest extends TestCase
 
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave did not check it (exit 2)']], $this->gate(null));
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['nope' => 1]]]));
+        self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['description' => '  ']]]));
     }
 
     /**
      * A package tagged 2026.07.01.0900 with Clock (old() deprecated or not),
      * Inner and Port; with $deprecatedLater the deprecation is added after that
-     * tag and shipped in 2026.10.20.0900 instead.
+     * tag and shipped in 2026.10.20.0900 instead; $laterMethod is a method added
+     * in that later release.
      *
      * @param array<string, string> $extra more files at the first tag
      */
-    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = []): void
+    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = ''): void
     {
         $dir = $this->root . '/packages/semitexa-core';
         $mark = $api ? '/** @api */' : '';
@@ -162,8 +192,8 @@ final class BcGateTest extends TestCase
         }
         $this->git($dir, ['init -q', 'config user.email t@example.test', 'config user.name T', 'add -A', 'commit -q -m released']);
         $this->git($dir, ['tag -a -m cut 2026.07.01.0900'], '2026-07-01T09:00:00Z');
-        if ($deprecatedLater) {
-            file_put_contents($dir . '/src/Clock.php', $clock($oldDoc));
+        if ($deprecatedLater || $laterMethod !== '') {
+            file_put_contents($dir . '/src/Clock.php', str_replace("    public function now(): int { return 0; }\n", "    public function now(): int { return 0; }\n" . $laterMethod, $clock($oldDoc)));
             $this->git($dir, ['commit -q -am deprecate']);
             $this->git($dir, ['tag -a -m cut 2026.10.20.0900'], '2026-10-20T09:00:00Z');
         }
