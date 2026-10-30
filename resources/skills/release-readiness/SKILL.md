@@ -59,6 +59,13 @@ Default assumptions:
   called `Request::getServedPath()` on 2026-09-18 while its floor named a core with no such method.
   The stage prints what each tagged package gained since its last tag and which dependents touch
   those classes, so the floor question is asked by the tool rather than remembered by a person
+- **the `upgrade-notes` stage writes what the release deprecated** to
+  `var/docs/release/UPGRADE-<version>.md`: every `@deprecated` class, interface, trait, enum,
+  method, constant, property (promoted ones too) and enum case a package gained since its previous
+  tag, `@api` ones marked, with the tag's text (when, and what instead). A report, not a gate; it
+  fails when something could not be read (the packages, a package's tags or changes, a file now
+  or at the tag, nikic/php-parser from the clone's autoloader) or the notes could not be written,
+  since notes that skipped something would say "nothing deprecated" about code nobody looked at
 - **the `downstream-discovery` stage boots the sites that run on the framework.** The private
   semitexa.com packages (site, os-site, platform-site) live in `semitexa.portal`, outside every other
   gate; on 2026-10-08 a feed the new core refused kept that host's auto-deploy rolling back for three

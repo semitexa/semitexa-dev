@@ -129,6 +129,10 @@ run_soft_stage "floors-are-dated" php "$SCRIPT_DIR/release-resolve-floors.php" -
 # Request::getServedPath() on 2026-09-18 while its floor named a core that had
 # no such method, and only a person remembering stood in the way.
 run_soft_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
+# What this release deprecated, as upgrade notes beside the release report. The
+# stability contract promises a deprecated @api part 90 days of warning, and a
+# @deprecated tag in a vendor file warns only whoever opens that file.
+run_soft_stage "upgrade-notes" php "$SCRIPT_DIR/release-upgrade-notes.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md"
 # The shipped capability index is generated in the monorepo and travels inside
 # semitexa/dev. Without this stage a package that gained a capability could be
 # released while the index still described the previous shape — and an index
