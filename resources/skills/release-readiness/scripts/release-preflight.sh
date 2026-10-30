@@ -163,6 +163,11 @@ run_stage "sync-clone-infra" "$SCRIPT_DIR/release-sync-clone-infra.sh"
 run_stage "stop-semitexa-containers" "$SCRIPT_DIR/release-stop-semitexa.sh"
 run_stage "start-release-clone" "$SCRIPT_DIR/release-start-rls.sh"
 run_stage "sync-release-schema" "$SCRIPT_DIR/release-orm-sync.sh"
+# The stability contract: a break on what a package marked @api at its previous
+# tag stops the cut, unless that part was deprecated 90 days before. roave runs
+# in the clone's app container (it needs bcmath and intl); a package with no
+# @api at its tag is not checked, so the stage costs nothing until one marks it.
+run_stage "bc-gate" env SEMITEXA_BC_CHECK="$SCRIPT_DIR/release-bc-check-in-clone.sh" php "$SCRIPT_DIR/release-bc-gate.php" --version="$RELEASE_VERSION"
 # A release run must not accept a skipped check. With this set, a missing node
 # fails RenderParityTest instead of skipping it, so the clone can never again
 # report parity it did not measure. docker-compose.test.yml passes it through to

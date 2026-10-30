@@ -66,6 +66,13 @@ Default assumptions:
   fails when something could not be read (the packages, a package's tags or changes, a file now
   or at the tag, nikic/php-parser from the clone's autoloader) or the notes could not be written,
   since notes that skipped something would say "nothing deprecated" about code nobody looked at
+- **the `bc-gate` stage holds the stability contract** (docs: get-started/stability). Per package
+  it runs roave/backward-compatibility-check against the package's previous tag, inside the
+  clone's app container (roave needs bcmath and intl, which the image carries since 2026-10-30;
+  it is installed into the clone's `var/tools/roave` the first time a package needs it). It keeps
+  only breaks on what was `@api` at that tag — the class, or the member itself — and fails the
+  cut on one unless that part was deprecated at least 90 days before this release. A package with
+  no `@api` at its tag is not checked; roave failing to check one fails the stage
 - **the `downstream-discovery` stage boots the sites that run on the framework.** The private
   semitexa.com packages (site, os-site, platform-site) live in `semitexa.portal`, outside every other
   gate; on 2026-10-08 a feed the new core refused kept that host's auto-deploy rolling back for three
