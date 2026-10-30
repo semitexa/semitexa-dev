@@ -61,6 +61,20 @@ final class BcGateTest extends TestCase
         ]], [$status, $out]);
     }
 
+    /** A deprecation written four spaces in, the furthest a tag may sit, is read as one. */
+    #[Test]
+    public function a_deprecation_four_spaces_in_is_read(): void
+    {
+        $this->released(oldDoc: "/**\n     *    @deprecated 2026.07.01 Use now() instead.\n     */");
+
+        [$status, $out] = $this->gate([self::BREAKS[0]]);
+
+        self::assertSame([0, [
+            '[ALLOWED] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — deprecated 2026.07.01, shipped in 2026.07.01.0900, 122 days ago',
+            '1 break(s), each deprecated long enough.',
+        ]], [$status, $out]);
+    }
+
     /**
      * The 90 days count from the release that shipped the deprecation: a date
      * written back to July, first released on 2026.10.20, gave 11 days of
