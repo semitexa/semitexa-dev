@@ -61,6 +61,20 @@ final class BcGateTest extends TestCase
         ]], [$status, $out]);
     }
 
+    /** A deprecation written four spaces in, the furthest a tag may sit, is read as one. */
+    #[Test]
+    public function a_deprecation_four_spaces_in_is_read(): void
+    {
+        $this->released(oldDoc: "/**\n     *    @deprecated 2026.07.01 Use now() instead.\n     */");
+
+        [$status, $out] = $this->gate([self::BREAKS[0]]);
+
+        self::assertSame([0, [
+            '[ALLOWED] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — deprecated 2026.07.01, shipped in 2026.07.01.0900, 122 days ago',
+            '1 break(s), each deprecated long enough.',
+        ]], [$status, $out]);
+    }
+
     /**
      * The 90 days count from the release that shipped the deprecation: a date
      * written back to July, first released on 2026.10.20, gave 11 days of
@@ -85,6 +99,23 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate(['Property Semitexa\\Core\\Box#$label was removed']);
 
         self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Property Semitexa\\Core\\Box#$label was removed — @api and never deprecated']], [$status, $out]);
+    }
+
+    /**
+     * A mark up to four spaces after the star is a mark, as semitexa.deprecatedApi
+     * reads it; five or more is an example in the prose.
+     */
+    #[Test]
+    public function a_mark_a_few_spaces_in_is_a_mark_and_further_in_is_prose(): void
+    {
+        $this->released(extra: [
+            'Box.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n *    @api\n */\nfinal class Box\n{\n    public function open(): void {}\n}\n",
+            'Note.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n * Mark it so:\n *\n *     @api\n */\nfinal class Note\n{\n    public function read(): void {}\n}\n",
+        ]);
+
+        [$status, $out] = $this->gate(['Method Semitexa\\Core\\Box#open() was removed', 'Method Semitexa\\Core\\Note#read() was removed']);
+
+        self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Box#open() was removed — @api and never deprecated']], [$status, $out]);
     }
 
     /** Roave reports a class removed whole by its name: a member promised in it went with it. */

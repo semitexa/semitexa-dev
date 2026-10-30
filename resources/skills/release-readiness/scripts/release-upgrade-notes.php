@@ -315,13 +315,13 @@ function members(Stmt\ClassLike $class): array
 }
 
 /**
- * A tag opens a docblock line: `* @tag` or `/** @tag`. Further in, it is an
- * example inside the prose (DeprecatedApiRule's own docblock shows one) and
+ * A tag opens a docblock line: `* @tag` or `/** @tag`, up to four spaces in.
+ * Further in, it is an example inside the prose (DeprecatedApiRule's own docblock shows one) and
  * deprecates nothing — the same reading as the phpstan rule's.
  */
 function tagStart(): string
 {
-    return '^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@';
+    return '^[ \t]*(?:\*[ \t]{0,4}|\/\*\*[ \t]{0,4})@';
 }
 
 function hasTag(?Doc $doc, string $tag): bool
@@ -332,7 +332,7 @@ function hasTag(?Doc $doc, string $tag): bool
 /** The text after @<tag>, continuation lines joined, up to the next tag. */
 function tagText(?Doc $doc, string $tag): string
 {
-    if ($doc === null || preg_match('/' . tagStart() . $tag . '\b(.*?)(?=^[ \t]*\*[ \t]?@|\*\/)/ms', $doc->getText(), $m) !== 1) {
+    if ($doc === null || preg_match('/' . tagStart() . $tag . '\b(.*?)(?=^[ \t]*\*[ \t]{0,4}@|\*\/)/ms', $doc->getText(), $m) !== 1) {
         return '';
     }
 

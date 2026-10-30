@@ -436,15 +436,16 @@ function judge(string $description, array $surface, \DateTimeImmutable $today, c
     return [true, implode('; ', array_unique($reasons))];
 }
 
+/** A tag opens a docblock line up to four spaces in, as semitexa.deprecatedApi reads it; further in is prose. */
 function hasTag(?Doc $doc, string $tag): bool
 {
-    return $doc !== null && preg_match('/^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@' . $tag . '\b/m', $doc->getText()) === 1;
+    return $doc !== null && preg_match('/^[ \t]*(?:\*[ \t]{0,4}|\/\*\*[ \t]{0,4})@' . $tag . '\b/m', $doc->getText()) === 1;
 }
 
 /** The date a @deprecated tag gives ('(no date)' without one), or null without the tag. */
 function deprecatedSince(?Doc $doc): ?string
 {
-    if ($doc === null || preg_match('/^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@deprecated\b[ \t]*(\S*)/m', $doc->getText(), $m) !== 1) {
+    if ($doc === null || preg_match('/^[ \t]*(?:\*[ \t]{0,4}|\/\*\*[ \t]{0,4})@deprecated\b[ \t]*(\S*)/m', $doc->getText(), $m) !== 1) {
         return null;
     }
 
