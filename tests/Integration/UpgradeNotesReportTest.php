@@ -49,7 +49,7 @@ final class UpgradeNotesReportTest extends TestCase
         self::assertSame([
             '# Upgrading to 2026.10.31.0900',
             '',
-            'Deprecated in this release. A deprecated part keeps working for at least 90 days after the release that ships it; `@api` parts are promised that, the rest is a courtesy (see get-started/stability).',
+            'Deprecated in this release. Parts marked `@api` keep working for at least 90 days after the release that ships the deprecation; the others are listed as a courtesy, with no such promise (see get-started/stability).',
             '',
             '## semitexa/core (since 2026.10.29.1052)',
             '',
@@ -58,6 +58,53 @@ final class UpgradeNotesReportTest extends TestCase
             '- `Semitexa\Core\Clock::helper()` — 2026.10.30 Internal detail.',
             '- `Semitexa\Core\Legacy` — 2026.10.30 Use Clock instead.',
         ], $out, 'old() was deprecated before the tag, so it is not news');
+    }
+
+    /** What a token scan got wrong (review of #166), read from the parsed source instead. */
+    #[Test]
+    public function members_are_read_from_the_syntax_tree_and_a_moved_file_is_not_news(): void
+    {
+        $this->release(
+            ['Old.php' => "<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.09.01 Use Clock. */\nfinal class Old {}\n"],
+            [
+                'Old.php' => null,
+                // Moved, not newly deprecated.
+                'Moved.php' => "<?php\nnamespace Semitexa\\Core;\n/** @deprecated 2026.09.01 Use Clock. */\nfinal class Old {}\n",
+                'Box.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Box\n{\n"
+                    . "    /** @deprecated 2026.10.30 Use C. */\n    public const A = 1, B = 2;\n"
+                    . "    /** @deprecated 2026.10.30 Use size(). */\n    public int \$count = 0;\n"
+                    . "    public function __construct(\n        /**\n         * @api\n         * @deprecated 2026.10.30 Use label().\n         */\n        public string \$name = '',\n    ) {}\n"
+                    . "    private /** @deprecated 2026.10.30 Gone soon. */ function helper(): void {}\n"
+                    . "    public function kind(int \$k): object\n    {\n        switch (\$k) {\n            /** @deprecated 2026.10.30 not a member */\n            case 1: break;\n        }\n"
+                    . "        return new class extends \\ArrayObject {\n            /** @deprecated 2026.10.30 anonymous */\n            public function old(): void {}\n        };\n    }\n}\n"
+                    . "/** @deprecated 2026.10.30 a function, no member */\nfunction loose(): void {}\n",
+            ],
+        );
+
+        [$status, $out] = $this->notes();
+
+        self::assertSame(0, $status, implode("\n", $out));
+        self::assertSame([
+            '- `Semitexa\Core\Box::$count` — 2026.10.30 Use size().',
+            '- `Semitexa\Core\Box::$name` (`@api`) — 2026.10.30 Use label().',
+            '- `Semitexa\Core\Box::A` (`@api`) — 2026.10.30 Use C.',
+            '- `Semitexa\Core\Box::B` (`@api`) — 2026.10.30 Use C.',
+        ], array_values(array_filter($out, static fn (string $l): bool => str_starts_with($l, '- '))), 'both grouped constants; an @api class\'s property only by its own mark; a docblock after the modifier documents nothing (as for phpDocumentor), so the private helper() is not listed, let alone as @api; no switch label, anonymous member, function or moved class');
+    }
+
+    /** A dangling link is a file that is there and cannot be read, not a deleted one: the notes fail. */
+    #[Test]
+    public function a_changed_file_that_cannot_be_read_fails_the_notes(): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], []);
+        $dir = $this->root . '/packages/semitexa-core';
+        symlink($dir . '/nowhere.php', $dir . '/src/Broken.php');
+        exec(sprintf('git -C %s add -A 2>&1 && git -C %s commit -q -m link 2>&1', escapeshellarg($dir), escapeshellarg($dir)));
+
+        [$status, $out] = $this->notes();
+
+        self::assertSame(1, $status);
+        self::assertSame('Not read, so not in the notes: ' . $dir . '/src/Broken.php', end($out));
     }
 
     #[Test]
@@ -70,7 +117,7 @@ final class UpgradeNotesReportTest extends TestCase
 
     /**
      * @param array<string, string> $released files at the tag
-     * @param array<string, string> $now files in the working tree after it
+     * @param array<string, string|null> $now files in the working tree after it (null: deleted)
      */
     private function release(array $released, array $now): void
     {
@@ -84,10 +131,14 @@ final class UpgradeNotesReportTest extends TestCase
             self::assertSame(0, $exit, "git {$command}: " . implode("\n", $out));
         }
         foreach ($now as $file => $source) {
-            file_put_contents($dir . '/src/' . $file, $source);
+            if ($source === null) {
+                unlink($dir . '/src/' . $file);
+            } else {
+                file_put_contents($dir . '/src/' . $file, $source);
+            }
         }
         // The release clone tags committed master heads: what follows the tag is committed too.
-        exec(sprintf('git -C %s add -A 2>&1 && git -C %s commit -q -m after 2>&1', escapeshellarg($dir), escapeshellarg($dir)), $out, $exit);
+        exec(sprintf('git -C %s add -A 2>&1 && git -C %s commit -q --allow-empty -m after 2>&1', escapeshellarg($dir), escapeshellarg($dir)), $out, $exit);
         self::assertSame(0, $exit, implode("\n", $out));
     }
 
@@ -95,7 +146,9 @@ final class UpgradeNotesReportTest extends TestCase
     private function notes(): array
     {
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-upgrade-notes.php';
-        exec(sprintf('RELEASE_ROOT=%s php %s --version=2026.10.31.0900 2>&1', escapeshellarg($this->root), escapeshellarg($script)), $out, $status);
+        // The parser comes from this project's autoloader; a release clone has its own.
+        $autoload = dirname(__DIR__, 4) . '/vendor/autoload.php';
+        exec(sprintf('RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s php %s --version=2026.10.31.0900 2>&1', escapeshellarg($this->root), escapeshellarg($autoload), escapeshellarg($script)), $out, $status);
 
         return [$status, $out];
     }

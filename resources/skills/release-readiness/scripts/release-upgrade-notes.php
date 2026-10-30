@@ -9,44 +9,66 @@ declare(strict_types=1);
  * The stability contract (docs: get-started/stability) promises a deprecated
  * `@api` part 90 days of warning. A warning is only one if it is read: a
  * `@deprecated` tag in a vendor file is seen by whoever opens that file. This
- * collects every deprecation a package gained since its previous tag — the
- * symbol, whether it is `@api`, and the tag's text (when, and what to use
- * instead) — so the release can say it once, in one place.
+ * collects every deprecation a package gained since its previous tag — classes,
+ * interfaces, traits, enums, methods, constants, properties (promoted ones too)
+ * and enum cases; whether it is `@api`; and the tag's text (when, and what to
+ * use instead) — so the release can say it once, in one place.
  *
- * Read from the SOURCE TEXT of the tag and of the working tree, as
- * release-new-public-api.php does: two versions of one class cannot be loaded
- * in one process.
+ * Read from the SOURCE of the tag and of the working tree, parsed with
+ * nikic/php-parser (the release clone has it): two versions of one class
+ * cannot be loaded in one process, and a token scan mistook anonymous classes,
+ * switch labels and functions after a class for members.
  *
  * ## Usage
  *
  *   php release-upgrade-notes.php [--version=<release version>] [--write=<file>]
  *
- * RELEASE_ROOT selects the tree. Prints the notes as Markdown; --write also
- * saves them. Exit 0 whatever it finds (nothing deprecated is the usual case);
- * exit 1 when a changed file could not be read, since notes that skipped a file
- * would say "nothing deprecated" about code nobody looked at.
+ * RELEASE_ROOT selects the tree; SEMITEXA_AUTOLOAD the autoloader that provides
+ * the parser (default: RELEASE_ROOT/vendor/autoload.php). Prints the notes as
+ * Markdown; --write also saves them. Exit 0 whatever it finds (nothing
+ * deprecated is the usual case). Exit 1 when something could not be read — the
+ * packages, a package's tags or changes, a file now or at the tag — or the notes
+ * could not be written: notes that skipped something would say "nothing
+ * deprecated" about code nobody looked at.
  */
+
+use PhpParser\Comment\Doc;
+use PhpParser\Node;
+use PhpParser\Node\Stmt;
+use PhpParser\NodeFinder;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
+use PhpParser\ParserFactory;
 
 $options = getopt('', ['version:', 'write:']);
 $version = is_string($options['version'] ?? null) ? $options['version'] : (getenv('RELEASE_VERSION') ?: 'next');
 $write = is_string($options['write'] ?? null) ? $options['write'] : null;
 
 $releaseRoot = rtrim(getenv('RELEASE_ROOT') ?: '/home/taras/Documents/Projects/semitexa.rls', DIRECTORY_SEPARATOR);
+$autoload = getenv('SEMITEXA_AUTOLOAD') ?: $releaseRoot . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    fail("No autoloader at {$autoload}: the notes need nikic/php-parser.");
+}
+require $autoload;
+if (!class_exists(ParserFactory::class)) {
+    fail("{$autoload} does not provide nikic/php-parser.");
+}
+
 $packagesDir = $releaseRoot . '/packages';
-if (!is_dir($packagesDir)) {
-    fwrite(STDERR, "Packages directory not found: {$packagesDir}\n");
-    exit(1);
+$packageDirs = is_dir($packagesDir) ? glob($packagesDir . '/*') : false;
+if ($packageDirs === false) {
+    fail("Cannot list the packages in {$packagesDir}.");
 }
 
 $sections = [];
 $unread = [];
-foreach (glob($packagesDir . '/*') ?: [] as $packageDir) {
+foreach ($packageDirs as $packageDir) {
     if (!is_dir($packageDir . '/.git') || !is_file($packageDir . '/composer.json')) {
         continue;
     }
-    $tag = latestTag($packageDir);
+    $tag = latestTag($packageDir, $unread);
     if ($tag === null) {
-        continue; // never released: nothing in it was promised yet
+        continue; // never released (or unreadable, recorded): nothing in it was promised yet
     }
     $added = addedDeprecations($packageDir, $tag, $unread);
     if ($added !== []) {
@@ -59,7 +81,7 @@ $lines = ["# Upgrading to {$version}", ''];
 if ($sections === []) {
     $lines[] = 'Nothing was deprecated in this release.';
 } else {
-    $lines[] = 'Deprecated in this release. A deprecated part keeps working for at least 90 days after the release that ships it; `@api` parts are promised that, the rest is a courtesy (see get-started/stability).';
+    $lines[] = 'Deprecated in this release. Parts marked `@api` keep working for at least 90 days after the release that ships the deprecation; the others are listed as a courtesy, with no such promise (see get-started/stability).';
     foreach ($sections as $package => $section) {
         $lines[] = '';
         $lines[] = "## {$package} (since {$section['since']})";
@@ -73,21 +95,46 @@ $markdown = implode("\n", $lines) . "\n";
 
 echo $markdown;
 if ($write !== null) {
-    if (!is_dir(dirname($write)) && !mkdir(dirname($write), 0775, true) && !is_dir(dirname($write))) {
-        fwrite(STDERR, "Cannot create " . dirname($write) . "\n");
-        exit(1);
+    if (!is_dir(dirname($write)) && !@mkdir(dirname($write), 0775, true) && !is_dir(dirname($write))) {
+        fail('Cannot create ' . dirname($write));
     }
-    if (file_put_contents($write, $markdown) === false) {
-        fwrite(STDERR, "Cannot write {$write}\n");
-        exit(1);
+    if (@file_put_contents($write, $markdown) === false) {
+        fail("Cannot write {$write}");
     }
     fwrite(STDERR, "Upgrade notes written to {$write}\n");
 }
 if ($unread !== []) {
-    fwrite(STDERR, "Not read, so not in the notes: " . implode(', ', $unread) . "\n");
-    exit(1);
+    fail('Not read, so not in the notes: ' . implode(', ', $unread));
 }
 exit(0);
+
+function fail(string $message): never
+{
+    fwrite(STDERR, $message . "\n");
+    exit(1);
+}
+
+/**
+ * Runs git in $dir, with paths printed as they are (no quoting of unusual
+ * characters), and returns its output; $status receives the exit status.
+ *
+ * @param list<string> $arguments
+ * @param-out int $status
+ */
+function git(string $dir, array $arguments, ?int &$status = null): string
+{
+    $command = 'git -C ' . escapeshellarg($dir) . ' -c core.quotePath=false ' . implode(' ', array_map('escapeshellarg', $arguments)) . ' 2>/dev/null';
+    $output = shell_exec($command . '; printf "\n%s" "$?"');
+    if (!is_string($output)) {
+        $status = 1;
+
+        return '';
+    }
+    $cut = (int) strrpos($output, "\n");
+    $status = (int) substr($output, $cut + 1);
+
+    return substr($output, 0, $cut);
+}
 
 function packageName(string $packageDir): string
 {
@@ -96,43 +143,74 @@ function packageName(string $packageDir): string
     return is_array($manifest) && is_string($manifest['name'] ?? null) ? $manifest['name'] : basename($packageDir);
 }
 
-/** The newest release tag, by creation date, or null when the package has none. */
-function latestTag(string $packageDir): ?string
+/**
+ * The newest release tag, by creation date; null when there is none, or when
+ * the listing failed (then recorded in $unread).
+ *
+ * @param list<string> $unread
+ */
+function latestTag(string $packageDir, array &$unread): ?string
 {
-    $out = shell_exec(sprintf('git -C %s tag --sort=-creatordate --list %s 2>/dev/null', escapeshellarg($packageDir), escapeshellarg('20*')));
-    $tags = array_values(array_filter(array_map('trim', explode("\n", (string) $out))));
+    $out = git($packageDir, ['tag', '--sort=-creatordate', '--list', '20*'], $status);
+    if ($status !== 0) {
+        $unread[] = $packageDir . ' (tags)';
+
+        return null;
+    }
+    $tags = array_values(array_filter(array_map('trim', explode("\n", $out))));
 
     return $tags[0] ?? null;
 }
 
 /**
- * Deprecations present in the working tree and absent at $tag, by symbol.
+ * Deprecations present in the working tree and absent at $tag, by symbol. A
+ * renamed file is compared with its old path, so a deprecation that only moved
+ * is not news.
  *
- * @param list<string> $unread files changed since $tag that could not be read
+ * @param list<string> $unread what could not be read
  * @return array<string, array{bool, string}> symbol => [is @api, the tag's text]
  */
 function addedDeprecations(string $packageDir, string $tag, array &$unread): array
 {
-    $changed = shell_exec(sprintf('git -C %s diff --name-only %s -- src 2>/dev/null', escapeshellarg($packageDir), escapeshellarg($tag)));
+    // -z: NUL-separated, so no path is quoted or split on a newline.
+    $out = git($packageDir, ['diff', '--name-status', '-z', '-M', $tag, '--', 'src'], $status);
+    if ($status !== 0) {
+        $unread[] = $packageDir . ' (changes since ' . $tag . ')';
+
+        return [];
+    }
+    $fields = $out === '' ? [] : explode("\0", rtrim($out, "\0"));
     $added = [];
-    foreach (array_filter(array_map('trim', explode("\n", (string) $changed))) as $relative) {
-        if (!str_ends_with($relative, '.php')) {
-            continue;
+    for ($i = 0; $i < count($fields);) {
+        $kind = $fields[$i][0] ?? '';
+        if ($kind === 'R' || $kind === 'C') {
+            [$before, $now] = [$fields[$i + 1] ?? '', $fields[$i + 2] ?? ''];
+            $i += 3;
+        } else {
+            $before = $now = $fields[$i + 1] ?? '';
+            $i += 2;
         }
-        $path = $packageDir . '/' . $relative;
-        if (!file_exists($path)) {
+        if ($kind === 'D' || !str_ends_with($now, '.php')) {
             continue; // deleted: a removal, which is the BC gate's to judge
         }
-        $now = @file_get_contents($path);
-        if ($now === false) {
+        $path = $packageDir . '/' . $now;
+        // A dangling link is a file that is there and cannot be read, not a deleted one.
+        $current = @file_get_contents($path);
+        if ($current === false) {
             $unread[] = $path;
             continue;
         }
-        // Absent at the tag (a new file) reads as empty: everything in it is new.
-        $before = (string) shell_exec(sprintf('git -C %s show %s 2>/dev/null', escapeshellarg($packageDir), escapeshellarg($tag . ':' . $relative)));
-        $old = deprecationsIn($before);
-        foreach (deprecationsIn($now) as $symbol => $entry) {
-            if (!isset($old[$symbol])) {
+        $old = '';
+        if ($kind !== 'A' && $kind !== 'C') {
+            $old = git($packageDir, ['show', $tag . ':' . $before], $showStatus);
+            if ($showStatus !== 0) {
+                $unread[] = $path . ' (at ' . $tag . ')';
+                continue;
+            }
+        }
+        $then = deprecationsIn($old, $unread, $path . ' (at ' . $tag . ')');
+        foreach (deprecationsIn($current, $unread, $path) as $symbol => $entry) {
+            if (!isset($then[$symbol])) {
                 $added[$symbol] = $entry;
             }
         }
@@ -143,180 +221,100 @@ function addedDeprecations(string $packageDir, string $tag, array &$unread): arr
 }
 
 /**
- * Every deprecated class, method, constant and enum case in one source file.
+ * Every deprecated class-like, method, constant, property and enum case in one
+ * source file. An anonymous class names nothing a user can reach, so it is left
+ * out; a member is `@api` when marked itself, or when public in an `@api` class
+ * (a property only when marked itself, as the phpstan rule reads it).
  *
+ * @param list<string> $unread
  * @return array<string, array{bool, string}> symbol => [is @api, the tag's text]
  */
-function deprecationsIn(string $source): array
+function deprecationsIn(string $source, array &$unread, string $where): array
 {
-    if ($source === '') {
+    if (trim($source) === '') {
         return [];
     }
-    $tokens = array_values(PhpToken::tokenize($source));
-    $namespace = '';
-    $class = null;
-    $classIsApi = false;
+    try {
+        $ast = (new ParserFactory())->createForNewestSupportedVersion()->parse($source) ?? [];
+    } catch (\PhpParser\Error $e) {
+        $unread[] = $where . ' (' . $e->getMessage() . ')';
+
+        return [];
+    }
+    $ast = (new NodeTraverser(new NameResolver()))->traverse($ast);
+
     $found = [];
-    $count = count($tokens);
-    for ($i = 0; $i < $count; $i++) {
-        $token = $tokens[$i];
-        if ($token->is(T_NAMESPACE)) {
-            $namespace = '';
-            for ($j = $i + 1; $j < $count && !in_array($tokens[$j]->text, [';', '{'], true); $j++) {
-                if ($tokens[$j]->is([T_NAME_QUALIFIED, T_STRING])) {
-                    $namespace = $tokens[$j]->text;
-                }
+    foreach ((new NodeFinder())->findInstanceOf($ast, Stmt\ClassLike::class) as $class) {
+        if ($class->namespacedName === null) {
+            continue; // anonymous
+        }
+        $name = $class->namespacedName->toString();
+        $classIsApi = hasTag($class->getDocComment(), 'api');
+        if (hasTag($class->getDocComment(), 'deprecated')) {
+            $found[$name] = [$classIsApi, tagText($class->getDocComment(), 'deprecated')];
+        }
+        foreach (members($class) as [$member, $doc, $public, $isProperty]) {
+            if (hasTag($doc, 'deprecated')) {
+                $isApi = hasTag($doc, 'api') || ($classIsApi && $public && !$isProperty);
+                $found[$name . '::' . $member] = [$isApi, tagText($doc, 'deprecated')];
             }
-            continue;
         }
-        $doc = $token->is(T_DOC_COMMENT) ? $token->text : null;
-        // What a docblock documents: the next declaration after attributes and modifiers.
-        $j = $doc !== null ? $i + 1 : $i;
-        $j = skipToDeclaration($tokens, $j);
-        if ($j === null) {
-            continue;
-        }
-        $kind = $tokens[$j];
-        if ($kind->is([T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM]) && !isClassConstantFetch($tokens, $j)) {
-            $name = nextOf($tokens, $j, [T_STRING]);
-            if ($name === null) {
-                continue;
-            }
-            $class = ltrim($namespace . '\\' . $name, '\\');
-            $classIsApi = $doc !== null && hasTag($doc, 'api');
-            if ($doc !== null && hasTag($doc, 'deprecated')) {
-                $found[$class] = [$classIsApi, tagText($doc, 'deprecated')];
-            }
-            $i = $j;
-            continue;
-        }
-        if ($doc === null || $class === null || !hasTag($doc, 'deprecated')) {
-            continue;
-        }
-        $member = match (true) {
-            $kind->is(T_FUNCTION) => ($n = nextOf($tokens, $j, [T_STRING])) !== null ? $n . '()' : null,
-            $kind->is(T_CONST) => constName($tokens, $j),
-            $kind->is(T_CASE) => nextOf($tokens, $j, [T_STRING]),
-            default => null,
-        };
-        if ($member === null) {
-            continue;
-        }
-        $public = !hasModifier($tokens, $i + 1, $j, ['private', 'protected']);
-        $found[$class . '::' . $member] = [hasTag($doc, 'api') || ($classIsApi && $public), tagText($doc, 'deprecated')];
-        $i = $j;
     }
 
     return $found;
 }
 
 /**
- * @param list<PhpToken> $tokens
+ * A class-like's members: name, docblock, public, is a property.
+ *
+ * @return list<array{string, ?Doc, bool, bool}>
  */
-function skipToDeclaration(array $tokens, int $from): ?int
+function members(Stmt\ClassLike $class): array
 {
-    $modifiers = ['public', 'protected', 'private', 'static', 'final', 'abstract', 'readonly'];
-    for ($j = $from, $count = count($tokens); $j < $count; $j++) {
-        $t = $tokens[$j];
-        if ($t->is([T_WHITESPACE, T_COMMENT]) || in_array(strtolower($t->text), $modifiers, true)) {
-            continue;
-        }
-        if ($t->is(T_ATTRIBUTE)) {
-            for ($depth = 1, $j++; $j < $count && $depth > 0; $j++) {
-                $depth += $tokens[$j]->text === '[' ? 1 : ($tokens[$j]->text === ']' ? -1 : 0);
+    $members = [];
+    foreach ($class->stmts as $stmt) {
+        if ($stmt instanceof Stmt\ClassMethod) {
+            $members[] = [$stmt->name->toString() . '()', $stmt->getDocComment(), $stmt->isPublic(), false];
+            foreach ($stmt->params as $param) {
+                if ($param->isPromoted() && $param->var instanceof Node\Expr\Variable && is_string($param->var->name)) {
+                    $members[] = ['$' . $param->var->name, $param->getDocComment(), $param->isPublic(), true];
+                }
             }
-            $j--;
-            continue;
-        }
-
-        return $t->is([T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM, T_FUNCTION, T_CONST, T_CASE]) ? $j : null;
-    }
-
-    return null;
-}
-
-/**
- * `Foo::class` is not a declaration.
- *
- * @param list<PhpToken> $tokens
- */
-function isClassConstantFetch(array $tokens, int $at): bool
-{
-    for ($j = $at - 1; $j >= 0 && $tokens[$j]->is(T_WHITESPACE); $j--) {
-    }
-
-    return $j >= 0 && $tokens[$j]->is(T_DOUBLE_COLON);
-}
-
-/**
- * @param list<PhpToken> $tokens
- * @param list<int> $kinds
- */
-function nextOf(array $tokens, int $from, array $kinds): ?string
-{
-    for ($j = $from + 1, $count = count($tokens); $j < $count; $j++) {
-        if ($tokens[$j]->is($kinds)) {
-            return $tokens[$j]->text;
-        }
-        if (in_array($tokens[$j]->text, ['(', '{', ';', '='], true)) {
-            return null;
+        } elseif ($stmt instanceof Stmt\ClassConst) {
+            foreach ($stmt->consts as $const) {
+                $members[] = [$const->name->toString(), $stmt->getDocComment(), $stmt->isPublic(), false];
+            }
+        } elseif ($stmt instanceof Stmt\Property) {
+            foreach ($stmt->props as $property) {
+                $members[] = ['$' . $property->name->toString(), $stmt->getDocComment(), $stmt->isPublic(), true];
+            }
+        } elseif ($stmt instanceof Stmt\EnumCase) {
+            $members[] = [$stmt->name->toString(), $stmt->getDocComment(), true, false];
         }
     }
 
-    return null;
-}
-
-/**
- * The name of `const [type] NAME = ...`: the last identifier before `=`.
- *
- * @param list<PhpToken> $tokens
- */
-function constName(array $tokens, int $from): ?string
-{
-    $name = null;
-    for ($j = $from + 1, $count = count($tokens); $j < $count && $tokens[$j]->text !== '='; $j++) {
-        if ($tokens[$j]->is(T_STRING)) {
-            $name = $tokens[$j]->text;
-        }
-    }
-
-    return $name;
-}
-
-/**
- * @param list<PhpToken> $tokens
- * @param list<string> $modifiers
- */
-function hasModifier(array $tokens, int $from, int $to, array $modifiers): bool
-{
-    for ($j = $from; $j < $to; $j++) {
-        if (in_array(strtolower($tokens[$j]->text), $modifiers, true)) {
-            return true;
-        }
-    }
-
-    return false;
+    return $members;
 }
 
 /**
  * A tag opens a docblock line: `* @tag` or `/** @tag`. Further in, it is an
  * example inside the prose (DeprecatedApiRule's own docblock shows one) and
- * deprecates nothing.
+ * deprecates nothing — the same reading as the phpstan rule's.
  */
 function tagStart(): string
 {
-    return '(?:^[ \t]*\*[ \t]?|\/\*\*[ \t]*)@';
+    return '^[ \t]*(?:\*[ \t]?|\/\*\*[ \t]*)@';
 }
 
-function hasTag(string $doc, string $tag): bool
+function hasTag(?Doc $doc, string $tag): bool
 {
-    return preg_match('/' . tagStart() . $tag . '\b/m', $doc) === 1;
+    return $doc !== null && preg_match('/' . tagStart() . $tag . '\b/m', $doc->getText()) === 1;
 }
 
 /** The text after @<tag>, continuation lines joined, up to the next tag. */
-function tagText(string $doc, string $tag): string
+function tagText(?Doc $doc, string $tag): string
 {
-    if (preg_match('/' . tagStart() . $tag . '\b(.*?)(?=^[ \t]*\*[ \t]?@|\*\/)/ms', $doc, $m) !== 1) {
+    if ($doc === null || preg_match('/' . tagStart() . $tag . '\b(.*?)(?=^[ \t]*\*[ \t]?@|\*\/)/ms', $doc->getText(), $m) !== 1) {
         return '';
     }
 
