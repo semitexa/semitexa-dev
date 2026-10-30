@@ -118,7 +118,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 56/1062 -> 57/1092 on 2026-10-06 (tk-rs-dashboard): countByDay(), one
         // GROUP BY DATE() for a dashboard trend instead of a COUNT per day. It
         // needs the private WHERE builder, so it cannot live outside this class.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1092],
+        // 1092 -> 1144 on 2026-10-30, recorded: docblocks only. The query
+        // builder joins the @api surface (stability contract), one mark per
+        // promised method; no method or code line was added.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1144],
         // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
         // (fail fast while the database is down) is wired through here, and
         // shutdown() now resets it so the next connect is a real attempt.
@@ -256,7 +259,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // slot stores its deferred request only after rendering, and only when
         // a deferred component rendered (storeDeferredRequest, shared by both
         // paths) — instead of serializing the context on every page.
-        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [26, 786],
+        // 786 -> 799 on 2026-10-30, recorded: docblocks only. The methods a
+        // page response calls (pageTitle, seo*, render*, auto-render) join the
+        // @api surface (stability contract); no code line was added.
+        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [26, 799],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
         // became a ring that keeps the LAST events, so the capped-trace notice
         // now has to say WHICH end was cut, and the root coroutine is read from
