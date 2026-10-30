@@ -87,6 +87,23 @@ final class BcGateTest extends TestCase
         self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Property Semitexa\\Core\\Box#$label was removed — @api and never deprecated']], [$status, $out]);
     }
 
+    /**
+     * A mark up to four spaces after the star is a mark, as semitexa.deprecatedApi
+     * reads it; five or more is an example in the prose.
+     */
+    #[Test]
+    public function a_mark_a_few_spaces_in_is_a_mark_and_further_in_is_prose(): void
+    {
+        $this->released(extra: [
+            'Box.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n *  @api\n */\nfinal class Box\n{\n    public function open(): void {}\n}\n",
+            'Note.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n * Mark it so:\n *\n *     @api\n */\nfinal class Note\n{\n    public function read(): void {}\n}\n",
+        ]);
+
+        [$status, $out] = $this->gate(['Method Semitexa\\Core\\Box#open() was removed', 'Method Semitexa\\Core\\Note#read() was removed']);
+
+        self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Box#open() was removed — @api and never deprecated']], [$status, $out]);
+    }
+
     /** Roave reports a class removed whole by its name: a member promised in it went with it. */
     #[Test]
     public function a_removed_class_takes_its_promised_members_with_it(): void

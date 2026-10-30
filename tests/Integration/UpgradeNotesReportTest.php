@@ -39,6 +39,8 @@ final class UpgradeNotesReportTest extends TestCase
             [
                 'Clock.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Clock\n{\n    /** @deprecated 2026.09.01 Use now() instead. */\n    public function old(): int { return 0; }\n    /**\n     * @deprecated 2026.10.30 Use now(), which\n     *     reads the same clock.\n     */\n    #[\\Deprecated('Use now().', since: '2026.10.30')]\n    public function current(): int { return 0; }\n    /** @deprecated 2026.10.30 Use B. */\n    public const int A = 1;\n    /** @deprecated 2026.10.30 Internal detail. */\n    private function helper(): void {}\n    public function now(): int { return Clock::class === '' ? 1 : 0; }\n}\n",
                 'Legacy.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n * @deprecated 2026.10.30 Use Clock instead.\n */\nfinal class Legacy\n{\n}\n",
+                // A tag a few spaces in is a tag, and the next one ends its text.
+                'Spaced.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n *  @deprecated  2026.10.30 Use Clock instead.\n *  @see Clock\n */\nfinal class Spaced\n{\n}\n",
                 // A tag shown as an example inside the prose deprecates nothing.
                 'Rule.php' => "<?php\nnamespace Semitexa\\Core;\n/**\n * Write it like this:\n *\n *     @deprecated 2026.11.02 Use Clock::now() instead.\n */\nfinal class Rule\n{\n}\n",
             ],
@@ -58,6 +60,7 @@ final class UpgradeNotesReportTest extends TestCase
             '- `Semitexa\Core\Clock::current()` (`@api`) — 2026.10.30 Use now(), which reads the same clock.',
             '- `Semitexa\Core\Clock::helper()` — 2026.10.30 Internal detail.',
             '- `Semitexa\Core\Legacy` — 2026.10.30 Use Clock instead.',
+            '- `Semitexa\Core\Spaced` — 2026.10.30 Use Clock instead.',
         ], $out, 'old() was deprecated before the tag, so it is not news');
     }
 
