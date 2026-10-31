@@ -20,6 +20,7 @@ use Semitexa\Webhooks\Application\Console\Command\WebhookCleanupCommand;
 use Semitexa\Webhooks\Auth\InMemoryWebhookReplayStore;
 use Semitexa\Webhooks\Auth\MySqlWebhookReplayStore;
 use Symfony\Component\Console\Tester\CommandTester;
+use Semitexa\Dev\Tests\Support\RequiresBackingServices;
 
 /**
  * Capstone readiness gate. Proves that the cycle 11–26 hardening surfaces
@@ -45,6 +46,8 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 final class FreshInstallReadinessSmokeTest extends TestCase
 {
+    use RequiresBackingServices;
+
     private const MODULE_NAME = 'FreshInstallDemo';
 
     private string $tmpRoot;
@@ -266,20 +269,8 @@ final class FreshInstallReadinessSmokeTest extends TestCase
     #[Test]
     public function orm_dry_run_plan_includes_webhook_persistence_tables(): void
     {
-        // Skip if MySQL not reachable — orm:sync requires a real connection
-        // for its diff to be meaningful.
-        $host = getenv('DB_HOST');
-        if ($host === false || $host === '') {
-            self::markTestSkipped('DB_HOST not configured — orm:sync probe requires real MySQL');
-        }
-        // Resolved outside the catch: a missing ORM binding is a fresh-install
-        // wiring failure, not "MySQL not reachable".
-        $orm = ContainerFactory::get()->get(OrmManager::class);
-        try {
-            $orm->getAdapter()->execute('SELECT 1');
-        } catch (\Throwable $e) {
-            self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
-        }
+        // orm:sync needs a real connection for its diff to mean anything.
+        self::mysqlOrm();
 
         // orm:sync --dry-run prints the operations plan to STDOUT. Shelling out
         // captures the same surface an operator sees on their terminal — kept as a
@@ -374,18 +365,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if (!class_exists(MySqlWebhookReplayStore::class)) {
             self::markTestSkipped('MySqlWebhookReplayStore not available');
         }
-        $host = getenv('DB_HOST');
-        if ($host === false || $host === '') {
-            self::markTestSkipped('DB_HOST not configured — MySQL backing not exercised');
-        }
-        // Resolved outside the catch: a missing ORM binding is a fresh-install
-        // wiring failure, not "MySQL not reachable".
-        $orm = ContainerFactory::get()->get(OrmManager::class);
-        try {
-            $orm->getAdapter()->execute('SELECT 1');
-        } catch (\Throwable $e) {
-            self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
-        }
+        $orm = self::mysqlOrm();
 
         $orm->getAdapter()->execute(sprintf(
             'CREATE TABLE IF NOT EXISTS `%s` (
@@ -417,21 +397,17 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         if (!class_exists(\Semitexa\Core\Redis\RedisConnectionPool::class)) {
             self::markTestSkipped('RedisConnectionPool not available');
         }
-        $redisHost = getenv('REDIS_HOST');
-        if ($redisHost === false || $redisHost === '') {
-            self::markTestSkipped('REDIS_HOST not configured — Redis backing not exercised');
-        }
+        $redisHost = self::redisHost();
+        $pool = ContainerFactory::get()->get(\Semitexa\Core\Redis\RedisConnectionPool::class);
+        self::redisAnswers($redisHost, static fn () => $pool->withConnection(static fn ($redis) => $redis->ping()));
 
-        try {
-            $pool = ContainerFactory::get()->get(\Semitexa\Core\Redis\RedisConnectionPool::class);
-            $store = new \Semitexa\Webhooks\Auth\RedisWebhookReplayStore($pool);
-            $key = 'fresh-install:redis:' . uniqid();
-
-            self::assertTrue($store->markIfFirstSeen($key, 60), 'Redis backing: first delivery wins');
-            self::assertFalse($store->markIfFirstSeen($key, 60), 'Redis backing: duplicate rejected');
-        } catch (\Throwable $e) {
-            self::markTestSkipped('Redis not reachable: ' . $e->getMessage());
-        }
+        // Outside any catch: the assertions themselves sat in the one that
+        // turned an error into "Redis not reachable", so a store that let a
+        // duplicate through was reported as skipped, not as broken.
+        $store = new \Semitexa\Webhooks\Auth\RedisWebhookReplayStore($pool);
+        $key = 'fresh-install:redis:' . uniqid();
+        self::assertTrue($store->markIfFirstSeen($key, 60), 'Redis backing: first delivery wins');
+        self::assertFalse($store->markIfFirstSeen($key, 60), 'Redis backing: duplicate rejected');
     }
 
     // ------------------------------------------------------------------
@@ -526,18 +502,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
 
     private function skipIfNoSyncedWebhookSchema(): void
     {
-        $host = getenv('DB_HOST');
-        if ($host === false || $host === '') {
-            self::markTestSkipped('DB_HOST not configured — webhook:cleanup probe requires real MySQL');
-        }
-        // Resolved outside the catch: a missing ORM binding is a fresh-install
-        // wiring failure this smoke exists to catch, not "MySQL not reachable".
-        $orm = ContainerFactory::get()->get(OrmManager::class);
-        try {
-            $orm->getAdapter()->execute('SELECT 1');
-        } catch (\Throwable $e) {
-            self::markTestSkipped('MySQL not reachable: ' . $e->getMessage());
-        }
+        $orm = self::mysqlOrm();
 
         // Past this point MySQL answered, so a query that throws is a defect
         // and must fail the test rather than be reported as a skip.

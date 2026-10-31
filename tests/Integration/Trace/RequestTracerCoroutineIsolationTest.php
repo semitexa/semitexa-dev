@@ -29,10 +29,6 @@ final class RequestTracerCoroutineIsolationTest extends TestCase
 
     protected function setUp(): void
     {
-        if (!extension_loaded('swoole')) {
-            self::markTestSkipped('Swoole is required to run coroutines.');
-        }
-
         $this->root = sys_get_temp_dir() . '/semitexa-tracer-coro-' . uniqid();
         mkdir($this->root . '/var/trace', 0755, true);
         TraceContext::resetFallback();
