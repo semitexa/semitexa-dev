@@ -71,7 +71,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 182,
+            "total": 169,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -96,7 +96,7 @@
                 "semitexa-theme": 1,
                 "semitexa-ultimate": 1,
                 "semitexa-update": 3,
-                "semitexa-webhooks": 15,
+                "semitexa-webhooks": 2,
                 "semitexa-workflow": 2
             },
             "sees": "markTestSkipped( / markTestIncomplete( calls in packages/*/tests and src/modules/*/tests, per package or module",
