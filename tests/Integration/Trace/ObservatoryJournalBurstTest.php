@@ -54,9 +54,6 @@ final class ObservatoryJournalBurstTest extends TestCase
     #[DataProvider('writers')]
     public function a_burst_of_coroutines_is_written_without_lock_contention(string $method, string $prefix): void
     {
-        if (!function_exists('Swoole\Coroutine\run') || !function_exists('proc_open')) {
-            self::markTestSkipped('Needs the Swoole extension and proc_open.');
-        }
         $dir = sys_get_temp_dir() . '/semitexa-journal-burst-' . bin2hex(random_bytes(6));
         mkdir($dir, 0o755, true);
         $script = $dir . '/burst.php';
