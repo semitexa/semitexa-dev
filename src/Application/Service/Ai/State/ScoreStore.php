@@ -24,7 +24,8 @@ final class ScoreStore
     public function all(): array
     {
         $path = $this->path();
-        if (!file_exists($path)) {
+        // A link to nothing is a broken file, not "never measured".
+        if (!file_exists($path) && !is_link($path)) {
             return [];
         }
         try {
@@ -73,6 +74,10 @@ final class ScoreStore
             throw new \RuntimeException('cannot lock ' . self::PATH);
         }
         try {
+            // Checked again under the lock: an expiry that passed while this waited is refused.
+            if (!$record->isCurrent(new \DateTimeImmutable('now', new \DateTimeZone('UTC')))) {
+                throw new \InvalidArgumentException("the score for \"{$record->criterionId}\" expired before it could be recorded");
+            }
             $records = $this->all();
             $records[$record->criterionId] = $record;
             ksort($records);

@@ -125,6 +125,18 @@ final class AiCharterCommandTest extends TestCase
     }
 
     #[Test]
+    public function a_link_to_nothing_where_the_charter_should_be_is_an_error(): void
+    {
+        mkdir($this->root . '/var/ai-work', 0755, true);
+        symlink($this->root . '/nowhere.json', $this->root . '/var/ai-work/charter.json');
+
+        [$status, $out] = $this->charter('next');
+        self::assertSame(1, $status, 'not a fresh interview');
+        self::assertIsString($out['error']);
+        self::assertStringStartsWith('var/ai-work/charter.json: ', $out['error']);
+    }
+
+    #[Test]
     public function a_directory_where_the_charter_should_be_is_an_error(): void
     {
         mkdir($this->root . '/var/ai-work/charter.json', 0755, true);

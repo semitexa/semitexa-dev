@@ -22,7 +22,8 @@ final class CharterStore
     public function get(): Charter
     {
         $path = $this->path();
-        if (!file_exists($path)) {
+        // A link to nothing is a broken charter, not one nobody was asked about.
+        if (!file_exists($path) && !is_link($path)) {
             return new Charter();
         }
         if (!is_file($path)) {

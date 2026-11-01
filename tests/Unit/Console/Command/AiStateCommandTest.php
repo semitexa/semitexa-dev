@@ -94,6 +94,44 @@ final class AiStateCommandTest extends TestCase
         self::assertSame([1, $message], [$this->state('score', ['--criterion' => 'work.installs', '--points' => '20', '--evidence' => 'e'])[0], $this->state('score', ['--criterion' => 'work.installs', '--points' => '20', '--evidence' => 'e'])[1]['error']]);
     }
 
+    #[Test]
+    public function evidence_prints_on_one_line_as_text_with_its_expiry(): void
+    {
+        $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "check complete\nMake it right: 100% <error>x</error>", '--expires' => '2099-01-01']);
+        self::assertSame('check complete Make it right: 100% <error>x</error>', (new ScoreStore())->all()['right.test-quality']->evidence, 'stored on one line');
+
+        $command = new AiStateCommand();
+        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore()]));
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'show'], ['interactive' => true, 'decorated' => false]);
+        $lines = array_values(array_filter(explode("\n", $tester->getDisplay()), static fn (string $l): bool => str_contains($l, 'Test quality')));
+
+        self::assertCount(1, $lines);
+        self::assertStringEndsWith('7/10  current  0d ago, until 2099-01-02: check complete Make it right: 100% <error>x</error>', rtrim($lines[0]));
+        self::assertStringNotContainsString("\nMake it right: 100%", $tester->getDisplay());
+    }
+
+    #[Test]
+    public function a_score_past_year_9999_or_already_expired_is_refused(): void
+    {
+        self::assertSame([1, '--expires "9999-12-31" is not a date'], [$this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => 'e', '--expires' => '9999-12-31'])[0], $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => 'e', '--expires' => '9999-12-31'])[1]['error']]);
+
+        $this->expectExceptionMessage('the score for "right.test-quality" expired before it could be recorded');
+        (new ScoreStore())->record(new \Semitexa\Dev\Application\Service\Ai\State\ScoreRecord('right.test-quality', 7, 'e', 'agent', '2026-01-01T00:00:00+00:00', '2026-01-02T00:00:00+00:00'), \Semitexa\Dev\Application\Service\Ai\State\FrameworkRubric::rubric());
+    }
+
+    #[Test]
+    public function a_link_to_nothing_at_the_scores_path_is_a_broken_file(): void
+    {
+        mkdir(dirname($this->root . '/' . ScoreStore::PATH), 0755, true);
+        symlink($this->root . '/nowhere.json', $this->root . '/' . ScoreStore::PATH);
+
+        [$status, $out] = $this->state('show');
+        self::assertSame(1, $status);
+        self::assertIsString($out['error']);
+        self::assertStringStartsWith('var/ai-work/state/scores.json: cannot read file', $out['error']);
+    }
+
     /**
      * @param array<string, mixed> $options
      * @return array{int, array<string, mixed>}

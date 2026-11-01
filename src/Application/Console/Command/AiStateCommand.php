@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Ai\State\FrameworkRubric;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreRecord;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreStore;
 use Semitexa\Dev\Application\Service\Ai\State\StateReport;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -80,12 +81,14 @@ final class AiStateCommand extends BaseCommand
             $output->writeln('');
             $output->writeln(sprintf('Make it %s: %s', $phase, $data['percent'] === null ? 'unknown' : $data['percent'] . '%'));
             foreach ($data['criteria'] as $c) {
+                // Evidence is text someone typed: one line, and never console markup.
+                $evidence = OutputFormatter::escape((string) preg_replace('/\s+/u', ' ', (string) $c['evidence']));
                 $output->writeln(sprintf(
                     '  %-34s %5s  %-8s %s',
                     $c['title'],
                     ($c['points'] ?? '?') . '/' . $c['weight'],
                     $c['status'],
-                    $c['status'] === 'unscored' ? '' : sprintf('%dd ago, %s', $c['age_days'], $c['evidence']),
+                    $c['status'] === 'unscored' ? '' : sprintf('%dd ago, until %s: %s', $c['age_days'], substr((string) $c['expires_at'], 0, 10), $evidence),
                 ));
             }
             foreach ($data['raise'] as $r) {
@@ -118,6 +121,8 @@ final class AiStateCommand extends BaseCommand
         }
         $by = self::text($input, 'by');
 
+        // Stored on one line: a line break in evidence would print as a line of its own.
+        $evidence = (string) preg_replace('/\s+/u', ' ', $evidence);
         $record = new ScoreRecord($criterion, (int) $points, $evidence, $by !== '' ? $by : 'agent', $now->format('c'), $expiresAt->format('c'));
         $this->scoreStore->record($record, FrameworkRubric::rubric());
         $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now);

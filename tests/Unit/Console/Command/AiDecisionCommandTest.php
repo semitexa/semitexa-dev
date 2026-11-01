@@ -95,6 +95,7 @@ final class AiDecisionCommandTest extends TestCase
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => 'someday'], '--expires "someday" is not a date'],
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '2099-02-30'], '--expires "2099-02-30" is not a date'],
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '+1 week'], '--expires "+1 week" is not a date'],
+            [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '9999-12-31'], '--expires "9999-12-31" is not a date'],
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '2099-01-01T00:00:00'], '--expires "2099-01-01T00:00:00" is not a date'],
             [['--id' => $base, '--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once'], "decision '{$base}' already exists"],
             [['--id' => '../x', '--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once'], "invalid decision id '../x': must match /^[a-z0-9][a-z0-9_-]{0,63}$/"],

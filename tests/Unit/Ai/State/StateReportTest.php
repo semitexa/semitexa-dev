@@ -61,13 +61,14 @@ final class StateReportTest extends TestCase
     #[Test]
     public function a_score_is_stale_at_its_very_expiry_and_an_orphan_is_shown_apart(): void
     {
-        $records = self::records(['work.installs' => 20], self::NOW) + self::records(['work.retired' => 5, 'right.test-quality' => 11]);
+        $records = self::records(['work.installs' => 20], self::NOW) + self::records(['work.retired' => 5, 'right.test-quality' => 11, 'fast.platform' => -1]);
         $report = StateReport::build(FrameworkRubric::rubric(), $records, new \DateTimeImmutable(self::NOW));
 
         self::assertSame('stale', $report['phases']['work']['criteria'][0]['status'], 'expires_at == now is past');
         self::assertSame([
             ['criterion' => 'work.retired', 'points' => 5, 'why' => 'no criterion of this rubric'],
             ['criterion' => 'right.test-quality', 'points' => 11, 'why' => 'above its weight 10'],
+            ['criterion' => 'fast.platform', 'points' => -1, 'why' => 'below 0'],
         ], $report['orphans']);
         self::assertSame('work ? · right ? · fast ?', StateReport::line($report));
     }

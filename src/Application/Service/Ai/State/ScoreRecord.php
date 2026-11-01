@@ -59,8 +59,8 @@ final readonly class ScoreRecord
             return $value;
         };
         $points = $data['points'] ?? null;
-        if (!is_int($points)) {
-            throw new \RuntimeException('score points must be an integer');
+        if (!is_int($points) || $points < 0) {
+            throw new \RuntimeException('score points must be a whole number, 0 or more');
         }
         foreach (['scored_at', 'expires_at'] as $key) {
             if (!Decision::isInstant($text($key))) {

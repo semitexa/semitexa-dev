@@ -19,9 +19,13 @@ final class Expiry
             $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $text, new \DateTimeZone('UTC'));
 
             // 2026-02-30 is not a day, whatever PHP rolls it into.
-            return $day !== false && $day->format('Y-m-d') === $text ? $day->modify('+1 day') : null;
+            $at = $day !== false && $day->format('Y-m-d') === $text ? $day->modify('+1 day') : null;
+        } else {
+            $at = Decision::isInstant($text) ? new \DateTimeImmutable((string) preg_replace('/Z\z/', '+00:00', $text)) : null;
         }
 
-        return Decision::isInstant($text) ? new \DateTimeImmutable((string) preg_replace('/Z\z/', '+00:00', $text)) : null;
+        // Stored as ISO-8601 and read back as one: past year 9999 it would not
+        // read (9999-12-31 holds into 10000), so it is not accepted either.
+        return $at !== null && (int) $at->format('Y') <= 9999 ? $at : null;
     }
 }

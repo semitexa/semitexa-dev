@@ -24,8 +24,12 @@ final class StateReport
         $orphans = [];
         foreach ($records as $id => $record) {
             $criterion = $rubric->criterion($id);
-            if ($criterion === null || $record->points > $criterion->weight) {
-                $orphans[] = ['criterion' => $id, 'points' => $record->points, 'why' => $criterion === null ? 'no criterion of this rubric' : "above its weight {$criterion->weight}"];
+            if ($criterion === null || $record->points < 0 || $record->points > $criterion->weight) {
+                $orphans[] = ['criterion' => $id, 'points' => $record->points, 'why' => match (true) {
+                    $criterion === null => 'no criterion of this rubric',
+                    $record->points < 0 => 'below 0',
+                    default => "above its weight {$criterion->weight}",
+                }];
                 unset($records[$id]);
             }
         }
