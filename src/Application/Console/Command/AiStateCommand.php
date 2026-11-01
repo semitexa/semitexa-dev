@@ -134,10 +134,15 @@ final class AiStateCommand extends BaseCommand
         return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'line' => StateReport::line($report)]);
     }
 
-    /** Whitespace collapsed to single spaces, control characters dropped. */
+    /**
+     * Whitespace collapsed to single spaces; control characters (ESC and the
+     * rest of Cc) and the bidirectional overrides that can reorder a line on
+     * screen dropped. Other format characters stay: a zero-width joiner is
+     * part of an emoji or a script, not a terminal command.
+     */
     private static function oneLine(string $text): string
     {
-        return trim((string) preg_replace('/\p{C}+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
+        return trim((string) preg_replace('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
     }
 
     private static function text(InputInterface $input, string $option): string

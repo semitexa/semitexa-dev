@@ -125,6 +125,10 @@ final class AiStateCommandTest extends TestCase
         // 00:30 at +14:00 is 10:30 UTC the day before.
         self::assertStringContainsString('until 2098-12-31 10:30 UTC: ok[2J[H done', $tester->getDisplay());
         self::assertStringNotContainsString("\e", $tester->getDisplay());
+
+        // A bidi override goes; a zero-width joiner (part of 👩‍💻) stays.
+        $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "by \u{202E}rotare\u{202C} 👩\u{200D}💻", '--expires' => '2099-01-01']);
+        self::assertSame("by rotare 👩\u{200D}💻", (new ScoreStore())->all()['right.test-quality']->evidence);
         self::assertSame([1, 'score needs --criterion, --points (a whole number, 0 to its weight) and --evidence (what sets them)'], [$this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "\e\x07"])[0], $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "\e\x07"])[1]['error']]);
     }
 
