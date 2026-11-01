@@ -163,6 +163,8 @@ final class AiCharterCommandTest extends TestCase
             [['--field' => 'mission', '--value' => ['x']], '--field is one of: goal, audience, problem, signs, constraints, non_goals, owner_decides'],
             [['--field' => 'goal'], '--field=goal takes exactly one --value'],
             [['--field' => 'goal', '--value' => ['a', 'b']], '--field=goal takes exactly one --value'],
+            // Only non-breaking and em spaces, which trim() leaves in place: no answer.
+            [['--field' => 'goal', '--value' => ["\u{00A0}\u{2003}"]], '--field=goal takes exactly one --value'],
             [['--field' => 'goal', '--value' => ['a'], '--source' => 'm'], '--source belongs to a sign: --field=signs'],
             [['--field' => 'signs', '--none' => true], 'a project needs at least one sign of success: --field=signs takes --value'],
             [['--field' => 'signs', '--value' => ['a', 'b'], '--source' => 'm'], '--source measures one sign: give it with a single --value'],

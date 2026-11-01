@@ -57,15 +57,13 @@ final class OwnerQuestions
         ]];
         // A list field's answer may be "none", and what the owner decides may
         // be the defaults: each gets the command that records it.
-        $other = match ($next['field']) {
-            'constraints', 'non_goals', 'owner_decides' => ['--none', 'when the owner\'s answer is "none"'],
-            default => null,
+        $others = match ($next['field']) {
+            'constraints', 'non_goals' => [['--none', 'when the owner\'s answer is "none"']],
+            'owner_decides' => [['--keep', 'when the owner keeps the defaults'], ['--none', 'when the owner leaves every decision to the agent']],
+            default => [],
         };
-        if ($next['field'] === 'owner_decides') {
-            $other = ['--keep', 'when the owner keeps the defaults'];
-        }
-        if ($other !== null) {
-            $commands[] = ['cmd' => 'ai:charter', 'args' => ['answer', '--field=' . $next['field'], $other[0], '--json'], 'why' => $other[1]];
+        foreach ($others as [$flag, $why]) {
+            $commands[] = ['cmd' => 'ai:charter', 'args' => ['answer', '--field=' . $next['field'], $flag, '--json'], 'why' => $why];
         }
 
         return [

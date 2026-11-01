@@ -154,6 +154,10 @@ final class AiDecisionCommandTest extends TestCase
         $store->save($d('earlier', '2026-11-01T10:00:00+02:00', 'Release'));
 
         self::assertSame(['earlier', 'later'], $this->ids(['--applies-to' => 'RELEASE']));
+
+        // Not only ASCII: tags here are written in the owner's language.
+        $store->save($d('uk', '2026-11-01T11:00:00+00:00', 'Реліз'));
+        self::assertSame(['uk'], $this->ids(['--applies-to' => 'реліз']));
     }
 
     #[Test]

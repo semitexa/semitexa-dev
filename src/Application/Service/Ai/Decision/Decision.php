@@ -42,6 +42,8 @@ final readonly class Decision
     /** A time with an explicit offset: one without would be read in whatever zone PHP runs in. */
     public static function isInstant(string $at): bool
     {
+        // Z is UTC as much as +00:00 is.
+        $at = (string) preg_replace('/Z\z/', '+00:00', $at);
         $parsed = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $at);
 
         // Round-tripped: 2026-02-30T… parses, as March 2.
@@ -115,7 +117,8 @@ final readonly class Decision
         }
 
         $consumedAt = $text('consumed_at', false);
-        $consumedBy = $text('consumed_by', false);
+        // An act that spent it, named: a blank one says nothing about what did.
+        $consumedBy = $text('consumed_by', $consumedAt !== null);
         if (($consumedAt === null) !== ($consumedBy === null)) {
             throw new \RuntimeException('decision consumed_at and consumed_by are set together or not at all');
         }

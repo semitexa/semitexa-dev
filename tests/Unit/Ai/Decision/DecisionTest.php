@@ -37,7 +37,9 @@ final class DecisionTest extends TestCase
 
         $file = $decision->toFileArray();
         $once = (new Decision('d-c', 'w', 'm', 'release', DecisionScope::ONCE, '2026-11-01T06:50:00+00:00'))->toFileArray();
-        foreach ([['decided_at' => '2026-02-30T00:00:00+00:00'] + $file, ['decided_at' => '2026-11-01T06:50:00'] + $file, ['consumed_at' => '2026-11-01T07:00:00+00:00'] + $once, ['consumed_by' => 'a release'] + $once, ['consumed_at' => '2026-11-01T07:00:00+00:00', 'consumed_by' => 'x'] + $file, ['schema_version' => 'x'] + $file, ['words' => ' '] + $file, ['scope' => 'forever'] + $file, ['revoked' => 'no'] + $file, ['expires_at' => 5] + $file] as $broken) {
+        self::assertTrue(Decision::isInstant('2026-11-01T06:50:00Z'), 'Z is UTC');
+        self::assertSame('2026-11-01T06:50:00Z', Decision::fromArray(['decided_at' => '2026-11-01T06:50:00Z'] + $file)->decidedAt);
+        foreach ([['decided_at' => '2026-02-30T00:00:00+00:00'] + $file, ['decided_at' => '2026-11-01T06:50:00'] + $file, ['consumed_at' => '2026-11-01T07:00:00+00:00'] + $once, ['consumed_by' => 'a release'] + $once, ['consumed_at' => '2026-11-01T07:00:00+00:00', 'consumed_by' => ' '] + $once, ['consumed_at' => '2026-11-01T07:00:00+00:00', 'consumed_by' => 'x'] + $file, ['schema_version' => 'x'] + $file, ['words' => ' '] + $file, ['scope' => 'forever'] + $file, ['revoked' => 'no'] + $file, ['expires_at' => 5] + $file] as $broken) {
             try {
                 Decision::fromArray($broken);
                 self::fail('accepted ' . json_encode($broken));

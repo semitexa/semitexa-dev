@@ -146,7 +146,7 @@ final readonly class Charter
             return null;
         }
         if (!is_array($value) || !array_is_list($value)
-            || array_filter($value, static fn (mixed $v): bool => is_string($v) && trim($v) !== '') !== $value) {
+            || array_filter($value, static fn (mixed $v): bool => is_string($v) && !Blank::is($v)) !== $value) {
             throw new \RuntimeException("charter {$key} must be a list of non-empty texts");
         }
 

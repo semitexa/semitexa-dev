@@ -20,7 +20,7 @@ final readonly class SuccessSign
 
     public function isComputed(): bool
     {
-        return $this->source !== null && trim($this->source) !== '';
+        return $this->source !== null && !Blank::is($this->source);
     }
 
     /** @return array{id: string, text: string, kind: string, source: ?string} */
@@ -40,7 +40,7 @@ final readonly class SuccessSign
         $id = $data['id'] ?? null;
         $text = $data['text'] ?? null;
         $source = $data['source'] ?? null;
-        if (!is_string($id) || $id === '' || !is_string($text) || trim($text) === '' || ($source !== null && !is_string($source))) {
+        if (!is_string($id) || $id === '' || !is_string($text) || Blank::is($text) || ($source !== null && !is_string($source))) {
             throw new \RuntimeException('a sign of success needs an id and a text (and, if any, a source string)');
         }
 

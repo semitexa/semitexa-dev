@@ -108,6 +108,6 @@ final class CharterInterview
 
     private static function filled(?string $text): bool
     {
-        return $text !== null && trim($text) !== '';
+        return $text !== null && !Blank::is($text);
     }
 }

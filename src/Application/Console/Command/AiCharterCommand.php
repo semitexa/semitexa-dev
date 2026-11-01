@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\Blank;
 use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterInterview;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterQuestion;
@@ -119,12 +120,12 @@ final class AiCharterCommand extends BaseCommand
         }
         $values = [];
         foreach ((array) $input->getOption('value') as $value) {
-            if (is_string($value) && trim($value) !== '') {
+            if (is_string($value) && !Blank::is($value)) {
                 $values[] = trim($value);
             }
         }
         $sourceOption = $input->getOption('source');
-        $source = is_string($sourceOption) && trim($sourceOption) !== '' ? trim($sourceOption) : null;
+        $source = is_string($sourceOption) && !Blank::is($sourceOption) ? trim($sourceOption) : null;
         $none = (bool) $input->getOption('none');
         $keep = (bool) $input->getOption('keep');
         $replace = (bool) $input->getOption('replace');
@@ -165,7 +166,7 @@ final class AiCharterCommand extends BaseCommand
                         $at = $i;
                     }
                 }
-                $signSource = is_string($sourceOption) && trim($sourceOption) !== '' ? trim($sourceOption) : null;
+                $signSource = is_string($sourceOption) && !Blank::is($sourceOption) ? trim($sourceOption) : null;
                 if ($at === null) {
                     $signs[] = new SuccessSign('s' . (count($signs) + 1), $text, $signSource);
                 } elseif ($signSource !== null) {

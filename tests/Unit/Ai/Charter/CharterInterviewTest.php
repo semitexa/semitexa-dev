@@ -60,7 +60,7 @@ final class CharterInterviewTest extends TestCase
         ], $array['signs']);
         self::assertEquals($charter, Charter::fromArray($array));
 
-        foreach ([['schema_version' => Charter::SCHEMA_VERSION, 'signs' => null], ['schema_version' => Charter::SCHEMA_VERSION, 'signs' => [], 'constraints' => ['EU', ' ']], [], ['schema_version' => 'other/v1'], ['schema_version' => Charter::SCHEMA_VERSION, 'goal' => 3], ['schema_version' => Charter::SCHEMA_VERSION, 'constraints' => 'EU'], ['schema_version' => Charter::SCHEMA_VERSION, 'signs' => [['id' => 's1', 'text' => ' ']]]] as $broken) {
+        foreach ([['schema_version' => Charter::SCHEMA_VERSION, 'signs' => null], ['schema_version' => Charter::SCHEMA_VERSION, 'signs' => [], 'constraints' => ['EU', ' ']], ['schema_version' => Charter::SCHEMA_VERSION, 'signs' => [], 'non_goals' => ["\u{00A0}"]], [], ['schema_version' => 'other/v1'], ['schema_version' => Charter::SCHEMA_VERSION, 'goal' => 3], ['schema_version' => Charter::SCHEMA_VERSION, 'constraints' => 'EU'], ['schema_version' => Charter::SCHEMA_VERSION, 'signs' => [['id' => 's1', 'text' => ' ']]]] as $broken) {
             try {
                 Charter::fromArray($broken);
                 self::fail('accepted ' . json_encode($broken));

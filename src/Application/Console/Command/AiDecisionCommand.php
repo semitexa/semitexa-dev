@@ -78,7 +78,7 @@ final class AiDecisionCommand extends BaseCommand
     {
         $words = self::text($input, 'words');
         $means = self::text($input, 'means');
-        $appliesTo = strtolower(self::text($input, 'applies-to'));
+        $appliesTo = mb_strtolower(self::text($input, 'applies-to'));
         $scope = DecisionScope::tryFrom(self::text($input, 'scope'));
         if ($words === '' || $means === '' || $appliesTo === '' || $scope === null) {
             return $this->fail($output, 'record needs --words (the owner\'s), --means, --applies-to and --scope=standing|once');
@@ -90,15 +90,18 @@ final class AiDecisionCommand extends BaseCommand
             if ($at === null) {
                 return $this->fail($output, "--expires \"{$expires}\" is not a date");
             }
-            if ($at <= $now) {
-                return $this->fail($output, "--expires {$expires} is already past");
-            }
             $expiresAt = $at->format('c');
         }
         $wanted = self::text($input, 'id');
         $by = self::text($input, 'by');
 
-        return $this->decisionStore->locked(function () use ($output, $now, $wanted, $words, $means, $appliesTo, $scope, $by, $expiresAt): int {
+        return $this->decisionStore->locked(function () use ($output, $expires, $wanted, $words, $means, $appliesTo, $scope, $by, $expiresAt): int {
+            // The clock read under the lock, like consume's: an expiry that
+            // passed while this waited is refused, not recorded already past.
+            $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+            if ($expiresAt !== null && new \DateTimeImmutable($expiresAt) <= $now) {
+                return $this->fail($output, "--expires {$expires} is already past");
+            }
             if ($wanted !== '' && $this->decisionStore->exists($wanted)) {
                 return $this->fail($output, "decision '{$wanted}' already exists");
             }
@@ -112,11 +115,11 @@ final class AiDecisionCommand extends BaseCommand
 
     private function list(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int
     {
-        $appliesTo = strtolower(self::text($input, 'applies-to'));
+        $appliesTo = mb_strtolower(self::text($input, 'applies-to'));
         $all = (bool) $input->getOption('all');
         $decisions = array_values(array_filter(
             $this->decisionStore->list(),
-            static fn (Decision $d): bool => ($appliesTo === '' || strtolower($d->appliesTo) === $appliesTo)
+            static fn (Decision $d): bool => ($appliesTo === '' || mb_strtolower($d->appliesTo) === $appliesTo)
                 && ($all || $d->status($now) === DecisionStatus::ACTIVE),
         ));
 

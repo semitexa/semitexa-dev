@@ -62,7 +62,10 @@ final class OwnerQuestionsTest extends TestCase
         self::assertSame([['answer', '--field=constraints', '--value="<the owner\'s answer>"', '--json'], ['answer', '--field=constraints', '--none', '--json']], array_column(OwnerQuestions::lead(['summary' => '', 'commands' => []], OwnerQuestions::of($store))['commands'], 'args'));
 
         $store->save(new Charter('g', 'a', 'p', [new SuccessSign('s1', 'x')], [], []));
-        self::assertSame(['answer', '--field=owner_decides', '--keep', '--json'], OwnerQuestions::lead(['summary' => '', 'commands' => []], OwnerQuestions::of($store))['commands'][1]['args']);
+        self::assertSame(
+            [['answer', '--field=owner_decides', '--keep', '--json'], ['answer', '--field=owner_decides', '--none', '--json']],
+            array_slice(array_column(OwnerQuestions::lead(['summary' => '', 'commands' => []], OwnerQuestions::of($store))['commands'], 'args'), 1),
+        );
     }
 
     #[Test]
