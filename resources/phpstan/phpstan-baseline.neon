@@ -523,12 +523,6 @@ parameters:
 			path: packages/semitexa-core/src/Locale/DefaultLocaleContext.php
 
 		-
-			message: '#^Call to function method_exists\(\) with ''Swoole\\\\Event'' and ''defer'' will always evaluate to true\.$#'
-			identifier: function.alreadyNarrowedType
-			count: 1
-			path: packages/semitexa-core/src/Log/AsyncJsonLogger.php
-
-		-
 			message: '#^Function is_subclass_of\(\) is a runtime reflection concept that might not work in PHPStan because it uses fully static reflection engine\. Use objects retrieved from ReflectionProvider instead\.$#'
 			identifier: phpstanApi.runtimeReflection
 			count: 1
@@ -1183,12 +1177,6 @@ parameters:
 			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
 
 		-
-			message: '#^Comparison operation "\<" between int\<80400, 80599\> and 80400 is always false\.$#'
-			identifier: smaller.alwaysFalse
-			count: 1
-			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
-
-		-
 			message: '#^Parameter \#2 \$paths of method Composer\\Autoload\\ClassLoader\:\:addPsr4\(\) expects list\<string\>\|string, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -1751,90 +1739,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: packages/semitexa-orm/src/OrmManager.php
-
-		-
-			message: '#^Cannot use array destructuring on mixed\.$#'
-			identifier: offsetAccess.nonArray
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 3
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Cannot use array destructuring on mixed\.$#'
-			identifier: offsetAccess.nonArray
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 3
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
 
 		-
 			message: '#^Method Semitexa\\Orm\\Query\\WhereCapableInterface\:\:whereIn\(\) has parameter \$values with no value type specified in iterable type array\.$#'
