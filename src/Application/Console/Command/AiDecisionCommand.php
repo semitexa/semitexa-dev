@@ -49,7 +49,7 @@ final class AiDecisionCommand extends BaseCommand
             ->addOption('means', null, InputOption::VALUE_REQUIRED, 'record: what it means for the work, in one line')
             ->addOption('applies-to', null, InputOption::VALUE_REQUIRED, 'record: what it is about, a short tag (release, dependency, data, docs, ...); list: filter')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'record: standing (holds until revoked) | once (spent by the act it allows)')
-            ->addOption('expires', null, InputOption::VALUE_REQUIRED, 'record: when it stops holding: a date (it holds through that day, UTC) or an ISO-8601 time')
+            ->addOption('expires', null, InputOption::VALUE_REQUIRED, 'record: when it stops holding: a date YYYY-MM-DD (it holds through that day, UTC) or an ISO-8601 time with its offset')
             ->addOption('by', null, InputOption::VALUE_REQUIRED, 'record: who decided (default: owner)')
             ->addOption('act', null, InputOption::VALUE_REQUIRED, 'consume: the act that spent it')
             ->addOption('all', null, InputOption::VALUE_NONE, 'list: consumed, revoked and expired ones too')
@@ -116,7 +116,7 @@ final class AiDecisionCommand extends BaseCommand
         $all = (bool) $input->getOption('all');
         $decisions = array_values(array_filter(
             $this->decisionStore->list(),
-            static fn (Decision $d): bool => ($appliesTo === '' || $d->appliesTo === $appliesTo)
+            static fn (Decision $d): bool => ($appliesTo === '' || strtolower($d->appliesTo) === $appliesTo)
                 && ($all || $d->status($now) === DecisionStatus::ACTIVE),
         ));
 
@@ -129,7 +129,9 @@ final class AiDecisionCommand extends BaseCommand
 
     private function consume(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int
     {
-        return $this->decisionStore->locked(fn (): int => $this->consumeLocked($input, $output, $now));
+        // The clock read under the lock: a decision that expired while this
+        // waited for it must not be spent.
+        return $this->decisionStore->locked(fn (): int => $this->consumeLocked($input, $output, new \DateTimeImmutable('now', new \DateTimeZone('UTC'))));
     }
 
     private function consumeLocked(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int
@@ -154,7 +156,7 @@ final class AiDecisionCommand extends BaseCommand
 
     private function revoke(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int
     {
-        return $this->decisionStore->locked(fn (): int => $this->revokeLocked($input, $output, $now));
+        return $this->decisionStore->locked(fn (): int => $this->revokeLocked($input, $output, new \DateTimeImmutable('now', new \DateTimeZone('UTC'))));
     }
 
     private function revokeLocked(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int
@@ -192,11 +194,9 @@ final class AiDecisionCommand extends BaseCommand
             // 2026-02-30 is not a day, whatever PHP rolls it into.
             return $day !== false && $day->format('Y-m-d') === $text ? $day->modify('+1 day') : null;
         }
-        try {
-            return new \DateTimeImmutable($text, $utc);
-        } catch (\Exception) {
-            return null;
-        }
+        // Otherwise only a full ISO-8601 time with its offset: "tomorrow" or
+        // "+1 week" would mean a different moment to every agent reading it.
+        return Decision::isInstant($text) ? new \DateTimeImmutable($text) : null;
     }
 
     /** d-<date>-<applies-to>[-n]: readable in a listing, unique in the directory. */

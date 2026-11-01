@@ -41,21 +41,36 @@ final class OwnerQuestions
      */
     public static function lead(array $hints, array $questions): array
     {
+        if ($questions['error'] !== null) {
+            // Said where every reader of orient looks, human or JSON.
+            return ['summary' => 'The project charter cannot be read (' . $questions['error'] . '): fix or remove it before asking the owner anything. ' . $hints['summary'], 'commands' => $hints['commands']];
+        }
         $next = $questions['next'];
         if ($next === null) {
             return $hints;
         }
 
+        $commands = [[
+            'cmd' => 'ai:charter',
+            'args' => ['answer', '--field=' . $next['field'], '--value="<the owner\'s answer>"', '--json'],
+            'why' => 'record the owner\'s answer; ai:charter next gives the question after it',
+        ]];
+        // A list field's answer may be "none", and what the owner decides may
+        // be the defaults: each gets the command that records it.
+        $other = match ($next['field']) {
+            'constraints', 'non_goals', 'owner_decides' => ['--none', 'when the owner\'s answer is "none"'],
+            default => null,
+        };
+        if ($next['field'] === 'owner_decides') {
+            $other = ['--keep', 'when the owner keeps the defaults'];
+        }
+        if ($other !== null) {
+            $commands[] = ['cmd' => 'ai:charter', 'args' => ['answer', '--field=' . $next['field'], $other[0], '--json'], 'why' => $other[1]];
+        }
+
         return [
             'summary' => 'Semitexa has a question for the project\'s owner: "' . $next['question'] . '" ' . $hints['summary'],
-            'commands' => [
-                [
-                    'cmd' => 'ai:charter',
-                    'args' => ['answer', '--field=' . $next['field'], '--value="<the owner\'s answer>"', '--json'],
-                    'why' => 'record the owner\'s answer; ai:charter next gives the question after it',
-                ],
-                ...$hints['commands'],
-            ],
+            'commands' => [...$commands, ...$hints['commands']],
         ];
     }
 }

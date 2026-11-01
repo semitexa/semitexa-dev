@@ -101,7 +101,7 @@ final readonly class Charter
         if (($data['schema_version'] ?? null) !== self::SCHEMA_VERSION) {
             throw new \RuntimeException('not a ' . self::SCHEMA_VERSION . ' charter');
         }
-        $signs = $data['signs'] ?? [];
+        $signs = $data['signs'] ?? null;
         if (!is_array($signs) || !array_is_list($signs)) {
             throw new \RuntimeException('charter signs must be a list');
         }
@@ -145,8 +145,9 @@ final readonly class Charter
         if ($value === null) {
             return null;
         }
-        if (!is_array($value) || !array_is_list($value) || array_filter($value, 'is_string') !== $value) {
-            throw new \RuntimeException("charter {$key} must be a list of texts");
+        if (!is_array($value) || !array_is_list($value)
+            || array_filter($value, static fn (mixed $v): bool => is_string($v) && trim($v) !== '') !== $value) {
+            throw new \RuntimeException("charter {$key} must be a list of non-empty texts");
         }
 
         return $value;

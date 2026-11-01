@@ -70,7 +70,7 @@ final class AiCharterCommand extends BaseCommand
             'next' => $this->next($output, $charter, $human),
             'show' => $this->emit($output, $this->state($charter) + ['charter' => $charter->toArray()]),
             'check' => $this->check($output, $charter),
-            'answer' => $this->answer($input, $output, $charter),
+            'answer' => $this->answerLocked($input, $output),
             default => $this->fail($output, "unknown action \"{$action}\" (expected next | answer | show | check)"),
         };
     }
@@ -100,6 +100,16 @@ final class AiCharterCommand extends BaseCommand
         return $open === [] ? self::SUCCESS : self::FAILURE;
     }
 
+    private function answerLocked(InputInterface $input, OutputInterface $output): int
+    {
+        try {
+            // Read again under the lock: the charter read before it may be stale.
+            return $this->charterStore->locked(fn (): int => $this->answer($input, $output, $this->charterStore->get()));
+        } catch (\RuntimeException $e) {
+            return $this->fail($output, 'the answer was not recorded: ' . $e->getMessage());
+        }
+    }
+
     private function answer(InputInterface $input, OutputInterface $output, Charter $charter): int
     {
         $field = $input->getOption('field');
@@ -113,8 +123,8 @@ final class AiCharterCommand extends BaseCommand
                 $values[] = trim($value);
             }
         }
-        $source = $input->getOption('source');
-        $source = is_string($source) && trim($source) !== '' ? trim($source) : null;
+        $sourceOption = $input->getOption('source');
+        $source = is_string($sourceOption) && trim($sourceOption) !== '' ? trim($sourceOption) : null;
         $none = (bool) $input->getOption('none');
         $keep = (bool) $input->getOption('keep');
         $replace = (bool) $input->getOption('replace');
@@ -146,17 +156,27 @@ final class AiCharterCommand extends BaseCommand
                 return $this->fail($output, '--source measures one sign: give it with a single --value');
             }
             $signs = $charter->signs;
-            $known = array_map(static fn (SuccessSign $s): string => mb_strtolower($s->text), $signs);
             foreach ($values as $text) {
-                // The same answer recorded twice (a retry, two agents) is one sign.
-                if (in_array(mb_strtolower($text), $known, true)) {
-                    continue;
+                // The same answer recorded twice (a retry, two agents) is one
+                // sign; given again with a source, that sign gains it.
+                $at = null;
+                foreach ($signs as $i => $sign) {
+                    if (mb_strtolower($sign->text) === mb_strtolower($text)) {
+                        $at = $i;
+                    }
                 }
-                $known[] = mb_strtolower($text);
-                $signs[] = new SuccessSign('s' . (count($signs) + 1), $text, $source);
+                $signSource = is_string($sourceOption) && trim($sourceOption) !== '' ? trim($sourceOption) : null;
+                if ($at === null) {
+                    $signs[] = new SuccessSign('s' . (count($signs) + 1), $text, $signSource);
+                } elseif ($signSource !== null) {
+                    $signs[$at] = new SuccessSign($signs[$at]->id, $signs[$at]->text, $signSource);
+                }
             }
             $updated = $charter->with(signs: $signs);
         } else {
+            if ($replace && $values === []) {
+                return $this->fail($output, '--replace sets the list to the --value items: give at least one');
+            }
             $chosen = (int) $none + (int) $keep + (int) ($values !== []);
             if ($chosen !== 1) {
                 return $this->fail($output, "--field={$field} takes --value (repeatable), or --none" . ($field === 'owner_decides' ? ', or --keep' : '') . ', one of them');
@@ -182,11 +202,7 @@ final class AiCharterCommand extends BaseCommand
         }
 
         $updated = $updated->with(updatedAt: gmdate('c'));
-        try {
-            $this->charterStore->save($updated);
-        } catch (\RuntimeException $e) {
-            return $this->fail($output, 'the answer was not recorded: ' . $e->getMessage());
-        }
+        $this->charterStore->save($updated);
 
         return $this->emit($output, ['status' => 'ok', 'recorded' => $field] + $this->state($updated) + ['charter' => $updated->toArray()]);
     }

@@ -55,6 +55,17 @@ final class OwnerQuestionsTest extends TestCase
     }
 
     #[Test]
+    public function a_list_question_also_offers_its_none_and_the_authority_one_its_defaults(): void
+    {
+        $store = new CharterStore();
+        $store->save(new Charter('g', 'a', 'p', [new SuccessSign('s1', 'x')]));
+        self::assertSame([['answer', '--field=constraints', '--value="<the owner\'s answer>"', '--json'], ['answer', '--field=constraints', '--none', '--json']], array_column(OwnerQuestions::lead(['summary' => '', 'commands' => []], OwnerQuestions::of($store))['commands'], 'args'));
+
+        $store->save(new Charter('g', 'a', 'p', [new SuccessSign('s1', 'x')], [], []));
+        self::assertSame(['answer', '--field=owner_decides', '--keep', '--json'], OwnerQuestions::lead(['summary' => '', 'commands' => []], OwnerQuestions::of($store))['commands'][1]['args']);
+    }
+
+    #[Test]
     public function a_complete_charter_asks_nothing_and_a_broken_one_says_so(): void
     {
         (new CharterStore())->save(new Charter('g', 'a', 'p', [new SuccessSign('s1', 'x')], [], [], []));
@@ -66,5 +77,6 @@ final class OwnerQuestionsTest extends TestCase
         file_put_contents($this->root . '/var/ai-work/charter.json', '[1]');
         $questions = OwnerQuestions::of(new CharterStore());
         self::assertSame([null, 'var/ai-work/charter.json: not a semitexa.ai-charter/v1 charter'], [$questions['next'], $questions['error']]);
+        self::assertSame('The project charter cannot be read (var/ai-work/charter.json: not a semitexa.ai-charter/v1 charter): fix or remove it before asking the owner anything. Resume.', OwnerQuestions::lead($hints, $questions)['summary']);
     }
 }

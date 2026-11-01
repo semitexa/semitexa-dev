@@ -94,6 +94,8 @@ final class AiDecisionCommandTest extends TestCase
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '2020-01-01'], '--expires 2020-01-01 is already past'],
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => 'someday'], '--expires "someday" is not a date'],
             [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '2099-02-30'], '--expires "2099-02-30" is not a date'],
+            [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '+1 week'], '--expires "+1 week" is not a date'],
+            [['--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once', '--expires' => '2099-01-01T00:00:00'], '--expires "2099-01-01T00:00:00" is not a date'],
             [['--id' => $base, '--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once'], "decision '{$base}' already exists"],
             [['--id' => '../x', '--words' => 'w', '--means' => 'm', '--applies-to' => 'a', '--scope' => 'once'], "invalid decision id '../x': must match /^[a-z0-9][a-z0-9_-]{0,63}$/"],
         ];
@@ -139,6 +141,26 @@ final class AiDecisionCommandTest extends TestCase
         self::assertSame([1, "decision 'spent' is consumed: nothing left to revoke"], $this->error('revoke', ['--id' => 'spent']));
         self::assertSame([1, "decision 'old' is expired: nothing left to revoke"], $this->error('revoke', ['--id' => 'old']));
         self::assertSame('consumed', $store->get('spent')->status(new \DateTimeImmutable())->value, 'a spent approval stays spent on record');
+    }
+
+    #[Test]
+    public function a_listing_sorts_by_instant_and_filters_whatever_the_case(): void
+    {
+        $store = new DecisionStore();
+        mkdir($this->root . '/var/ai-work/decisions', 0755, true);
+        $d = static fn (string $id, string $at, string $about): \Semitexa\Dev\Application\Service\Ai\Decision\Decision => new \Semitexa\Dev\Application\Service\Ai\Decision\Decision($id, 'w', 'm', $about, \Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope::STANDING, $at);
+        // 10:00+02:00 is 08:00 UTC: earlier than 09:00 UTC, though it sorts later as text.
+        $store->save($d('later', '2026-11-01T09:00:00+00:00', 'release'));
+        $store->save($d('earlier', '2026-11-01T10:00:00+02:00', 'Release'));
+
+        self::assertSame(['earlier', 'later'], $this->ids(['--applies-to' => 'RELEASE']));
+    }
+
+    #[Test]
+    public function a_decision_that_could_not_be_read_back_is_not_written(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        (new DecisionStore())->save(new \Semitexa\Dev\Application\Service\Ai\Decision\Decision('bad', 'w', 'm', 'release', \Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope::STANDING, 'yesterday'));
     }
 
     #[Test]

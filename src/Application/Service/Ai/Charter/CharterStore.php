@@ -22,14 +22,44 @@ final class CharterStore
     public function get(): Charter
     {
         $path = $this->path();
-        if (!is_file($path)) {
+        if (!file_exists($path)) {
             return new Charter();
+        }
+        if (!is_file($path)) {
+            // A directory there is not "nobody was asked": it would restart the interview.
+            throw new \RuntimeException(self::PATH . ': not a file');
         }
 
         try {
             return Charter::fromArray(JsonFile::read($path));
         } catch (\RuntimeException $e) {
             throw new \RuntimeException(self::PATH . ': ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Runs a read-modify-write under a lock beside the charter, so two agents
+     * recording answers at once do not lose one.
+     *
+     * @template T
+     * @param callable(): T $change
+     * @return T
+     */
+    public function locked(callable $change): mixed
+    {
+        $dir = dirname($this->path());
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException('cannot create ' . dirname(self::PATH));
+        }
+        $lock = @fopen($this->path() . '.lock', 'c');
+        if ($lock === false || !flock($lock, LOCK_EX)) {
+            throw new \RuntimeException('cannot lock ' . self::PATH);
+        }
+        try {
+            return $change();
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
         }
     }
 

@@ -115,6 +115,24 @@ final class AiCharterCommandTest extends TestCase
     }
 
     #[Test]
+    public function a_sign_given_again_with_its_source_becomes_computed(): void
+    {
+        $this->charter('answer', ['--field' => 'signs', '--value' => ['Ten orders a day']]);
+        $this->charter('answer', ['--field' => 'signs', '--value' => ['ten orders a day'], '--source' => 'orders.per-day']);
+        $this->charter('answer', ['--field' => 'signs', '--value' => ['A menu in five minutes'], '--source' => '  ']);
+
+        self::assertSame([['s1', 'Ten orders a day', 'computed'], ['s2', 'A menu in five minutes', 'judged']], array_map(static fn ($s): array => [$s->id, $s->text, $s->isComputed() ? 'computed' : 'judged'], (new CharterStore())->get()->signs));
+    }
+
+    #[Test]
+    public function a_directory_where_the_charter_should_be_is_an_error(): void
+    {
+        mkdir($this->root . '/var/ai-work/charter.json', 0755, true);
+
+        self::assertSame([1, 'var/ai-work/charter.json: not a file'], [$this->charter('next')[0], $this->charter('next')[1]['error']]);
+    }
+
+    #[Test]
     public function a_refused_answer_leaves_a_charter_as_it_was(): void
     {
         $this->charter('answer', ['--field' => 'goal', '--value' => ['Bakers sell bread online']]);
@@ -151,6 +169,7 @@ final class AiCharterCommandTest extends TestCase
             [['--field' => 'constraints', '--keep' => true], '--keep belongs to --field=owner_decides'],
             [['--field' => 'constraints'], '--field=constraints takes --value (repeatable), or --none, one of them'],
             [['--field' => 'owner_decides', '--keep' => true, '--none' => true], '--field=owner_decides takes --value (repeatable), or --none, or --keep, one of them'],
+            [['--field' => 'constraints', '--replace' => true, '--none' => true], '--replace sets the list to the --value items: give at least one'],
         ];
         foreach ($refused as [$options, $error]) {
             [$status, $out] = $this->charter('answer', $options);

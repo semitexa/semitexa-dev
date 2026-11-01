@@ -433,6 +433,7 @@ final class AiOrientCommand extends BaseCommand
         return null;
     }
 
+    /** @return array{summary: string, commands: list<array{cmd: string, args: list<string>, why: string}>} */
     private function suggestNext(array $git, ?string $activeEpicId, array $inProgress, array $blocked, array $epics): array
     {
         $cmds = [];

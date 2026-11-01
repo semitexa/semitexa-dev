@@ -20,7 +20,7 @@ final readonly class SuccessSign
 
     public function isComputed(): bool
     {
-        return $this->source !== null && $this->source !== '';
+        return $this->source !== null && trim($this->source) !== '';
     }
 
     /** @return array{id: string, text: string, kind: string, source: ?string} */

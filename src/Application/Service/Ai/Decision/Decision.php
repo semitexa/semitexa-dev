@@ -42,7 +42,10 @@ final readonly class Decision
     /** A time with an explicit offset: one without would be read in whatever zone PHP runs in. */
     public static function isInstant(string $at): bool
     {
-        return \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $at) !== false;
+        $parsed = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $at);
+
+        // Round-tripped: 2026-02-30T… parses, as March 2.
+        return $parsed !== false && $parsed->format(\DateTimeInterface::ATOM) === $at;
     }
 
     public function consumed(string $at, string $by): self
@@ -109,6 +112,15 @@ final readonly class Decision
             if ($at !== null && !self::isInstant($at)) {
                 throw new \RuntimeException("decision {$key} must be an ISO-8601 time with its offset, got \"{$at}\"");
             }
+        }
+
+        $consumedAt = $text('consumed_at', false);
+        $consumedBy = $text('consumed_by', false);
+        if (($consumedAt === null) !== ($consumedBy === null)) {
+            throw new \RuntimeException('decision consumed_at and consumed_by are set together or not at all');
+        }
+        if ($consumedAt !== null && $scope !== DecisionScope::ONCE) {
+            throw new \RuntimeException('a standing decision is revoked, never consumed');
         }
 
         return new self(

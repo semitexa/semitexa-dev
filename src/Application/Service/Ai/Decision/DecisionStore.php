@@ -41,6 +41,8 @@ final class DecisionStore
     public function save(Decision $decision): void
     {
         WorkId::assertValid($decision->id, 'decision id');
+        // What could not be read back is not written: one bad file blocks every listing.
+        Decision::fromArray($decision->toFileArray());
         JsonFile::writeAtomic($this->pathFor($decision->id), $decision->toFileArray());
     }
 
@@ -79,7 +81,8 @@ final class DecisionStore
             throw new \RuntimeException('cannot list ' . self::SUBDIR);
         }
         $decisions = array_map(self::read(...), $files);
-        usort($decisions, static fn (Decision $a, Decision $b): int => [$a->decidedAt, $a->id] <=> [$b->decidedAt, $b->id]);
+        // By instant: two offsets for the same moment sort as one.
+        usort($decisions, static fn (Decision $a, Decision $b): int => [(new \DateTimeImmutable($a->decidedAt))->getTimestamp(), $a->id] <=> [(new \DateTimeImmutable($b->decidedAt))->getTimestamp(), $b->id]);
 
         return $decisions;
     }
@@ -103,7 +106,7 @@ final class DecisionStore
         }
         // Saved under its id: one named otherwise would be written to a file
         // nobody reads, and the one listed would never change.
-        if ($decision->id . '.json' !== basename($path)) {
+        if (preg_match(WorkId::PATTERN, $decision->id) !== 1 || $decision->id . '.json' !== basename($path)) {
             throw new \RuntimeException(self::SUBDIR . '/' . basename($path) . ": holds decision '{$decision->id}'; the file is named after its id");
         }
 
