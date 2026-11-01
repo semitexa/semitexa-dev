@@ -1309,24 +1309,6 @@ parameters:
 			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
 
 		-
-			message: '#^Cannot cast mixed to float\.$#'
-			identifier: cast.double
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
-
-		-
-			message: '#^Cannot cast mixed to int\.$#'
-			identifier: cast.int
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
-
-		-
-			message: '#^Cannot cast mixed to string\.$#'
-			identifier: cast.string
-			count: 6
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
-
-		-
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
 			count: 1
@@ -1591,60 +1573,6 @@ parameters:
 			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
 
 		-
-			message: '#^Access to property \$description on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$isDestructive on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$sql on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$tableName on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$type on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Binary operation "\." between ''\-\- '' and mixed results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Binary operation "\." between mixed and '';'' results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Cannot access property \$value on mixed\.$#'
-			identifier: property.nonObject
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Parameter \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) has invalid type Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
 			identifier: argument.type
 			count: 1
@@ -1659,12 +1587,6 @@ parameters:
 		-
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
-
-		-
-			message: '#^Parameter \#1 \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) expects array\<Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\>, list\<Semitexa\\Orm\\Domain\\Model\\DdlOperation\> given\.$#'
-			identifier: argument.type
 			count: 1
 			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
 
