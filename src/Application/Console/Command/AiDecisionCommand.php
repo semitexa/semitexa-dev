@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStatus;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
+use Semitexa\Dev\Application\Service\Ai\Decision\Expiry;
 use Semitexa\Dev\Application\Service\Ai\Work\WorkId;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -86,7 +87,7 @@ final class AiDecisionCommand extends BaseCommand
         $expires = self::text($input, 'expires');
         $expiresAt = null;
         if ($expires !== '') {
-            $at = self::expiry($expires);
+            $at = Expiry::parse($expires);
             if ($at === null) {
                 return $this->fail($output, "--expires \"{$expires}\" is not a date");
             }
@@ -186,20 +187,6 @@ final class AiDecisionCommand extends BaseCommand
         WorkId::assertValid($id, 'decision id');
 
         return $id;
-    }
-
-    /** A bare date holds through that day (UTC); a time is taken as given. Null when it is neither. */
-    private static function expiry(string $text): ?\DateTimeImmutable
-    {
-        $utc = new \DateTimeZone('UTC');
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $text) === 1) {
-            $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $text, $utc);
-            // 2026-02-30 is not a day, whatever PHP rolls it into.
-            return $day !== false && $day->format('Y-m-d') === $text ? $day->modify('+1 day') : null;
-        }
-        // Otherwise only a full ISO-8601 time with its offset: "tomorrow" or
-        // "+1 week" would mean a different moment to every agent reading it.
-        return Decision::isInstant($text) ? new \DateTimeImmutable($text) : null;
     }
 
     /** d-<date>-<applies-to>[-n]: readable in a listing, unique in the directory. */
