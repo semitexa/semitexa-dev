@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Decision;
 
+use Semitexa\Dev\Application\Service\Ai\Charter\Blank;
+
 /**
  * One decision of the project's owner (ep-project-charter): their words, what
  * it means for the work, what it applies to, and whether it stands or allows
@@ -96,7 +98,8 @@ final readonly class Decision
             if ($value === null && !$required) {
                 return null;
             }
-            if (!is_string($value) || ($required && trim($value) === '')) {
+            // Blank by the charter's rule: a non-breaking space is not an answer either.
+            if (!is_string($value) || ($required && Blank::is($value))) {
                 throw new \RuntimeException("decision {$key} must be " . ($required ? 'non-empty text' : 'text or null'));
             }
 
