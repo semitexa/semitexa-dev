@@ -6,6 +6,12 @@ unchanged so that a number today can be compared with that one. Change a
 criterion or a weight only deliberately, and say so in the history; a score on
 a different rubric is a different number.
 
+The rubric is declared in code:
+`Semitexa\Dev\Application\Service\Ai\State\FrameworkRubric` (criterion ids,
+weights, computed or judged, evidence), and `FrameworkRubricTest` holds it to the
+weights below and to the scorecard's numbers. The tables here mirror it; when
+the two differ, the code is the rubric.
+
 ## The living scorecard
 
 `var/docs/make-it/scorecard.md` in the project: the current table for all
