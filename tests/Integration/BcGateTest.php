@@ -274,6 +274,75 @@ final class BcGateTest extends TestCase
     }
 
     /**
+     * The operator's way past a tag roave cannot read (core 2026.11.01.0448
+     * declares ThemeValue in ThemeLayer.php): declared per package and tag,
+     * with its reason in the report.
+     */
+    #[Test]
+    public function an_exempted_tag_roave_cannot_read_passes_with_its_reason(): void
+    {
+        $this->released();
+
+        self::assertSame([0, [
+            '[EXEMPT] semitexa-core (since 2026.07.01.0900): roave did not check it (exit 2) — exempt: Clock moved to its own file',
+            'No break on the @api surface.',
+        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+    }
+
+    /** It forgives an unreadable tag, never a break roave did report; read, the tag needed no exemption. */
+    #[Test]
+    public function an_exemption_does_not_forgive_a_break(): void
+    {
+        $this->released();
+
+        [$status, $out] = $this->gate(self::BREAKS, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]);
+
+        self::assertSame(1, $status);
+        self::assertSame([
+            '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated',
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method b() was added to interface Semitexa\\Core\\Port — @api and never deprecated',
+        ], $out);
+        // Nor a report roave did give but that cannot be judged.
+        self::assertSame([1, [
+            '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+            '[UNCHECKED] semitexa-core: roave said it found breaks and listed none',
+        ]], $this->gate([], ['errors' => []], exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+    }
+
+    /** Another tag's or another package's exemption covers nothing here, and is shown for removal. */
+    #[Test]
+    public function an_exemption_for_another_tag_does_not_apply(): void
+    {
+        $this->released();
+
+        self::assertSame([1, [
+            '[UNUSED EXEMPTION] semitexa-core at 2026.01.01.0900: nothing needed it; remove it from the exemptions',
+            '[UNCHECKED] semitexa-core: roave did not check it (exit 2)',
+        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.01.01.0900' => 'an older cut']]));
+        self::assertSame([1, [
+            '[UNUSED EXEMPTION] semitexa-orm at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+            '[UNCHECKED] semitexa-core: roave did not check it (exit 2)',
+        ]], $this->gate(null, exemptions: ['semitexa-orm' => ['2026.07.01.0900' => 'another package']]));
+    }
+
+    /** An exemption without its reason exempts nothing, and says so. */
+    #[Test]
+    public function an_exemption_without_a_reason_fails_the_gate(): void
+    {
+        $this->released();
+
+        [$status, $out] = $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => ' ']]);
+
+        self::assertSame(1, $status);
+        self::assertSame([$this->root . '/exemptions.json: semitexa-core at 2026.07.01.0900 needs the reason it is exempt.'], $out);
+        // A file that is not package => tag => reason exempts nothing either.
+        self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '{"semitexa-core": '));
+        self::assertSame([1, [$this->root . '/exemptions.json: "0" must map tags to reasons.']], $this->gate(null, exemptions: '["semitexa-core"]'));
+        self::assertSame([1, [$this->root . '/exemptions.json: "semitexa-core" must map tags to reasons.']], $this->gate(null, exemptions: '{"semitexa-core": {}}'));
+    }
+
+    /**
      * A package tagged 2026.07.01.0900 with Clock (old() deprecated or not),
      * Inner and Port; with $deprecatedLater the deprecation is added after that
      * tag and shipped in 2026.10.20.0900 instead; $laterMethod is a method added
@@ -324,10 +393,13 @@ final class BcGateTest extends TestCase
      * @param list<string>|null $breaks what the stand-in roave reports; null: it fails (exit 2)
      * @param string $before what it prints to stdout ahead of the report
      * @param array<string, mixed>|null $report a raw report instead
+     * @param array<string, array<string, string>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
      * @return array{int, list<string>}
      */
-    private function gate(?array $breaks, ?array $report = null, string $before = ''): array
+    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = []): array
     {
+        $exemptionsFile = $this->root . '/exemptions.json';
+        file_put_contents($exemptionsFile, is_string($exemptions) ? $exemptions : ($exemptions === [] ? '{}' : (string) json_encode($exemptions)));
         $fake = $this->root . '/roave';
         $json = json_encode($report ?? ['errors' => array_map(static fn (string $d): array => ['description' => $d], $breaks ?? [])]);
         file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nexit 2\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
@@ -336,10 +408,11 @@ final class BcGateTest extends TestCase
         self::assertIsString($loader);
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-bc-gate.php';
         exec(sprintf(
-            'RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s SEMITEXA_BC_CHECK=%s php %s --version=2026.10.31.0900 2>&1',
+            'RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s SEMITEXA_BC_CHECK=%s SEMITEXA_BC_EXEMPTIONS=%s php %s --version=2026.10.31.0900 2>&1',
             escapeshellarg($this->root),
             escapeshellarg(dirname($loader, 2) . '/autoload.php'),
             escapeshellarg($fake),
+            escapeshellarg($exemptionsFile),
             escapeshellarg($script),
         ), $out, $status);
 

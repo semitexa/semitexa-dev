@@ -29,6 +29,14 @@ declare(strict_types=1);
  * `vendor/bin/roave-backward-compatibility-check` of RELEASE_ROOT). Prints each
  * break it keeps; exit 1 when one is not allowed, or when a package, a tag or
  * roave's answer could not be read — a gate that cannot check must not pass.
+ *
+ * The one way past an unreadable tag is an exemption the operator decided,
+ * declared in release-bc-gate-exemptions.json next to this script
+ * (SEMITEXA_BC_EXEMPTIONS another file): `{"<package dir>": {"<tag>": "<why>"}}`.
+ * It forgives only roave failing to read that package at that tag; breaks
+ * roave does report are judged as always. It names one tag, so it stops
+ * applying once the package is released again, and an entry no package used
+ * is printed for removal.
  */
 
 use PhpParser\Comment\Doc;
@@ -46,6 +54,7 @@ $version = is_string($options['version'] ?? null) ? $options['version'] : (geten
 $releaseRoot = rtrim(getenv('RELEASE_ROOT') ?: '/home/taras/Documents/Projects/semitexa.rls', DIRECTORY_SEPARATOR);
 $autoload = getenv('SEMITEXA_AUTOLOAD') ?: $releaseRoot . '/vendor/autoload.php';
 $check = getenv('SEMITEXA_BC_CHECK') ?: escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($releaseRoot . '/vendor/bin/roave-backward-compatibility-check');
+$exemptions = exemptions(getenv('SEMITEXA_BC_EXEMPTIONS') ?: __DIR__ . '/release-bc-gate-exemptions.json');
 
 if (!is_file($autoload)) {
     fail("No autoloader at {$autoload}: the gate needs nikic/php-parser.");
@@ -69,6 +78,8 @@ $refused = [];
 $allowed = [];
 $problems = [];
 $unchanged = [];
+$exempted = [];
+$used = [];
 foreach ($packageDirs as $packageDir) {
     // No src at HEAD is no reason to skip: an @api package that deleted it broke everything it promised.
     if (!is_dir($packageDir . '/.git')) {
@@ -89,7 +100,19 @@ foreach ($packageDirs as $packageDir) {
         $unchanged[] = basename($packageDir) . ": no source change since {$tag}";
         continue;
     }
-    foreach (breaks($packageDir, $tag, $check, $problems) as $description) {
+    $unchecked = null;
+    $descriptions = breaks($packageDir, $tag, $check, $problems, $unchecked);
+    if ($descriptions === null) {
+        $why = $exemptions[basename($packageDir)][$tag] ?? null;
+        if ($why === null) {
+            $problems[] = basename($packageDir) . ': ' . $unchecked;
+        } else {
+            $used[basename($packageDir)][$tag] = true;
+            $exempted[] = basename($packageDir) . " (since {$tag}): {$unchecked} — exempt: {$why}";
+        }
+        continue;
+    }
+    foreach ($descriptions as $description) {
         // By reference: what shippedIn() cannot read must reach the exit code.
         $verdict = judge($description, $surface, $today, static function (string $key) use ($packageDir, $tag, &$problems): array {
             return shippedIn($packageDir, $key, $tag, $problems);
@@ -109,6 +132,16 @@ foreach ($packageDirs as $packageDir) {
 
 foreach ($unchanged as $line) {
     echo "[SAME] {$line}\n";
+}
+foreach ($exempted as $line) {
+    echo "[EXEMPT] {$line}\n";
+}
+foreach ($exemptions as $package => $tags) {
+    foreach (array_keys($tags) as $tag) {
+        if (!isset($used[$package][$tag])) {
+            echo "[UNUSED EXEMPTION] {$package} at {$tag}: nothing needed it; remove it from the exemptions\n";
+        }
+    }
 }
 foreach ($allowed as $line) {
     echo "[ALLOWED] {$line}\n";
@@ -363,13 +396,48 @@ function members(Stmt\ClassLike $class): array
 }
 
 /**
- * Roave's breaks for one package since $tag, as their descriptions.
+ * The operator's exemptions: package dir => tag => why. No file is none; a
+ * file that does not read as that shape fails, rather than exempting nothing
+ * or something nobody wrote.
+ *
+ * @return array<string, array<string, string>>
+ */
+function exemptions(string $file): array
+{
+    if (!file_exists($file)) {
+        return [];
+    }
+    $raw = file_get_contents($file);
+    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($decoded)) {
+        fail("{$file} is not a JSON object of exemptions.");
+    }
+    foreach ($decoded as $package => $tags) {
+        if (!is_string($package) || !is_array($tags) || $tags === []) {
+            fail("{$file}: \"{$package}\" must map tags to reasons.");
+        }
+        foreach ($tags as $tag => $why) {
+            if (!is_string($tag) || !is_string($why) || trim($why) === '') {
+                fail("{$file}: {$package} at {$tag} needs the reason it is exempt.");
+            }
+        }
+    }
+
+    /** @var array<string, array<string, string>> $decoded */
+    return $decoded;
+}
+
+/**
+ * Roave's breaks for one package since $tag, as their descriptions; null when
+ * roave did not check it, and $unchecked says how (the caller decides whether
+ * an exemption covers that).
  *
  * @param list<string> $problems
- * @return list<string>
+ * @return list<string>|null
  */
-function breaks(string $packageDir, string $tag, string $check, array &$problems): array
+function breaks(string $packageDir, string $tag, string $check, array &$problems, ?string &$unchecked = null): ?array
 {
+    $unchecked = null;
     $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=HEAD --format=json 2>/dev/null';
     $output = [];
     exec($command, $output, $status);
@@ -386,9 +454,9 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
         }
     }
     if (!in_array($status, [0, 3], true) || !is_array($report) || !is_array($report['errors'] ?? null)) {
-        $problems[] = basename($packageDir) . ": roave did not check it (exit {$status})";
+        $unchecked = "roave did not check it (exit {$status})";
 
-        return [];
+        return null;
     }
     if ($status === 3 && $report['errors'] === []) {
         // "Breaks found", and none listed: nothing here can be judged.
