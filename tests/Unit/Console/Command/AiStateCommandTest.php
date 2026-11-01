@@ -107,8 +107,25 @@ final class AiStateCommandTest extends TestCase
         $lines = array_values(array_filter(explode("\n", $tester->getDisplay()), static fn (string $l): bool => str_contains($l, 'Test quality')));
 
         self::assertCount(1, $lines);
-        self::assertStringEndsWith('7/10  current  0d ago, until 2099-01-02: check complete Make it right: 100% <error>x</error>', rtrim($lines[0]));
+        self::assertStringEndsWith('7/10  current  0d ago, until 2099-01-02 00:00 UTC: check complete Make it right: 100% <error>x</error>', rtrim($lines[0]));
         self::assertStringNotContainsString("\nMake it right: 100%", $tester->getDisplay());
+    }
+
+    #[Test]
+    public function the_expiry_shows_in_utc_and_evidence_drops_control_bytes(): void
+    {
+        $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "ok\e[2J\e[H done", '--expires' => '2099-01-01T00:30:00+14:00']);
+        self::assertSame('ok[2J[H done', (new ScoreStore())->all()['right.test-quality']->evidence, 'ESC is gone, the text stays');
+
+        $command = new AiStateCommand();
+        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore()]));
+        $tester = new CommandTester($command);
+        $tester->execute(['action' => 'show'], ['interactive' => true, 'decorated' => false]);
+
+        // 00:30 at +14:00 is 10:30 UTC the day before.
+        self::assertStringContainsString('until 2098-12-31 10:30 UTC: ok[2J[H done', $tester->getDisplay());
+        self::assertStringNotContainsString("\e", $tester->getDisplay());
+        self::assertSame([1, 'score needs --criterion, --points (a whole number, 0 to its weight) and --evidence (what sets them)'], [$this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "\e\x07"])[0], $this->state('score', ['--criterion' => 'right.test-quality', '--points' => '7', '--evidence' => "\e\x07"])[1]['error']]);
     }
 
     #[Test]

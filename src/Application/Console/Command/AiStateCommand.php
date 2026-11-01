@@ -81,14 +81,15 @@ final class AiStateCommand extends BaseCommand
             $output->writeln('');
             $output->writeln(sprintf('Make it %s: %s', $phase, $data['percent'] === null ? 'unknown' : $data['percent'] . '%'));
             foreach ($data['criteria'] as $c) {
-                // Evidence is text someone typed: one line, and never console markup.
-                $evidence = OutputFormatter::escape((string) preg_replace('/\s+/u', ' ', (string) $c['evidence']));
+                // Evidence is text someone typed: one line, no control bytes (an
+                // ESC sequence would drive the terminal), and never console markup.
+                $evidence = OutputFormatter::escape(self::oneLine((string) $c['evidence']));
                 $output->writeln(sprintf(
                     '  %-34s %5s  %-8s %s',
                     $c['title'],
                     ($c['points'] ?? '?') . '/' . $c['weight'],
                     $c['status'],
-                    $c['status'] === 'unscored' ? '' : sprintf('%dd ago, until %s: %s', $c['age_days'], substr((string) $c['expires_at'], 0, 10), $evidence),
+                    $c['status'] === 'unscored' ? '' : sprintf('%dd ago, until %s UTC: %s', $c['age_days'], (new \DateTimeImmutable((string) $c['expires_at']))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'), $evidence),
                 ));
             }
             foreach ($data['raise'] as $r) {
@@ -122,12 +123,21 @@ final class AiStateCommand extends BaseCommand
         $by = self::text($input, 'by');
 
         // Stored on one line: a line break in evidence would print as a line of its own.
-        $evidence = (string) preg_replace('/\s+/u', ' ', $evidence);
+        $evidence = self::oneLine($evidence);
+        if ($evidence === '') {
+            return $this->fail($output, 'score needs --criterion, --points (a whole number, 0 to its weight) and --evidence (what sets them)');
+        }
         $record = new ScoreRecord($criterion, (int) $points, $evidence, $by !== '' ? $by : 'agent', $now->format('c'), $expiresAt->format('c'));
         $this->scoreStore->record($record, FrameworkRubric::rubric());
         $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now);
 
         return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'line' => StateReport::line($report)]);
+    }
+
+    /** Whitespace collapsed to single spaces, control characters dropped. */
+    private static function oneLine(string $text): string
+    {
+        return trim((string) preg_replace('/\p{C}+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
     }
 
     private static function text(InputInterface $input, string $option): string
