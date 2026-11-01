@@ -31,6 +31,11 @@ final class BcGateTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
+    /** What roave says for core at 2026.11.01.0448, wrapped mid-word by the console, with Clock for ThemeValue. */
+    private const UNREADABLE_TAG = "No security vulnerability advisories found.\n\nIn IdentifierNotFound.php line 26:\n                \n  Roave\\BetterReflection\\Reflection\\ReflectionClass \"Semitexa\\Co  \n  re\\Clock\" could not be found in the located source  \n                \n\nroave-backwards-compatibility-check:assert-backwards-compatible [--from [FROM]] [--to TO]\n";
+
+    private const CLOCK_EXEMPT = ['semitexa-core' => ['2026.07.01.0900' => ['reason' => 'Clock moved to its own file', 'error' => 'Semitexa\\Core\\Clock" could not be found']]];
+
     private const BREAKS = ['Method Semitexa\\Core\\Clock#old() was removed', 'Method Semitexa\\Core\\Inner#gone() was removed', 'Method b() was added to interface Semitexa\\Core\\Port'];
 
     #[Test]
@@ -284,10 +289,30 @@ final class BcGateTest extends TestCase
     {
         $this->released();
 
+        // The console wrapped the class name mid-word; the match ignores that.
         self::assertSame([0, [
-            '[EXEMPT] semitexa-core (since 2026.07.01.0900): roave did not check it (exit 2) — exempt: Clock moved to its own file',
+            '[EXEMPT] semitexa-core (since 2026.07.01.0900): roave did not check it (exit 1): Roave\\BetterReflection\\Reflection\\ReflectionClass "Semitexa\\Co re\\Clock" could not be found in the located source — exempt: Clock moved to its own file',
             'No break on the @api surface.',
-        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+        ]], $this->gate(null, exemptions: self::CLOCK_EXEMPT, exit: 1, stderr: self::UNREADABLE_TAG));
+    }
+
+    /**
+     * Only the error it names: the container, composer or another roave error
+     * failing at that tag ends with the same exit 1, and is not what the
+     * operator exempted.
+     */
+    #[Test]
+    public function an_exemption_covers_only_the_error_it_names(): void
+    {
+        $this->released();
+
+        foreach (['service "app" is not running', 'Class "Semitexa\\Core\\Other" could not be found', ''] as $stderr) {
+            $said = $stderr === '' ? '' : ': ' . $stderr;
+            self::assertSame([1, [
+                '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+                '[UNCHECKED] semitexa-core: roave did not check it (exit 1)' . $said . ' (the exemption for this tag covers only "Semitexa\\Core\\Clock" could not be found")',
+            ]], $this->gate(null, exemptions: self::CLOCK_EXEMPT, exit: 1, stderr: $stderr), $stderr);
+        }
     }
 
     /** It forgives an unreadable tag, never a break roave did report; read, the tag needed no exemption. */
@@ -296,7 +321,7 @@ final class BcGateTest extends TestCase
     {
         $this->released();
 
-        [$status, $out] = $this->gate(self::BREAKS, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]);
+        [$status, $out] = $this->gate(self::BREAKS, exemptions: self::CLOCK_EXEMPT);
 
         self::assertSame(1, $status);
         self::assertSame([
@@ -308,12 +333,12 @@ final class BcGateTest extends TestCase
         self::assertSame([1, [
             '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
             '[UNCHECKED] semitexa-core: roave said it found breaks and listed none',
-        ]], $this->gate([], ['errors' => []], exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+        ]], $this->gate([], ['errors' => []], exemptions: self::CLOCK_EXEMPT));
         // Exit 3 is roave having checked: a report without its errors is not an unreadable tag.
         self::assertSame([1, [
             '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
             '[UNCHECKED] semitexa-core: roave checked it (exit 3), but its report could not be read',
-        ]], $this->gate([], ['no' => 'errors'], exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+        ]], $this->gate([], ['no' => 'errors'], exemptions: self::CLOCK_EXEMPT));
     }
 
     /** Another tag's or another package's exemption covers nothing here, and is shown for removal. */
@@ -325,11 +350,11 @@ final class BcGateTest extends TestCase
         self::assertSame([1, [
             '[UNUSED EXEMPTION] semitexa-core at 2026.01.01.0900: nothing needed it; remove it from the exemptions',
             '[UNCHECKED] semitexa-core: roave did not check it (exit 2)',
-        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.01.01.0900' => 'an older cut']]));
+        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.01.01.0900' => ['reason' => 'an older cut', 'error' => 'could not be found']]]));
         self::assertSame([1, [
             '[UNUSED EXEMPTION] semitexa-orm at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
             '[UNCHECKED] semitexa-core: roave did not check it (exit 2)',
-        ]], $this->gate(null, exemptions: ['semitexa-orm' => ['2026.07.01.0900' => 'another package']]));
+        ]], $this->gate(null, exemptions: ['semitexa-orm' => ['2026.07.01.0900' => ['reason' => 'another package', 'error' => 'could not be found']]]));
     }
 
     /** A checker that never ran is not a tag roave could not read: no exemption covers it. */
@@ -342,16 +367,13 @@ final class BcGateTest extends TestCase
             self::assertSame([1, [
                 '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
                 "[UNCHECKED] semitexa-core: the checker could not be run (exit {$exit}): sh: roave: not found",
-            ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']], exit: $exit, stderr: 'sh: roave: not found'));
+            ]], $this->gate(null, exemptions: self::CLOCK_EXEMPT, exit: $exit, stderr: 'sh: roave: not found'));
         }
-        // What roave says on stderr reaches the report: its console error block
-        // (roave's own output for core at 2026.11.01.0448, shortened), not the
-        // composer log before it or the usage line after it.
-        $stderr = "No security vulnerability advisories found.\n\nIn IdentifierNotFound.php line 26:\n                \n  Roave\\BetterReflection\\Reflection\\ReflectionClass \"Semitexa\\Core\\Clock\" could not be found  \n  in the located source  \n                \n\nroave-backwards-compatibility-check:assert-backwards-compatible [--from [FROM]] [--to TO]\n";
-        self::assertSame([0, [
-            '[EXEMPT] semitexa-core (since 2026.07.01.0900): roave did not check it (exit 1): Roave\\BetterReflection\\Reflection\\ReflectionClass "Semitexa\\Core\\Clock" could not be found in the located source — exempt: Clock moved to its own file',
-            'No break on the @api surface.',
-        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']], exit: 1, stderr: $stderr));
+        // Even when it prints the very error the exemption names.
+        self::assertSame([1, [
+            '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+            '[UNCHECKED] semitexa-core: the checker could not be run (exit 127): Roave\\BetterReflection\\Reflection\\ReflectionClass "Semitexa\\Co re\\Clock" could not be found in the located source',
+        ]], $this->gate(null, exemptions: self::CLOCK_EXEMPT, exit: 127, stderr: self::UNREADABLE_TAG));
     }
 
     /** An exemption without its reason exempts nothing, and says so. */
@@ -360,10 +382,14 @@ final class BcGateTest extends TestCase
     {
         $this->released();
 
-        [$status, $out] = $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => ' ']]);
+        [$status, $out] = $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => ['reason' => ' ', 'error' => 'x']]]);
 
         self::assertSame(1, $status);
-        self::assertSame([$this->root . '/exemptions.json: semitexa-core at 2026.07.01.0900 needs the reason it is exempt.'], $out);
+        self::assertSame([$this->root . '/exemptions.json: semitexa-core at 2026.07.01.0900 needs the reason it is exempt and the error roave gives there.'], $out);
+        // Nor without the error it covers, or as a bare reason.
+        foreach ([['reason' => 'moved'], ['reason' => 'moved', 'error' => ' '], 'moved'] as $exemption) {
+            self::assertSame([1, [$this->root . '/exemptions.json: semitexa-core at 2026.07.01.0900 needs the reason it is exempt and the error roave gives there.']], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => $exemption]]));
+        }
         // A file that is not package => tag => reason exempts nothing either.
         self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '{"semitexa-core": '));
         self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '["semitexa-core"]'));
@@ -424,7 +450,7 @@ final class BcGateTest extends TestCase
      * @param array<string, mixed>|null $report a raw report instead
      * @param int $exit the stand-in's exit code when it reports nothing ($breaks and $report null)
      * @param string $stderr what it prints to stderr then
-     * @param array<string, array<string, string>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
+     * @param array<string, array<string, mixed>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
      * @return array{int, list<string>}
      */
     private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = ''): array

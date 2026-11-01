@@ -29,8 +29,11 @@ fi
 if ! compose exec -T app test -x "$tool/vendor/bin/roave-backward-compatibility-check"; then
     # Composer refuses a --working-dir that does not exist yet.
     compose exec -T app mkdir -p "$tool"
-    compose exec -T app composer require --no-interaction --no-progress --working-dir="$tool" \
-        'roave/backward-compatibility-check:^8.27' >&2
+    if ! compose exec -T app composer require --no-interaction --no-progress --working-dir="$tool" \
+        'roave/backward-compatibility-check:^8.27' >&2; then
+        echo "composer could not install roave into $tool" >&2
+        exit 127
+    fi
 fi
 if ! compose exec -T app test -x "$tool/vendor/bin/roave-backward-compatibility-check"; then
     echo "roave is not installed in $tool" >&2

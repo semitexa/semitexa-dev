@@ -32,9 +32,12 @@ declare(strict_types=1);
  *
  * The one way past an unreadable tag is an exemption the operator decided,
  * declared in release-bc-gate-exemptions.json next to this script
- * (SEMITEXA_BC_EXEMPTIONS another file): `{"<package dir>": {"<tag>": "<why>"}}`.
- * It forgives only roave failing to read that package at that tag; breaks
- * roave does report are judged as always. It names one tag, so it stops
+ * (SEMITEXA_BC_EXEMPTIONS another file):
+ * `{"<package dir>": {"<tag>": {"reason": "<why>", "error": "<text>"}}}`.
+ * It forgives only roave failing to read that package at that tag with the
+ * error it names: its console error must contain that text. Any other failure
+ * there (the container, composer, a different roave error) fails as before,
+ * whatever its exit code; breaks roave does report are judged as always. It names one tag, so it stops
  * applying once the package is released again, and an entry no package used
  * is printed for removal.
  */
@@ -103,12 +106,15 @@ foreach ($packageDirs as $packageDir) {
     $unchecked = null;
     $descriptions = breaks($packageDir, $tag, $check, $problems, $unchecked);
     if ($descriptions === null) {
-        $why = $exemptions[basename($packageDir)][$tag] ?? null;
-        if ($why === null) {
-            $problems[] = basename($packageDir) . ': ' . $unchecked;
-        } else {
+        $exemption = $exemptions[basename($packageDir)][$tag] ?? null;
+        // Compared without whitespace: the console wraps roave's message at
+        // its width, mid-word ("…\\Tenant\\Lay" / "er\\ThemeValue" in the clone).
+        if ($exemption !== null && str_contains(unspaced((string) $unchecked), unspaced($exemption['error']))) {
             $used[basename($packageDir)][$tag] = true;
-            $exempted[] = basename($packageDir) . " (since {$tag}): {$unchecked} — exempt: {$why}";
+            $exempted[] = basename($packageDir) . " (since {$tag}): {$unchecked} — exempt: {$exemption['reason']}";
+        } else {
+            $problems[] = basename($packageDir) . ': ' . $unchecked
+                . ($exemption !== null ? " (the exemption for this tag covers only \"{$exemption['error']}\")" : '');
         }
         continue;
     }
@@ -427,12 +433,17 @@ function whatRoaveSaid(array $lines): string
     return $nonEmpty === [] ? '' : $nonEmpty[count($nonEmpty) - 1];
 }
 
+function unspaced(string $text): string
+{
+    return (string) preg_replace('/\s+/', '', $text);
+}
+
 /**
- * The operator's exemptions: package dir => tag => why. No file is none; a
+ * The operator's exemptions: package dir => tag => [reason, error]. No file is none; a
  * file that does not read as that shape fails, rather than exempting nothing
  * or something nobody wrote.
  *
- * @return array<string, array<string, string>>
+ * @return array<string, array<string, array{reason: string, error: string}>>
  */
 function exemptions(string $file): array
 {
@@ -449,14 +460,16 @@ function exemptions(string $file): array
         if (!is_string($package) || !is_array($tags) || $tags === []) {
             fail("{$file}: \"{$package}\" must map tags to reasons.");
         }
-        foreach ($tags as $tag => $why) {
-            if (!is_string($tag) || !is_string($why) || trim($why) === '') {
-                fail("{$file}: {$package} at {$tag} needs the reason it is exempt.");
+        foreach ($tags as $tag => $exemption) {
+            if (!is_string($tag) || !is_array($exemption)
+                || !is_string($exemption['reason'] ?? null) || trim($exemption['reason']) === ''
+                || !is_string($exemption['error'] ?? null) || trim($exemption['error']) === '') {
+                fail("{$file}: {$package} at {$tag} needs the reason it is exempt and the error roave gives there.");
             }
         }
     }
 
-    /** @var array<string, array<string, string>> $decoded */
+    /** @var array<string, array<string, array{reason: string, error: string}>> $decoded */
     return $decoded;
 }
 

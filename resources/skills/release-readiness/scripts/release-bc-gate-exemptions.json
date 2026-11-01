@@ -1,5 +1,8 @@
 {
     "semitexa-core": {
-        "2026.11.01.0448": "ThemeValue is declared in ThemeLayer.php at that tag, and roave locates classes by PSR-4. tk-core-themevalue-own-file moves it to its own file without changing the declaration; the release that ships the move passes once (operator decision 2026-11-01). Remove this entry after that release."
+        "2026.11.01.0448": {
+            "reason": "ThemeValue is declared in ThemeLayer.php at that tag, and roave locates classes by PSR-4. tk-core-themevalue-own-file moves it to its own file without changing the declaration; the release that ships the move passes once (operator decision 2026-11-01). Remove this entry after that release.",
+            "error": "Semitexa\\Core\\Tenant\\Layer\\ThemeValue\" could not be found"
+        }
     }
 }
