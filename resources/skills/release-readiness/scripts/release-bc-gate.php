@@ -68,6 +68,7 @@ if ($packageDirs === false) {
 $refused = [];
 $allowed = [];
 $problems = [];
+$unchanged = [];
 foreach ($packageDirs as $packageDir) {
     // No src at HEAD is no reason to skip: an @api package that deleted it broke everything it promised.
     if (!is_dir($packageDir . '/.git')) {
@@ -80,6 +81,13 @@ foreach ($packageDirs as $packageDir) {
     $surface = surfaceAt($packageDir, $tag, $problems);
     if ($surface === []) {
         continue; // nothing promised at that tag
+    }
+    if (sourceUnchanged($packageDir, $tag, $problems)) {
+        // Nothing to compare, so nothing can have broken: roave is not run,
+        // and a tag it cannot read (core 2026.10.31.0849 declares ThemeValue
+        // in ThemeLayer.php) does not fail a cut that did not touch the code.
+        $unchanged[] = basename($packageDir) . ": no source change since {$tag}";
+        continue;
     }
     foreach (breaks($packageDir, $tag, $check, $problems) as $description) {
         // By reference: what shippedIn() cannot read must reach the exit code.
@@ -99,6 +107,9 @@ foreach ($packageDirs as $packageDir) {
     }
 }
 
+foreach ($unchanged as $line) {
+    echo "[SAME] {$line}\n";
+}
 foreach ($allowed as $line) {
     echo "[ALLOWED] {$line}\n";
 }
@@ -141,6 +152,33 @@ function git(string $dir, array $arguments, ?int &$status = null): string
     exec('git -C ' . escapeshellarg($dir) . ' -c core.quotePath=false ' . implode(' ', array_map('escapeshellarg', $arguments)) . ' 2>/dev/null', $output, $status);
 
     return implode("\n", $output);
+}
+
+/**
+ * Whether src and composer.json's autoload are exactly as they were at $tag:
+ * the only things a class's API can come from. A comparison git cannot make
+ * is recorded and counts as changed, so roave still runs.
+ *
+ * @param list<string> $problems
+ */
+function sourceUnchanged(string $packageDir, string $tag, array &$problems): bool
+{
+    git($packageDir, ['diff', '--quiet', $tag, 'HEAD', '--', 'src'], $status);
+    if ($status === 1) {
+        return false;
+    }
+    if ($status !== 0) {
+        $problems[] = basename($packageDir) . ": src could not be compared with {$tag}";
+
+        return false;
+    }
+    $before = json_decode(git($packageDir, ['show', $tag . ':composer.json'], $shown), true);
+    $now = json_decode(git($packageDir, ['show', 'HEAD:composer.json'], $current), true);
+    if ($shown !== 0 || $current !== 0 || !is_array($before) || !is_array($now)) {
+        return false;
+    }
+
+    return ($before['autoload'] ?? null) === ($now['autoload'] ?? null);
 }
 
 /**
@@ -336,7 +374,17 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
     $output = [];
     exec($command, $output, $status);
     // 0: no break; 3: breaks found. Anything else is roave failing to check.
-    $report = json_decode(implode("\n", $output), true);
+    // The report is the last line that reads as JSON: roave checks out the
+    // old tag with composer, which prints "No security vulnerability
+    // advisories found." to stdout first, and the whole output never decoded.
+    $report = null;
+    foreach (array_reverse($output) as $line) {
+        $decoded = json_decode($line, true);
+        if (is_array($decoded)) {
+            $report = $decoded;
+            break;
+        }
+    }
     if (!in_array($status, [0, 3], true) || !is_array($report) || !is_array($report['errors'] ?? null)) {
         $problems[] = basename($packageDir) . ": roave did not check it (exit {$status})";
 

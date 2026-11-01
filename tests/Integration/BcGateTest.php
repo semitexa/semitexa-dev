@@ -184,7 +184,8 @@ final class BcGateTest extends TestCase
         file_put_contents($dir . '/src/Clock.php', "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Clock\n{\n    /** @deprecated 2026.07.01 Use now() instead. */\n    public function old(): int { return 1; }\n}\n");
         $this->git($dir, ['add -A', 'commit -q -m released']);
         $this->git($dir, ['tag -a -m cut 2026.07.01.0900'], '2026-07-01T09:00:00Z');
-        $this->git($dir, ['commit -q --allow-empty -m after']);
+        file_put_contents($dir . '/src/Later.php', "<?php\nnamespace Semitexa\\Core;\nfinal class Later {}\n");
+        $this->git($dir, ['add -A', 'commit -q -m after']);
 
         [$status, $out] = $this->gate([self::BREAKS[0]]);
 
@@ -225,6 +226,41 @@ final class BcGateTest extends TestCase
         self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Class Semitexa\\Core\\Clock has been deleted — @api and never deprecated']], [$status, $out]);
     }
 
+    /**
+     * Nothing to compare, nothing broken: roave is not run (this stand-in would
+     * fail if it were), so a tag roave cannot read does not fail an untouched
+     * package. core 2026.10.31.0849 declares ThemeValue in ThemeLayer.php.
+     */
+    #[Test]
+    public function a_package_whose_source_did_not_change_since_its_tag_is_not_checked(): void
+    {
+        $this->released(changedSince: false);
+
+        self::assertSame([0, [
+            '[SAME] semitexa-core: no source change since 2026.07.01.0900',
+            'No break on the @api surface.',
+        ]], $this->gate(null));
+    }
+
+    /**
+     * Roave checks out the old tag with composer, which prints "No security
+     * vulnerability advisories found." to stdout before the report: read as a
+     * whole the output never decoded, and every package came back unchecked.
+     */
+    #[Test]
+    public function the_report_is_read_past_what_composer_prints_before_it(): void
+    {
+        $this->released();
+
+        [$status, $out] = $this->gate(self::BREAKS, null, "No security vulnerability advisories found.\nNo security vulnerability advisories found.\n");
+
+        self::assertSame(1, $status);
+        self::assertSame([
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated',
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method b() was added to interface Semitexa\\Core\\Port — @api and never deprecated',
+        ], $out);
+    }
+
     /** "No break" read from a roave that could not check, or from a break it could not read, would pass a break. */
     #[Test]
     public function roave_that_cannot_check_or_be_read_fails_the_gate(): void
@@ -241,11 +277,12 @@ final class BcGateTest extends TestCase
      * A package tagged 2026.07.01.0900 with Clock (old() deprecated or not),
      * Inner and Port; with $deprecatedLater the deprecation is added after that
      * tag and shipped in 2026.10.20.0900 instead; $laterMethod is a method added
-     * in that later release.
+     * in that later release; with $changedSince false nothing under src or in
+     * composer.json's autoload moves after the last tag.
      *
      * @param array<string, string> $extra more files at the first tag
      */
-    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = '', string $classDoc = ''): void
+    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = '', string $classDoc = '', bool $changedSince = true): void
     {
         $dir = $this->root . '/packages/semitexa-core';
         $mark = $api ? ($classDoc !== '' ? "/**\n * @api\n * {$classDoc}\n */" : '/** @api */') : '';
@@ -264,7 +301,13 @@ final class BcGateTest extends TestCase
             $this->git($dir, ['commit -q -am deprecate']);
             $this->git($dir, ['tag -a -m cut 2026.10.20.0900'], '2026-10-20T09:00:00Z');
         }
-        $this->git($dir, ['commit -q --allow-empty -m after']);
+        if ($changedSince) {
+            // The code moved on since the tag: what roave is there to judge.
+            file_put_contents($dir . '/src/Later.php', "<?php\nnamespace Semitexa\\Core;\nfinal class Later {}\n");
+            $this->git($dir, ['add -A', 'commit -q -m after']);
+        } else {
+            $this->git($dir, ['commit -q --allow-empty -m after']);
+        }
     }
 
     /** @param list<string> $commands */
@@ -279,14 +322,15 @@ final class BcGateTest extends TestCase
 
     /**
      * @param list<string>|null $breaks what the stand-in roave reports; null: it fails (exit 2)
+     * @param string $before what it prints to stdout ahead of the report
      * @param array<string, mixed>|null $report a raw report instead
      * @return array{int, list<string>}
      */
-    private function gate(?array $breaks, ?array $report = null): array
+    private function gate(?array $breaks, ?array $report = null, string $before = ''): array
     {
         $fake = $this->root . '/roave';
         $json = json_encode($report ?? ['errors' => array_map(static fn (string $d): array => ['description' => $d], $breaks ?? [])]);
-        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nexit 2\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg((string) $json) . "\nexit 3\n");
+        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nexit 2\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
         chmod($fake, 0o755);
         $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
         self::assertIsString($loader);
