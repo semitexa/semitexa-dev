@@ -332,6 +332,28 @@ final class BcGateTest extends TestCase
         ]], $this->gate(null, exemptions: ['semitexa-orm' => ['2026.07.01.0900' => 'another package']]));
     }
 
+    /** A checker that never ran is not a tag roave could not read: no exemption covers it. */
+    #[Test]
+    public function an_exemption_does_not_cover_a_checker_that_could_not_run(): void
+    {
+        $this->released();
+
+        foreach ([125, 126, 127] as $exit) {
+            self::assertSame([1, [
+                '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+                "[UNCHECKED] semitexa-core: the checker could not be run (exit {$exit}): sh: roave: not found",
+            ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']], exit: $exit, stderr: 'sh: roave: not found'));
+        }
+        // What roave says on stderr reaches the report: its console error block
+        // (roave's own output for core at 2026.11.01.0448, shortened), not the
+        // composer log before it or the usage line after it.
+        $stderr = "No security vulnerability advisories found.\n\nIn IdentifierNotFound.php line 26:\n                \n  Roave\\BetterReflection\\Reflection\\ReflectionClass \"Semitexa\\Core\\Clock\" could not be found  \n  in the located source  \n                \n\nroave-backwards-compatibility-check:assert-backwards-compatible [--from [FROM]] [--to TO]\n";
+        self::assertSame([0, [
+            '[EXEMPT] semitexa-core (since 2026.07.01.0900): roave did not check it (exit 1): Roave\\BetterReflection\\Reflection\\ReflectionClass "Semitexa\\Core\\Clock" could not be found in the located source — exempt: Clock moved to its own file',
+            'No break on the @api surface.',
+        ]], $this->gate(null, exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']], exit: 1, stderr: $stderr));
+    }
+
     /** An exemption without its reason exempts nothing, and says so. */
     #[Test]
     public function an_exemption_without_a_reason_fails_the_gate(): void
@@ -400,16 +422,18 @@ final class BcGateTest extends TestCase
      * @param list<string>|null $breaks what the stand-in roave reports; null: it fails (exit 2)
      * @param string $before what it prints to stdout ahead of the report
      * @param array<string, mixed>|null $report a raw report instead
+     * @param int $exit the stand-in's exit code when it reports nothing ($breaks and $report null)
+     * @param string $stderr what it prints to stderr then
      * @param array<string, array<string, string>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
      * @return array{int, list<string>}
      */
-    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = []): array
+    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = ''): array
     {
         $exemptionsFile = $this->root . '/exemptions.json';
         file_put_contents($exemptionsFile, is_string($exemptions) ? $exemptions : ($exemptions === [] ? '{}' : (string) json_encode($exemptions)));
         $fake = $this->root . '/roave';
         $json = json_encode($report ?? ['errors' => array_map(static fn (string $d): array => ['description' => $d], $breaks ?? [])]);
-        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nexit 2\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
+        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nprintf '%s' " . escapeshellarg($stderr) . " >&2\nexit {$exit}\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
         chmod($fake, 0o755);
         $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
         self::assertIsString($loader);

@@ -396,6 +396,38 @@ function members(Stmt\ClassLike $class): array
 }
 
 /**
+ * Why roave stopped, from its stderr: the console's error block (the lines
+ * after "In <File>.php line <n>:", up to the usage line that follows a blank
+ * one), or else the last line. Composer's install log comes before it.
+ *
+ * @param list<string> $lines
+ */
+function whatRoaveSaid(array $lines): string
+{
+    $lines = array_map('trim', $lines);
+    $block = [];
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^In \S+ line \d+:$/', $line) === 1) {
+            $block = [];
+            for ($j = $i + 1; $j < count($lines); $j++) {
+                if ($lines[$j] === '' && $block !== []) {
+                    break;
+                }
+                if ($lines[$j] !== '') {
+                    $block[] = $lines[$j];
+                }
+            }
+        }
+    }
+    if ($block !== []) {
+        return implode(' ', $block);
+    }
+    $nonEmpty = array_values(array_filter($lines, static fn (string $line): bool => $line !== ''));
+
+    return $nonEmpty === [] ? '' : $nonEmpty[count($nonEmpty) - 1];
+}
+
+/**
  * The operator's exemptions: package dir => tag => why. No file is none; a
  * file that does not read as that shape fails, rather than exempting nothing
  * or something nobody wrote.
@@ -439,9 +471,19 @@ function exemptions(string $file): array
 function breaks(string $packageDir, string $tag, string $check, array &$problems, ?string &$unchecked = null): ?array
 {
     $unchecked = null;
-    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=HEAD --format=json 2>/dev/null';
+    // stderr kept apart, so its last line can say why roave stopped.
+    $errors = tempnam(sys_get_temp_dir(), 'semitexa-bc-');
+    if ($errors === false) {
+        $problems[] = basename($packageDir) . ': no temporary file for what roave prints to stderr';
+
+        return [];
+    }
+    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=HEAD --format=json 2>' . escapeshellarg($errors);
     $output = [];
     exec($command, $output, $status);
+    $said = whatRoaveSaid(file($errors) ?: []);
+    @unlink($errors);
+    $said = $said === '' ? '' : ': ' . $said;
     // 0: no break; 3: breaks found. Anything else is roave failing to check.
     // The report is the last line that reads as JSON: roave checks out the
     // old tag with composer, which prints "No security vulnerability
@@ -454,8 +496,15 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
             break;
         }
     }
+    if (in_array($status, [125, 126, 127], true)) {
+        // The shell or docker could not run the checker at all: not roave
+        // failing to read a tag, so no exemption may cover it.
+        $problems[] = basename($packageDir) . ": the checker could not be run (exit {$status}){$said}";
+
+        return [];
+    }
     if (!in_array($status, [0, 3], true)) {
-        $unchecked = "roave did not check it (exit {$status})";
+        $unchecked = "roave did not check it (exit {$status}){$said}";
 
         return null;
     }
