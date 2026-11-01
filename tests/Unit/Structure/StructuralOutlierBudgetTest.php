@@ -121,7 +121,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 1092 -> 1144 on 2026-10-30, recorded: docblocks only. The query
         // builder joins the @api surface (stability contract), one mark per
         // promised method; no method or code line was added.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1144],
+        // 57/1144 -> 58/1177 on 2026-11-01 (orm-gap-3-locking-read): forUpdate(),
+        // the locking read a check-then-book needs. Its rules (transaction-aware
+        // adapter, inside run(), FOR UPDATE where the server locks rows, no
+        // aggregates) live in Query/LockingRead; here only the flag and the
+        // calls into it, which need the private SQL builders.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [58, 1177],
         // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
         // (fail fast while the database is down) is wired through here, and
         // shutdown() now resets it so the next connect is a real attempt.

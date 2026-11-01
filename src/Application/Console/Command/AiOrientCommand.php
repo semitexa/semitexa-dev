@@ -14,6 +14,8 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Quality\QualityAdvisor;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
+use Semitexa\Dev\Application\Service\Ai\Charter\OwnerQuestions;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceHeader;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
@@ -55,6 +57,9 @@ final class AiOrientCommand extends BaseCommand
     #[InjectAsReadonly]
     protected TraceStore $traceStore;
 
+    #[InjectAsReadonly]
+    protected CharterStore $charterStore;
+
     public function __construct()
     {
         parent::__construct('ai:orient');
@@ -87,6 +92,8 @@ final class AiOrientCommand extends BaseCommand
             [$qualityNext, $qualityError] = [[], $e->getMessage()];
         }
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
+        $ownerQuestions = OwnerQuestions::of($this->charterStore);
+        $hints         = OwnerQuestions::lead($hints, $ownerQuestions);
 
         $workingNow = $this->workingNow();
         if ($workingNow['you'] === null || !($workingNow['you']['joined'] ?? true)) {
@@ -128,6 +135,8 @@ final class AiOrientCommand extends BaseCommand
             // The improvement loop's entry point: what the quality ledger says to
             // make better next. Read from the recorded baseline, measured nothing.
             'quality_next'   => $qualityNext,
+            // What Semitexa asks the owner next (ep-project-charter), and how.
+            'owner_questions' => $ownerQuestions,
             'quality_error'  => $qualityError,
             'suggest_next'   => $hints['summary'],
             'next_command'   => $hints['commands'],
@@ -424,6 +433,7 @@ final class AiOrientCommand extends BaseCommand
         return null;
     }
 
+    /** @return array{summary: string, commands: list<array{cmd: string, args: list<string>, why: string}>} */
     private function suggestNext(array $git, ?string $activeEpicId, array $inProgress, array $blocked, array $epics): array
     {
         $cmds = [];
