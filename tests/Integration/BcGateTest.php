@@ -271,6 +271,7 @@ final class BcGateTest extends TestCase
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['nope' => 1]]]));
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave reported break #0 without a description']], $this->gate([], ['errors' => [['description' => '  ']]]));
         self::assertSame([1, ['[UNCHECKED] semitexa-core: roave said it found breaks and listed none']], $this->gate([], ['errors' => []]));
+        self::assertSame([1, ['[UNCHECKED] semitexa-core: roave checked it (exit 3), but its report could not be read']], $this->gate([], ['no' => 'errors']));
     }
 
     /**
@@ -308,6 +309,11 @@ final class BcGateTest extends TestCase
             '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
             '[UNCHECKED] semitexa-core: roave said it found breaks and listed none',
         ]], $this->gate([], ['errors' => []], exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
+        // Exit 3 is roave having checked: a report without its errors is not an unreadable tag.
+        self::assertSame([1, [
+            '[UNUSED EXEMPTION] semitexa-core at 2026.07.01.0900: nothing needed it; remove it from the exemptions',
+            '[UNCHECKED] semitexa-core: roave checked it (exit 3), but its report could not be read',
+        ]], $this->gate([], ['no' => 'errors'], exemptions: ['semitexa-core' => ['2026.07.01.0900' => 'Clock moved to its own file']]));
     }
 
     /** Another tag's or another package's exemption covers nothing here, and is shown for removal. */
@@ -338,7 +344,8 @@ final class BcGateTest extends TestCase
         self::assertSame([$this->root . '/exemptions.json: semitexa-core at 2026.07.01.0900 needs the reason it is exempt.'], $out);
         // A file that is not package => tag => reason exempts nothing either.
         self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '{"semitexa-core": '));
-        self::assertSame([1, [$this->root . '/exemptions.json: "0" must map tags to reasons.']], $this->gate(null, exemptions: '["semitexa-core"]'));
+        self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '["semitexa-core"]'));
+        self::assertSame([1, [$this->root . '/exemptions.json is not a JSON object of exemptions.']], $this->gate(null, exemptions: '[]'));
         self::assertSame([1, [$this->root . '/exemptions.json: "semitexa-core" must map tags to reasons.']], $this->gate(null, exemptions: '{"semitexa-core": {}}'));
     }
 

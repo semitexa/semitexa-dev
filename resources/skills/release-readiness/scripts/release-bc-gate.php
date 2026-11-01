@@ -408,7 +408,8 @@ function exemptions(string $file): array
         return [];
     }
     $raw = file_get_contents($file);
-    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+    // An object, not a list: `[]` decodes to the same empty array as `{}`.
+    $decoded = is_string($raw) && json_decode($raw) instanceof \stdClass ? json_decode($raw, true) : null;
     if (!is_array($decoded)) {
         fail("{$file} is not a JSON object of exemptions.");
     }
@@ -453,10 +454,17 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
             break;
         }
     }
-    if (!in_array($status, [0, 3], true) || !is_array($report) || !is_array($report['errors'] ?? null)) {
+    if (!in_array($status, [0, 3], true)) {
         $unchecked = "roave did not check it (exit {$status})";
 
         return null;
+    }
+    if (!is_array($report) || !is_array($report['errors'] ?? null)) {
+        // Roave did check (0 or 3) and its answer is unreadable: not a tag it
+        // could not read, so no exemption covers it.
+        $problems[] = basename($packageDir) . ": roave checked it (exit {$status}), but its report could not be read";
+
+        return [];
     }
     if ($status === 3 && $report['errors'] === []) {
         // "Breaks found", and none listed: nothing here can be judged.
