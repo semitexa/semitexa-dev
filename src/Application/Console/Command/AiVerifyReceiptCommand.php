@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\CommitCoverage;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -35,6 +36,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
             ->addArgument('id', InputArgument::OPTIONAL, 'Receipt id (rcpt-...); default: the latest run')
             ->addOption('unread', null, InputOption::VALUE_NONE, 'List the receipts nobody has checked, failed runs first: what a subagent ran and the parent never looked at')
             ->addOption('hours', null, InputOption::VALUE_REQUIRED, 'With --unread: only runs from the last N hours', '24')
+            ->addOption('commit', null, InputOption::VALUE_REQUIRED, 'Also hold the claim against a commit (HEAD, a sha) in each repository the receipt touches: every file it adds or changes must be one the run checked, with those bytes')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
     }
 
@@ -50,9 +52,19 @@ final class AiVerifyReceiptCommand extends BaseCommand
             $receipts->markRead($check['id']);
         }
         $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
+        $revision = $input->getOption('commit');
+        $commit = null;
+        if ($check['found'] && is_string($revision) && $revision !== '') {
+            $tree = [];
+            foreach ((array) ($check['receipt']['tree'] ?? []) as $path => $hash) {
+                $tree[(string) $path] = is_string($hash) ? $hash : null;
+            }
+            $commit = (new CommitCoverage($this->getProjectRoot()))->of($tree, $revision);
+            $holds = $holds && $commit['commits'] !== [] && $commit['unresolved'] === [] && $commit['unchecked'] === [] && $commit['differs'] === [];
+        }
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipt-check/v1', 'holds' => $holds] + $check, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+            $output->writeln((string) json_encode(['artifact' => 'semitexa-dev.verify-receipt-check/v1', 'holds' => $holds, 'commit' => $commit] + $check, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return $holds ? self::SUCCESS : self::FAILURE;
         }
@@ -70,10 +82,19 @@ final class AiVerifyReceiptCommand extends BaseCommand
         if ($check['changed_during_run'] !== []) {
             $output->writeln(sprintf('  run:     %d file(s) changed WHILE the run checked them: %s', count($check['changed_during_run']), implode(', ', $check['changed_during_run'])));
         }
+        if ($commit !== null) {
+            $output->writeln(sprintf('  commit:  %s → %s', $commit['revision'], $commit['commits'] === [] ? 'no commit in the receipt\'s repositories' : implode(', ', array_map(static fn (string $repo, string $sha): string => $repo . '@' . substr($sha, 0, 7), array_keys($commit['commits']), $commit['commits']))));
+            foreach (['unresolved' => 'names no commit in', 'unchecked' => 'committed, never checked:', 'differs' => 'committed with other bytes than the run checked:'] as $key => $what) {
+                if ($commit[$key] !== []) {
+                    $output->writeln(sprintf('           %s %s', $what, implode(', ', $commit[$key])));
+                }
+            }
+        }
         if ($check['not_checked'] !== []) {
             $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories no check read: %s', count($check['not_checked']), implode(', ', $check['not_checked'])));
         }
         $output->writeln(match (true) {
+            !$holds && $commit !== null && ($commit['unchecked'] !== [] || $commit['differs'] !== [] || $commit['unresolved'] !== [] || $commit['commits'] === []) => 'The claim does not cover commit ' . $commit['revision'] . ': verify what it carries.',
             !$holds => 'The claim does not hold for the tree in front of you: re-run ai:verify.',
             $check['not_checked'] !== [] => sprintf('The claim holds for the %d file(s) the run checked, not for the change(s) beside them.', count((array) ($check['receipt']['tree'] ?? []))),
             default => 'The claim holds for the tree in front of you.',

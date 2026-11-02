@@ -116,7 +116,7 @@ final readonly class UnselectedChanges
      *
      * @param list<string> $repositories
      */
-    private static function repositoryOf(string $path, array $repositories): ?string
+    public static function repositoryOf(string $path, array $repositories): ?string
     {
         $path = ltrim($path, '/');
         $best = null;
