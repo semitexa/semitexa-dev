@@ -523,12 +523,6 @@ parameters:
 			path: packages/semitexa-core/src/Locale/DefaultLocaleContext.php
 
 		-
-			message: '#^Call to function method_exists\(\) with ''Swoole\\\\Event'' and ''defer'' will always evaluate to true\.$#'
-			identifier: function.alreadyNarrowedType
-			count: 1
-			path: packages/semitexa-core/src/Log/AsyncJsonLogger.php
-
-		-
 			message: '#^Function is_subclass_of\(\) is a runtime reflection concept that might not work in PHPStan because it uses fully static reflection engine\. Use objects retrieved from ReflectionProvider instead\.$#'
 			identifier: phpstanApi.runtimeReflection
 			count: 1
@@ -1183,12 +1177,6 @@ parameters:
 			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
 
 		-
-			message: '#^Comparison operation "\<" between int\<80400, 80599\> and 80400 is always false\.$#'
-			identifier: smaller.alwaysFalse
-			count: 1
-			path: packages/semitexa-core/src/Server/SwooleBootstrap.php
-
-		-
 			message: '#^Parameter \#2 \$paths of method Composer\\Autoload\\ClassLoader\:\:addPsr4\(\) expects list\<string\>\|string, mixed given\.$#'
 			identifier: argument.type
 			count: 1
@@ -1319,24 +1307,6 @@ parameters:
 			identifier: encapsedStringPart.nonString
 			count: 1
 			path: packages/semitexa-orm/src/Adapter/MysqlAdapter.php
-
-		-
-			message: '#^Cannot cast mixed to float\.$#'
-			identifier: cast.double
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
-
-		-
-			message: '#^Cannot cast mixed to int\.$#'
-			identifier: cast.int
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
-
-		-
-			message: '#^Cannot cast mixed to string\.$#'
-			identifier: cast.string
-			count: 6
-			path: packages/semitexa-orm/src/Application/Service/Hydration/TypeCaster.php
 
 		-
 			message: '#^Cannot cast mixed to string\.$#'
@@ -1603,60 +1573,6 @@ parameters:
 			path: packages/semitexa-orm/src/Application/Service/Schema/SchemaComparator.php
 
 		-
-			message: '#^Access to property \$description on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$isDestructive on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$sql on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 2
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$tableName on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Access to property \$type on an unknown class Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Binary operation "\." between ''\-\- '' and mixed results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Binary operation "\." between mixed and '';'' results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Cannot access property \$value on mixed\.$#'
-			identifier: property.nonObject
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
-			message: '#^Parameter \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) has invalid type Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\.$#'
-			identifier: class.notFound
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/AuditLogger.php
-
-		-
 			message: '#^Parameter \#1 \$objectOrClass of class ReflectionClass constructor expects class\-string\<T of object\>\|T of object, string given\.$#'
 			identifier: argument.type
 			count: 1
@@ -1671,12 +1587,6 @@ parameters:
 		-
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
-			count: 1
-			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
-
-		-
-			message: '#^Parameter \#1 \$operations of method Semitexa\\Orm\\Application\\Service\\Sync\\AuditLogger\:\:log\(\) expects array\<Semitexa\\Orm\\Application\\Service\\Sync\\DdlOperation\>, list\<Semitexa\\Orm\\Domain\\Model\\DdlOperation\> given\.$#'
-			identifier: argument.type
 			count: 1
 			path: packages/semitexa-orm/src/Application/Service/Sync/SyncEngine.php
 
@@ -1751,90 +1661,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: packages/semitexa-orm/src/OrmManager.php
-
-		-
-			message: '#^Cannot use array destructuring on mixed\.$#'
-			identifier: offsetAccess.nonArray
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 3
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/DeleteQuery.php
-
-		-
-			message: '#^Cannot use array destructuring on mixed\.$#'
-			identifier: offsetAccess.nonArray
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Parameter \#2 \$array of function implode expects array, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$paramFrom \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$paramTo \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''connector''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''operator''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 3
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
-
-		-
-			message: '#^Part \$where\[''param''\] \(mixed\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 1
-			path: packages/semitexa-orm/src/Query/UpdateQuery.php
 
 		-
 			message: '#^Method Semitexa\\Orm\\Query\\WhereCapableInterface\:\:whereIn\(\) has parameter \$values with no value type specified in iterable type array\.$#'
