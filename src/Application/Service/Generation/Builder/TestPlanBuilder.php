@@ -108,7 +108,8 @@ final class TestPlanBuilder
         // An existing handler is run only when it injects nothing and handle()
         // takes the resource this test would pass (make:handler --resource can
         // name another).
-        $runs = $freshHandler || ($injected === [] && self::handles($handlerFqcn, $resourceFqcn));
+        $payloadFqcn = "{$moduleNs}\\Application\\Payload\\Request\\{$payloadClass}";
+        $runs = $freshHandler || ($injected === [] && self::handles($handlerFqcn, $payloadFqcn, $resourceFqcn));
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
@@ -174,16 +175,24 @@ final class TestPlanBuilder
         return array_values(array_unique($names));
     }
 
-    /** Whether handle()'s resource parameter is the class this test would pass. */
-    private static function handles(string $handler, string $resource): bool
+    /**
+     * Whether handle() takes the payload and the resource this test would pass:
+     * make:handler --payload and --resource can name others than --name does.
+     */
+    private static function handles(string $handler, string $payload, string $resource): bool
     {
         if (!class_exists($handler) || !method_exists($handler, 'handle')) {
             return false;
         }
-        $parameter = (new \ReflectionMethod($handler, 'handle'))->getParameters()[1] ?? null;
-        $type = $parameter?->getType();
+        $parameters = (new \ReflectionMethod($handler, 'handle'))->getParameters();
+        foreach ([0 => $payload, 1 => $resource] as $position => $class) {
+            $type = ($parameters[$position] ?? null)?->getType();
+            if (!$type instanceof \ReflectionNamedType || ltrim($type->getName(), '\\') !== $class) {
+                return false;
+            }
+        }
 
-        return $type instanceof \ReflectionNamedType && ltrim($type->getName(), '\\') === $resource;
+        return true;
     }
 
     private function snake(string $studly): string
