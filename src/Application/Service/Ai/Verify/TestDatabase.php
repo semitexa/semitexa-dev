@@ -76,7 +76,10 @@ final class TestDatabase
         $env = ['DB_DATABASE=' . $test, 'APP_ENV=test'];
 
         $console = $this->projectRoot . '/vendor/bin/semitexa';
-        if ($this->application->has('orm:sync') && is_file($console)) {
+        if ($this->application->has('orm:sync') && !is_file($console)) {
+            return $this->prepared = "the ORM is installed but {$console} is missing, so the test schema cannot be synced; PHPUnit does not run on a stale one.";
+        }
+        if ($this->application->has('orm:sync')) {
             $sync = $this->processRunner->run(['env', ...$env, PHP_BINARY, $console, 'orm:sync'], $this->projectRoot);
             if ($sync['exit'] !== 0 || isset($sync['failure'])) {
                 return $this->prepared = sprintf(

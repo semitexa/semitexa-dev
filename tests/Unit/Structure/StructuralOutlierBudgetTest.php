@@ -354,11 +354,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // a file staged for deletion and written again, and keeping only the
         // deletion made the planner skip a file sitting right there.
         // METHOD COUNT UNCHANGED at 19.
-        // 738 -> 742, 2026-11-02: a pass over `--files=A` held "for the tree in
+        // 738 -> 745, 2026-11-02: a pass over `--files=A` held "for the tree in
         // front of you" while B beside it was never read. The rule and the
         // wording live in UnselectedChanges; the command gains its one call
-        // and a parameter to the NDJSON writer. METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 742],
+        // and a parameter to the envelope and NDJSON writers, typed (review of
+        // dev#187: the untyped one failed phpstan's argument.type). METHOD COUNT UNCHANGED at 19.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 745],
         // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
         // review of dev#84 and the ratchet said so. The addition is a refusal:
         // `--preview` with `--expect-field` resolved the target, returned

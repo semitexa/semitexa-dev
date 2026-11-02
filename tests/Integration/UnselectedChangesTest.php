@@ -65,12 +65,26 @@ final class UnselectedChangesTest extends TestCase
         );
     }
 
+    /** A directory argument asks about structure; nothing under it is read, so nothing under it is covered. */
     #[Test]
-    public function a_selected_directory_covers_what_is_under_it(): void
+    public function a_selected_directory_covers_nothing_under_it(): void
     {
         self::assertSame(
-            [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'], ['path' => 'packages/semitexa-one/src/Selected.php', 'status' => 'A']],
+            [
+                ['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'],
+                ['path' => 'packages/semitexa-one/src/Deep/Inner.php', 'status' => 'A'],
+                ['path' => 'packages/semitexa-one/src/Selected.php', 'status' => 'A'],
+            ],
             UnselectedChanges::beside($this->root, ['packages/semitexa-one/src/Deep/']),
+        );
+    }
+
+    #[Test]
+    public function a_path_spelled_with_dot_or_doubled_slashes_is_the_same_path(): void
+    {
+        self::assertSame(
+            [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'], ['path' => 'packages/semitexa-one/src/Deep/Inner.php', 'status' => 'A']],
+            UnselectedChanges::beside($this->root, ['./packages//semitexa-one/src/Selected.php']),
         );
     }
 
@@ -87,7 +101,7 @@ final class UnselectedChangesTest extends TestCase
     {
         $gap = UnselectedChanges::annotate(['headline' => '3 checks over 1 changed file', 'unchecked_files' => []], [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A']]);
 
-        self::assertSame('3 checks over 1 changed file; 1 other uncommitted change in the same repository was not selected, so no check read it: packages/semitexa-one/src/Beside.php', $gap['headline']);
+        self::assertSame('3 checks over 1 changed file; 1 other uncommitted change in the same repository was not selected, so this verdict does not cover it: packages/semitexa-one/src/Beside.php', $gap['headline']);
         self::assertSame([['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A']], $gap['unselected_changes']);
         self::assertSame('x', UnselectedChanges::annotate(['headline' => 'x', 'unchecked_files' => []], [])['headline'], 'nothing left out, nothing added');
     }

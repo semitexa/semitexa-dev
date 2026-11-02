@@ -103,6 +103,21 @@ final class CommitCoverageTest extends TestCase
         self::assertSame([], $coverage['unchecked']);
     }
 
+    /** A merge's plain listing is empty; against its first parent it is what the merge brought. */
+    #[Test]
+    public function a_merge_commit_is_held_to_what_it_brings_against_its_first_parent(): void
+    {
+        $this->git('checkout', '-q', '-b', 'side');
+        $this->write('src/FromSide.php', "<?php // side\n");
+        $this->commit('side');
+        $this->git('checkout', '-q', '-');
+        $this->git('merge', '-q', '--no-ff', '--no-edit', 'side');
+
+        $coverage = (new CommitCoverage($this->root))->of(self::checked(...['src/Kept.php' => "<?php\n"]), 'HEAD');
+
+        self::assertSame(['packages/semitexa-one/src/FromSide.php'], $coverage['unchecked']);
+    }
+
     #[Test]
     public function a_revision_that_names_no_commit_is_reported_not_taken_as_empty(): void
     {

@@ -53,6 +53,11 @@ final class AiVerifyReceiptCommand extends BaseCommand
         }
         $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
         $revision = $input->getOption('commit');
+        if ($revision !== null && (!is_string($revision) || trim($revision) === '')) {
+            $output->writeln('--commit takes a revision (HEAD, a sha, a branch); an empty one checks nothing.');
+
+            return self::INVALID;
+        }
         $commit = null;
         if ($check['found'] && is_string($revision) && $revision !== '') {
             $tree = [];

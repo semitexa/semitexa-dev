@@ -525,7 +525,10 @@ final class AiVerifyCommand extends BaseCommand
         return $bands;
     }
 
-    /** @param list<VerificationResult> $results */
+    /**
+     * @param list<VerificationResult> $results
+     * @param list<array{path: string, status: string}> $unselected
+     */
     private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null, array $unselected = []): array
     {
         $report = new VerifyReportSerializer();

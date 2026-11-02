@@ -49,12 +49,17 @@ final readonly class CommitCoverage
         $differs = [];
         foreach ($touched as $prefix => $absolute) {
             $sha = trim((string) $this->git($absolute, ['rev-parse', '--verify', '--quiet', $revision . '^{commit}']));
-            if (preg_match('/\A[0-9a-f]{40,64}\z/', $sha) !== 1) {
+            // A merge lists its changes against its first parent (-m --first-parent):
+            // the plain listing is empty for one. A listing git cannot give is
+            // the repository unresolved, never "nothing committed".
+            $listing = preg_match('/\A[0-9a-f]{40,64}\z/', $sha) === 1
+                ? $this->git($absolute, ['show', '--format=', '--name-status', '--no-renames', '-m', '--first-parent', '-z', $sha])
+                : null;
+            if ($listing === null) {
                 $unresolved[] = $prefix === '' ? '(project root)' : $prefix;
                 continue;
             }
             $commits[$prefix === '' ? '(project root)' : $prefix] = $sha;
-            $listing = (string) $this->git($absolute, ['show', '--format=', '--name-status', '--no-renames', '-z', $sha]);
             $fields = explode("\0", rtrim($listing, "\0"));
             for ($i = 0; $i + 1 < count($fields); $i += 2) {
                 [$status, $relative] = [$fields[$i], $fields[$i + 1]];
@@ -64,7 +69,7 @@ final readonly class CommitCoverage
                 $path = $prefix === '' ? $relative : $prefix . '/' . $relative;
                 if (!array_key_exists($path, $tree)) {
                     $unchecked[] = $path;
-                } elseif (hash('sha256', (string) $this->git($absolute, ['show', $sha . ':' . $relative])) !== $tree[$path]) {
+                } elseif (($blob = $this->git($absolute, ['show', $sha . ':' . $relative])) === null || hash('sha256', $blob) !== $tree[$path]) {
                     $differs[] = $path;
                 }
             }
@@ -75,13 +80,22 @@ final readonly class CommitCoverage
         return ['revision' => $revision, 'commits' => $commits, 'unresolved' => $unresolved, 'unchecked' => $unchecked, 'differs' => $differs];
     }
 
-    /** @param list<string> $args */
+    /**
+     * Git's output, byte for byte, or null when git failed: an empty answer and
+     * no answer are different things here.
+     *
+     * @param list<string> $args
+     */
     private function git(string $repository, array $args): ?string
     {
         // Read-only, scoped to this one repository (see DirtyWorkspaceScanner::statusOf).
-        $cmd = sprintf('git -C %s -c safe.directory=%s %s 2>/dev/null', escapeshellarg($repository), escapeshellarg($repository), implode(' ', array_map('escapeshellarg', $args)));
-        $out = shell_exec($cmd);
+        $proc = proc_open(['git', '-C', $repository, '-c', 'safe.directory=' . $repository, ...$args], [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+        if (!is_resource($proc)) {
+            return null;
+        }
+        $out = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
 
-        return is_string($out) ? $out : null;
+        return proc_close($proc) === 0 && is_string($out) ? $out : null;
     }
 }

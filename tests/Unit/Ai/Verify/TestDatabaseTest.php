@@ -77,6 +77,18 @@ final class TestDatabaseTest extends TestCase
         self::assertStringContainsString('bin/semitexa test:run', $refusal);
     }
 
+    #[Test]
+    public function an_installed_orm_without_its_console_stops_the_targets_instead_of_skipping_the_sync(): void
+    {
+        unlink($this->root . '/vendor/bin/semitexa');
+        $runner = new RecordingProcessRunner(new FixedProcessRunner(['exit' => 0, 'output' => '']));
+        $refusal = (new TestDatabase(self::withOrm(), $this->root, $runner, liveDatabase: 'semitexa', testDatabase: 'semitexa_test'))->wrap(['vendor/bin/phpunit']);
+
+        self::assertIsString($refusal);
+        self::assertStringContainsString('cannot be synced', $refusal);
+        self::assertSame([], $runner->calls());
+    }
+
     /** No ORM, no schema to sync: the database name still goes to the test one. */
     #[Test]
     public function without_the_orm_nothing_is_synced_and_the_test_database_is_still_named(): void
