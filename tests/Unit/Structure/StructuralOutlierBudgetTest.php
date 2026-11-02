@@ -418,7 +418,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 915],
         // 742 -> 747 on 2026-09-26, NO NEW METHOD: worker-wide statics now
         // declare their lifetime (core 30e2b35).
-        'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 747],
+        // 20/747 -> 21/795 on 2026-11-02 (tk-discovery-reports-dropped-classes):
+        // unloadableClasses() and the shared set behind it, so a scan says which
+        // classes it could not inspect. The two drops that recorded nothing now
+        // record why. The state lives beside the attribute cache it describes.
+        'semitexa-core/src/Discovery/ClassDiscovery.php' => [21, 795],
         // NEW on 2026-09-26, at 735 -> 781 lines, recorded rather than trimmed.
         // #[InjectAsFactory] now injects the generated Factory* class chosen by
         // the property's declared type, and a worker-scoped service runs
