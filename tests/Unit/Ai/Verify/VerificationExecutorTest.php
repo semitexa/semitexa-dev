@@ -340,6 +340,8 @@ class VerificationExecutorTest extends TestCase
         $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
         $this->assertContains('--filter', $runner->calls[0]['command']);
         $this->assertContains('FooTest', $runner->calls[0]['command']);
+        $this->assertContains('DB_DATABASE=semitexa_test', $runner->calls[0]['command'], 'a PHPUnit target runs on the test database');
+        $this->assertContains('APP_ENV=test', $runner->calls[0]['command']);
     }
 
     public function test_phpunit_target_passes_file_path_positionally_when_planner_supplies_it(): void

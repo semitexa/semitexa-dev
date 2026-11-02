@@ -252,6 +252,28 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertArrayHasKey('dirty_scan', $envelope);
     }
 
+    /** And on a dirty tree it selects the uncommitted change, as --dirty would. */
+    #[Test]
+    public function a_bare_run_selects_what_is_uncommitted(): void
+    {
+        $repo = $this->root . '/packages/semitexa-probe';
+        mkdir($repo . '/src', 0777, true);
+        $q = escapeshellarg($repo);
+        exec("git -C {$q} init -q 2>&1");
+        file_put_contents($repo . '/src/Probe.php', "<?php\n");
+
+        $command = $this->command();
+        // A dirty tree plans checks, and dispatching them needs a console; which
+        // of them pass in this bare fixture is not the question here.
+        (new \Symfony\Component\Console\Application())->add($command);
+        $output = new BufferedOutput();
+        $command->run(new ArrayInput(['--json' => true], $command->getDefinition()), $output);
+
+        $envelope = (array) json_decode(trim($output->fetch()), true);
+        $paths = array_column((array) ($envelope['changed_files'] ?? []), 'path');
+        self::assertContains('packages/semitexa-probe/src/Probe.php', $paths, 'a run that selected nothing would pass the clean-tree test too');
+    }
+
     /**
      * `completed` is what a consumer reads to decide whether the required
      * checks actually ran. An empty run said `true` — offering itself as

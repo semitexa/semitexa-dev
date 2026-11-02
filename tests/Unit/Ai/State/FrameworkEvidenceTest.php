@@ -120,5 +120,14 @@ final class FrameworkEvidenceTest extends TestCase
             self::assertNotNull(FrameworkRubric::rubric()->criterion($id), $id);
         }
         self::assertSame(['tests.skip-calls' => 0, 'packages.without-tests' => 0], $readings['right.test-quality']->values, 'an empty tree has nothing to skip');
+
+        // A tree with one skip and one package without tests reads as such:
+        // the readers measure the tree, they do not answer 0.
+        mkdir($this->root . '/packages/semitexa-probe/tests', 0777, true);
+        // Spelled in two halves: the call written whole would be a skip of this repository's own.
+        file_put_contents($this->root . '/packages/semitexa-probe/tests/ProbeTest.php', "<?php\n\$this->mark" . "TestSkipped('probe');\n");
+        mkdir($this->root . '/packages/semitexa-bare/src', 0777, true);
+        file_put_contents($this->root . '/packages/semitexa-bare/src/Bare.php', "<?php\n");
+        self::assertSame(['tests.skip-calls' => 1, 'packages.without-tests' => 1], FrameworkEvidence::forProject($this->root)->read()['right.test-quality']->values);
     }
 }

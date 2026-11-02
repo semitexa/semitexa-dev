@@ -99,7 +99,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
         $unscanned = array_keys(array_filter($check['not_checked'], static fn (string $status): bool => $status === 'unscanned'));
         $beside = array_keys(array_diff_key($check['not_checked'], array_flip($unscanned)));
         if ($beside !== []) {
-            $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories no check read: %s', count($beside), implode(', ', $beside)));
+            $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories not covered by this verdict: %s', count($beside), implode(', ', $beside)));
         }
         if ($unscanned !== []) {
             $output->writeln('  beside:  could not be asked: ' . implode(', ', $unscanned));

@@ -143,7 +143,8 @@ final readonly class UnselectedChanges
 
     /**
      * A workspace path as the scanner writes it: no `.` segments, `..` resolved
-     * against what precedes it, no doubled or edge slashes.
+     * against what precedes it (one that climbs above the root is kept), no
+     * doubled or edge slashes.
      */
     public static function normalize(string $path): string
     {
@@ -152,8 +153,14 @@ final readonly class UnselectedChanges
             if ($segment === '' || $segment === '.') {
                 continue;
             }
+            // A `..` with nothing left to climb out of stays: the path is above
+            // the project root, never the in-project file of the same tail.
             if ($segment === '..') {
-                array_pop($segments);
+                if ($segments === [] || end($segments) === '..') {
+                    $segments[] = '..';
+                } else {
+                    array_pop($segments);
+                }
                 continue;
             }
             $segments[] = $segment;

@@ -91,6 +91,19 @@ final class UnselectedChangesTest extends TestCase
         }
     }
 
+    /** A path above the project root is no file of it, however its tail reads. */
+    #[Test]
+    public function a_path_that_climbs_above_the_root_is_not_the_file_inside_it(): void
+    {
+        self::assertSame('../packages/semitexa-one/src/Beside.php', UnselectedChanges::normalize('../packages/semitexa-one/src/Beside.php'));
+        self::assertSame('../../x', UnselectedChanges::normalize('a/../../../x'));
+        self::assertSame(
+            [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'], ['path' => 'packages/semitexa-one/src/Deep/Inner.php', 'status' => 'A']],
+            UnselectedChanges::beside($this->root, ['packages/semitexa-one/src/Selected.php', '../packages/semitexa-one/src/Beside.php']),
+            'selecting a file outside the project leaves the in-project one unselected',
+        );
+    }
+
     /** The authoring workspace's root is no repository: nothing there can be asked, or named. */
     #[Test]
     public function a_selection_no_repository_holds_names_nothing(): void
