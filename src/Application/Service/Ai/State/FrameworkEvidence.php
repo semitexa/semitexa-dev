@@ -29,8 +29,10 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
  *   - right.static-analysis: the errors phpstan-baseline.neon holds and the
  *     ceiling the release gate allows above it. Running phpstan takes
  *     minutes and is the gate's job; this is what the gate is measured from.
+ *   - work.installs: the last release report's Published install verdict
+ *     (1 PASS, 0 anything else) and the version it installed, as digits.
  *
- * The other computed criteria (installs, release tests, users get fixes,
+ * The other computed criteria (release tests, users get fixes,
  * audits, the rest of the performance audit) have no reader yet: their
  * evidence is a release report or an epic's progress, each a provider of its
  * own.
@@ -42,6 +44,8 @@ final class FrameworkEvidence
 
     public const PHPSTAN_BASELINE = 'packages/semitexa-dev/resources/phpstan/phpstan-baseline.neon';
     public const PHPSTAN_CEILING = 'packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json';
+    /** Where release-readiness leaves one report per run. */
+    public const RELEASE_REPORTS = 'var/docs/release';
 
     /**
      * @param array<string, array<string, QualityMetricInterface>> $measured criterion => metric id => metric
@@ -64,6 +68,7 @@ final class FrameworkEvidence
             [
                 'work.known-bugs' => self::openBugTasks(...),
                 'right.static-analysis' => self::phpstanBaseline(...),
+                'work.installs' => self::lastPublishedInstall(...),
             ],
         );
     }
@@ -81,6 +86,38 @@ final class FrameworkEvidence
         }
 
         return ['bugs.open' => $open];
+    }
+
+    /**
+     * The newest release report (named <date>-<codename>-<version>.md, the
+     * version written 2026.11.01.0448 or 2026-11-01-0448; the UPGRADE notes
+     * beside them are not reports): its version and whether its
+     * Published install passed. A report without the verdict is no reading.
+     *
+     * @return array<string, int>
+     */
+    public static function lastPublishedInstall(string $projectRoot): array
+    {
+        $reports = array_values(array_filter(
+            glob($projectRoot . '/' . self::RELEASE_REPORTS . '/*.md') ?: [],
+            static fn (string $f): bool => str_starts_with(basename($f), 'UPGRADE-') === false && self::versionOf($f) !== '',
+        ));
+        if ($reports === []) {
+            throw new \RuntimeException('no release report in ' . self::RELEASE_REPORTS);
+        }
+        usort($reports, static fn (string $a, string $b): int => strcmp(self::versionOf($b), self::versionOf($a)));
+        $report = (string) @file_get_contents($reports[0]);
+        if (preg_match('/^## Published install\s.*?^- Verdict: \*\*([A-Z]+)\*\*/ms', $report, $m) !== 1) {
+            throw new \RuntimeException(basename($reports[0]) . ' records no Published install verdict');
+        }
+
+        return ['release.version' => (int) self::versionOf($reports[0]), 'release.published-install-pass' => $m[1] === 'PASS' ? 1 : 0];
+    }
+
+    /** The report's version as twelve digits (YYYYMMDDhhmm), '' when its name carries none. */
+    private static function versionOf(string $report): string
+    {
+        return preg_match('/\A\d{4}-\d{2}-\d{2}-.+-(\d{4})[.-](\d{2})[.-](\d{2})[.-](\d{4})\.md\z/', basename($report), $m) === 1 ? $m[1] . $m[2] . $m[3] . $m[4] : '';
     }
 
     /** @return array<string, int> */

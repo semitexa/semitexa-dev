@@ -128,6 +128,25 @@ final class FrameworkEvidenceTest extends TestCase
         FrameworkEvidence::openBugTasks($this->root);
     }
 
+    /** The newest report by version, not by name or mtime; UPGRADE notes are no reports. */
+    #[Test]
+    public function installs_read_the_newest_release_report_s_published_install(): void
+    {
+        $dir = $this->root . '/' . FrameworkEvidence::RELEASE_REPORTS;
+        mkdir($dir, 0777, true);
+        $report = static fn (string $verdict): string => "# Release\n\n## Published install\n\n- Verdict: **{$verdict}**\n";
+        file_put_contents($dir . '/2026-10-31-tamador-2026-10-31.0849.md', $report('PASS'));
+        // Both spellings of the version occur among the real reports.
+        file_put_contents($dir . '/2026-11-01-aurisera-2026-11-01-0448.md', $report('FAIL'));
+        file_put_contents($dir . '/UPGRADE-2026.11.02.0000.md', $report('PASS'));
+
+        self::assertSame(['release.version' => 202611010448, 'release.published-install-pass' => 0], FrameworkEvidence::lastPublishedInstall($this->root));
+
+        file_put_contents($dir . '/2026-11-02-zephyr-2026-11-02.0900.md', "# Release\n\nno install section\n");
+        $this->expectExceptionMessage('records no Published install verdict');
+        FrameworkEvidence::lastPublishedInstall($this->root);
+    }
+
     #[Test]
     public function static_analysis_reads_the_baseline_errors_and_the_ceiling(): void
     {
@@ -145,7 +164,7 @@ final class FrameworkEvidenceTest extends TestCase
         $this->ledger(['requests.query-shapes' => 1, 'requests.duplicate-queries' => 0, 'requests.repeated-statements' => 0]);
         $readings = FrameworkEvidence::forProject($this->root)->read();
 
-        self::assertSame(['right.test-quality', 'fast.speed-ratchet', 'work.known-bugs', 'right.static-analysis'], array_keys($readings));
+        self::assertSame(['right.test-quality', 'fast.speed-ratchet', 'work.known-bugs', 'right.static-analysis', 'work.installs'], array_keys($readings));
         self::assertSame('could not read: ' . FrameworkEvidence::PHPSTAN_BASELINE . ' is missing', $readings['right.static-analysis']->text(), 'no baseline is no reading, never 0 errors');
         foreach (array_keys($readings) as $id) {
             self::assertNotNull(FrameworkRubric::rubric()->criterion($id), $id);
