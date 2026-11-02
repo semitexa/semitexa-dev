@@ -44,8 +44,9 @@ final class CriterionFormulaTest extends TestCase
         self::assertSame(20, $f['right.static-analysis']->points(['phpstan.baseline-errors' => 0, 'phpstan.ceiling' => 1], 20));
         self::assertSame(0, $f['right.static-analysis']->points(['phpstan.baseline-errors' => 0, 'phpstan.ceiling' => 5], 20), 'a ceiling above 1 lets errors in past the baseline');
         self::assertSame(0, $f['right.static-analysis']->points(['phpstan.baseline-errors' => 1500, 'phpstan.ceiling' => 1], 20), 'clamped at 0');
-        self::assertSame(7, $f['right.test-quality']->points(['tests.skip-calls' => 87, 'packages.without-tests' => 0], 10));
-        self::assertSame(10, $f['right.test-quality']->points(['tests.skip-calls' => 0, 'packages.without-tests' => 0], 10));
+        self::assertSame(7, $f['right.test-quality']->points(['tests.skip-calls' => 87, 'packages.without-tests' => 0, 'tests.files' => 1500], 10));
+        self::assertSame(10, $f['right.test-quality']->points(['tests.skip-calls' => 0, 'packages.without-tests' => 0, 'tests.files' => 1], 10));
+        self::assertSame(0, $f['right.test-quality']->points(['tests.skip-calls' => 0, 'packages.without-tests' => 0, 'tests.files' => 0], 10), 'no skips in a tree with no tests is no test quality');
         self::assertNull($f['right.test-quality']->points(['tests.skip-calls' => 87], 10), 'a reading without what the formula needs says nothing');
     }
 

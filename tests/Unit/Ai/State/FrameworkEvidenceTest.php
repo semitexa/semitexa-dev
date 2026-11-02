@@ -169,7 +169,7 @@ final class FrameworkEvidenceTest extends TestCase
         foreach (array_keys($readings) as $id) {
             self::assertNotNull(FrameworkRubric::rubric()->criterion($id), $id);
         }
-        self::assertSame(['tests.skip-calls' => 0, 'packages.without-tests' => 0], $readings['right.test-quality']->values, 'an empty tree has nothing to skip');
+        self::assertSame(['tests.skip-calls' => 0, 'packages.without-tests' => 0, 'tests.files' => 0], $readings['right.test-quality']->values, 'an empty tree has nothing to skip, and no tests');
 
         // A tree with one skip and one package without tests reads as such:
         // the readers measure the tree, they do not answer 0.
@@ -178,6 +178,6 @@ final class FrameworkEvidenceTest extends TestCase
         file_put_contents($this->root . '/packages/semitexa-probe/tests/ProbeTest.php', "<?php\n\$this->mark" . "TestSkipped('probe');\n");
         mkdir($this->root . '/packages/semitexa-bare/src', 0777, true);
         file_put_contents($this->root . '/packages/semitexa-bare/src/Bare.php', "<?php\n");
-        self::assertSame(['tests.skip-calls' => 1, 'packages.without-tests' => 1], FrameworkEvidence::forProject($this->root)->read()['right.test-quality']->values);
+        self::assertSame(['tests.skip-calls' => 1, 'packages.without-tests' => 1, 'tests.files' => 1], FrameworkEvidence::forProject($this->root)->read()['right.test-quality']->values);
     }
 }

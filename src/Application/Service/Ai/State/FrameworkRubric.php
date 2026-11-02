@@ -75,9 +75,11 @@ final class FrameworkRubric
                     : null,
             ),
             'right.test-quality' => new CriterionFormula(
-                '10 − ⌈tests.skip-calls / 30⌉ − packages.without-tests',
-                static fn (array $v): ?int => isset($v['tests.skip-calls'], $v['packages.without-tests'])
-                    ? 10 - (int) ceil($v['tests.skip-calls'] / 30) - $v['packages.without-tests']
+                '10 − ⌈tests.skip-calls / 30⌉ − packages.without-tests; 0 with no test file at all',
+                // No skips in a tree with no tests is no test quality: the
+                // first formula scored an empty tree 10.
+                static fn (array $v): ?int => isset($v['tests.skip-calls'], $v['packages.without-tests'], $v['tests.files'])
+                    ? ($v['tests.files'] === 0 ? 0 : 10 - (int) ceil($v['tests.skip-calls'] / 30) - $v['packages.without-tests'])
                     : null,
             ),
         ];

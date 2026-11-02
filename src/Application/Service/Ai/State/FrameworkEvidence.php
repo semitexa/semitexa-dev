@@ -63,7 +63,7 @@ final class FrameworkEvidence
     {
         return new self(
             $projectRoot,
-            ['right.test-quality' => ['tests.skip-calls' => new TestSkipCallsMetric(), 'packages.without-tests' => new PackagesWithoutTestsMetric()]],
+            ['right.test-quality' => ['tests.skip-calls' => new TestSkipCallsMetric(), 'packages.without-tests' => new PackagesWithoutTestsMetric(), 'tests.files' => new TestFilesCount()]],
             ['fast.speed-ratchet' => ['requests.query-shapes', 'requests.duplicate-queries', 'requests.repeated-statements']],
             [
                 'work.known-bugs' => self::openBugTasks(...),
