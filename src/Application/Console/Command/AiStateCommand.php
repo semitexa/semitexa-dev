@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Dev\Application\Service\Ai\Decision\Expiry;
+use Semitexa\Dev\Application\Service\Ai\State\FrameworkEvidence;
 use Semitexa\Dev\Application\Service\Ai\State\FrameworkRubric;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreRecord;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreStore;
@@ -71,7 +72,7 @@ final class AiStateCommand extends BaseCommand
 
     private function show(OutputInterface $output, \DateTimeImmutable $now, bool $human): int
     {
-        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now);
+        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, FrameworkEvidence::forProject($this->getProjectRoot())->read());
         if (!$human) {
             return $this->emit($output, ['line' => StateReport::line($report)] + $report);
         }
@@ -91,6 +92,14 @@ final class AiStateCommand extends BaseCommand
                     $c['status'],
                     $c['status'] === 'unscored' ? '' : sprintf('%dd ago, until %s UTC: %s', $c['age_days'], (new \DateTimeImmutable((string) $c['expires_at']))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'), $evidence),
                 ));
+                if (is_string($c['reading'])) {
+                    $output->writeln(sprintf(
+                        '  %34s now: %s%s',
+                        '',
+                        OutputFormatter::escape(self::oneLine($c['reading'])),
+                        $c['reading_changed'] === true ? ' — changed since scored, the points need a look' : '',
+                    ));
+                }
             }
             foreach ($data['raise'] as $r) {
                 $output->writeln(sprintf('  ↑ +%d: %s', $r['gap'], $r['title']));
@@ -127,9 +136,13 @@ final class AiStateCommand extends BaseCommand
         if ($evidence === '') {
             return $this->fail($output, 'score needs --criterion, --points (a whole number, 0 to its weight) and --evidence (what sets them)');
         }
-        $record = new ScoreRecord($criterion, (int) $points, $evidence, $by !== '' ? $by : 'agent', $now->format('c'), $expiresAt->format('c'));
+        // The evidence as it reads now goes with the points, so a later run can
+        // say when it moved. A reading that failed is not kept: nothing to compare.
+        $readings = FrameworkEvidence::forProject($this->getProjectRoot())->read();
+        $reading = isset($readings[$criterion]) && $readings[$criterion]->failure === null ? $readings[$criterion]->values : null;
+        $record = new ScoreRecord($criterion, (int) $points, $evidence, $by !== '' ? $by : 'agent', $now->format('c'), $expiresAt->format('c'), $reading);
         $this->scoreStore->record($record, FrameworkRubric::rubric());
-        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now);
+        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, $readings);
 
         return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'line' => StateReport::line($report)]);
     }

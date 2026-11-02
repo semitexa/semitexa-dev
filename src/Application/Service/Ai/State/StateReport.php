@@ -15,9 +15,10 @@ final class StateReport
 {
     /**
      * @param array<string, ScoreRecord> $records
+     * @param array<string, Reading> $readings the computed criteria's evidence as read on this run
      * @return array{phases: array<string, array{percent: ?int, unknown: int, criteria: list<array<string, mixed>>, raise: list<array{criterion: string, title: string, gap: int}>}>, orphans: list<array{criterion: string, points: int, why: string}>}
      */
-    public static function build(Rubric $rubric, array $records, \DateTimeImmutable $now): array
+    public static function build(Rubric $rubric, array $records, \DateTimeImmutable $now, array $readings = []): array
     {
         // A score the rubric no longer holds (renamed, reweighted, hand-edited)
         // is shown apart, never counted and never fatal to the whole report.
@@ -59,6 +60,10 @@ final class StateReport
                     'by' => $record?->by,
                     'age_days' => $record === null ? null : intdiv(max(0, $now->getTimestamp() - (new \DateTimeImmutable($record->scoredAt))->getTimestamp()), 86400),
                     'expires_at' => $record?->expiresAt,
+                    // Measured now, and whether it moved since the points were
+                    // given: a moved reading asks for a look, it does not rescore.
+                    'reading' => isset($readings[$criterion->id]) ? $readings[$criterion->id]->text() : null,
+                    'reading_changed' => isset($readings[$criterion->id]) ? $readings[$criterion->id]->changedSince($record?->reading) : null,
                 ];
                 $gap = $criterion->weight - ($points ?? 0);
                 if ($gap > 0) {
