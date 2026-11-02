@@ -41,18 +41,10 @@ final class ModulePlanBuilder
             );
         }
 
-        $files = array_merge($files, [
-            new PlannedFile("{$base}/Application/Payload/Request/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/Handler/PayloadHandler/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/Resource/Response/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/Handler/DomainListener/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/Console/Command/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Application/View/templates/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Domain/Service/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Domain/Contract/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Domain/Event/.gitkeep", $gitkeep, FileType::PhpClass),
-            new PlannedFile("{$base}/Domain/Model/.gitkeep", $gitkeep, FileType::PhpClass),
-        ]);
+        // The module's root, not ten empty folders (bench-make-module-empty-dirs):
+        // the generators create each folder with the first class that lives in
+        // it, where the module structure says it goes.
+        $files[] = new PlannedFile("{$base}/.gitkeep", $gitkeep, FileType::PhpClass);
 
         if ($target !== self::TARGET_PACKAGE) {
             $files[] = new PlannedFile(

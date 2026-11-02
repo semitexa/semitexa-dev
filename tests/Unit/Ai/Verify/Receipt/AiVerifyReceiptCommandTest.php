@@ -64,4 +64,18 @@ final class AiVerifyReceiptCommandTest extends TestCase
         self::assertSame(Command::INVALID, $tester->execute(['--unread' => true, '--hours' => 'a day']));
         self::assertStringContainsString('--hours takes a whole number', $tester->getDisplay());
     }
+
+    /** An empty --commit checked nothing and still let the claim hold. */
+    #[Test]
+    public function an_empty_commit_revision_is_refused(): void
+    {
+        (new VerifyReceipts($this->root))->attach(['generated_at' => gmdate(DATE_ATOM), 'verdict' => 'pass', 'results' => [], 'changed_files' => []], []);
+
+        foreach (['', '  '] as $revision) {
+            $tester = new CommandTester(new AiVerifyReceiptCommand());
+            self::assertSame(Command::INVALID, $tester->execute(['--commit' => $revision]), var_export($revision, true));
+            self::assertStringContainsString('--commit takes a revision', $tester->getDisplay());
+        }
+        self::assertCount(1, (new VerifyReceipts($this->root))->unread(), 'a refused run leaves the receipt unread');
+    }
 }

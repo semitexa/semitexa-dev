@@ -95,6 +95,7 @@ final class FreshInstallReadinessSmokeTest extends TestCase
     #[Test]
     public function fresh_module_generation_produces_canonical_layout(): void
     {
+        // verify:accept-test-change make:module writes only the module roots now (bench-make-module-empty-dirs): the exact file list is pinned instead, and the Console/Command path is pinned where commands are generated (CommandPlanBuilderTest).
         $this->enterTempProjectRoot();
         $exit = (new CommandTester(new MakeModuleCommand()))->execute([
             '--name' => self::MODULE_NAME,
@@ -103,17 +104,13 @@ final class FreshInstallReadinessSmokeTest extends TestCase
         self::assertSame(0, $exit, 'make:module --write must succeed in fresh workspace');
 
         $base = $this->tmpRoot . '/src/modules/' . self::MODULE_NAME;
-        self::assertDirectoryExists($base . '/src/Application/Payload/Request');
-        self::assertDirectoryExists($base . '/src/Application/Handler/PayloadHandler');
-        self::assertDirectoryExists($base . '/src/Application/Resource/Response');
-        self::assertDirectoryExists($base . '/src/Application/Console/Command');
-        self::assertDirectoryExists($base . '/src/Domain/Service');
-        self::assertDirectoryExists($base . '/src/Domain/Contract');
-
-        // Cycle 22's deferred design choice: .gitkeep markers carry content,
-        // so every emitted directory contains a real file. Validator-clean
-        // by construction.
-        self::assertFileExists($base . '/src/Application/Payload/Request/.gitkeep');
+        // The module's roots, marked with a .gitkeep that carries content, and
+        // no empty folder: each generator creates the folder its class goes
+        // in (bench-make-module-empty-dirs; the page generator below does).
+        self::assertFileExists($base . '/src/.gitkeep');
+        self::assertFileExists($base . '/tests/.gitkeep');
+        self::assertDirectoryDoesNotExist($base . '/src/Application');
+        self::assertDirectoryDoesNotExist($base . '/src/Domain');
     }
 
     #[Test]

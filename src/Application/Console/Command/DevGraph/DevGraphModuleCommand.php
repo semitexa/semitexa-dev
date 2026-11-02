@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\ModuleRegistry;
@@ -61,7 +62,7 @@ final class DevGraphModuleCommand extends BaseCommand
             'module' => $module['name'],
             'aliases' => $module['aliases'] ?? [],
             'type' => $module['type'] ?? 'unknown',
-            'namespace' => $module['namespace'] ?? null,
+            'namespace' => self::namespaceOf($module),
             'path' => $module['path'] ?? null,
             'payloads' => $buckets['payloads'],
             'handlers' => $buckets['handlers'],
@@ -404,5 +405,22 @@ final class DevGraphModuleCommand extends BaseCommand
 
         sort($files);
         return $files;
+    }
+
+    /**
+     * A local module's namespace is the one its code declares, as the
+     * generators write it (App\Modules\<Name>): the registry also maps
+     * Semitexa\Modules\<Name> to the same directory and named that one
+     * (bench-ai-ask-module-namespace). Other modules answer as registered.
+     *
+     * @param array<string, mixed> $module
+     */
+    public static function namespaceOf(array $module): ?string
+    {
+        if (($module['type'] ?? null) === 'local' && is_string($module['name'] ?? null)) {
+            return ModuleNamespace::of($module['name']);
+        }
+
+        return is_string($module['namespace'] ?? null) ? $module['namespace'] : null;
     }
 }

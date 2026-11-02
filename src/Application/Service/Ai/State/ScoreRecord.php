@@ -22,6 +22,8 @@ final readonly class ScoreRecord
         public string $by,
         public string $scoredAt,
         public string $expiresAt,
+        /** @var array<string, int>|null what the criterion's evidence read when scored; null when it has no reader */
+        public ?array $reading = null,
     ) {}
 
     public function isCurrent(\DateTimeImmutable $now): bool
@@ -34,10 +36,10 @@ final readonly class ScoreRecord
         return new CriterionScore($this->criterionId, $this->points, $this->evidence);
     }
 
-    /** @return array{criterion: string, points: int, evidence: string, by: string, scored_at: string, expires_at: string} */
+    /** @return array{criterion: string, points: int, evidence: string, by: string, scored_at: string, expires_at: string, reading?: array<string, int>} */
     public function toArray(): array
     {
-        return [
+        $row = [
             'criterion' => $this->criterionId,
             'points' => $this->points,
             'evidence' => $this->evidence,
@@ -45,6 +47,11 @@ final readonly class ScoreRecord
             'scored_at' => $this->scoredAt,
             'expires_at' => $this->expiresAt,
         ];
+        if ($this->reading !== null) {
+            $row['reading'] = $this->reading;
+        }
+
+        return $row;
     }
 
     /** @param array<string, mixed> $data */
@@ -68,6 +75,22 @@ final readonly class ScoreRecord
             }
         }
 
-        return new self($text('criterion'), $points, $text('evidence'), $text('by'), $text('scored_at'), $text('expires_at'));
+        // Optional: scores recorded before readings existed have none.
+        $reading = $data['reading'] ?? null;
+        if ($reading !== null) {
+            if (!is_array($reading)) {
+                throw new \RuntimeException('score reading must be an object of name => whole number');
+            }
+            $values = [];
+            foreach ($reading as $name => $value) {
+                if (!is_string($name) || !is_int($value)) {
+                    throw new \RuntimeException('score reading must be an object of name => whole number');
+                }
+                $values[$name] = $value;
+            }
+            $reading = $values;
+        }
+
+        return new self($text('criterion'), $points, $text('evidence'), $text('by'), $text('scored_at'), $text('expires_at'), $reading);
     }
 }

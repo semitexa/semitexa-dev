@@ -37,6 +37,11 @@ final class TaskClassifierRoutingTest extends TestCase
         yield 'uk: console command' => ['створи консольну команду, що чистить старі сесії', 'add_cli_command'];
         yield 'uk: rename' => ['перейменуй сутність Invoice на Bill', 'rename_symbol'];
         yield 'uk: event listener' => ['додай слухача на подію UserRegistered', 'add_event_listener'];
+        // bench-ai-task-misroutes-add-field: a stored form field is end to end, a DTO field is not.
+        yield 'a field on a form is end to end' => ['add a phone field to the contact form', 'add_form_field'];
+        yield 'storing what a form takes' => ['store the phone number entered on the form', 'add_form_field'];
+        yield 'a column on an entity' => ['add a bio column to the user entity', 'add_form_field'];
+        yield 'a payload field stays a payload field' => ['add a field to the payload', 'add_payload_field'];
     }
 
     #[Test]

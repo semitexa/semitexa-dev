@@ -41,6 +41,7 @@ final class VerificationExecutor
     private readonly ?ChangedLineTypeCheck $typeCheck;
     private readonly LintRunner $lintRunner;
 
+    private readonly TestDatabase $testDatabase;
     public function __construct(
         private readonly Application $application,
         private readonly string $projectRoot,
@@ -55,7 +56,9 @@ final class VerificationExecutor
         ?ChangedLineTypeCheck $typeCheck = null,
         // What the change is measured against (ai:verify --git-ref); null: HEAD.
         ?string $baseRef = null,
+        ?TestDatabase $testDatabase = null,
     ) {
+        $this->testDatabase = $testDatabase ?? new TestDatabase($application, $projectRoot, $this->processRunner);
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
         $this->phpstanRunner = $phpstanRunner ?? new PhpstanRunner($projectRoot, $this->processRunner);
         // A test that hands in its own PhpstanRunner gets no second, real PHPStan run.
@@ -181,6 +184,10 @@ final class VerificationExecutor
             return $this->skipped($target, "phpunit target directory no longer exists: {$rel}");
         }
 
+        $command = $this->testDatabase->wrap($command); // the test database, as test:run uses
+        if (is_string($command)) {
+            return $this->skipped($target, $command);
+        }
         $r = $this->processRunner->run($command, $this->projectRoot);
 
         // phpunit exits 0 when filter+suite resolve to zero tests. Treat that as

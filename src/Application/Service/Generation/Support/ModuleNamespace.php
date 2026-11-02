@@ -23,7 +23,7 @@ final class ModuleNamespace
     public static function of(string $module, ?string $projectRoot = null): string
     {
         $dir = ($projectRoot ?? ProjectRoot::get()) . '/src/modules/' . $module . '/src';
-        $pattern = '/^namespace\s+(App|Semitexa)\\\\Modules\\\\' . preg_quote($module, '/') . '(?:\\\\|;)/m';
+        $pattern = '/^namespace\s+(App|Semitexa)\\\\Modules\\\\' . preg_quote($module, '/') . '(?:\\\\|;|\s*\{)/m';
 
         foreach (self::phpFiles($dir) as $file) {
             // The whole file: a long license header or docblock can push the

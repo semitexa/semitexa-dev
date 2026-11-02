@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\CoverageGap;
+use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
 use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
@@ -73,7 +74,7 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
-            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask.')
+            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask. The default when no scope is given.')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
@@ -87,6 +88,10 @@ final class AiVerifyCommand extends BaseCommand
         $jsonMode = (bool) $input->getOption('json');
         $scope = (string) $input->getOption('scope');
 
+        // No scope named: the working tree, as --dirty (bench-verify-bare-errors: a bare run was an error).
+        if ((array) $input->getOption('files') === [] && !$input->getOption('git-ref') && !(bool) $input->getOption('diff-stdin') && !(bool) $input->getOption('all')) {
+            $input->setOption('dirty', true);
+        }
         try {
             $paths = $this->collectPaths($input);
         } catch (\RuntimeException $e) {
@@ -215,7 +220,8 @@ final class AiVerifyCommand extends BaseCommand
             $impact = $this->probeImpact($plan);
         }
 
-        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
+        $unselected = UnselectedChanges::ofRun($input, $projectRoot, $plan);
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact, $unselected), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
@@ -232,7 +238,7 @@ final class AiVerifyCommand extends BaseCommand
             );
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
-            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan);
+            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan, $unselected);
             $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
         }
 
@@ -523,8 +529,11 @@ final class AiVerifyCommand extends BaseCommand
         return $bands;
     }
 
-    /** @param list<VerificationResult> $results */
-    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
+    /**
+     * @param list<VerificationResult> $results
+     * @param list<array{path: string, status: string}> $unselected
+     */
+    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null, array $unselected = []): array
     {
         $report = new VerifyReportSerializer();
         $violations = $this->collectViolations($results);
@@ -554,7 +563,7 @@ final class AiVerifyCommand extends BaseCommand
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
             'restart'         => $report->restartAdvice($plan->changedFiles),
-        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
+        ] + UnselectedChanges::annotate(CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray(), $unselected);
     }
 
     /**
@@ -632,6 +641,7 @@ final class AiVerifyCommand extends BaseCommand
     /**
      * @param list<VerificationResult> $results
      * @param array{scanned: list<string>, unscannable: list<string>}|null $dirtyScan
+     * @param list<array{path: string, status: string}> $unselected
      */
     private function emitNdjson(
         OutputInterface $output,
@@ -640,6 +650,7 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         ?ImpactReport $impact = null,
         ?array $dirtyScan = null,
+        array $unselected = [],
     ): void {
         $report = new VerifyReportSerializer();
         // NDJSON is the DEFAULT mode, and the reach of a `--dirty` scan existed
@@ -715,7 +726,7 @@ final class AiVerifyCommand extends BaseCommand
             'verdict' => $verdict,
             'completed' => $report->completed($results),
             'counts'  => $report->countByStatus($results),
-        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
+        ] + UnselectedChanges::annotate(CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray(), $unselected);
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }

@@ -354,7 +354,14 @@ final class StructuralOutlierBudgetTest extends TestCase
         // a file staged for deletion and written again, and keeping only the
         // deletion made the planner skip a file sitting right there.
         // METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 738],
+        // 738 -> 745, 2026-11-02: a pass over `--files=A` held "for the tree in
+        // front of you" while B beside it was never read. The rule and the
+        // wording live in UnselectedChanges; the command gains its one call
+        // and a parameter to the envelope and NDJSON writers, typed (review of
+        // dev#187: the untyped one failed phpstan's argument.type). METHOD COUNT UNCHANGED at 19.
+        // 745 -> 749, 2026-11-02 (bench-verify-bare-errors): a run that names no
+        // scope verifies the working tree as --dirty instead of failing.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 749],
         // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
         // review of dev#84 and the ratchet said so. The addition is a refusal:
         // `--preview` with `--expect-field` resolved the target, returned
@@ -422,7 +429,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // its factories now waits too, in dependency order. Same ordering rule
         // of the build graph, so it stays where the graph is built.
         'semitexa-core/src/Container/GraphBuilder.php' => [22, 829],
-        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
+        // 709 -> 713, 2026-11-02 (phpstan burn-down): a discovered class that
+        // does not load is reported instead of a ReflectionException, and the
+        // class-string guards it needs are declared. Relations became a typed
+        // RelationDefinition, which took lines out. METHOD COUNT UNCHANGED at 20.
+        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 713],
         // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
         // when the prompt.catalog detector landed, and the four lines are the
         // comment saying why — a detector no kind schedules never runs and reads
@@ -559,7 +570,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the visitor of an earlier request re-established for work done on
         // KISS — and reExecute() re-establishing the session BEFORE its auth
         // gate (a re-run used to resolve nobody; tk-ls-kiss-visitor).
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [17, 676],
+        // 676 -> 686, 2026-11-02 (bench-html-form-validation-422): an HTML form
+        // whose payload failed validation goes on to its handler's invalid()
+        // when one answers it, decided once the response profile's handlers
+        // are bound (review of core#214); the rules are PayloadAdmission's,
+        // the run PipelineExecutor's. METHOD COUNT UNCHANGED at 17.
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [17, 686],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 806],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],

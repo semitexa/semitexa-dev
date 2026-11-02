@@ -234,17 +234,44 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertArrayNotHasKey('kind', $envelope);
     }
 
-    /** Without the flag, no paths is still a misuse and still fails. */
+    /**
+     * No scope named is a run over the working tree, as --dirty: it used to be
+     * an error an agent had to read and retry (bench-verify-bare-errors).
+     */
     #[Test]
-    public function the_generic_empty_case_still_fails(): void
+    public function a_bare_run_verifies_the_working_tree(): void
     {
         $command = $this->command();
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--json' => true], $command->getDefinition()), $output);
 
-        self::assertSame(1, $exit);
-        self::assertStringContainsString('no changed files supplied', $output->fetch());
+        self::assertSame(0, $exit);
+        $envelope = (array) json_decode(trim($output->fetch()), true);
+        self::assertSame('nothing_to_verify', $envelope['verdict'] ?? null, 'the clean tree, answered as --dirty answers it');
+        self::assertArrayHasKey('dirty_scan', $envelope);
+    }
+
+    /** And on a dirty tree it selects the uncommitted change, as --dirty would. */
+    #[Test]
+    public function a_bare_run_selects_what_is_uncommitted(): void
+    {
+        $repo = $this->root . '/packages/semitexa-probe';
+        mkdir($repo . '/src', 0777, true);
+        $q = escapeshellarg($repo);
+        exec("git -C {$q} init -q 2>&1");
+        file_put_contents($repo . '/src/Probe.php', "<?php\n");
+
+        $command = $this->command();
+        // A dirty tree plans checks, and dispatching them needs a console; which
+        // of them pass in this bare fixture is not the question here.
+        (new \Symfony\Component\Console\Application())->add($command);
+        $output = new BufferedOutput();
+        $command->run(new ArrayInput(['--json' => true], $command->getDefinition()), $output);
+
+        $envelope = (array) json_decode(trim($output->fetch()), true);
+        $paths = array_column((array) ($envelope['changed_files'] ?? []), 'path');
+        self::assertContains('packages/semitexa-probe/src/Probe.php', $paths, 'a run that selected nothing would pass the clean-tree test too');
     }
 
     /**
