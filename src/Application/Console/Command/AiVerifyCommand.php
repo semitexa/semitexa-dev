@@ -74,7 +74,7 @@ final class AiVerifyCommand extends BaseCommand
             ->addOption('files', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Repo-relative path(s) to verify. Repeat the flag and/or comma-separate; both forms combine.')
             ->addOption('git-ref', null, InputOption::VALUE_REQUIRED, 'Compare working tree against this git ref (e.g. HEAD~1, origin/main)')
             ->addOption('diff-stdin', null, InputOption::VALUE_NONE, 'Read newline-separated paths from stdin (output of `git diff --name-only`)')
-            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask.')
+            ->addOption('dirty', null, InputOption::VALUE_NONE, 'Every uncommitted change this workspace can see: each packages/semitexa-* repository, plus the project root when it is one. Says which roots it could not ask. The default when no scope is given.')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Scan every Semitexa package under packages/semitexa-* and every local module under src/modules/* (deterministic repo-wide module-structure check)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Verification scope: minimal, standard, broad', VerificationPlan::SCOPE_STANDARD)
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Append a verify_result event to this ai:trace id (falls back to $SEMITEXA_AI_TRACE_ID)')
@@ -88,6 +88,10 @@ final class AiVerifyCommand extends BaseCommand
         $jsonMode = (bool) $input->getOption('json');
         $scope = (string) $input->getOption('scope');
 
+        // No scope named: the working tree, as --dirty (bench-verify-bare-errors: a bare run was an error).
+        if ((array) $input->getOption('files') === [] && !$input->getOption('git-ref') && !(bool) $input->getOption('diff-stdin') && !(bool) $input->getOption('all')) {
+            $input->setOption('dirty', true);
+        }
         try {
             $paths = $this->collectPaths($input);
         } catch (\RuntimeException $e) {

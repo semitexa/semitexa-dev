@@ -234,17 +234,22 @@ final class VerifyDirtyCleanTreeTest extends TestCase
         self::assertArrayNotHasKey('kind', $envelope);
     }
 
-    /** Without the flag, no paths is still a misuse and still fails. */
+    /**
+     * No scope named is a run over the working tree, as --dirty: it used to be
+     * an error an agent had to read and retry (bench-verify-bare-errors).
+     */
     #[Test]
-    public function the_generic_empty_case_still_fails(): void
+    public function a_bare_run_verifies_the_working_tree(): void
     {
         $command = $this->command();
         $output = new BufferedOutput();
 
         $exit = $command->run(new ArrayInput(['--json' => true], $command->getDefinition()), $output);
 
-        self::assertSame(1, $exit);
-        self::assertStringContainsString('no changed files supplied', $output->fetch());
+        self::assertSame(0, $exit);
+        $envelope = (array) json_decode(trim($output->fetch()), true);
+        self::assertSame('nothing_to_verify', $envelope['verdict'] ?? null, 'the clean tree, answered as --dirty answers it');
+        self::assertArrayHasKey('dirty_scan', $envelope);
     }
 
     /**

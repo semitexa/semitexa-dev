@@ -359,7 +359,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // wording live in UnselectedChanges; the command gains its one call
         // and a parameter to the envelope and NDJSON writers, typed (review of
         // dev#187: the untyped one failed phpstan's argument.type). METHOD COUNT UNCHANGED at 19.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 745],
+        // 745 -> 749, 2026-11-02 (bench-verify-bare-errors): a run that names no
+        // scope verifies the working tree as --dirty instead of failing.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 749],
         // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
         // review of dev#84 and the ratchet said so. The addition is a refusal:
         // `--preview` with `--expect-field` resolved the target, returned

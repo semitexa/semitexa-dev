@@ -196,17 +196,7 @@ class AiVerifyCommandTest extends TestCase
         $this->assertSame(['live_tenancy', 'module_structure', 'skill_copies', 'syntax'], $types);
     }
 
-    public function test_no_inputs_returns_error_envelope(): void
-    {
-        $tester = $this->newTester();
-        $exit = $tester->execute([]);
-
-        $this->assertSame(1, $exit);
-        $line = json_decode(trim($tester->getDisplay()), true);
-        $this->assertSame('error', $line['kind']);
-        $this->assertStringContainsString('no changed files supplied', $line['error']);
-    }
-
+    // verify:accept-test-change a bare run is no longer an error: it verifies the working tree as --dirty (bench-verify-bare-errors), pinned by VerifyDirtyCleanTreeTest::a_bare_run_verifies_the_working_tree.
     public function test_an_error_naming_a_ref_that_is_not_utf8_is_still_one_json_line(): void
     {
         // json_encode() returned false on the ref's byte and writeln() threw a
