@@ -96,7 +96,7 @@ final class VerifyReceipts
     }
 
     /**
-     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, not_checked: list<string>, receipt: ?array<string, mixed>}
+     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, not_checked: array<string, string>, receipt: ?array<string, mixed>}
      */
     public function check(?string $id): array
     {
@@ -129,7 +129,8 @@ final class VerifyReceipts
             'changed_during_run' => array_values(array_filter((array) ($receipt['changed_during_run'] ?? []), is_string(...))),
             // What the claim does not cover, as the tree stands now: the
             // uncommitted changes beside the checked files in their repositories.
-            'not_checked'   => array_map(static fn (array $c): string => $c['path'], UnselectedChanges::beside($this->projectRoot, array_map('strval', array_keys($tree)))),
+            // path => status: 'unscanned' names a repository git could not answer for, not a change.
+            'not_checked'   => array_column(UnselectedChanges::beside($this->projectRoot, array_map('strval', array_keys($tree))), 'status', 'path'),
             'receipt'       => $receipt,
         ];
     }

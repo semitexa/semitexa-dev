@@ -46,18 +46,19 @@ final class AiVerifyReceiptCommand extends BaseCommand
         if ((bool) $input->getOption('unread')) {
             return $this->listUnread($receipts, $input, $output);
         }
-        $id = $input->getArgument('id');
-        $check = $receipts->check(is_string($id) && $id !== '' ? $id : null);
-        if ($check['found'] && $check['id'] !== null) {
-            $receipts->markRead($check['id']);
-        }
-        $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
+        // Refused before the receipt is looked up: a refused run must not mark it read.
         $revision = $input->getOption('commit');
         if ($revision !== null && (!is_string($revision) || trim($revision) === '')) {
             $output->writeln('--commit takes a revision (HEAD, a sha, a branch); an empty one checks nothing.');
 
             return self::INVALID;
         }
+        $id = $input->getArgument('id');
+        $check = $receipts->check(is_string($id) && $id !== '' ? $id : null);
+        if ($check['found'] && $check['id'] !== null) {
+            $receipts->markRead($check['id']);
+        }
+        $holds = $check['found'] && $check['intact'] && $check['changed_since'] === [] && $check['changed_during_run'] === [] && $check['verdict'] === 'pass';
         $commit = null;
         if ($check['found'] && is_string($revision)) {
             $tree = [];
@@ -95,8 +96,13 @@ final class AiVerifyReceiptCommand extends BaseCommand
                 }
             }
         }
-        if ($check['not_checked'] !== []) {
-            $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories no check read: %s', count($check['not_checked']), implode(', ', $check['not_checked'])));
+        $unscanned = array_keys(array_filter($check['not_checked'], static fn (string $status): bool => $status === 'unscanned'));
+        $beside = array_keys(array_diff_key($check['not_checked'], array_flip($unscanned)));
+        if ($beside !== []) {
+            $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories no check read: %s', count($beside), implode(', ', $beside)));
+        }
+        if ($unscanned !== []) {
+            $output->writeln('  beside:  could not be asked: ' . implode(', ', $unscanned));
         }
         $output->writeln(match (true) {
             !$holds && $commit !== null && ($commit['unchecked'] !== [] || $commit['differs'] !== [] || $commit['unresolved'] !== [] || $commit['commits'] === []) => 'The claim does not cover commit ' . $commit['revision'] . ': verify what it carries.',

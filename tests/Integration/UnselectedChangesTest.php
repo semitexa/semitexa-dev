@@ -80,12 +80,15 @@ final class UnselectedChangesTest extends TestCase
     }
 
     #[Test]
-    public function a_path_spelled_with_dot_or_doubled_slashes_is_the_same_path(): void
+    public function a_path_spelled_with_dot_dot_or_doubled_slashes_is_the_same_path(): void
     {
-        self::assertSame(
-            [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'], ['path' => 'packages/semitexa-one/src/Deep/Inner.php', 'status' => 'A']],
-            UnselectedChanges::beside($this->root, ['./packages//semitexa-one/src/Selected.php']),
-        );
+        foreach (['./packages//semitexa-one/src/Selected.php', 'packages/semitexa-one/src/Deep/../Selected.php'] as $spelling) {
+            self::assertSame(
+                [['path' => 'packages/semitexa-one/src/Beside.php', 'status' => 'A'], ['path' => 'packages/semitexa-one/src/Deep/Inner.php', 'status' => 'A']],
+                UnselectedChanges::beside($this->root, [$spelling]),
+                $spelling,
+            );
+        }
     }
 
     /** The authoring workspace's root is no repository: nothing there can be asked, or named. */
@@ -122,6 +125,6 @@ final class UnselectedChangesTest extends TestCase
 
         $check = $receipts->check($id);
         self::assertSame([], $check['changed_since']);
-        self::assertSame(['packages/semitexa-one/src/Beside.php', 'packages/semitexa-one/src/Deep/Inner.php'], $check['not_checked']);
+        self::assertSame(['packages/semitexa-one/src/Beside.php' => 'A', 'packages/semitexa-one/src/Deep/Inner.php' => 'A'], $check['not_checked'], 'each with its status: unscanned would mark a repository git could not answer for');
     }
 }

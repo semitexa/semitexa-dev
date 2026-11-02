@@ -32,6 +32,12 @@ final readonly class CommitCoverage
      */
     public function of(array $tree, string $revision): array
     {
+        // Keyed as the scanner and git write paths: ./a, a//b and a/../b are one file.
+        $normalized = [];
+        foreach ($tree as $path => $hash) {
+            $normalized[UnselectedChanges::normalize((string) $path)] = $hash;
+        }
+        $tree = $normalized;
         $scanner = new DirtyWorkspaceScanner($this->projectRoot);
         $repositories = $scanner->repositories();
         $touched = [];

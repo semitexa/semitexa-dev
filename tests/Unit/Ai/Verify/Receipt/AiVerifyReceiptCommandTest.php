@@ -76,5 +76,6 @@ final class AiVerifyReceiptCommandTest extends TestCase
             self::assertSame(Command::INVALID, $tester->execute(['--commit' => $revision]), var_export($revision, true));
             self::assertStringContainsString('--commit takes a revision', $tester->getDisplay());
         }
+        self::assertCount(1, (new VerifyReceipts($this->root))->unread(), 'a refused run leaves the receipt unread');
     }
 }

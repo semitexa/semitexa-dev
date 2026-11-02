@@ -141,12 +141,24 @@ final readonly class UnselectedChanges
         return $best;
     }
 
-    /** A workspace path as the scanner writes it: no ./ segments, no doubled or edge slashes. */
-    private static function normalize(string $path): string
+    /**
+     * A workspace path as the scanner writes it: no `.` segments, `..` resolved
+     * against what precedes it, no doubled or edge slashes.
+     */
+    public static function normalize(string $path): string
     {
-        $path = (string) preg_replace('#/+#', '/', $path);
-        $path = (string) preg_replace('#(?<=^|/)\./#', '', $path);
+        $segments = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
 
-        return trim($path, '/');
+        return implode('/', $segments);
     }
 }
