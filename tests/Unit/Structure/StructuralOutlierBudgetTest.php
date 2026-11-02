@@ -568,11 +568,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // the visitor of an earlier request re-established for work done on
         // KISS — and reExecute() re-establishing the session BEFORE its auth
         // gate (a re-run used to resolve nobody; tk-ls-kiss-visitor).
-        // 676 -> 683, 2026-11-02 (bench-html-form-validation-422): an HTML form
+        // 676 -> 686, 2026-11-02 (bench-html-form-validation-422): an HTML form
         // whose payload failed validation goes on to its handler's invalid()
-        // when one answers it; the rule is PayloadAdmission::answersInvalid(),
+        // when one answers it, decided once the response profile's handlers
+        // are bound (review of core#214); the rules are PayloadAdmission's,
         // the run PipelineExecutor's. METHOD COUNT UNCHANGED at 17.
-        'semitexa-core/src/Pipeline/RouteExecutor.php' => [17, 683],
+        'semitexa-core/src/Pipeline/RouteExecutor.php' => [17, 686],
         'semitexa-demo/src/Application/Service/DemoCatalogService.php' => [17, 825],
         'semitexa-platform-ui/src/Application/Service/Twig/PlatformUiTwigExtension.php' => [17, 806],
         'semitexa-core/src/Resource/ResourceExpansionPipeline.php' => [12, 707],
