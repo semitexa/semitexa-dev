@@ -34,7 +34,7 @@ final class TestPlanBuilder
     ) {}
 
     /**
-     * @param array{module: string, name: string, target?: string, dryRun?: bool} $params
+     * @param array{module: string, name: string, target?: string, dryRun?: bool, freshHandler?: bool} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -46,7 +46,7 @@ final class TestPlanBuilder
             $files[] = $this->payloadTest($module, $params['name']);
         }
         if ($target === self::TARGET_HANDLER || $target === self::TARGET_BOTH) {
-            $files[] = $this->handlerTest($module, $params['name']);
+            $files[] = $this->handlerTest($module, $params['name'], $params['freshHandler'] ?? false);
         }
 
         return new GenerationPlan(
@@ -87,7 +87,7 @@ final class TestPlanBuilder
         );
     }
 
-    private function handlerTest(string $module, string $name): PlannedFile
+    private function handlerTest(string $module, string $name, bool $freshHandler): PlannedFile
     {
         $moduleNs = ModuleNamespace::of($module);
         $handlerClass = $this->inflector->toHandlerClass($name);
@@ -96,9 +96,15 @@ final class TestPlanBuilder
         $className = $handlerClass . 'Test';
         $namespace = "App\\Tests\\Modules\\{$module}\\Unit";
 
-        // The test calls handle() with a fresh payload and resource and asserts
-        // the answer: it used to assert only the class's interface, with the
-        // call left as a commented TODO (bench-make-page-placeholder-tests).
+        // A handler make:page just wrote, or one that injects nothing, is run:
+        // the test calls handle() and asserts its answer, where it used to
+        // assert only the interface beside a commented TODO
+        // (bench-make-page-placeholder-tests). A handler with #[InjectAs*]
+        // properties (or one not loadable here) reads services a bare `new`
+        // leaves unset, so its test asserts the contract and names what to set.
+        $handlerFqcn = "{$moduleNs}\\Application\\Handler\\PayloadHandler\\{$handlerClass}";
+        $injected = $freshHandler ? [] : self::injectedProperties($handlerFqcn);
+        $runs = $freshHandler || $injected === [];
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
@@ -117,7 +123,13 @@ final class TestPlanBuilder
             'handlerClass' => $handlerClass,
             'payloadClass' => $payloadClass,
             'resourceClass' => $resourceClass,
-            'testMethod' => $this->snake($handlerClass) . '_answers_with_its_resource',
+            'doc' => $runs
+                ? " * What {$handlerClass} answers: as generated, a {$resourceClass}. When handle()\n * fills it, assert what it puts there, e.g. `\$resource->getRenderContext()['…']`."
+                : " * {$handlerClass} keeps the handler contract. handle() is not called here: it\n * reads services the container injects, which a bare `new` leaves unset.",
+            'body' => $runs
+                ? "        \$handler = new {$handlerClass}();\n\n        self::assertInstanceOf(TypedHandlerInterface::class, \$handler);\n        self::assertInstanceOf({$resourceClass}::class, \$handler->handle(new {$payloadClass}(), new {$resourceClass}()), 'the handler answers with its resource');"
+                : "        // Set " . ($injected === null ? 'the services it injects' : implode(', ', array_map(static fn (string $p): string => '$' . $p, $injected))) . " on the handler, then\n        // assert what handle(new {$payloadClass}(), new {$resourceClass}()) puts on the resource.\n        \$handler = new {$handlerClass}();\n\n        self::assertInstanceOf(TypedHandlerInterface::class, \$handler);",
+            'testMethod' => $this->snake($handlerClass) . ($runs ? '_answers_with_its_resource' : '_is_a_typed_handler'),
         ], 'make:test');
 
         return new PlannedFile(
@@ -125,6 +137,30 @@ final class TestPlanBuilder
             $content,
             FileType::PhpClass,
         );
+    }
+
+    /**
+     * The handler's container-injected properties: [] when it has none,
+     * null when the class cannot be loaded here (so nothing is assumed).
+     *
+     * @return list<string>|null
+     */
+    private static function injectedProperties(string $class): ?array
+    {
+        if (!class_exists($class)) {
+            return null;
+        }
+        $names = [];
+        foreach ((new \ReflectionClass($class))->getProperties() as $property) {
+            foreach ($property->getAttributes() as $attribute) {
+                if (str_starts_with($attribute->getName(), 'Semitexa\\Core\\Attribute\\InjectAs')) {
+                    $names[] = $property->getName();
+                    break;
+                }
+            }
+        }
+
+        return $names;
     }
 
     private function snake(string $studly): string

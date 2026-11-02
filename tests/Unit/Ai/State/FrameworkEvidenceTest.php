@@ -139,6 +139,8 @@ final class FrameworkEvidenceTest extends TestCase
         // Both spellings of the version occur among the real reports.
         file_put_contents($dir . '/2026-11-01-aurisera-2026-11-01-0448.md', $report('FAIL'));
         file_put_contents($dir . '/UPGRADE-2026.11.02.0000.md', $report('PASS'));
+        // An earlier run for the same version, which the later one supersedes.
+        file_put_contents($dir . '/2026-10-31-aurisera-2026-11-01-0448.md', $report('PASS'));
 
         self::assertSame(['release.version' => 202611010448, 'release.published-install-pass' => 0], FrameworkEvidence::lastPublishedInstall($this->root));
 
@@ -151,7 +153,7 @@ final class FrameworkEvidenceTest extends TestCase
     public function static_analysis_reads_the_baseline_errors_and_the_ceiling(): void
     {
         mkdir(dirname($this->root . '/' . FrameworkEvidence::PHPSTAN_BASELINE), 0777, true);
-        file_put_contents($this->root . '/' . FrameworkEvidence::PHPSTAN_BASELINE, "parameters:\n\tignoreErrors:\n\t\t-\n\t\t\tmessage: '#^a$#'\n\t\t\tcount: 3\n\t\t\tpath: x.php\n\n\t\t-\n\t\t\tmessage: '#^b$#'\n\t\t\tcount: 4\n\t\t\tpath: y.php\n");
+        file_put_contents($this->root . '/' . FrameworkEvidence::PHPSTAN_BASELINE, "parameters:\n\tignoreErrors:\n\t\t-\n\t\t\tmessage: '#^a$#'\n\t\t\tcount: 3\n\t\t\tpath: x.php\n\n\t\t-\n\t\t\tmessage: '#^b$#'\n\t\t\tcount: 4 # kept: see the ticket\n\t\t\tpath: y.php\n");
         file_put_contents($this->root . '/' . FrameworkEvidence::PHPSTAN_CEILING, json_encode(['ceiling' => 1]));
 
         self::assertSame(['phpstan.baseline-errors' => 7, 'phpstan.ceiling' => 1], FrameworkEvidence::phpstanBaseline($this->root));

@@ -82,6 +82,8 @@ final class PagePlanBuilder
                 'module' => $module,
                 'name' => $name,
                 'target' => TestPlanBuilder::TARGET_HANDLER,
+                // The handler this command writes injects nothing: its test runs it.
+                'freshHandler' => true,
                 'dryRun' => false,
             ]);
             $allFiles = array_merge($allFiles, $testPlan->files);

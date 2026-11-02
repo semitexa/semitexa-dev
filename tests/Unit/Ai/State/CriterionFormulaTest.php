@@ -73,5 +73,7 @@ final class CriterionFormulaTest extends TestCase
         $row = self::row(StateReport::build(FrameworkRubric::rubric(), $records, new \DateTimeImmutable(self::NOW), $readings, FrameworkRubric::formulas()), 'work.installs');
 
         self::assertSame([20, 'current'], [$row['points'], $row['status']]);
+        $report = StateReport::build(FrameworkRubric::rubric(), $records, new \DateTimeImmutable(self::NOW), $readings, FrameworkRubric::formulas());
+        self::assertSame(20, $report['phases']['work']['percent'], 'the phase counts the recorded 20, not 0');
     }
 }

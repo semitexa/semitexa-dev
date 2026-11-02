@@ -77,7 +77,16 @@ final class FrameworkEvidence
     public static function openBugTasks(string $projectRoot): array
     {
         $open = 0;
-        foreach (glob($projectRoot . '/var/ai-work/tasks/*.json') ?: [] as $file) {
+        $dir = $projectRoot . '/var/ai-work/tasks';
+        // No backlog is no open bug; a backlog that cannot be listed is no reading.
+        if (is_dir($dir) && !is_readable($dir)) {
+            throw new \RuntimeException('var/ai-work/tasks cannot be listed');
+        }
+        $files = is_dir($dir) ? glob($dir . '/*.json') : [];
+        if ($files === false) {
+            throw new \RuntimeException('var/ai-work/tasks cannot be listed');
+        }
+        foreach ($files as $file) {
             // A task file that does not read is a finding, never a closed bug.
             $task = JsonFile::read($file);
             if (in_array($task['recipe'] ?? null, self::BUG_RECIPES, true) && !in_array($task['status'] ?? null, ['done', 'discarded'], true)) {
@@ -105,7 +114,8 @@ final class FrameworkEvidence
         if ($reports === []) {
             throw new \RuntimeException('no release report in ' . self::RELEASE_REPORTS);
         }
-        usort($reports, static fn (string $a, string $b): int => strcmp(self::versionOf($b), self::versionOf($a)));
+        // Newest version first; two runs for one version, the later date first.
+        usort($reports, static fn (string $a, string $b): int => [self::versionOf($b), basename($b)] <=> [self::versionOf($a), basename($a)]);
         $report = (string) @file_get_contents($reports[0]);
         if (preg_match('/^## Published install\s.*?^- Verdict: \*\*([A-Z]+)\*\*/ms', $report, $m) !== 1) {
             throw new \RuntimeException(basename($reports[0]) . ' records no Published install verdict');
@@ -127,7 +137,8 @@ final class FrameworkEvidence
         if ($baseline === false) {
             throw new \RuntimeException(self::PHPSTAN_BASELINE . ' is missing');
         }
-        preg_match_all('/^\s+count:\s*(\d+)\s*$/m', $baseline, $counts);
+        // A count may carry a trailing NEON comment (`count: 3 # why`).
+        preg_match_all('/^\s+count:\s*(\d+)\s*(?:#.*)?$/m', $baseline, $counts);
         $ceiling = JsonFile::read($projectRoot . '/' . self::PHPSTAN_CEILING)['ceiling'] ?? null;
         if (!is_int($ceiling)) {
             throw new \RuntimeException(self::PHPSTAN_CEILING . ' holds no ceiling');

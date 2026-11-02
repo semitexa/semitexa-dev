@@ -10,7 +10,8 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
 
 /**
  * How many test files (named ...Test.php) the project has, where test:run
- * discovers them: its own tests/ and every package's and module's. A reading for
+ * discovers them in the trees tests.skip-calls scans: every package's and
+ * module's tests/. A reading for
  * right.test-quality only, not a ledger metric (more tests is not worse),
  * so a tree with no tests scores no test quality rather than full marks for
  * skipping nothing.
@@ -19,7 +20,9 @@ final class TestFilesCount implements QualityMetricInterface
 {
     public function measure(string $projectRoot): Measurement
     {
-        $dirs = ['project' => $projectRoot . '/tests'];
+        // The same trees tests.skip-calls scans, so the two inputs of one
+        // criterion speak of the same tests.
+        $dirs = [];
         foreach (PhpFiles::packages($projectRoot) as $name => $dir) {
             $dirs[$name] = $dir . '/tests';
         }
