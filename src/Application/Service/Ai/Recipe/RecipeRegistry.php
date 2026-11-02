@@ -230,6 +230,25 @@ final class RecipeRegistry
                 ],
                 default_risk: 'medium',
             ),
+            // Before add_payload_field: a field on a FORM reaches every layer
+            // (bench-ai-task-misroutes-add-field: 'add a phone field to the contact
+            // form' was routed to the payload-only recipe, low confidence).
+            new Recipe(
+                id: 'add_form_field',
+                label: 'Add a field to a form, end to end',
+                summary: 'A new input that is stored: the Payload property, setter and validate() rule; the domain model; '
+                    . 'the ResourceModel column and its Mapper; the Twig input with its error and old value; '
+                    . 'the test that posts it; then orm:sync for the column and ai:verify.',
+                keywords: ['form', 'field', 'input', 'column', 'entity', 'stored', 'store', 'persist', 'save', 'saved'],
+                verbs: ['add', 'extend', 'capture', 'collect', 'store', 'persist'],
+                generator_chain: [],
+                context_signals: ['Payload\\Request', 'Db\\MySQL\\Model', 'Db\\MySQL\\Mapper', 'Domain\\Model', 'View\\templates'],
+                arg_hints: [
+                    '--module' => 'Module hosting the form.',
+                    '--name'   => 'The form\'s payload class (no Payload suffix).',
+                ],
+                default_risk: 'medium',
+            ),
             new Recipe(
                 id: 'add_payload_field',
                 label: 'Add a field to an existing payload',
