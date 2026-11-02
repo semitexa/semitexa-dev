@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify\Receipt;
 
+use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
+
 /**
  * A receipt for an ai:verify run, so "all tests pass" can be checked instead
  * of believed.
@@ -94,14 +96,14 @@ final class VerifyReceipts
     }
 
     /**
-     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, receipt: ?array<string, mixed>}
+     * @return array{found: bool, id: ?string, intact: bool, verdict: ?string, generated_at: ?string, changed_since: list<string>, changed_during_run: list<string>, not_checked: list<string>, receipt: ?array<string, mixed>}
      */
     public function check(?string $id): array
     {
         $file = $id === null ? $this->latest() : $this->projectRoot . '/' . self::DIR . '/' . basename($id) . '.json';
         $receipt = $file !== null && is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
         if (!is_array($receipt)) {
-            return ['found' => false, 'id' => $id, 'intact' => false, 'verdict' => null, 'generated_at' => null, 'changed_since' => [], 'changed_during_run' => [], 'receipt' => null];
+            return ['found' => false, 'id' => $id, 'intact' => false, 'verdict' => null, 'generated_at' => null, 'changed_since' => [], 'changed_during_run' => [], 'not_checked' => [], 'receipt' => null];
         }
         /** @var array<string, mixed> $receipt */
         $recorded = is_string($receipt['digest'] ?? null) ? $receipt['digest'] : '';
@@ -125,6 +127,9 @@ final class VerifyReceipts
             'generated_at'  => is_string($receipt['generated_at'] ?? null) ? $receipt['generated_at'] : null,
             'changed_since' => $changed,
             'changed_during_run' => array_values(array_filter((array) ($receipt['changed_during_run'] ?? []), is_string(...))),
+            // What the claim does not cover, as the tree stands now: the
+            // uncommitted changes beside the checked files in their repositories.
+            'not_checked'   => array_map(static fn (array $c): string => $c['path'], UnselectedChanges::beside($this->projectRoot, array_map('strval', array_keys($tree)))),
             'receipt'       => $receipt,
         ];
     }

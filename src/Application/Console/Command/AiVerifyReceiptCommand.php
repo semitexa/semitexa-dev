@@ -70,9 +70,14 @@ final class AiVerifyReceiptCommand extends BaseCommand
         if ($check['changed_during_run'] !== []) {
             $output->writeln(sprintf('  run:     %d file(s) changed WHILE the run checked them: %s', count($check['changed_during_run']), implode(', ', $check['changed_during_run'])));
         }
-        $output->writeln($holds
-            ? 'The claim holds for the tree in front of you.'
-            : 'The claim does not hold for the tree in front of you: re-run ai:verify.');
+        if ($check['not_checked'] !== []) {
+            $output->writeln(sprintf('  beside:  %d other uncommitted change(s) in these repositories no check read: %s', count($check['not_checked']), implode(', ', $check['not_checked'])));
+        }
+        $output->writeln(match (true) {
+            !$holds => 'The claim does not hold for the tree in front of you: re-run ai:verify.',
+            $check['not_checked'] !== [] => sprintf('The claim holds for the %d file(s) the run checked, not for the change(s) beside them.', count((array) ($check['receipt']['tree'] ?? []))),
+            default => 'The claim holds for the tree in front of you.',
+        });
 
         return $holds ? self::SUCCESS : self::FAILURE;
     }

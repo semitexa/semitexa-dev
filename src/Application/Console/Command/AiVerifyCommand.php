@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Trace\TraceAutoAppender;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\CoverageGap;
+use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
 use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
@@ -215,7 +216,8 @@ final class AiVerifyCommand extends BaseCommand
             $impact = $this->probeImpact($plan);
         }
 
-        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
+        $unselected = UnselectedChanges::ofRun($input, $projectRoot, $plan);
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact, $unselected), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not
@@ -232,7 +234,7 @@ final class AiVerifyCommand extends BaseCommand
             );
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         } else {
-            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan);
+            $this->emitNdjson($output, $plan, $results, $verdict, $impact, $dirtyScan, $unselected);
             $this->maybeAppendToTrace($input, $output, $plan, $results, $verdict, $envelope);
         }
 
@@ -524,7 +526,7 @@ final class AiVerifyCommand extends BaseCommand
     }
 
     /** @param list<VerificationResult> $results */
-    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null): array
+    private function buildEnvelope(VerificationPlan $plan, array $results, string $verdict, ?ImpactReport $impact = null, array $unselected = []): array
     {
         $report = new VerifyReportSerializer();
         $violations = $this->collectViolations($results);
@@ -554,7 +556,7 @@ final class AiVerifyCommand extends BaseCommand
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
             'restart'         => $report->restartAdvice($plan->changedFiles),
-        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
+        ] + UnselectedChanges::annotate(CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray(), $unselected);
     }
 
     /**
@@ -632,6 +634,7 @@ final class AiVerifyCommand extends BaseCommand
     /**
      * @param list<VerificationResult> $results
      * @param array{scanned: list<string>, unscannable: list<string>}|null $dirtyScan
+     * @param list<array{path: string, status: string}> $unselected
      */
     private function emitNdjson(
         OutputInterface $output,
@@ -640,6 +643,7 @@ final class AiVerifyCommand extends BaseCommand
         string $verdict,
         ?ImpactReport $impact = null,
         ?array $dirtyScan = null,
+        array $unselected = [],
     ): void {
         $report = new VerifyReportSerializer();
         // NDJSON is the DEFAULT mode, and the reach of a `--dirty` scan existed
@@ -715,7 +719,7 @@ final class AiVerifyCommand extends BaseCommand
             'verdict' => $verdict,
             'completed' => $report->completed($results),
             'counts'  => $report->countByStatus($results),
-        ] + CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray();
+        ] + UnselectedChanges::annotate(CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray(), $unselected);
         if ($impact !== null) {
             $verdictLine['impact'] = $impact->toSummary();
         }
