@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
+use Semitexa\Dev\Application\Service\Ai\Verify\TestDatabase;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationExecutor;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
@@ -306,6 +307,22 @@ class VerificationExecutorTest extends TestCase
         $this->assertStringContainsString('phpunit binary not found', $results[0]->signal);
     }
 
+    /**
+     * An executor whose PHPUnit targets name their databases here, not from the
+     * process env: the suite's other tests set and clear APP_ENV, and under
+     * test:run DB_DATABASE is the test database, so an ambient read refused
+     * (both names the same) or passed depending on what ran before.
+     */
+    private function phpunitExecutor(ProcessRunner $runner): VerificationExecutor
+    {
+        return new VerificationExecutor(
+            new Application(),
+            $this->root,
+            $runner,
+            testDatabase: new TestDatabase(new Application(), $this->root, $runner, liveDatabase: 'semitexa', testDatabase: 'semitexa_test'),
+        );
+    }
+
     public function test_phpunit_target_runs_with_filter_when_binary_present(): void
     {
         $bin = $this->root . '/vendor/bin';
@@ -318,7 +335,7 @@ class VerificationExecutorTest extends TestCase
         $plan = $this->planWith([
             new VerificationTarget(VerificationTarget::TYPE_PHPUNIT, 'phpunit:Foo', 'r', [], testFilter: 'FooTest'),
         ]);
-        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+        $results = $this->phpunitExecutor($runner)->execute($plan);
 
         $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
         $this->assertContains('--filter', $runner->calls[0]['command']);
@@ -346,7 +363,7 @@ class VerificationExecutorTest extends TestCase
                 testFilter: 'FooTest',
             ),
         ]);
-        (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+        $this->phpunitExecutor($runner)->execute($plan);
 
         $this->assertContains('packages/foo/tests/FooTest.php', $runner->calls[0]['command']);
     }
@@ -366,7 +383,7 @@ class VerificationExecutorTest extends TestCase
         $plan = $this->planWith([
             new VerificationTarget(VerificationTarget::TYPE_PHPUNIT, 'phpunit:Foo', 'r', [], testFilter: 'FooTest'),
         ]);
-        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+        $results = $this->phpunitExecutor($runner)->execute($plan);
 
         $this->assertNotContains('--no-output', $runner->calls[0]['command']);
         $this->assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
@@ -398,7 +415,7 @@ class VerificationExecutorTest extends TestCase
                 testFilter: null,
             ),
         ]);
-        $results = (new VerificationExecutor(new Application(), $this->root, $runner))->execute($plan);
+        $results = $this->phpunitExecutor($runner)->execute($plan);
 
         $this->assertSame(VerificationResult::STATUS_PASS, $results[0]->status);
         $this->assertNotContains('--filter', $runner->calls[0]['command'], 'directory-scoped target must not pass --filter');
