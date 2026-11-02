@@ -40,6 +40,7 @@ class MakeModuleCommandTest extends TestCase
 
     public function test_defaults_to_custom_target_in_json_mode(): void
     {
+        // verify:accept-test-change make:module writes only the module roots now (bench-make-module-empty-dirs): the exact file list is pinned instead, and the Console/Command path is pinned where commands are generated (CommandPlanBuilderTest).
         $tester = new CommandTester(new MakeModuleCommand());
         $exit = $tester->execute([
             '--name' => 'Catalog',
@@ -51,33 +52,9 @@ class MakeModuleCommandTest extends TestCase
 
         $decoded = json_decode(trim($tester->getDisplay()), true);
         $this->assertSame('semitexa-dev.generation-result/v1', $decoded['artifact']);
-        $this->assertContains('src/modules/Catalog/src/Application/Payload/Request/.gitkeep', $decoded['result']['created']);
+        // The module's roots, no empty folders (bench-make-module-empty-dirs).
+        $this->assertSame(['src/modules/Catalog/src/.gitkeep', 'src/modules/Catalog/tests/.gitkeep'], $decoded['result']['created']);
         $this->assertContains('--target=custom', $decoded['result']['replay_args']);
-    }
-
-    public function test_custom_target_emits_canonical_console_command_path(): void
-    {
-        $tester = new CommandTester(new MakeModuleCommand());
-        $tester->execute([
-            '--name' => 'Catalog',
-            '--dry-run' => true,
-            '--json' => true,
-        ]);
-
-        $created = json_decode(trim($tester->getDisplay()), true)['result']['created'];
-
-        // Canonical: Application/Console/Command/ — required by the
-        // module_structure validator. This pins the regression so the
-        // generator can never silently regress to Application/Command/.
-        $this->assertContains(
-            'src/modules/Catalog/src/Application/Console/Command/.gitkeep',
-            $created,
-        );
-        $this->assertNotContains(
-            'src/modules/Catalog/src/Application/Command/.gitkeep',
-            $created,
-            'make:module must not emit the deprecated Application/Command/ path',
-        );
     }
 
     public function test_generates_package_layout_when_target_is_package(): void
@@ -93,31 +70,8 @@ class MakeModuleCommandTest extends TestCase
         $this->assertSame(0, $exit);
 
         $decoded = json_decode(trim($tester->getDisplay()), true);
-        $this->assertContains('packages/semitexa-catalog/composer.json', $decoded['result']['created']);
-        $this->assertContains('packages/semitexa-catalog/src/Application/Payload/Request/.gitkeep', $decoded['result']['created']);
+        $this->assertSame(['packages/semitexa-catalog/composer.json', 'packages/semitexa-catalog/src/.gitkeep'], $decoded['result']['created']);
         $this->assertContains('--target=package', $decoded['result']['replay_args']);
-    }
-
-    public function test_package_target_also_emits_canonical_console_command_path(): void
-    {
-        $tester = new CommandTester(new MakeModuleCommand());
-        $tester->execute([
-            '--name' => 'Catalog',
-            '--target' => 'package',
-            '--dry-run' => true,
-            '--json' => true,
-        ]);
-
-        $created = json_decode(trim($tester->getDisplay()), true)['result']['created'];
-
-        $this->assertContains(
-            'packages/semitexa-catalog/src/Application/Console/Command/.gitkeep',
-            $created,
-        );
-        $this->assertNotContains(
-            'packages/semitexa-catalog/src/Application/Command/.gitkeep',
-            $created,
-        );
     }
 
     public function test_written_module_passes_module_structure_validation(): void
@@ -132,8 +86,10 @@ class MakeModuleCommandTest extends TestCase
         ]);
         $this->assertSame(0, $exit, 'make:module --write must succeed');
 
-        $this->assertDirectoryExists($this->tmpRoot . '/src/modules/Catalog/src/Application/Console/Command');
-        $this->assertDirectoryDoesNotExist($this->tmpRoot . '/src/modules/Catalog/src/Application/Command');
+        // The roots, and no empty folder (bench-make-module-empty-dirs).
+        $this->assertFileExists($this->tmpRoot . '/src/modules/Catalog/src/.gitkeep');
+        $this->assertDirectoryDoesNotExist($this->tmpRoot . '/src/modules/Catalog/src/Application');
+        $this->assertDirectoryDoesNotExist($this->tmpRoot . '/src/modules/Catalog/src/Domain');
 
         // Real project root holds the executable spec; the validator runs
         // against the temp $tmpRoot which holds the freshly generated module.
