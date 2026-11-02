@@ -24,22 +24,35 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
  *   - fast.speed-ratchet: the requests.* metrics the ledger holds. They are
  *     measured by running requests, which the release preflight does; the
  *     ratchet is what the ledger has recorded.
+ *   - work.known-bugs: the backlog's open bug tasks (recipe fix_bug, bugfix
+ *     or debug_investigate, status neither done nor discarded).
+ *   - right.static-analysis: the errors phpstan-baseline.neon holds and the
+ *     ceiling the release gate allows above it. Running phpstan takes
+ *     minutes and is the gate's job; this is what the gate is measured from.
  *
- * The other computed criteria (installs, release tests, known bugs, users get
- * fixes, audits, static analysis, the rest of the performance audit) have no
- * reader yet: their evidence is a release report, the backlog or a phpstan
- * run, and each is a provider of its own.
+ * The other computed criteria (installs, release tests, users get fixes,
+ * audits, the rest of the performance audit) have no reader yet: their
+ * evidence is a release report or an epic's progress, each a provider of its
+ * own.
  */
 final class FrameworkEvidence
 {
+    /** Recipes a task fixing a defect is filed under. */
+    public const BUG_RECIPES = ['fix_bug', 'bugfix', 'debug_investigate'];
+
+    public const PHPSTAN_BASELINE = 'packages/semitexa-dev/resources/phpstan/phpstan-baseline.neon';
+    public const PHPSTAN_CEILING = 'packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json';
+
     /**
      * @param array<string, array<string, QualityMetricInterface>> $measured criterion => metric id => metric
      * @param array<string, list<string>> $recorded criterion => ledger metric ids
+     * @param array<string, \Closure(string): array<string, int>> $counted criterion => a count read from the project's files
      */
     public function __construct(
         private readonly string $projectRoot,
         private readonly array $measured,
         private readonly array $recorded,
+        private readonly array $counted = [],
     ) {}
 
     public static function forProject(string $projectRoot): self
@@ -48,7 +61,42 @@ final class FrameworkEvidence
             $projectRoot,
             ['right.test-quality' => ['tests.skip-calls' => new TestSkipCallsMetric(), 'packages.without-tests' => new PackagesWithoutTestsMetric()]],
             ['fast.speed-ratchet' => ['requests.query-shapes', 'requests.duplicate-queries', 'requests.repeated-statements']],
+            [
+                'work.known-bugs' => self::openBugTasks(...),
+                'right.static-analysis' => self::phpstanBaseline(...),
+            ],
         );
+    }
+
+    /** @return array<string, int> */
+    public static function openBugTasks(string $projectRoot): array
+    {
+        $open = 0;
+        foreach (glob($projectRoot . '/var/ai-work/tasks/*.json') ?: [] as $file) {
+            // A task file that does not read is a finding, never a closed bug.
+            $task = JsonFile::read($file);
+            if (in_array($task['recipe'] ?? null, self::BUG_RECIPES, true) && !in_array($task['status'] ?? null, ['done', 'discarded'], true)) {
+                $open++;
+            }
+        }
+
+        return ['bugs.open' => $open];
+    }
+
+    /** @return array<string, int> */
+    public static function phpstanBaseline(string $projectRoot): array
+    {
+        $baseline = @file_get_contents($projectRoot . '/' . self::PHPSTAN_BASELINE);
+        if ($baseline === false) {
+            throw new \RuntimeException(self::PHPSTAN_BASELINE . ' is missing');
+        }
+        preg_match_all('/^\s+count:\s*(\d+)\s*$/m', $baseline, $counts);
+        $ceiling = JsonFile::read($projectRoot . '/' . self::PHPSTAN_CEILING)['ceiling'] ?? null;
+        if (!is_int($ceiling)) {
+            throw new \RuntimeException(self::PHPSTAN_CEILING . ' holds no ceiling');
+        }
+
+        return ['phpstan.baseline-errors' => array_sum(array_map('intval', $counts[1])), 'phpstan.ceiling' => $ceiling];
     }
 
     /** @return array<string, Reading> by criterion id */
@@ -69,6 +117,13 @@ final class FrameworkEvidence
         }
         foreach ($this->recorded as $criterion => $ids) {
             $readings[$criterion] = $this->fromLedger($criterion, $ids);
+        }
+        foreach ($this->counted as $criterion => $count) {
+            try {
+                $readings[$criterion] = new Reading($criterion, $count($this->projectRoot));
+            } catch (\RuntimeException $e) {
+                $readings[$criterion] = Reading::failed($criterion, $e->getMessage());
+            }
         }
 
         return $readings;

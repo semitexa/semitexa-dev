@@ -108,6 +108,36 @@ final class FrameworkEvidenceTest extends TestCase
         ScoreRecord::fromArray(['reading' => ['tests.skip-calls' => '87']] + $record->toArray());
     }
 
+    /** Open bug tasks: a bug recipe, not done or discarded. A task file that does not read fails the reading. */
+    #[Test]
+    public function known_bugs_count_the_open_bug_tasks(): void
+    {
+        mkdir($this->root . '/var/ai-work/tasks', 0777, true);
+        $task = fn (string $id, string $recipe, string $status) => file_put_contents($this->root . "/var/ai-work/tasks/{$id}.json", json_encode(['id' => $id, 'recipe' => $recipe, 'status' => $status]));
+        $task('a', 'fix_bug', 'new');
+        $task('b', 'bugfix', 'in_progress');
+        $task('c', 'debug_investigate', 'blocked');
+        $task('d', 'fix_bug', 'done');
+        $task('e', 'fix_bug', 'discarded');
+        $task('f', 'add_feature', 'new');
+
+        self::assertSame(['bugs.open' => 3], FrameworkEvidence::openBugTasks($this->root));
+
+        file_put_contents($this->root . '/var/ai-work/tasks/g.json', '{not json');
+        $this->expectException(\RuntimeException::class);
+        FrameworkEvidence::openBugTasks($this->root);
+    }
+
+    #[Test]
+    public function static_analysis_reads_the_baseline_errors_and_the_ceiling(): void
+    {
+        mkdir(dirname($this->root . '/' . FrameworkEvidence::PHPSTAN_BASELINE), 0777, true);
+        file_put_contents($this->root . '/' . FrameworkEvidence::PHPSTAN_BASELINE, "parameters:\n\tignoreErrors:\n\t\t-\n\t\t\tmessage: '#^a$#'\n\t\t\tcount: 3\n\t\t\tpath: x.php\n\n\t\t-\n\t\t\tmessage: '#^b$#'\n\t\t\tcount: 4\n\t\t\tpath: y.php\n");
+        file_put_contents($this->root . '/' . FrameworkEvidence::PHPSTAN_CEILING, json_encode(['ceiling' => 1]));
+
+        self::assertSame(['phpstan.baseline-errors' => 7, 'phpstan.ceiling' => 1], FrameworkEvidence::phpstanBaseline($this->root));
+    }
+
     /** The framework's own readers: one per criterion that has one, every one a criterion of the rubric. */
     #[Test]
     public function the_framework_reads_test_quality_and_the_speed_ratchet(): void
@@ -115,7 +145,8 @@ final class FrameworkEvidenceTest extends TestCase
         $this->ledger(['requests.query-shapes' => 1, 'requests.duplicate-queries' => 0, 'requests.repeated-statements' => 0]);
         $readings = FrameworkEvidence::forProject($this->root)->read();
 
-        self::assertSame(['right.test-quality', 'fast.speed-ratchet'], array_keys($readings));
+        self::assertSame(['right.test-quality', 'fast.speed-ratchet', 'work.known-bugs', 'right.static-analysis'], array_keys($readings));
+        self::assertSame('could not read: ' . FrameworkEvidence::PHPSTAN_BASELINE . ' is missing', $readings['right.static-analysis']->text(), 'no baseline is no reading, never 0 errors');
         foreach (array_keys($readings) as $id) {
             self::assertNotNull(FrameworkRubric::rubric()->criterion($id), $id);
         }
