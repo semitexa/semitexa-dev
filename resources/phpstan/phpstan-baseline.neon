@@ -1598,12 +1598,6 @@ parameters:
 			path: packages/semitexa-ssr/src/Application/Service/Seo/AiSitemapJsonRenderer.php
 
 		-
-			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:generateForResource\(\) return type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: packages/semitexa-ssr/src/Application/Service/Seo/SemanticRenderer.php
-
-		-
 			message: '#^Method Semitexa\\Ssr\\Application\\Service\\Seo\\SemanticRenderer\:\:getCurrentContext\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
