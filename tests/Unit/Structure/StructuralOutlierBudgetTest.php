@@ -427,7 +427,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // its factories now waits too, in dependency order. Same ordering rule
         // of the build graph, so it stays where the graph is built.
         'semitexa-core/src/Container/GraphBuilder.php' => [22, 829],
-        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 709],
+        // 709 -> 713, 2026-11-02 (phpstan burn-down): a discovered class that
+        // does not load is reported instead of a ReflectionException, and the
+        // class-string guards it needs are declared. Relations became a typed
+        // RelationDefinition, which took lines out. METHOD COUNT UNCHANGED at 20.
+        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 713],
         // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
         // when the prompt.catalog detector landed, and the four lines are the
         // comment saying why — a detector no kind schedules never runs and reads
