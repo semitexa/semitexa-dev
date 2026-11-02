@@ -59,7 +59,7 @@ final class AiVerifyReceiptCommand extends BaseCommand
             return self::INVALID;
         }
         $commit = null;
-        if ($check['found'] && is_string($revision) && $revision !== '') {
+        if ($check['found'] && is_string($revision)) {
             $tree = [];
             foreach ((array) ($check['receipt']['tree'] ?? []) as $path => $hash) {
                 $tree[(string) $path] = is_string($hash) ? $hash : null;
