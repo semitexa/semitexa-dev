@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Generation\Builder;
 
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Generation\Contract\NameInflectorInterface;
 use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterface;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
@@ -82,8 +83,10 @@ final class PagePlanBuilder
                 'module' => $module,
                 'name' => $name,
                 'target' => TestPlanBuilder::TARGET_HANDLER,
-                // The handler this command writes injects nothing: its test runs it.
-                'freshHandler' => true,
+                // A handler this run writes injects nothing, so its test runs it. One
+                // already on disk is kept (no --force) and may inject: the test then
+                // judges it as make:test does.
+                'freshHandler' => !self::handlerExists($handlerPlan),
                 'dryRun' => false,
             ]);
             $allFiles = array_merge($allFiles, $testPlan->files);
@@ -94,5 +97,16 @@ final class PagePlanBuilder
             files: $allFiles,
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    private static function handlerExists(GenerationPlan $handlerPlan): bool
+    {
+        foreach ($handlerPlan->files as $file) {
+            if (str_ends_with($file->path, 'Handler.php')) {
+                return is_file(ProjectRoot::get() . '/' . $file->path);
+            }
+        }
+
+        return false;
     }
 }

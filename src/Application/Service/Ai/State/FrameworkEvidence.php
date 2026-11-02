@@ -79,7 +79,7 @@ final class FrameworkEvidence
         $open = 0;
         $dir = $projectRoot . '/var/ai-work/tasks';
         // No backlog is no open bug; a backlog that cannot be listed is no reading.
-        if (is_dir($dir) && !is_readable($dir)) {
+        if ((is_dir($dir) && !is_readable($dir)) || (is_link($dir) && !is_dir($dir))) {
             throw new \RuntimeException('var/ai-work/tasks cannot be listed');
         }
         $files = is_dir($dir) ? glob($dir . '/*.json') : [];

@@ -103,8 +103,12 @@ final class TestPlanBuilder
         // properties (or one not loadable here) reads services a bare `new`
         // leaves unset, so its test asserts the contract and names what to set.
         $handlerFqcn = "{$moduleNs}\\Application\\Handler\\PayloadHandler\\{$handlerClass}";
+        $resourceFqcn = "{$moduleNs}\\Application\\Resource\\Response\\{$resourceClass}";
         $injected = $freshHandler ? [] : self::injectedProperties($handlerFqcn);
-        $runs = $freshHandler || $injected === [];
+        // An existing handler is run only when it injects nothing and handle()
+        // takes the resource this test would pass (make:handler --resource can
+        // name another).
+        $runs = $freshHandler || ($injected === [] && self::handles($handlerFqcn, $resourceFqcn));
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
@@ -151,16 +155,35 @@ final class TestPlanBuilder
             return null;
         }
         $names = [];
-        foreach ((new \ReflectionClass($class))->getProperties() as $property) {
-            foreach ($property->getAttributes() as $attribute) {
-                if (str_starts_with($attribute->getName(), 'Semitexa\\Core\\Attribute\\InjectAs')) {
-                    $names[] = $property->getName();
-                    break;
+        // Up the parent chain, each class's own properties: a parent's private
+        // one is invisible to getProperties() on the child, and injected all the same.
+        for ($ref = new \ReflectionClass($class); $ref !== false; $ref = $ref->getParentClass()) {
+            foreach ($ref->getProperties() as $property) {
+                if ($property->getDeclaringClass()->getName() !== $ref->getName()) {
+                    continue;
+                }
+                foreach ($property->getAttributes() as $attribute) {
+                    if (str_starts_with($attribute->getName(), 'Semitexa\\Core\\Attribute\\InjectAs')) {
+                        $names[] = $property->getName();
+                        break;
+                    }
                 }
             }
         }
 
-        return $names;
+        return array_values(array_unique($names));
+    }
+
+    /** Whether handle()'s resource parameter is the class this test would pass. */
+    private static function handles(string $handler, string $resource): bool
+    {
+        if (!class_exists($handler) || !method_exists($handler, 'handle')) {
+            return false;
+        }
+        $parameter = (new \ReflectionMethod($handler, 'handle'))->getParameters()[1] ?? null;
+        $type = $parameter?->getType();
+
+        return $type instanceof \ReflectionNamedType && ltrim($type->getName(), '\\') === $resource;
     }
 
     private function snake(string $studly): string

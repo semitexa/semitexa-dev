@@ -141,12 +141,25 @@ final class FrameworkEvidenceTest extends TestCase
         file_put_contents($dir . '/UPGRADE-2026.11.02.0000.md', $report('PASS'));
         // An earlier run for the same version, which the later one supersedes.
         file_put_contents($dir . '/2026-10-31-aurisera-2026-11-01-0448.md', $report('PASS'));
+        // An older version run later: the version decides, not the date.
+        file_put_contents($dir . '/2026-11-05-tamador-2026-10-29-1052.md', $report('PASS'));
 
         self::assertSame(['release.version' => 202611010448, 'release.published-install-pass' => 0], FrameworkEvidence::lastPublishedInstall($this->root));
 
         file_put_contents($dir . '/2026-11-02-zephyr-2026-11-02.0900.md', "# Release\n\nno install section\n");
         $this->expectExceptionMessage('records no Published install verdict');
         FrameworkEvidence::lastPublishedInstall($this->root);
+    }
+
+    /** A tasks link to nothing is an unreadable backlog, not an empty one. */
+    #[Test]
+    public function a_dangling_tasks_link_fails_the_bug_reading(): void
+    {
+        mkdir($this->root . '/var/ai-work', 0777, true);
+        symlink($this->root . '/nowhere', $this->root . '/var/ai-work/tasks');
+
+        $this->expectExceptionMessage('cannot be listed');
+        FrameworkEvidence::openBugTasks($this->root);
     }
 
     #[Test]
