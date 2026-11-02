@@ -16,10 +16,27 @@ final class StateReport
     /**
      * @param array<string, ScoreRecord> $records
      * @param array<string, Reading> $readings the computed criteria's evidence as read on this run
+     * @param array<string, CriterionFormula> $formulas the criteria Semitexa scores itself from their readings
      * @return array{phases: array<string, array{percent: ?int, unknown: int, criteria: list<array<string, mixed>>, raise: list<array{criterion: string, title: string, gap: int}>}>, orphans: list<array{criterion: string, points: int, why: string}>}
      */
-    public static function build(Rubric $rubric, array $records, \DateTimeImmutable $now, array $readings = []): array
+    public static function build(Rubric $rubric, array $records, \DateTimeImmutable $now, array $readings = [], array $formulas = []): array
     {
+        // A criterion with a formula and a reading it can use is scored here,
+        // from what was measured on this run; a recorded score for it is not
+        // counted (status `computed`). Without a usable reading it falls back
+        // to its record, so a failed read never zeroes it.
+        $computed = [];
+        foreach ($formulas as $id => $formula) {
+            $criterion = $rubric->criterion($id);
+            $reading = $readings[$id] ?? null;
+            if ($criterion !== null && $reading !== null && $reading->failure === null) {
+                $points = $formula->points($reading->values, $criterion->weight);
+                if ($points !== null) {
+                    $computed[$id] = ['points' => $points, 'evidence' => $reading->text() . ' — ' . $formula->text];
+                }
+            }
+        }
+
         // A score the rubric no longer holds (renamed, reweighted, hand-edited)
         // is shown apart, never counted and never fatal to the whole report.
         $orphans = [];
@@ -34,8 +51,12 @@ final class StateReport
                 unset($records[$id]);
             }
         }
-        $current = array_filter($records, static fn (ScoreRecord $r): bool => $r->isCurrent($now));
-        $percents = StateScore::phases($rubric, array_values(array_map(static fn (ScoreRecord $r): CriterionScore => $r->toScore(), $current)));
+        $current = array_filter($records, static fn (ScoreRecord $r): bool => $r->isCurrent($now) && !isset($computed[$r->criterionId]));
+        $scores = array_values(array_map(static fn (ScoreRecord $r): CriterionScore => $r->toScore(), $current));
+        foreach ($computed as $id => $c) {
+            $scores[] = new CriterionScore($id, $c['points'], $c['evidence']);
+        }
+        $percents = StateScore::phases($rubric, $scores);
 
         $phases = [];
         foreach ($rubric->phases() as $phase) {
@@ -43,6 +64,27 @@ final class StateReport
             $raise = [];
             foreach ($rubric->forPhase($phase) as $criterion) {
                 $record = $records[$criterion->id] ?? null;
+                if (isset($computed[$criterion->id])) {
+                    $criteria[] = [
+                        'criterion' => $criterion->id,
+                        'title' => $criterion->title,
+                        'weight' => $criterion->weight,
+                        'kind' => $criterion->kind->value,
+                        'points' => $computed[$criterion->id]['points'],
+                        'status' => 'computed',
+                        'evidence' => $computed[$criterion->id]['evidence'],
+                        'by' => 'semitexa',
+                        'age_days' => 0,
+                        'expires_at' => null,
+                        'reading' => $readings[$criterion->id]->text(),
+                        'reading_changed' => null,
+                    ];
+                    $gap = $criterion->weight - $computed[$criterion->id]['points'];
+                    if ($gap > 0) {
+                        $raise[] = ['criterion' => $criterion->id, 'title' => $criterion->title, 'gap' => $gap];
+                    }
+                    continue;
+                }
                 $status = match (true) {
                     $record === null => 'unscored',
                     $record->isCurrent($now) => 'current',
