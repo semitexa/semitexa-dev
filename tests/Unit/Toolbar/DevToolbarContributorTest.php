@@ -71,4 +71,25 @@ final class DevToolbarContributorTest extends TestCase
 
         self::assertSame('', $contributor->bodyEnd());
     }
+
+    #[Test]
+    public function a_page_on_another_site_that_fetches_one_gets_no_placeholder(): void
+    {
+        putenv('APP_ENV=dev');
+        putenv('SEMITEXA_DEV_TOOLBAR=1');
+        putenv('SEMITEXA_OBSERVATORY_TOKEN=');
+        $contributor = new DevToolbarContributor();
+        (new \ReflectionProperty(DevToolbarContributor::class, 'gate'))->setValue($contributor, new ObservatoryPanelGate());
+
+        // This machine's browser, but a fetch from another site's page: with
+        // CORS_ALLOW_ORIGIN set, that page reads the response.
+        CurrentRequestStore::set(new Request('GET', '/', [
+            'Host' => 'localhost:9502',
+            'Sec-Fetch-Site' => 'cross-site',
+            'Sec-Fetch-Mode' => 'cors',
+            'Sec-Fetch-Dest' => 'empty',
+        ], [], [], ['remote_addr' => '127.0.0.1'], []));
+
+        self::assertSame('', $contributor->bodyEnd());
+    }
 }

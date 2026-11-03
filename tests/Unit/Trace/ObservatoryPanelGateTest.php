@@ -149,6 +149,7 @@ final class ObservatoryPanelGateTest extends TestCase
         putenv('SEMITEXA_OBSERVATORY_TOKEN=s3cret');
         $this->request(['Host' => '192.168.100.2:9507', 'X-Observatory-Token' => 's3cret'], '192.168.100.7');
         self::assertTrue($gate->allows(), 'a dev stack used from elsewhere on purpose carries the token');
+        self::assertTrue($gate->allowsDevTools(), 'the same token opens the dev tools');
         $this->request(['Host' => '192.168.100.2:9507', 'X-Observatory-Token' => 'wrong'], '192.168.100.7');
         self::assertFalse($gate->allows());
     }
