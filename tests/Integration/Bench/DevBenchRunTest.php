@@ -22,9 +22,14 @@ final class DevBenchRunTest extends TestCase
     {
         $exit = null;
         $display = '';
-        Coroutine\run(function () use (&$exit, &$display): void {
+        $hosts = [];
+        Coroutine\run(function () use (&$exit, &$display, &$hosts): void {
             $server = new Server('127.0.0.1', 0);
-            $server->handle('/', static fn (Request $request, Response $response) => $response->end('ok'));
+            // '/' matches every path: /a and /b included.
+            $server->handle('/', static function (Request $request, Response $response) use (&$hosts): void {
+                $hosts[$request->header['host'] ?? '(none)'] = true;
+                $response->end('ok');
+            });
             Coroutine::create(static fn () => $server->start());
             $tester = new CommandTester(new DevBenchCommand());
             $exit = $tester->execute([
@@ -43,6 +48,7 @@ final class DevBenchRunTest extends TestCase
         $artifact = json_decode($display, true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('semitexa-dev.bench/v1', $artifact['artifact']);
         self::assertSame('shop.test', $artifact['server']['host']);
+        self::assertSame(['shop.test'], array_keys($hosts), 'the Host header the server received, not only the option echoed');
         self::assertSame([1, 2], $artifact['method']['concurrency']);
         self::assertSame(['GET /a', 'GET /a', 'GET /b', 'GET /b'], array_column($artifact['runs'], 'route'));
         foreach ($artifact['runs'] as $run) {
