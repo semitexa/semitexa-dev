@@ -10,6 +10,7 @@ use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\TracePayload;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\TraceHtmlRenderer;
 use Semitexa\Dev\Application\Service\Trace\TraceReader;
 
@@ -22,6 +23,10 @@ use Semitexa\Dev\Application\Service\Trace\TraceReader;
 #[AsPayloadHandler(payload: TracePayload::class, resource: ResourceResponse::class)]
 final class TraceHandler implements TypedHandlerInterface
 {
+    /** Dev and THIS MACHINE: APP_ENV=dev alone served this to the whole Wi-Fi (2026-11-03). */
+    #[InjectAsReadonly]
+    protected ObservatoryPanelGate $gate;
+
     #[InjectAsReadonly]
     protected TraceReader $reader;
 
@@ -30,7 +35,7 @@ final class TraceHandler implements TypedHandlerInterface
 
     public function handle(TracePayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!$this->reader->isEnabled()) {
+        if (!$this->reader->isEnabled() || !$this->gate->allowsDevTools()) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

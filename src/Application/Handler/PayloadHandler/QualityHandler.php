@@ -12,7 +12,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Payload\Request\QualityPayload;
 use Semitexa\Dev\Application\Service\Quality\QualityHtmlRenderer;
-use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 
 /**
  * Serves the quality ledger at `/__quality`.
@@ -24,6 +24,10 @@ use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
 #[AsPayloadHandler(payload: QualityPayload::class, resource: ResourceResponse::class)]
 final class QualityHandler implements TypedHandlerInterface
 {
+    /** Dev and THIS MACHINE: APP_ENV=dev alone served this to the whole Wi-Fi (2026-11-03). */
+    #[InjectAsReadonly]
+    protected ObservatoryPanelGate $gate;
+
     #[InjectAsReadonly]
     protected QualityHtmlRenderer $renderer;
 
@@ -33,7 +37,7 @@ final class QualityHandler implements TypedHandlerInterface
 
     public function handle(QualityPayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!ObservatoryMode::full()) {
+        if (!$this->gate->allowsDevTools()) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

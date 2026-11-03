@@ -10,7 +10,7 @@ use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryTimelinePayload;
-use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\PageTimelineHtmlRenderer;
 use Semitexa\Dev\Application\Service\Trace\PageTimelineReader;
 
@@ -21,6 +21,10 @@ use Semitexa\Dev\Application\Service\Trace\PageTimelineReader;
 #[AsPayloadHandler(payload: ObservatoryTimelinePayload::class, resource: ResourceResponse::class)]
 final class ObservatoryTimelineHandler implements TypedHandlerInterface
 {
+    /** Dev and THIS MACHINE: APP_ENV=dev alone served this to the whole Wi-Fi (2026-11-03). */
+    #[InjectAsReadonly]
+    protected ObservatoryPanelGate $gate;
+
     #[InjectAsReadonly]
     protected PageTimelineReader $reader;
 
@@ -29,7 +33,7 @@ final class ObservatoryTimelineHandler implements TypedHandlerInterface
 
     public function handle(ObservatoryTimelinePayload $payload, ResourceResponse $resource): ResourceResponse
     {
-        if (!ObservatoryMode::full()) {
+        if (!$this->gate->allowsDevTools()) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

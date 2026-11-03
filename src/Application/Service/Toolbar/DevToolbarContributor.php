@@ -12,6 +12,7 @@ use Semitexa\Core\Environment;
 use Semitexa\Core\Lifecycle\CurrentRequestStore;
 use Semitexa\Dev\Application\Service\Explorer\RouteCatalog;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryMode;
+use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\TraceContext;
 use Semitexa\Ssr\Domain\Contract\PageDocumentContributorInterface;
 
@@ -27,7 +28,8 @@ use Semitexa\Ssr\Domain\Contract\PageDocumentContributorInterface;
  * once the response has gone and the journal holds its end line. So the page pays a
  * few hundred bytes, and nothing inline for a CSP to refuse.
  *
- * Dev only: APP_ENV=dev, not the production monitor mode. Off with
+ * Dev only: APP_ENV=dev, not the production monitor mode, and only to a
+ * request the Observatory gate lets in (this machine). Off with
  * SEMITEXA_DEV_TOOLBAR=0.
  */
 #[AsService]
@@ -37,13 +39,18 @@ final class DevToolbarContributor implements PageDocumentContributorInterface
     #[InjectAsReadonly]
     protected AttributeDiscovery $discovery;
 
+    #[InjectAsReadonly]
+    protected ObservatoryPanelGate $gate;
+
     public function bodyEnd(): string
     {
         if (!self::enabled()) {
             return '';
         }
         $request = CurrentRequestStore::get();
-        if ($request === null) {
+        // The placeholder names the payload and handler classes behind the
+        // page; another machine on the network got them on every page.
+        if ($request === null || !$this->gate->allows()) {
             return '';
         }
 
