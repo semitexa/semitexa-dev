@@ -72,7 +72,7 @@ final class AiStateCommand extends BaseCommand
 
     private function show(OutputInterface $output, \DateTimeImmutable $now, bool $human): int
     {
-        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, FrameworkEvidence::forProject($this->getProjectRoot())->read());
+        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, FrameworkEvidence::forProject($this->getProjectRoot())->read(), FrameworkRubric::formulas());
         if (!$human) {
             return $this->emit($output, ['line' => StateReport::line($report)] + $report);
         }
@@ -90,9 +90,13 @@ final class AiStateCommand extends BaseCommand
                     $c['title'],
                     ($c['points'] ?? '?') . '/' . $c['weight'],
                     $c['status'],
-                    $c['status'] === 'unscored' ? '' : sprintf('%dd ago, until %s UTC: %s', $c['age_days'], (new \DateTimeImmutable((string) $c['expires_at']))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'), $evidence),
+                    match ($c['status']) {
+                        'unscored' => '',
+                        'computed' => 'by Semitexa, from: ' . $evidence,
+                        default => sprintf('%dd ago, until %s UTC: %s', $c['age_days'], (new \DateTimeImmutable((string) $c['expires_at']))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'), $evidence),
+                    },
                 ));
-                if (is_string($c['reading'])) {
+                if (is_string($c['reading']) && $c['status'] !== 'computed') {
                     $output->writeln(sprintf(
                         '  %34s now: %s%s',
                         '',
@@ -121,6 +125,9 @@ final class AiStateCommand extends BaseCommand
         if ($criterion === '' || preg_match('/^\d{1,3}$/', $points) !== 1 || $evidence === '') {
             return $this->fail($output, 'score needs --criterion, --points (a whole number, 0 to its weight) and --evidence (what sets them)');
         }
+        if (isset(FrameworkRubric::formulas()[$criterion])) {
+            return $this->fail($output, "{$criterion} is scored by Semitexa from its reading (" . FrameworkRubric::formulas()[$criterion]->text . '); change the evidence, not the points');
+        }
         $expires = self::text($input, 'expires');
         $expiresAt = $expires === '' ? $now->modify('+' . self::DEFAULT_DAYS . ' days') : Expiry::parse($expires);
         if ($expiresAt === null) {
@@ -142,7 +149,7 @@ final class AiStateCommand extends BaseCommand
         $reading = isset($readings[$criterion]) && $readings[$criterion]->failure === null ? $readings[$criterion]->values : null;
         $record = new ScoreRecord($criterion, (int) $points, $evidence, $by !== '' ? $by : 'agent', $now->format('c'), $expiresAt->format('c'), $reading);
         $this->scoreStore->record($record, FrameworkRubric::rubric());
-        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, $readings);
+        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, $readings, FrameworkRubric::formulas());
 
         return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'line' => StateReport::line($report)]);
     }

@@ -418,7 +418,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         'semitexa-api/src/OpenApi/Route/ResourceRouteSchemaGenerator.php' => [20, 915],
         // 742 -> 747 on 2026-09-26, NO NEW METHOD: worker-wide statics now
         // declare their lifetime (core 30e2b35).
-        'semitexa-core/src/Discovery/ClassDiscovery.php' => [20, 747],
+        // 20/747 -> 21/795 on 2026-11-02 (tk-discovery-reports-dropped-classes):
+        // unloadableClasses() and the shared set behind it, so a scan says which
+        // classes it could not inspect. The two drops that recorded nothing now
+        // record why. The state lives beside the attribute cache it describes.
+        'semitexa-core/src/Discovery/ClassDiscovery.php' => [21, 795],
         // NEW on 2026-09-26, at 735 -> 781 lines, recorded rather than trimmed.
         // #[InjectAsFactory] now injects the generated Factory* class chosen by
         // the property's declared type, and a worker-scoped service runs
@@ -433,7 +437,12 @@ final class StructuralOutlierBudgetTest extends TestCase
         // does not load is reported instead of a ReflectionException, and the
         // class-string guards it needs are declared. Relations became a typed
         // RelationDefinition, which took lines out. METHOD COUNT UNCHANGED at 20.
-        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [20, 713],
+        // 20/713 -> 21/748 on 2026-11-02 (tk-discovery-reports-dropped-classes,
+        // orm#105): reportUninspected() turns the classes discovery could not
+        // inspect into an error (the class's own attributes declare #[FromTable],
+        // on the synced connection, or its source cannot be read) or a named
+        // warning. The source parsing lives in DeclaredClassAttributes.
+        'semitexa-orm/src/Application/Service/Schema/SchemaCollector.php' => [21, 748],
         // 827 -> 831 on 2026-09-14: lint:mechanisms joined the KIND_SERVICE row
         // when the prompt.catalog detector landed, and the four lines are the
         // comment saying why — a detector no kind schedules never runs and reads

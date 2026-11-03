@@ -38,6 +38,28 @@ final class GeneratedHandlerTestImportsTest extends TestCase
         self::fail('make:test planned no Unit handler test');
     }
 
+    /**
+     * make:test on a handler it cannot see runs nothing it cannot set up: the
+     * handler may read services the container injects (review of dev#189), so
+     * the test asserts the contract and says what to set. make:page's own
+     * handler injects nothing, so its test runs handle().
+     */
+    #[Test]
+    public function a_handler_it_cannot_see_is_held_to_its_contract_and_a_fresh_one_is_run(): void
+    {
+        $contract = $this->handlerTest();
+        self::assertStringContainsString('_is_a_typed_handler', $contract);
+        self::assertStringContainsString('// Set the services it injects on the handler', $contract);
+        self::assertStringNotContainsString('$handler->handle(', $contract);
+
+        $plan = (new TestPlanBuilder(new NameInflector(), new TemplateResolver(), new TemplateRenderer()))->build([
+            'module' => 'AuditModule', 'name' => 'AuditCheck', 'target' => TestPlanBuilder::TARGET_HANDLER, 'freshHandler' => true, 'dryRun' => true,
+        ]);
+        $fresh = $plan->files[0]->content;
+        self::assertStringContainsString('_answers_with_its_resource', $fresh);
+        self::assertStringContainsString('self::assertInstanceOf(AuditCheckResponse::class, $handler->handle(new AuditCheckPayload(), new AuditCheckResponse())', $fresh);
+    }
+
     // verify:accept-test-change a new module is generated under App\Modules, the canonical prefix (operator decision 18.10)
     #[Test]
     public function the_payload_and_the_response_are_imported(): void
@@ -55,40 +77,27 @@ final class GeneratedHandlerTestImportsTest extends TestCase
     }
 
     /**
-     * The real assertion: every short class name the TODO line mentions has an
-     * import that ends with it. Checking the two names above would pass a
-     * template that changed its example; this follows whatever the line says.
+     * The real assertion: every class the generated test constructs has an
+     * import that ends with it. The example used to be a commented TODO; since
+     * bench-make-page-placeholder-tests it is the test's own code, so the same
+     * rule now holds for what runs.
      */
+    // verify:accept-test-change the TODO example became the test body (bench-make-page-placeholder-tests); the import rule now covers every `new` the test runs
     #[Test]
-    public function every_class_the_todo_line_names_is_imported(): void
+    public function every_class_the_test_constructs_is_imported(): void
     {
         $content = $this->handlerTest();
+        self::assertStringNotContainsString('TODO', $content, 'no instruction left to follow by hand');
 
-        preg_match('/^\s*\/\/\s*\$resource = .*$/m', $content, $todo);
-        self::assertNotEmpty($todo, 'the scaffold lost its worked example');
+        preg_match_all('/new ([A-Z][A-Za-z0-9_]*)\(/', $content, $names);
+        self::assertGreaterThanOrEqual(3, count(array_unique($names[1])), 'it constructs the handler, its payload and its resource');
 
-        preg_match_all('/new ([A-Z][A-Za-z0-9_]*)\(/', $todo[0], $names);
-        self::assertNotEmpty($names[1], 'the example constructs nothing');
-
-        foreach ($names[1] as $short) {
+        foreach (array_unique($names[1]) as $short) {
             self::assertMatchesRegularExpression(
                 '/^use .*\\\\' . preg_quote($short, '/') . ';$/m',
                 $content,
-                "the example constructs {$short}, which the file does not import",
+                "the test constructs {$short}, which the file does not import",
             );
         }
-    }
-
-    /** Imports stay sorted, so a later addition does not reshuffle the file. */
-    #[Test]
-    public function the_import_block_is_sorted(): void
-    {
-        preg_match_all('/^use .*;$/m', $this->handlerTest(), $matches);
-
-        $imports = $matches[0];
-        $sorted = $imports;
-        sort($sorted);
-
-        self::assertSame($sorted, $imports);
     }
 }

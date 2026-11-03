@@ -34,7 +34,7 @@ final class TestPlanBuilder
     ) {}
 
     /**
-     * @param array{module: string, name: string, target?: string, dryRun?: bool} $params
+     * @param array{module: string, name: string, target?: string, dryRun?: bool, freshHandler?: bool} $params
      */
     public function build(array $params): GenerationPlan
     {
@@ -46,7 +46,7 @@ final class TestPlanBuilder
             $files[] = $this->payloadTest($module, $params['name']);
         }
         if ($target === self::TARGET_HANDLER || $target === self::TARGET_BOTH) {
-            $files[] = $this->handlerTest($module, $params['name']);
+            $files[] = $this->handlerTest($module, $params['name'], $params['freshHandler'] ?? false);
         }
 
         return new GenerationPlan(
@@ -87,7 +87,7 @@ final class TestPlanBuilder
         );
     }
 
-    private function handlerTest(string $module, string $name): PlannedFile
+    private function handlerTest(string $module, string $name, bool $freshHandler): PlannedFile
     {
         $moduleNs = ModuleNamespace::of($module);
         $handlerClass = $this->inflector->toHandlerClass($name);
@@ -96,11 +96,20 @@ final class TestPlanBuilder
         $className = $handlerClass . 'Test';
         $namespace = "App\\Tests\\Modules\\{$module}\\Unit";
 
-        // The payload and the response are imported even though only the
-        // commented TODO names them. That comment is the first thing anyone
-        // does with this file, and uncommenting it used to produce two
-        // undefined classes — a scaffold whose one instruction does not work is
-        // worse than one that says nothing.
+        // A handler make:page just wrote, or one that injects nothing, is run:
+        // the test calls handle() and asserts its answer, where it used to
+        // assert only the interface beside a commented TODO
+        // (bench-make-page-placeholder-tests). A handler with #[InjectAs*]
+        // properties (or one not loadable here) reads services a bare `new`
+        // leaves unset, so its test asserts the contract and names what to set.
+        $handlerFqcn = "{$moduleNs}\\Application\\Handler\\PayloadHandler\\{$handlerClass}";
+        $resourceFqcn = "{$moduleNs}\\Application\\Resource\\Response\\{$resourceClass}";
+        $injected = $freshHandler ? [] : self::injectedProperties($handlerFqcn);
+        // An existing handler is run only when it injects nothing and handle()
+        // takes the resource this test would pass (make:handler --resource can
+        // name another).
+        $payloadFqcn = "{$moduleNs}\\Application\\Payload\\Request\\{$payloadClass}";
+        $runs = $freshHandler || ($injected === [] && self::handles($handlerFqcn, $payloadFqcn, $resourceFqcn));
         $imports = [
             'use PHPUnit\\Framework\\Attributes\\Test;',
             'use PHPUnit\\Framework\\TestCase;',
@@ -119,7 +128,13 @@ final class TestPlanBuilder
             'handlerClass' => $handlerClass,
             'payloadClass' => $payloadClass,
             'resourceClass' => $resourceClass,
-            'testMethod' => $this->snake($handlerClass) . '_is_a_typed_handler',
+            'doc' => $runs
+                ? " * What {$handlerClass} answers: as generated, a {$resourceClass}. When handle()\n * fills it, assert what it puts there, e.g. `\$resource->getRenderContext()['…']`."
+                : " * {$handlerClass} keeps the handler contract. handle() is not called here: it\n * reads services the container injects, which a bare `new` leaves unset.",
+            'body' => $runs
+                ? "        \$handler = new {$handlerClass}();\n\n        self::assertInstanceOf(TypedHandlerInterface::class, \$handler);\n        self::assertInstanceOf({$resourceClass}::class, \$handler->handle(new {$payloadClass}(), new {$resourceClass}()), 'the handler answers with its resource');"
+                : "        // Set " . ($injected === null ? 'the services it injects' : implode(', ', array_map(static fn (string $p): string => '$' . $p, $injected))) . " on the handler, then\n        // assert what handle(new {$payloadClass}(), new {$resourceClass}()) puts on the resource.\n        \$handler = new {$handlerClass}();\n\n        self::assertInstanceOf(TypedHandlerInterface::class, \$handler);",
+            'testMethod' => $this->snake($handlerClass) . ($runs ? '_answers_with_its_resource' : '_is_a_typed_handler'),
         ], 'make:test');
 
         return new PlannedFile(
@@ -127,6 +142,71 @@ final class TestPlanBuilder
             $content,
             FileType::PhpClass,
         );
+    }
+
+    /**
+     * The handler's container-injected properties: [] when it has none,
+     * null when the class cannot be loaded here (so nothing is assumed).
+     *
+     * @return list<string>|null
+     */
+    private static function injectedProperties(string $class): ?array
+    {
+        if (!class_exists($class)) {
+            return null;
+        }
+        $names = [];
+        // Up the parent chain, each class's own properties: a parent's private
+        // one is invisible to getProperties() on the child, and injected all the same.
+        for ($ref = new \ReflectionClass($class); $ref !== false; $ref = $ref->getParentClass()) {
+            foreach ($ref->getProperties() as $property) {
+                if ($property->getDeclaringClass()->getName() !== $ref->getName()) {
+                    continue;
+                }
+                foreach ($property->getAttributes() as $attribute) {
+                    if (str_starts_with($attribute->getName(), 'Semitexa\\Core\\Attribute\\InjectAs')) {
+                        $names[] = $property->getName();
+                        break;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * Whether handle() takes the payload and the resource this test would pass:
+     * make:handler --payload and --resource can name others than --name does.
+     */
+    private static function handles(string $handler, string $payload, string $resource): bool
+    {
+        if (!class_exists($handler) || !method_exists($handler, 'handle')) {
+            return false;
+        }
+        $parameters = (new \ReflectionMethod($handler, 'handle'))->getParameters();
+        foreach ([0 => $payload, 1 => $resource] as $position => $class) {
+            $type = ($parameters[$position] ?? null)?->getType();
+            // The class the test passes must be accepted (a parent type takes it
+            // too) and be buildable with a bare `new`.
+            if (!$type instanceof \ReflectionNamedType || !is_a($class, ltrim($type->getName(), '\\'), true) || !self::constructsWithoutArguments($class)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Instantiable, with no constructor or a public one with no required parameter: the test's `new X()` works. */
+    private static function constructsWithoutArguments(string $class): bool
+    {
+        if (!class_exists($class)) {
+            return false;
+        }
+        $reflection = new \ReflectionClass($class);
+        $constructor = $reflection->getConstructor();
+
+        return $reflection->isInstantiable() && ($constructor === null || ($constructor->isPublic() && $constructor->getNumberOfRequiredParameters() === 0));
     }
 
     private function snake(string $studly): string

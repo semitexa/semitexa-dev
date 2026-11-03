@@ -49,4 +49,39 @@ final class FrameworkRubric
             $c('fast.speed-ratchet', 'Ratchet on speed', 10, $computed, '`requests.*` metrics in the ledger, failing a release on regression'),
         ]);
     }
+
+    /**
+     * The computed criteria Semitexa scores itself, from FrameworkEvidence's
+     * readings. Calibrated on 2026-11-02 so that day's readings give the points
+     * the board held (installs 20, static analysis 13, test quality 7): the
+     * numbers do not jump, they stop depending on who counts. Criteria without
+     * a formula are scored with `ai:state score`: the judged ones, and
+     * work.known-bugs until its bug tasks are told apart from agent-efficiency
+     * ones filed with the same recipe.
+     *
+     * @return array<string, CriterionFormula> by criterion id
+     */
+    public static function formulas(): array
+    {
+        return [
+            'work.installs' => new CriterionFormula(
+                '20 when the last release\'s Published install passed, else 0',
+                static fn (array $v): ?int => isset($v['release.published-install-pass']) ? ($v['release.published-install-pass'] === 1 ? 20 : 0) : null,
+            ),
+            'right.static-analysis' => new CriterionFormula(
+                '20 × (1 − phpstan baseline errors / 1000), 0 while the ceiling above the baseline is over 1',
+                static fn (array $v): ?int => isset($v['phpstan.baseline-errors'], $v['phpstan.ceiling'])
+                    ? ($v['phpstan.ceiling'] > 1 ? 0 : (int) round(20 * (1 - $v['phpstan.baseline-errors'] / 1000)))
+                    : null,
+            ),
+            'right.test-quality' => new CriterionFormula(
+                '10 − ⌈tests.skip-calls / 30⌉ − packages.without-tests; 0 with no test file at all',
+                // No skips in a tree with no tests is no test quality: the
+                // first formula scored an empty tree 10.
+                static fn (array $v): ?int => isset($v['tests.skip-calls'], $v['packages.without-tests'], $v['tests.files'])
+                    ? ($v['tests.files'] === 0 ? 0 : 10 - (int) ceil($v['tests.skip-calls'] / 30) - $v['packages.without-tests'])
+                    : null,
+            ),
+        ];
+    }
 }

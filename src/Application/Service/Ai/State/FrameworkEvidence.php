@@ -24,31 +24,127 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
  *   - fast.speed-ratchet: the requests.* metrics the ledger holds. They are
  *     measured by running requests, which the release preflight does; the
  *     ratchet is what the ledger has recorded.
+ *   - work.known-bugs: the backlog's open bug tasks (recipe fix_bug, bugfix
+ *     or debug_investigate, status neither done nor discarded).
+ *   - right.static-analysis: the errors phpstan-baseline.neon holds and the
+ *     ceiling the release gate allows above it. Running phpstan takes
+ *     minutes and is the gate's job; this is what the gate is measured from.
+ *   - work.installs: the last release report's Published install verdict
+ *     (1 PASS, 0 anything else) and the version it installed, as digits.
  *
- * The other computed criteria (installs, release tests, known bugs, users get
- * fixes, audits, static analysis, the rest of the performance audit) have no
- * reader yet: their evidence is a release report, the backlog or a phpstan
- * run, and each is a provider of its own.
+ * The other computed criteria (release tests, users get fixes,
+ * audits, the rest of the performance audit) have no reader yet: their
+ * evidence is a release report or an epic's progress, each a provider of its
+ * own.
  */
 final class FrameworkEvidence
 {
+    /** Recipes a task fixing a defect is filed under. */
+    public const BUG_RECIPES = ['fix_bug', 'bugfix', 'debug_investigate'];
+
+    public const PHPSTAN_BASELINE = 'packages/semitexa-dev/resources/phpstan/phpstan-baseline.neon';
+    public const PHPSTAN_CEILING = 'packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json';
+    /** Where release-readiness leaves one report per run. */
+    public const RELEASE_REPORTS = 'var/docs/release';
+
     /**
      * @param array<string, array<string, QualityMetricInterface>> $measured criterion => metric id => metric
      * @param array<string, list<string>> $recorded criterion => ledger metric ids
+     * @param array<string, \Closure(string): array<string, int>> $counted criterion => a count read from the project's files
      */
     public function __construct(
         private readonly string $projectRoot,
         private readonly array $measured,
         private readonly array $recorded,
+        private readonly array $counted = [],
     ) {}
 
     public static function forProject(string $projectRoot): self
     {
         return new self(
             $projectRoot,
-            ['right.test-quality' => ['tests.skip-calls' => new TestSkipCallsMetric(), 'packages.without-tests' => new PackagesWithoutTestsMetric()]],
+            ['right.test-quality' => ['tests.skip-calls' => new TestSkipCallsMetric(), 'packages.without-tests' => new PackagesWithoutTestsMetric(), 'tests.files' => new TestFilesCount()]],
             ['fast.speed-ratchet' => ['requests.query-shapes', 'requests.duplicate-queries', 'requests.repeated-statements']],
+            [
+                'work.known-bugs' => self::openBugTasks(...),
+                'right.static-analysis' => self::phpstanBaseline(...),
+                'work.installs' => self::lastPublishedInstall(...),
+            ],
         );
+    }
+
+    /** @return array<string, int> */
+    public static function openBugTasks(string $projectRoot): array
+    {
+        $open = 0;
+        $dir = $projectRoot . '/var/ai-work/tasks';
+        // No backlog is no open bug; a backlog that cannot be listed is no reading.
+        if ((is_dir($dir) && !is_readable($dir)) || (is_link($dir) && !is_dir($dir))) {
+            throw new \RuntimeException('var/ai-work/tasks cannot be listed');
+        }
+        $files = is_dir($dir) ? glob($dir . '/*.json') : [];
+        if ($files === false) {
+            throw new \RuntimeException('var/ai-work/tasks cannot be listed');
+        }
+        foreach ($files as $file) {
+            // A task file that does not read is a finding, never a closed bug.
+            $task = JsonFile::read($file);
+            if (in_array($task['recipe'] ?? null, self::BUG_RECIPES, true) && !in_array($task['status'] ?? null, ['done', 'discarded'], true)) {
+                $open++;
+            }
+        }
+
+        return ['bugs.open' => $open];
+    }
+
+    /**
+     * The newest release report (named <date>-<codename>-<version>.md, the
+     * version written 2026.11.01.0448 or 2026-11-01-0448; the UPGRADE notes
+     * beside them are not reports): its version and whether its
+     * Published install passed. A report without the verdict is no reading.
+     *
+     * @return array<string, int>
+     */
+    public static function lastPublishedInstall(string $projectRoot): array
+    {
+        $reports = array_values(array_filter(
+            glob($projectRoot . '/' . self::RELEASE_REPORTS . '/*.md') ?: [],
+            static fn (string $f): bool => str_starts_with(basename($f), 'UPGRADE-') === false && self::versionOf($f) !== '',
+        ));
+        if ($reports === []) {
+            throw new \RuntimeException('no release report in ' . self::RELEASE_REPORTS);
+        }
+        // Newest version first; two runs for one version, the later date first.
+        usort($reports, static fn (string $a, string $b): int => [self::versionOf($b), basename($b)] <=> [self::versionOf($a), basename($a)]);
+        $report = (string) @file_get_contents($reports[0]);
+        if (preg_match('/^## Published install\s.*?^- Verdict: \*\*([A-Z]+)\*\*/ms', $report, $m) !== 1) {
+            throw new \RuntimeException(basename($reports[0]) . ' records no Published install verdict');
+        }
+
+        return ['release.version' => (int) self::versionOf($reports[0]), 'release.published-install-pass' => $m[1] === 'PASS' ? 1 : 0];
+    }
+
+    /** The report's version as twelve digits (YYYYMMDDhhmm), '' when its name carries none. */
+    private static function versionOf(string $report): string
+    {
+        return preg_match('/\A\d{4}-\d{2}-\d{2}-.+-(\d{4})[.-](\d{2})[.-](\d{2})[.-](\d{4})\.md\z/', basename($report), $m) === 1 ? $m[1] . $m[2] . $m[3] . $m[4] : '';
+    }
+
+    /** @return array<string, int> */
+    public static function phpstanBaseline(string $projectRoot): array
+    {
+        $baseline = @file_get_contents($projectRoot . '/' . self::PHPSTAN_BASELINE);
+        if ($baseline === false) {
+            throw new \RuntimeException(self::PHPSTAN_BASELINE . ' is missing');
+        }
+        // A count may carry a trailing NEON comment (`count: 3 # why`).
+        preg_match_all('/^\s+count:\s*(\d+)\s*(?:#.*)?$/m', $baseline, $counts);
+        $ceiling = JsonFile::read($projectRoot . '/' . self::PHPSTAN_CEILING)['ceiling'] ?? null;
+        if (!is_int($ceiling)) {
+            throw new \RuntimeException(self::PHPSTAN_CEILING . ' holds no ceiling');
+        }
+
+        return ['phpstan.baseline-errors' => array_sum(array_map('intval', $counts[1])), 'phpstan.ceiling' => $ceiling];
     }
 
     /** @return array<string, Reading> by criterion id */
@@ -69,6 +165,13 @@ final class FrameworkEvidence
         }
         foreach ($this->recorded as $criterion => $ids) {
             $readings[$criterion] = $this->fromLedger($criterion, $ids);
+        }
+        foreach ($this->counted as $criterion => $count) {
+            try {
+                $readings[$criterion] = new Reading($criterion, $count($this->projectRoot));
+            } catch (\RuntimeException $e) {
+                $readings[$criterion] = Reading::failed($criterion, $e->getMessage());
+            }
         }
 
         return $readings;

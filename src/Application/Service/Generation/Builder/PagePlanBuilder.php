@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Generation\Builder;
 
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Generation\Contract\NameInflectorInterface;
 use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterface;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
@@ -71,14 +72,21 @@ final class PagePlanBuilder
             $resourcePlan->files,
         );
 
-        // The all-in-one ships tested code by default: payload contract +
-        // handler smoke, matching exactly what this command generates. Opt out
-        // with --no-test (withTest=false) when a hand-written test will follow.
+        // The all-in-one ships a test that asserts something: the handler's
+        // answer. Not the payload contract test: the payload it generates has no
+        // fields and no #[TestablePayload], so that test only ever skipped
+        // (bench-make-page-placeholder-tests); `make:test --target=payload`
+        // adds it once the payload has fields to check. Opt out with --no-test
+        // (withTest=false) when a hand-written test will follow.
         if (($params['withTest'] ?? true) !== false) {
             $testPlan = $this->testBuilder->build([
                 'module' => $module,
                 'name' => $name,
-                'target' => TestPlanBuilder::TARGET_BOTH,
+                'target' => TestPlanBuilder::TARGET_HANDLER,
+                // A handler this run writes injects nothing, so its test runs it. One
+                // already on disk is kept (no --force) and may inject: the test then
+                // judges it as make:test does.
+                'freshHandler' => !self::handlerExists($handlerPlan),
                 'dryRun' => false,
             ]);
             $allFiles = array_merge($allFiles, $testPlan->files);
@@ -89,5 +97,16 @@ final class PagePlanBuilder
             files: $allFiles,
             dryRun: $params['dryRun'] ?? false,
         );
+    }
+
+    private static function handlerExists(GenerationPlan $handlerPlan): bool
+    {
+        foreach ($handlerPlan->files as $file) {
+            if (str_ends_with($file->path, 'Handler.php')) {
+                return is_file(ProjectRoot::get() . '/' . $file->path);
+            }
+        }
+
+        return false;
     }
 }
