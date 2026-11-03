@@ -24,8 +24,7 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
  *   - fast.speed-ratchet: the requests.* metrics the ledger holds. They are
  *     measured by running requests, which the release preflight does; the
  *     ratchet is what the ledger has recorded.
- *   - work.known-bugs: the backlog's open bug tasks (recipe fix_bug, bugfix
- *     or debug_investigate, status neither done nor discarded).
+ *   - work.known-bugs: the backlog's open bug tasks (recipe fix_bug or bugfix, status neither done nor discarded).
  *   - right.static-analysis: the errors phpstan-baseline.neon holds and the
  *     ceiling the release gate allows above it. Running phpstan takes
  *     minutes and is the gate's job; this is what the gate is measured from.
@@ -40,7 +39,8 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
 final class FrameworkEvidence
 {
     /** Recipes a task fixing a defect is filed under. */
-    public const BUG_RECIPES = ['fix_bug', 'bugfix', 'debug_investigate'];
+    // Defects only: debug_investigate also files research, which is no known bug.
+    public const BUG_RECIPES = ['fix_bug', 'bugfix'];
 
     public const PHPSTAN_BASELINE = 'packages/semitexa-dev/resources/phpstan/phpstan-baseline.neon';
     public const PHPSTAN_CEILING = 'packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json';

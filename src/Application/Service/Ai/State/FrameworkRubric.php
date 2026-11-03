@@ -70,7 +70,7 @@ final class FrameworkRubric
                 static fn (array $v): ?int => isset($v['release.published-install-pass']) ? ($v['release.published-install-pass'] === 1 ? 20 : 0) : null,
             ),
             'work.known-bugs' => new CriterionFormula(
-                '15 − bugs.open (open fix_bug / bugfix / debug_investigate tasks)',
+                '15 − bugs.open (open fix_bug / bugfix tasks)',
                 static fn (array $v): ?int => isset($v['bugs.open']) ? 15 - $v['bugs.open'] : null,
             ),
             'right.static-analysis' => new CriterionFormula(
