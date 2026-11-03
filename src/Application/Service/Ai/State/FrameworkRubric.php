@@ -54,10 +54,11 @@ final class FrameworkRubric
      * The computed criteria Semitexa scores itself, from FrameworkEvidence's
      * readings. Calibrated on 2026-11-02 so that day's readings give the points
      * the board held (installs 20, static analysis 13, test quality 7): the
-     * numbers do not jump, they stop depending on who counts. Criteria without
-     * a formula are scored with `ai:state score`: the judged ones, and
-     * work.known-bugs until its bug tasks are told apart from agent-efficiency
-     * ones filed with the same recipe.
+     * numbers do not jump, they stop depending on who counts. work.known-bugs
+     * joined on 2026-11-03, once the agent-efficiency, research and decision
+     * tasks filed under bug recipes were relabelled: its reading counts only
+     * defects now. Criteria without a formula, the judged ones, are scored
+     * with `ai:state score`.
      *
      * @return array<string, CriterionFormula> by criterion id
      */
@@ -67,6 +68,10 @@ final class FrameworkRubric
             'work.installs' => new CriterionFormula(
                 '20 when the last release\'s Published install passed, else 0',
                 static fn (array $v): ?int => isset($v['release.published-install-pass']) ? ($v['release.published-install-pass'] === 1 ? 20 : 0) : null,
+            ),
+            'work.known-bugs' => new CriterionFormula(
+                '15 − bugs.open (open fix_bug / bugfix / debug_investigate tasks)',
+                static fn (array $v): ?int => isset($v['bugs.open']) ? 15 - $v['bugs.open'] : null,
             ),
             'right.static-analysis' => new CriterionFormula(
                 '20 × (1 − phpstan baseline errors / 1000), 0 while the ceiling above the baseline is over 1',

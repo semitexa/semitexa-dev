@@ -39,6 +39,8 @@ final class CriterionFormulaTest extends TestCase
         $f = FrameworkRubric::formulas();
 
         self::assertSame(20, $f['work.installs']->points(['release.published-install-pass' => 1], 20));
+        self::assertSame(13, $f['work.known-bugs']->points(['bugs.open' => 2], 15), 'curl/Swoole 6.2.4 and the pooled FK cycle, 2026-11-03');
+        self::assertSame(0, $f['work.known-bugs']->points(['bugs.open' => 40], 15), 'clamped at 0');
         self::assertSame(0, $f['work.installs']->points(['release.published-install-pass' => 0], 20));
         self::assertSame(13, $f['right.static-analysis']->points(['phpstan.baseline-errors' => 369, 'phpstan.ceiling' => 1], 20));
         self::assertSame(20, $f['right.static-analysis']->points(['phpstan.baseline-errors' => 0, 'phpstan.ceiling' => 1], 20));

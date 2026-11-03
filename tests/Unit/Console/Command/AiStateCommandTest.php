@@ -43,11 +43,12 @@ final class AiStateCommandTest extends TestCase
     public function a_score_with_its_evidence_moves_the_line_and_expires_in_thirty_days(): void
     {
         [$status, $out] = $this->state('show');
-        // The fixture tree has no tests: Semitexa scores test quality 0 itself.
-        self::assertSame([0, 'work ? · right 0% (5 unknown) · fast ?'], [$status, $out['line']]);
+        // The fixture tree has no tests and no backlog: Semitexa scores test
+        // quality 0 and known bugs 15 (none open) itself.
+        self::assertSame([0, 'work 15% (5 unknown) · right 0% (5 unknown) · fast ?'], [$status, $out['line']]);
 
         [$status, $out] = $this->state('score', ['--criterion' => 'right.architecture', '--points' => '7', '--evidence' => 'StructuralOutlierBudgetTest: 8 god classes']);
-        self::assertSame([0, 'work ? · right 7% (4 unknown) · fast ?'], [$status, $out['line']]);
+        self::assertSame([0, 'work 15% (5 unknown) · right 7% (4 unknown) · fast ?'], [$status, $out['line']]);
         self::assertIsArray($out['recorded']);
         self::assertSame(['right.architecture', 7, 'agent'], [$out['recorded']['criterion'], $out['recorded']['points'], $out['recorded']['by']]);
         self::assertIsString($out['recorded']['expires_at']);
