@@ -28,6 +28,7 @@ final class LatencyStatsTest extends TestCase
 
         self::assertSame(['route', 'concurrency', 'seconds', 'requests', 'errors', 'req_per_second', 'statuses', 'latency'], array_keys($run->toArray()));
         self::assertSame(50.0, $run->toArray()['req_per_second']);
+        self::assertSame(3, $run->toArray()['errors']);
         self::assertSame([200 => 97, 500 => 3], $run->toArray()['statuses'], 'statuses in order');
     }
 }

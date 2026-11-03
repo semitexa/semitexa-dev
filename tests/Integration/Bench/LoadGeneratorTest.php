@@ -67,4 +67,54 @@ final class LoadGeneratorTest extends TestCase
         self::assertSame($run->requests, $run->errors);
         self::assertSame([0 => $run->requests], $run->statuses);
     }
+
+    #[Test]
+    public function past_the_sample_cap_the_count_stays_exact_and_the_latencies_a_sample(): void
+    {
+        $run = null;
+        Coroutine\run(function () use (&$run): void {
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', static fn (Request $request, Response $response) => $response->end('ok'));
+            Coroutine::create(static fn () => $server->start());
+            $run = (new LoadGenerator('127.0.0.1', $server->port, 10.0, 10))->run('/', 2, 0.2);
+            $server->shutdown();
+        });
+
+        self::assertGreaterThan(10, $run->requests, 'every answer is counted');
+        self::assertSame(10, $run->latency->count, 'ten latencies are kept');
+    }
+
+    #[Test]
+    public function a_duration_that_is_no_finite_number_is_refused(): void
+    {
+        foreach ([[NAN, 0.0], [INF, 0.0], [1.0, NAN], [1.0, -1.0]] as [$seconds, $warmup]) {
+            try {
+                (new LoadGenerator('127.0.0.1', 1))->run('/', 1, $seconds, $warmup);
+                self::fail("{$seconds}/{$warmup} was accepted");
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    #[Test]
+    public function a_connection_swoole_refuses_to_start_is_named_and_the_others_are_released(): void
+    {
+        $error = null;
+        Coroutine::set(['max_coroutine' => 8]);
+        try {
+            Coroutine\run(function () use (&$error): void {
+                try {
+                    (new LoadGenerator('127.0.0.1', 1, 0.2))->run('/', 32, 0.2);
+                } catch (\RuntimeException $e) {
+                    $error = $e->getMessage();
+                }
+            });
+        } finally {
+            Coroutine::set(['max_coroutine' => 100000]);
+        }
+
+        self::assertIsString($error, 'the run stops with an error, not a hang');
+        self::assertStringContainsString('of 32 could not start', $error);
+    }
 }

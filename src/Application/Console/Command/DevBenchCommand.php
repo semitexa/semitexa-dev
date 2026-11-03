@@ -32,6 +32,9 @@ final class DevBenchCommand extends BaseCommand
     /** A window is held in memory (every latency sample), so it is bounded. */
     private const MAX_SECONDS = 300;
 
+    /** Connections per level: past this a closed loop measures the generator, not the server. */
+    private const MAX_CONCURRENCY = 1024;
+
     public function __construct()
     {
         parent::__construct('dev:bench');
@@ -54,13 +57,22 @@ final class DevBenchCommand extends BaseCommand
         $routes = array_values((array) $input->getOption('route'));
         foreach ($routes as $route) {
             if (!is_string($route) || !str_starts_with($route, '/')) {
-                return $this->fail($output, '--route ' . (is_string($route) ? "\"{$route}\"" : '') . ' is no path: every route starts with /');
+                return $this->fail($output, '--route ' . (is_string($route) ? '"' . self::printable($route) . '"' : '') . ' is no path: every route starts with /');
+            }
+        }
+        // Each one is written into the JSON artifact and sent as a request line or header.
+        foreach (['--route' => $routes, '--host' => [$input->getOption('host')], '--accept' => [$input->getOption('accept')]] as $option => $values) {
+            foreach ($values as $value) {
+                if (is_string($value) && !self::isText($value)) {
+                    return $this->fail($output, "{$option} is not printable UTF-8 text");
+                }
             }
         }
         $levels = [];
         foreach (explode(',', (string) $input->getOption('concurrency')) as $part) {
-            if (!ctype_digit(trim($part)) || (int) $part < 1) {
-                return $this->fail($output, "--concurrency \"{$part}\" is no whole number of 1 or more");
+            // A digit string past PHP_INT_MAX casts to PHP_INT_MAX, which the ceiling refuses too.
+            if (!ctype_digit(trim($part)) || (int) $part < 1 || (int) $part > self::MAX_CONCURRENCY) {
+                return $this->fail($output, '--concurrency "' . self::printable($part) . '" is no whole number from 1 to ' . self::MAX_CONCURRENCY);
             }
             $levels[(int) $part] = (int) $part;
         }
@@ -101,7 +113,7 @@ final class DevBenchCommand extends BaseCommand
             'request' => ['accept' => $headers['Accept']],
             'method' => ['loop' => 'closed', 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration],
             'runs' => $runs,
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
     }
@@ -109,6 +121,18 @@ final class DevBenchCommand extends BaseCommand
     private static function seconds(mixed $value): ?float
     {
         return is_string($value) && is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
+    }
+
+    /** Valid UTF-8 without control characters: safe in a request line, a header and the JSON. */
+    private static function isText(string $value): bool
+    {
+        return mb_check_encoding($value, 'UTF-8') && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
+    }
+
+    /** A value quoted back in an error, made safe for the JSON that carries it. */
+    private static function printable(string $value): string
+    {
+        return self::isText($value) ? $value : '(not printable text)';
     }
 
     private static function cpus(): ?int

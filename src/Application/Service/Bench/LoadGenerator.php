@@ -20,17 +20,27 @@ use Swoole\Coroutine\Http\Client;
  */
 final class LoadGenerator
 {
+    /**
+     * Latencies kept per window. A fast route at high concurrency answers
+     * millions of requests in 300 s; past this many the window keeps a uniform
+     * sample (reservoir sampling), so the percentiles stay unbiased and the
+     * memory stays at about 16 MB. The request count is always exact.
+     */
+    public const MAX_SAMPLES = 1_000_000;
+
     public function __construct(
         private readonly string $host,
         private readonly int $port,
         private readonly float $timeoutS = 10.0,
+        private readonly int $maxSamples = self::MAX_SAMPLES,
     ) {}
 
     /** @param array<string, string> $headers */
     public function run(string $path, int $concurrency, float $seconds, float $warmupS = 0.0, array $headers = []): LoadRun
     {
-        if ($concurrency < 1 || $seconds <= 0) {
-            throw new \InvalidArgumentException('a load run needs a concurrency of 1 or more and a duration above 0');
+        // NAN and INF pass a plain comparison: the window would end before it starts.
+        if ($concurrency < 1 || !is_finite($seconds) || $seconds <= 0 || !is_finite($warmupS) || $warmupS < 0) {
+            throw new \InvalidArgumentException('a load run needs a concurrency of 1 or more, a finite duration above 0 and a finite warm-up of 0 or more');
         }
         $result = null;
         $work = function () use ($path, $concurrency, $seconds, $warmupS, $headers, &$result): void {
@@ -51,13 +61,16 @@ final class LoadGenerator
     private function window(string $path, int $concurrency, float $seconds, array $headers): LoadRun
     {
         $latencies = [];
+        $answered = 0;
         $statuses = [];
         $errors = 0;
         $deadline = 0;
         $go = new Coroutine\Channel($concurrency);
         $done = new Coroutine\Channel($concurrency);
+        $started = 0;
         for ($i = 0; $i < $concurrency; $i++) {
-            Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$statuses, &$errors): void {
+            // @: past max_coroutine Swoole warns and returns false; the error below names it.
+            $cid = @Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
                 $client = new Client($this->host, $this->port);
                 $client->set(['timeout' => $this->timeoutS, 'keep_alive' => true]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
@@ -68,7 +81,13 @@ final class LoadGenerator
                 while (hrtime(true) < $deadline) {
                     $sent = hrtime(true);
                     $client->get($path);
-                    $latencies[] = (hrtime(true) - $sent) / 1e6;
+                    $latency = (hrtime(true) - $sent) / 1e6;
+                    $answered++;
+                    if ($answered <= $this->maxSamples) {
+                        $latencies[] = $latency;
+                    } elseif (($slot = random_int(0, $answered - 1)) < $this->maxSamples) {
+                        $latencies[$slot] = $latency;
+                    }
                     $status = $client->statusCode > 0 ? $client->statusCode : 0;
                     $statuses[$status] = ($statuses[$status] ?? 0) + 1;
                     if ($status === 0 || $status >= 500) {
@@ -84,6 +103,18 @@ final class LoadGenerator
                 $client->close();
                 $done->push(true);
             });
+            if ($cid === false) {
+                // The coroutine limit (max_coroutine): release the ones that
+                // started — the deadline is still 0, so each closes at once.
+                for ($j = 0; $j < $started; $j++) {
+                    $go->push(true);
+                }
+                for ($j = 0; $j < $started; $j++) {
+                    $done->pop();
+                }
+                throw new \RuntimeException(sprintf('connection %d of %d could not start: Swoole refused the coroutine (max_coroutine); lower --concurrency', $i + 1, $concurrency));
+            }
+            $started++;
         }
         $start = hrtime(true);
         $deadline = $start + (int) ($seconds * 1e9);
@@ -95,6 +126,6 @@ final class LoadGenerator
         }
         $elapsed = (hrtime(true) - $start) / 1e9;
 
-        return new LoadRun('GET ' . $path, $concurrency, $elapsed, count($latencies), $errors, $statuses, LatencyStats::of($latencies));
+        return new LoadRun('GET ' . $path, $concurrency, $elapsed, $answered, $errors, $statuses, LatencyStats::of($latencies));
     }
 }
