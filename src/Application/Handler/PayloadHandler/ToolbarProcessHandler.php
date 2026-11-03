@@ -7,6 +7,8 @@ namespace Semitexa\Dev\Application\Handler\PayloadHandler;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
+use Semitexa\Core\Lifecycle\CurrentRequestStore;
+use Semitexa\Core\Http\CrossSiteRead;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Dev\Application\Payload\Request\ToolbarProcessPayload;
@@ -30,7 +32,8 @@ final class ToolbarProcessHandler implements TypedHandlerInterface
     public function handle(ToolbarProcessPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $id = $payload->getId();
-        if (!$this->gate->allows() || preg_match('/^p-[0-9]+-[a-f0-9]{4,32}$/', $id) !== 1) {
+        // As the placeholder that asks it: never to a page on another site.
+        if (!$this->gate->allows() || CrossSiteRead::isCrossSiteRead(CurrentRequestStore::get()) || preg_match('/^p-[0-9]+-[a-f0-9]{4,32}$/', $id) !== 1) {
             return $resource
                 ->setStatusCode(HttpStatus::NotFound->value)
                 ->setHeader('Content-Type', 'text/plain; charset=utf-8')

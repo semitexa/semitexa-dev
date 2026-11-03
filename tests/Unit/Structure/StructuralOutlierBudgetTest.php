@@ -232,7 +232,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // last slot made the renderer log a failed finalisation and abandon the
         // rest. The three outcomes are now distinct and the nine lines are the
         // sentence explaining which is which.
-        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [24, 718],
+        // 24/718 -> 25/747 on 2026-11-03: fits() lets the renderers ask whether a
+        // deferred request can be stored (context and snapshot) and render inline
+        // instead of a 500 on a long request URL (HTTP edge probe).
+        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [25, 747],
         // NEW on 2026-09-17, at 701 lines, and recorded rather than trimmed.
         // The class did not gain a method or a branch: `slot.resolve` stopped
         // being a begin/end pair and became a mark carrying its own duration,
@@ -267,7 +270,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 786 -> 799 on 2026-10-30, recorded: docblocks only. The methods a
         // page response calls (pageTitle, seo*, render*, auto-render) join the
         // @api surface (stability contract); no code line was added.
-        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [26, 799],
+        // 799 -> 808 on 2026-11-03, NO NEW METHOD: a context or snapshot too big to
+        // store renders inline (DeferredRequestRegistry::fits) instead of a 500.
+        'semitexa-ssr/src/Application/Service/Http/Response/HtmlResponse.php' => [26, 808],
         // 771 -> 779 on 2026-09-06, recorded deliberately: the trace buffer
         // became a ring that keeps the LAST events, so the capped-trace notice
         // now has to say WHICH end was cut, and the root coroutine is read from

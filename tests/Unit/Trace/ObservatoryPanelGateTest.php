@@ -126,4 +126,31 @@ final class ObservatoryPanelGateTest extends TestCase
 
         self::assertFalse((new ObservatoryPanelGate())->allows());
     }
+
+    #[Test]
+    public function dev_is_open_to_this_machine_only(): void
+    {
+        putenv('APP_ENV=dev');
+        $gate = new ObservatoryPanelGate();
+
+        $this->request(['Host' => 'dev.semitexa.test', 'X-Real-Ip' => '172.23.0.1'], '127.0.0.1');
+        self::assertTrue($gate->allows(), 'this machine, through the local router');
+        self::assertTrue($gate->allowsDevTools());
+
+        // Measured 2026-11-03: the laptop's Wi-Fi address served the graph and
+        // the Explorer sandbox to anyone on the network.
+        $this->request(['Host' => '192.168.100.2:9507'], '192.168.100.7');
+        self::assertFalse($gate->allows(), 'another machine on the network stays out');
+        self::assertFalse($gate->allowsDevTools());
+
+        $this->request(['Host' => 'rebind.evil.example:9507'], '127.0.0.1');
+        self::assertFalse($gate->allows(), 'a public name rebound to loopback stays out');
+
+        putenv('SEMITEXA_OBSERVATORY_TOKEN=s3cret');
+        $this->request(['Host' => '192.168.100.2:9507', 'X-Observatory-Token' => 's3cret'], '192.168.100.7');
+        self::assertTrue($gate->allows(), 'a dev stack used from elsewhere on purpose carries the token');
+        self::assertTrue($gate->allowsDevTools(), 'the same token opens the dev tools');
+        $this->request(['Host' => '192.168.100.2:9507', 'X-Observatory-Token' => 'wrong'], '192.168.100.7');
+        self::assertFalse($gate->allows());
+    }
 }
