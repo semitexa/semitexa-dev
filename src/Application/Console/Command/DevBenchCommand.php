@@ -29,6 +29,9 @@ final class DevBenchCommand extends BaseCommand
 {
     private const ARTIFACT = 'semitexa-dev.bench/v1';
 
+    /** A window is held in memory (every latency sample), so it is bounded. */
+    private const MAX_SECONDS = 300;
+
     public function __construct()
     {
         parent::__construct('dev:bench');
@@ -48,17 +51,29 @@ final class DevBenchCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $routes = array_values(array_filter((array) $input->getOption('route'), static fn (mixed $r): bool => is_string($r) && str_starts_with($r, '/')));
-        $levels = array_values(array_unique(array_map('intval', explode(',', (string) $input->getOption('concurrency')))));
-        $duration = (float) $input->getOption('duration');
-        $warmup = (float) $input->getOption('warmup');
-        if ($routes === [] || in_array(0, $levels, true) || array_filter($levels, static fn (int $l): bool => $l < 0) !== [] || $duration <= 0 || $warmup < 0) {
-            return $this->fail($output, 'dev:bench needs at least one --route=/path, concurrency levels of 1 or more, a --duration above 0 and a --warmup of 0 or more');
+        $routes = array_values((array) $input->getOption('route'));
+        foreach ($routes as $route) {
+            if (!is_string($route) || !str_starts_with($route, '/')) {
+                return $this->fail($output, '--route ' . (is_string($route) ? "\"{$route}\"" : '') . ' is no path: every route starts with /');
+            }
+        }
+        $levels = [];
+        foreach (explode(',', (string) $input->getOption('concurrency')) as $part) {
+            if (!ctype_digit(trim($part)) || (int) $part < 1) {
+                return $this->fail($output, "--concurrency \"{$part}\" is no whole number of 1 or more");
+            }
+            $levels[(int) $part] = (int) $part;
+        }
+        $levels = array_values($levels);
+        $duration = self::seconds($input->getOption('duration'));
+        $warmup = self::seconds($input->getOption('warmup'));
+        if ($routes === [] || $duration === null || $duration <= 0 || $duration > self::MAX_SECONDS || $warmup === null || $warmup < 0 || $warmup > self::MAX_SECONDS) {
+            return $this->fail($output, 'dev:bench needs at least one --route=/path, a --duration above 0 and a --warmup of 0 or more, each a number of seconds up to ' . self::MAX_SECONDS);
         }
         $base = (string) ($input->getOption('base-url') ?: 'http://127.0.0.1:' . (getenv('SWOOLE_PORT') ?: '9501'));
         $url = parse_url($base);
-        if (!is_array($url) || ($url['scheme'] ?? '') !== 'http' || !isset($url['host'])) {
-            return $this->fail($output, "--base-url {$base} is no http:// URL");
+        if (!is_array($url) || ($url['scheme'] ?? '') !== 'http' || !isset($url['host']) || !in_array($url['path'] ?? '', ['', '/'], true) || isset($url['query'])) {
+            return $this->fail($output, "--base-url {$base} is no http://host[:port]: the routes are its paths, so it carries none of its own");
         }
         $host = is_string($input->getOption('host')) && $input->getOption('host') !== '' ? (string) $input->getOption('host') : null;
         $headers = ['Accept' => (string) $input->getOption('accept')] + ($host !== null ? ['Host' => $host] : []);
@@ -68,7 +83,8 @@ final class DevBenchCommand extends BaseCommand
         foreach ($routes as $route) {
             foreach ($levels as $level) {
                 $run = $generator->run($route, $level, $duration, $warmup, $headers);
-                if ($run->requests === 0 || $run->errors === $run->requests) {
+                // No response at all is no measurement; 5xx answers are, and are reported.
+                if ($run->requests === ($run->statuses[0] ?? 0)) {
                     return $this->fail($output, "{$route} at concurrency {$level}: no request was answered by {$base}; start the server (bin/semitexa server:start) or pass --base-url");
                 }
                 $runs[] = $run->toArray();
@@ -79,13 +95,20 @@ final class DevBenchCommand extends BaseCommand
             'artifact' => self::ARTIFACT,
             'measured_at' => gmdate('c'),
             'machine' => ['php' => PHP_VERSION, 'swoole' => phpversion('swoole') ?: null, 'cpus' => self::cpus(), 'os' => php_uname('s') . ' ' . php_uname('r')],
-            'server' => ['base_url' => $base, 'host' => $host, 'workers' => getenv('SWOOLE_WORKER_NUM') ?: null, 'app_env' => getenv('APP_ENV') ?: null, 'app_debug' => getenv('APP_DEBUG') ?: null],
+            'server' => ['base_url' => $base, 'host' => $host],
+            // This process's env: the server's own when --base-url is the local one, not otherwise.
+            'cli_env' => ['workers' => getenv('SWOOLE_WORKER_NUM') ?: null, 'app_env' => getenv('APP_ENV') ?: null, 'app_debug' => getenv('APP_DEBUG') ?: null],
             'request' => ['accept' => $headers['Accept']],
             'method' => ['loop' => 'closed', 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration],
             'runs' => $runs,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    private static function seconds(mixed $value): ?float
+    {
+        return is_string($value) && is_numeric($value) && is_finite((float) $value) ? (float) $value : null;
     }
 
     private static function cpus(): ?int

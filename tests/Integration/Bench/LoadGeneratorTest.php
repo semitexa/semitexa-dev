@@ -49,7 +49,11 @@ final class LoadGeneratorTest extends TestCase
         self::assertSame(0, $ok->errors);
         self::assertGreaterThanOrEqual(0.3, $ok->seconds);
         self::assertGreaterThan($ok->requests + $runs['missing']->requests + $runs['broken']->requests, $seen, 'the warm-up was sent too, and left out of the counts');
+        self::assertGreaterThan(0, $runs['missing']->requests);
+        self::assertSame([404 => $runs['missing']->requests], $runs['missing']->statuses);
         self::assertSame(0, $runs['missing']->errors, 'a 404 is an answer, not an error');
+        self::assertGreaterThan(0, $runs['broken']->requests);
+        self::assertSame([500 => $runs['broken']->requests], $runs['broken']->statuses);
         self::assertSame($runs['broken']->requests, $runs['broken']->errors, 'every 500 is an error');
         self::assertGreaterThan(0.0, $ok->latency->p99Ms);
     }

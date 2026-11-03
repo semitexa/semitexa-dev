@@ -117,12 +117,13 @@ final class FrameworkEvidenceTest extends TestCase
         $task('a', 'fix_bug', 'new');
         $task('b', 'bugfix', 'in_progress');
         $task('c', 'fix_bug', 'blocked');
-        $task('h', 'debug_investigate', 'new'); // research, not a defect
+        $task('h', 'debug_investigate', 'new'); // a bug report, as the classifier files one
+        $task('i', 'research', 'new');
         $task('d', 'fix_bug', 'done');
         $task('e', 'fix_bug', 'discarded');
         $task('f', 'add_feature', 'new');
 
-        self::assertSame(['bugs.open' => 3], FrameworkEvidence::openBugTasks($this->root));
+        self::assertSame(['bugs.open' => 4], FrameworkEvidence::openBugTasks($this->root));
 
         file_put_contents($this->root . '/var/ai-work/tasks/g.json', '{not json');
         $this->expectException(\RuntimeException::class);

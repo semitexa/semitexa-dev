@@ -53,15 +53,18 @@ final class LoadGenerator
         $latencies = [];
         $statuses = [];
         $errors = 0;
-        $start = hrtime(true);
-        $deadline = $start + (int) ($seconds * 1e9);
+        $deadline = 0;
+        $go = new Coroutine\Channel($concurrency);
         $done = new Coroutine\Channel($concurrency);
         for ($i = 0; $i < $concurrency; $i++) {
-            Coroutine::create(function () use ($path, $headers, $deadline, $done, &$latencies, &$statuses, &$errors): void {
+            Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$statuses, &$errors): void {
                 $client = new Client($this->host, $this->port);
                 $client->set(['timeout' => $this->timeoutS, 'keep_alive' => true]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
                 $client->setHeaders($headers + ['Host' => $this->host, 'Accept' => 'text/html']);
+                // Every connection starts the window together: one created last
+                // would otherwise get less of it.
+                $go->pop();
                 while (hrtime(true) < $deadline) {
                     $sent = hrtime(true);
                     $client->get($path);
@@ -73,12 +76,19 @@ final class LoadGenerator
                         // A dropped connection is reopened, not left to fail every request.
                         if ($status === 0) {
                             $client->close();
+                            // A refused connection is retried, not spun on.
+                            Coroutine::sleep(0.01);
                         }
                     }
                 }
                 $client->close();
                 $done->push(true);
             });
+        }
+        $start = hrtime(true);
+        $deadline = $start + (int) ($seconds * 1e9);
+        for ($i = 0; $i < $concurrency; $i++) {
+            $go->push(true);
         }
         for ($i = 0; $i < $concurrency; $i++) {
             $done->pop();

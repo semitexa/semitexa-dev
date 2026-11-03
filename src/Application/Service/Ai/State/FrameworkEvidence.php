@@ -39,8 +39,10 @@ use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
 final class FrameworkEvidence
 {
     /** Recipes a task fixing a defect is filed under. */
-    // Defects only: debug_investigate also files research, which is no known bug.
-    public const BUG_RECIPES = ['fix_bug', 'bugfix'];
+    // The recipes defects are filed under; the classifier files a bug report
+    // ("fix the 500 on /login") as debug_investigate. Research is filed as
+    // `research`, so it is not counted.
+    public const BUG_RECIPES = ['fix_bug', 'bugfix', 'debug_investigate'];
 
     public const PHPSTAN_BASELINE = 'packages/semitexa-dev/resources/phpstan/phpstan-baseline.neon';
     public const PHPSTAN_CEILING = 'packages/semitexa-dev/resources/phpstan/phpstan-ceiling.json';
