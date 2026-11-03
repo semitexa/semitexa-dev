@@ -187,12 +187,25 @@ final class TestPlanBuilder
         $parameters = (new \ReflectionMethod($handler, 'handle'))->getParameters();
         foreach ([0 => $payload, 1 => $resource] as $position => $class) {
             $type = ($parameters[$position] ?? null)?->getType();
-            if (!$type instanceof \ReflectionNamedType || ltrim($type->getName(), '\\') !== $class) {
+            // The class the test passes must be accepted (a parent type takes it
+            // too) and be buildable with a bare `new`.
+            if (!$type instanceof \ReflectionNamedType || !is_a($class, ltrim($type->getName(), '\\'), true) || !self::constructsWithoutArguments($class)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /** No constructor, or one with no required parameter: the test's `new X()` works. */
+    private static function constructsWithoutArguments(string $class): bool
+    {
+        if (!class_exists($class)) {
+            return false;
+        }
+        $constructor = (new \ReflectionClass($class))->getConstructor();
+
+        return $constructor === null || $constructor->getNumberOfRequiredParameters() === 0;
     }
 
     private function snake(string $studly): string
