@@ -197,15 +197,16 @@ final class TestPlanBuilder
         return true;
     }
 
-    /** No constructor, or one with no required parameter: the test's `new X()` works. */
+    /** Instantiable, with no constructor or a public one with no required parameter: the test's `new X()` works. */
     private static function constructsWithoutArguments(string $class): bool
     {
         if (!class_exists($class)) {
             return false;
         }
-        $constructor = (new \ReflectionClass($class))->getConstructor();
+        $reflection = new \ReflectionClass($class);
+        $constructor = $reflection->getConstructor();
 
-        return $constructor === null || $constructor->getNumberOfRequiredParameters() === 0;
+        return $reflection->isInstantiable() && ($constructor === null || ($constructor->isPublic() && $constructor->getNumberOfRequiredParameters() === 0));
     }
 
     private function snake(string $studly): string
