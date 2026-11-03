@@ -26,6 +26,7 @@ final class DevBenchCommandTest extends TestCase
             [['--route' => ['/ok'], '--host' => "shop\xff.test"], '--host is not printable UTF-8'],
             [['--route' => ['/ok'], '--accept' => "text/html\r\nX-Injected: 1"], '--accept is not printable UTF-8'],
             [['--route' => ["/ok\xff"]], '--route is not printable UTF-8'],
+            [['--route' => ['/ok'], '--base-url' => "http://127.0.0.1:9501/#\xff"], '--base-url is not printable UTF-8'],
             [['--route' => ['/ok'], '--duration' => '1e309'], 'a number of seconds up to 300'],
             [['--route' => ['/ok'], '--duration' => '301'], 'a number of seconds up to 300'],
             [['--route' => ['/ok'], '--warmup' => 'soon'], 'a number of seconds up to 300'],

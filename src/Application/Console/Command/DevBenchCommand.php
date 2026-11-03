@@ -61,7 +61,7 @@ final class DevBenchCommand extends BaseCommand
             }
         }
         // Each one is written into the JSON artifact and sent as a request line or header.
-        foreach (['--route' => $routes, '--host' => [$input->getOption('host')], '--accept' => [$input->getOption('accept')]] as $option => $values) {
+        foreach (['--route' => $routes, '--host' => [$input->getOption('host')], '--accept' => [$input->getOption('accept')], '--base-url' => [$input->getOption('base-url')]] as $option => $values) {
             foreach ($values as $value) {
                 if (is_string($value) && !self::isText($value)) {
                     return $this->fail($output, "{$option} is not printable UTF-8 text");
