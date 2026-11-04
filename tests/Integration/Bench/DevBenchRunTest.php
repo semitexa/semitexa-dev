@@ -82,6 +82,15 @@ final class DevBenchRunTest extends TestCase
     }
 
     #[Test]
+    public function each_level_gets_its_own_warm_up_because_it_opens_its_own_connections(): void
+    {
+        // Two levels: 2 x 0.3 s of warm-up. Once per route it would span 0.34 s.
+        [, , $measuredSeconds] = $this->benchCountingRequests('0.02', '0.3', '1', '1,2');
+
+        self::assertGreaterThan(0.55, $measuredSeconds);
+    }
+
+    #[Test]
     public function the_warm_up_runs_before_the_first_window_and_not_before_each(): void
     {
         // Once: 0.3 s of warm-up and 5 x 0.02 s of windows, 0.4 s. Per window it would be 1.6 s.
@@ -92,14 +101,14 @@ final class DevBenchRunTest extends TestCase
     }
 
     /** @return array{0: string, 1: int, 2: float} The artifact, the warm-pass requests, and the seconds keep-alive requests spanned. */
-    private function benchCountingRequests(string $duration, string $warmup, string $repeat): array
+    private function benchCountingRequests(string $duration, string $warmup, string $repeat, string $concurrency = '1'): array
     {
         $exit = null;
         $display = '';
         $warm = 0;
         $first = null;
         $last = null;
-        Coroutine\run(function () use (&$exit, &$display, &$warm, &$first, &$last, $duration, $warmup, $repeat): void {
+        Coroutine\run(function () use (&$exit, &$display, &$warm, &$first, &$last, $duration, $warmup, $repeat, $concurrency): void {
             $server = new Server('127.0.0.1', 0);
             $server->handle('/', static function (Request $request, Response $response) use (&$warm, &$first, &$last): void {
                 if (strtolower($request->header['connection'] ?? '') === 'keep-alive') {
@@ -114,7 +123,7 @@ final class DevBenchRunTest extends TestCase
             $tester = new CommandTester(new DevBenchCommand());
             $exit = $tester->execute([
                 '--route' => ['/a'],
-                '--concurrency' => '1',
+                '--concurrency' => $concurrency,
                 '--duration' => $duration,
                 '--warmup' => $warmup,
                 '--repeat' => $repeat,

@@ -48,10 +48,12 @@ final class DevBenchCommand extends BaseCommand
     private const WARM_CONNECTIONS = 16;
 
     /**
-     * Seconds the connection-per-request pass runs, whatever --warmup says: it has
-     * reached every worker by then, and each request leaves a socket in TIME_WAIT.
+     * Requests the connection-per-request pass stops at. Requests, not seconds: each
+     * leaves a socket in TIME_WAIT, so a fast route needs the limit, while a slow
+     * one needs all of --warmup to touch every worker. Raise --warmup for a route
+     * that takes a second or more.
      */
-    private const WARM_PASS_MAX_SECONDS = 2.0;
+    private const WARM_PASS_MAX_REQUESTS = 2000;
 
     public function __construct()
     {
@@ -117,9 +119,9 @@ final class DevBenchCommand extends BaseCommand
 
         $warmConnections = max(self::WARM_CONNECTIONS, ...$levels);
         if ($warmup > 0) {
-            $warmer = new LoadGenerator($url['host'], (int) ($url['port'] ?? 80), keepAlive: false);
+            $warmer = new LoadGenerator($url['host'], (int) ($url['port'] ?? 80), keepAlive: false, maxRequests: self::WARM_PASS_MAX_REQUESTS);
             foreach ($routes as $route) {
-                $warmer->run($route, $warmConnections, min($warmup, self::WARM_PASS_MAX_SECONDS), 0.0, $headers);
+                $warmer->run($route, $warmConnections, $warmup, 0.0, $headers);
             }
         }
 
@@ -153,7 +155,7 @@ final class DevBenchCommand extends BaseCommand
             // This process's env: the server's own when --base-url is the local one, not otherwise.
             'cli_env' => ['workers' => getenv('SWOOLE_WORKER_NUM') ?: null, 'app_env' => getenv('APP_ENV') ?: null, 'app_debug' => getenv('APP_DEBUG') ?: null],
             'request' => ['accept' => $headers['Accept']],
-            'method' => ['loop' => 'closed', 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration, 'windows' => $repeat, 'warm_connections' => $warmup > 0 ? $warmConnections : 0],
+            'method' => ['loop' => 'closed', 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration, 'windows' => $repeat, 'warm_connections' => $warmup > 0 ? $warmConnections : 0, 'warm_max_requests' => self::WARM_PASS_MAX_REQUESTS],
             'runs' => $runs,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 

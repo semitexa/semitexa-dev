@@ -56,14 +56,15 @@ final class LoadSeriesTest extends TestCase
     #[Test]
     public function the_artifact_keeps_the_median_windows_fields_and_adds_every_window_in_order(): void
     {
-        $array = (new LoadSeries([$this->window(200, 1.0), $this->window(100, 3.0), $this->window(150, 2.0)], [2.5, 3.0, null]))->toArray();
+        // The median window sits in the middle and has the worst p99: neither the last window nor a per-field median.
+        $array = (new LoadSeries([$this->window(200, 1.0), $this->window(150, 9.0), $this->window(100, 3.0)], [2.5, 3.0, null]))->toArray();
 
         $this->assertSame(150, $array['requests']);
         $this->assertSame(150.0, $array['req_per_second']);
         $this->assertSame(3, $array['windows']);
-        $this->assertSame([200.0, 100.0, 150.0], $array['req_per_second_each']);
+        $this->assertSame([200.0, 150.0, 100.0], $array['req_per_second_each']);
         $this->assertSame([2.5, 3.0, null], $array['load_1m_each']);
-        $this->assertSame(2.0, $array['latency']['p99_ms'], 'the latency of the window whose rate is quoted');
+        $this->assertSame(9.0, $array['latency']['p99_ms'], 'the latency of the window whose rate is quoted');
     }
 
     #[Test]

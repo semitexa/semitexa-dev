@@ -38,6 +38,8 @@ final class LoadGenerator
         private readonly int $maxSamples = self::MAX_SAMPLES,
         /** Off for a warm-up: a new connection per request is a new draw of the worker. */
         private readonly bool $keepAlive = true,
+        /** Ends a window early once this many requests are answered; 0 for none. */
+        private readonly int $maxRequests = 0,
     ) {}
 
     /** @param array<string, string> $headers */
@@ -83,7 +85,7 @@ final class LoadGenerator
                 // Every connection starts the window together: one created last
                 // would otherwise get less of it.
                 $go->pop();
-                while (hrtime(true) < $deadline) {
+                while (hrtime(true) < $deadline && ($this->maxRequests === 0 || $answered < $this->maxRequests)) {
                     $sent = hrtime(true);
                     $client->get($path);
                     $latency = (hrtime(true) - $sent) / 1e6;
