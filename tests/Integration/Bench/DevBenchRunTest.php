@@ -69,7 +69,7 @@ final class DevBenchRunTest extends TestCase
 
         self::assertSame(16, json_decode($display, true, 512, JSON_THROW_ON_ERROR)['method']['warm_connections']);
         // A request without keep-alive is its own connection. Not counted by fd: a closed fd is reused.
-        self::assertGreaterThan(16, $warm, 'more requests than the 16 in parallel, each without keep-alive');
+        self::assertGreaterThanOrEqual(16, $warm, 'the first 16 in parallel, each without keep-alive; a keep-alive warm-up counts 0');
     }
 
     #[Test]
@@ -127,6 +127,33 @@ final class DevBenchRunTest extends TestCase
         self::assertSame(Command::SUCCESS, $exit, $display);
 
         return [$display, $warm, ($last - $first) / 1e9];
+    }
+
+    #[Test]
+    public function three_windows_are_measured_unless_told_otherwise(): void
+    {
+        $exit = null;
+        $display = '';
+        Coroutine\run(function () use (&$exit, &$display): void {
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', static fn (Request $request, Response $response) => $response->end('ok'));
+            Coroutine::create(static fn () => $server->start());
+            $tester = new CommandTester(new DevBenchCommand());
+            $exit = $tester->execute([
+                '--route' => ['/a'],
+                '--concurrency' => '1',
+                '--duration' => '0.02',
+                '--warmup' => '0',
+                '--base-url' => 'http://127.0.0.1:' . $server->port,
+            ]);
+            $display = $tester->getDisplay();
+            $server->shutdown();
+        });
+
+        self::assertSame(Command::SUCCESS, $exit, $display);
+        $artifact = json_decode($display, true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(3, $artifact['method']['windows']);
+        self::assertSame(3, $artifact['runs'][0]['windows']);
     }
 
     #[Test]

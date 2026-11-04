@@ -47,6 +47,12 @@ final class DevBenchCommand extends BaseCommand
     /** Parallel requests that warm a route, each on its own connection. */
     private const WARM_CONNECTIONS = 16;
 
+    /**
+     * Seconds the connection-per-request pass runs, whatever --warmup says: it has
+     * reached every worker by then, and each request leaves a socket in TIME_WAIT.
+     */
+    private const WARM_PASS_MAX_SECONDS = 2.0;
+
     public function __construct()
     {
         parent::__construct('dev:bench');
@@ -113,7 +119,7 @@ final class DevBenchCommand extends BaseCommand
         if ($warmup > 0) {
             $warmer = new LoadGenerator($url['host'], (int) ($url['port'] ?? 80), keepAlive: false);
             foreach ($routes as $route) {
-                $warmer->run($route, $warmConnections, $warmup, 0.0, $headers);
+                $warmer->run($route, $warmConnections, min($warmup, self::WARM_PASS_MAX_SECONDS), 0.0, $headers);
             }
         }
 
@@ -122,10 +128,13 @@ final class DevBenchCommand extends BaseCommand
             foreach ($levels as $level) {
                 $windows = [];
                 $loads = [];
+                // Once per level: the windows after the first follow one straight away, so they are warm.
+                if ($warmup > 0) {
+                    $generator->run($route, $level, $warmup, 0.0, $headers);
+                }
                 for ($window = 0; $window < $repeat; $window++) {
                     $loads[] = self::load();
-                    // The windows after the first follow one straight away, so they are warm.
-                    $run = $generator->run($route, $level, $duration, $window === 0 ? $warmup : 0.0, $headers);
+                    $run = $generator->run($route, $level, $duration, 0.0, $headers);
                     // No response at all is no measurement; 5xx answers are, and are reported.
                     if ($run->requests === ($run->statuses[0] ?? 0)) {
                         return $this->fail($output, "{$route} at concurrency {$level}: no request was answered by {$base}; start the server (bin/semitexa server:start) or pass --base-url");
@@ -168,7 +177,7 @@ final class DevBenchCommand extends BaseCommand
         return self::isText($value) ? $value : '(not printable text)';
     }
 
-    /** The 1-minute load, or null where the platform does not give one. */
+    /** The 1-minute load, or null when the system cannot report it. */
     private static function load(): ?float
     {
         $load = sys_getloadavg();
