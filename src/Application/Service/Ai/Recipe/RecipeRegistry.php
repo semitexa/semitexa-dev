@@ -171,6 +171,7 @@ final class RecipeRegistry
                 context_signals: ['Resource\\Slot', 'Handler\\SlotHandler', 'View\\templates'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_live_region',
@@ -184,6 +185,7 @@ final class RecipeRegistry
                 context_signals: ['Component', 'UiIslandInterface', 'WatchScopes'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_data_grid',
@@ -197,6 +199,7 @@ final class RecipeRegistry
                 context_signals: ['Payload\\Request', 'CollectionFeed', 'Component'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_wizard_form',
@@ -205,14 +208,14 @@ final class RecipeRegistry
                     . 'and each step validates on the server through #[UiOn] handlers. '
                     . 'Run: ai:ask mechanisms --id=ui.event-intent, then ai:ask components --name=platform.form',
                 keywords: ['wizard', 'steps', 'step', 'multistep', 'checkout', 'draft', 'guided'],
-                // In these four recipes the telling noun weighs like a verb: "a multi-step
-                // wizard" has no other word to reach the confidence bar on, and a general
+                // The telling noun weighs like a verb in these four (see noun_led): a general
                 // verb such as "build" would take ordinary requests away from add_service.
                 verbs: ['guide', 'wizard', 'step'],
                 generator_chain: [],
                 context_signals: ['Component', 'View\\templates'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_event_listener',

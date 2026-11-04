@@ -32,6 +32,10 @@ final class TaskClassifier
     private const NOISE_FLOOR = 2;
     private const UNKNOWN_RECIPE_ID = 'unknown_task';
 
+    /** "fix broken dashboard widgets" is a bug report, whatever nouns it names. */
+    private const MENDING_VERBS = ['fix', 'repair', 'debug', 'rename', 'remove', 'delete', 'refactor'];
+    private const CREATING_VERBS = ['build', 'create', 'add', 'make'];
+
     /**
      * Reliability bar for confidence=high. Mirrors AGENTS.md §3's inline-eligibility
      * rule verbatim: "ai:task score ≥ 8 AND no alternative within 2 points" — i.e. a
@@ -124,7 +128,16 @@ final class TaskClassifier
      */
     private function score(Recipe $recipe, array $tokens, array $bigrams): int
     {
+        if ($recipe->noun_led && array_intersect(self::MENDING_VERBS, $tokens) !== []) {
+            return 0;
+        }
+
         $score = 0;
+        if ($recipe->noun_led
+            && array_intersect(self::CREATING_VERBS, $tokens) !== []
+            && array_intersect($recipe->verbs, $tokens) !== []) {
+            $score += self::WEIGHT_VERB;
+        }
         foreach ($recipe->verbs as $verb) {
             if (in_array(strtolower($verb), $tokens, true)) {
                 $score += self::WEIGHT_VERB;

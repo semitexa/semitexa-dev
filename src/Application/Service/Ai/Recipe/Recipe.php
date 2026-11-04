@@ -32,5 +32,11 @@ final readonly class Recipe
         public array $context_signals,
         public array $arg_hints,
         public string $default_risk = 'low',
+        /**
+         * Its `verbs` are the telling nouns (grid, wizard, widget): it builds that
+         * thing. So a request to mend one is not for it, and a word of creation
+         * counts only once one of those nouns has been named.
+         */
+        public bool $noun_led = false,
     ) {}
 }

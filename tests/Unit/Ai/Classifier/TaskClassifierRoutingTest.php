@@ -40,6 +40,8 @@ final class TaskClassifierRoutingTest extends TestCase
         yield 'a page to build stays a page' => ['build a page for orders', 'add_html_page'];
         yield 'a filter service is a service' => ['build a filter service', 'add_service'];
         yield 'a multi-tenant service is no wizard' => ['a multi-tenant service', 'add_service'];
+        yield 'mending a widget is a bug' => ['fix broken dashboard widgets', 'debug_investigate'];
+        yield 'a typo in a wizard is copy' => ['fix a typo in a wizard step template', 'fix_template_text'];
         yield 'a plain page stays a page' => ['add a page that shows the order', 'add_html_page'];
         yield 'a bug is investigated, not re-worded' => ['fix the 500 error on /login', 'debug_investigate'];
         yield 'a template typo is still a template fix' => ['fix a typo in the login template', 'fix_template_text'];
@@ -71,7 +73,7 @@ final class TaskClassifierRoutingTest extends TestCase
     #[Test]
     public function a_short_ui_request_is_confident_enough_not_to_be_sent_back(): void
     {
-        foreach (['build an order grid with sorting and paging', 'a multi-step order wizard', 'live board that updates by itself'] as $request) {
+        foreach (['build an order grid with sorting and paging', 'a multi-step order wizard', 'build an order wizard', 'live board that updates by itself'] as $request) {
             self::assertSame(ClassificationResult::CONFIDENCE_HIGH, (new TaskClassifier())->classify($request)->confidence, $request);
         }
     }
