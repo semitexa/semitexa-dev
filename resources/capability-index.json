@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-04T14:34:47+00:00",
+    "generated_at": "2026-11-04T15:04:43+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "fa5fdb78bec949d68fbb5cb77de1ef0eb5e017f96a8ba9f3f16c51ff87f2b68c",
+    "content_hash": "ec82de2fd88e6d78ae37d60e17570b0f0563498e6b7ff588b332e45e78739bda",
     "capabilities": [
         {
             "id": "api.external",
@@ -1101,7 +1101,7 @@
             "replaces": [
                 "wiring an event listener in page JavaScript and posting to an ad-hoc route"
             ],
-            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// In its template: {{ ui_part('increment', {label: '+1'}) }}\n// The root element carries data-ui-component=\"shop.counter\" and\n// data-ui-component-instance-id=\"{{ ui_component_instance_for(instanceId|default(null)) }}\".\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part binds one element: rendered per row, only the first row responds. Use one\n// <form> part for the rows and read $event->formValues. A child cannot rerender its parent.",
+            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// Its template. Without the manifest line nothing fires, and nothing says so:\n{%- set _ui_instance = ui_component_instance_for(instanceId|default(null)) -%}\n<div data-ui-component=\"shop.counter\" data-ui-component-instance-id=\"{{ _ui_instance }}\">\n    {{ ui_part('increment', {label: '+1'}) }}\n    {{ ui_event_manifest(_ui_instance) }}\n</div>\n\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part can repeat per row. The element's value says which row, so write the element\n// itself, ui_part() does not pass value on:\n<button type=\"button\" data-ui-part=\"remove\" value=\"{{ line.id }}\">Remove</button>\n// and read $event->value(). A child cannot rerender its parent.",
             "see_also": "ui.event-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
