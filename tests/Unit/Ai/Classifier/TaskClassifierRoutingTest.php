@@ -33,6 +33,8 @@ final class TaskClassifierRoutingTest extends TestCase
         yield 'a wizard' => ['build a multi-step order wizard with three steps', 'add_wizard_form'];
         yield 'uk: a grid' => ['таблиця замовлень із сортуванням і фільтром', 'add_data_grid'];
         yield 'uk: a wizard' => ['майстер замовлення на три кроки', 'add_wizard_form'];
+        yield 'a grid in few words' => ['build an order grid with sorting and paging', 'add_data_grid'];
+        yield 'a wizard in few words' => ['a multi-step order wizard', 'add_wizard_form'];
         yield 'a plain page stays a page' => ['add a page that shows the order', 'add_html_page'];
         yield 'a bug is investigated, not re-worded' => ['fix the 500 error on /login', 'debug_investigate'];
         yield 'a template typo is still a template fix' => ['fix a typo in the login template', 'fix_template_text'];

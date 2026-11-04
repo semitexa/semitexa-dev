@@ -166,7 +166,7 @@ final class RecipeRegistry
                     . 'The page shows its skeleton, the slot follows by itself; page data reaches the slot handler as '
                     . '$slot->getRenderContext(). Run: ai:ask mechanisms --id=ssr.deferred',
                 keywords: ['slow', 'deferred', 'widget', 'widgets', 'skeleton', 'loading', 'afterwards', 'lazy', 'expensive', 'fills', 'dashboard'],
-                verbs: ['defer', 'fill', 'stream', 'load'],
+                verbs: ['build', 'defer', 'fill', 'stream', 'load'],
                 generator_chain: [],
                 context_signals: ['Resource\\Slot', 'Handler\\SlotHandler', 'View\\templates'],
                 arg_hints: [],
@@ -179,7 +179,7 @@ final class RecipeRegistry
                     . 'Signed-in visitors: a component implementing UiIslandInterface. Public pages: an SSE feed payload. '
                     . 'Run: ai:ask mechanisms --id=ssr.transport',
                 keywords: ['live', 'realtime', 'real-time', 'board', 'itself', 'automatically', 'sse', 'push', 'polling', 'reload', 'viewers', 'watch', 'move'],
-                verbs: ['watch', 'push', 'subscribe', 'broadcast'],
+                verbs: ['build', 'watch', 'push', 'subscribe', 'broadcast'],
                 generator_chain: [],
                 context_signals: ['Component', 'UiIslandInterface', 'WatchScopes'],
                 arg_hints: [],
@@ -192,7 +192,7 @@ final class RecipeRegistry
                     . 'hand-written table and script. Custom markup: one #[AsComponent] with #[UiUrl] props. '
                     . 'Run: ai:ask mechanisms --id=crud.collection-feed, then ai:ask components --name=platform.grid',
                 keywords: ['grid', 'table', 'sort', 'sorting', 'sortable', 'filter', 'filters', 'filtering', 'paging', 'pagination', 'paginated', 'rows', 'bulk'],
-                verbs: ['sort', 'filter', 'paginate', 'list'],
+                verbs: ['build', 'sort', 'filter', 'paginate', 'list'],
                 generator_chain: [],
                 context_signals: ['Payload\\Request', 'CollectionFeed', 'Component'],
                 arg_hints: [],
@@ -204,8 +204,10 @@ final class RecipeRegistry
                 summary: 'The framework has no wizard: one server component holds the steps, the draft lives in the session, '
                     . 'and each step validates on the server through #[UiOn] handlers. '
                     . 'Run: ai:ask mechanisms --id=ui.event-intent, then ai:ask components --name=platform.form',
-                keywords: ['wizard', 'steps', 'step', 'multi-step', 'multistep', 'checkout', 'draft'],
-                verbs: ['guide'],
+                keywords: ['wizard', 'steps', 'step', 'multi', 'multistep', 'checkout', 'draft', 'guided'],
+                // The noun is the whole request here, so it weighs like a verb: "a
+                // multi-step wizard" has no other word to reach the confidence bar on.
+                verbs: ['build', 'guide', 'wizard'],
                 generator_chain: [],
                 context_signals: ['Component', 'View\\templates'],
                 arg_hints: [],
