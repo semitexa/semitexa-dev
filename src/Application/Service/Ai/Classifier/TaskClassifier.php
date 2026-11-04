@@ -32,6 +32,13 @@ final class TaskClassifier
     private const NOISE_FLOOR = 2;
     private const UNKNOWN_RECIPE_ID = 'unknown_task';
 
+    /** "fix broken dashboard widgets" is a bug report and "explain a wizard" a question, whatever nouns they name. */
+    private const NOT_CREATING_VERBS = ['fix', 'repair', 'debug', 'rename', 'remove', 'delete', 'refactor', 'explain', 'describe', 'document'];
+    private const CREATING_VERBS = ['build', 'create', 'add', 'make'];
+
+    /** "build a board service" asks for the service, whatever it serves. */
+    private const NAMED_ARTEFACTS = ['service', 'listener', 'console command'];
+
     /**
      * Reliability bar for confidence=high. Mirrors AGENTS.md §3's inline-eligibility
      * rule verbatim: "ai:task score ≥ 8 AND no alternative within 2 points" — i.e. a
@@ -47,6 +54,7 @@ final class TaskClassifier
         $normalized = mb_strtolower(trim($description));
         $tokens = $this->tokenize($normalized);
         $bigrams = $this->bigrams($tokens);
+        $leadingVerb = $this->leadingVerb($tokens);
 
         $scored = [];
         foreach (RecipeRegistry::all() as $recipe) {
@@ -55,7 +63,7 @@ final class TaskClassifier
             }
             $scored[] = [
                 'recipe' => $recipe,
-                'score'  => $this->score($recipe, $tokens, $bigrams),
+                'score'  => $this->score($recipe, $tokens, $bigrams, $leadingVerb),
             ];
         }
 
@@ -122,9 +130,19 @@ final class TaskClassifier
      * @param list<string> $tokens
      * @param list<string> $bigrams
      */
-    private function score(Recipe $recipe, array $tokens, array $bigrams): int
+    private function score(Recipe $recipe, array $tokens, array $bigrams, ?string $leadingVerb): int
     {
+        if ($recipe->noun_led
+            && (in_array($leadingVerb, self::NOT_CREATING_VERBS, true) || array_intersect(self::NAMED_ARTEFACTS, [...$tokens, ...$bigrams]) !== [])) {
+            return 0;
+        }
+
         $score = 0;
+        if ($recipe->noun_led
+            && in_array($leadingVerb, self::CREATING_VERBS, true)
+            && array_intersect($recipe->verbs, $tokens) !== []) {
+            $score += self::WEIGHT_VERB;
+        }
         foreach ($recipe->verbs as $verb) {
             if (in_array(strtolower($verb), $tokens, true)) {
                 $score += self::WEIGHT_VERB;
@@ -143,6 +161,22 @@ final class TaskClassifier
             }
         }
         return $score;
+    }
+
+    /**
+     * The first verb says what is being asked; later ones describe the thing asked for.
+     * "build a grid to delete rows" builds, and "delete the grid" does not.
+     *
+     * @param list<string> $tokens
+     */
+    private function leadingVerb(array $tokens): ?string
+    {
+        foreach ($tokens as $token) {
+            if (in_array($token, self::CREATING_VERBS, true) || in_array($token, self::NOT_CREATING_VERBS, true)) {
+                return $token;
+            }
+        }
+        return null;
     }
 
     /**
@@ -211,7 +245,9 @@ final class TaskClassifier
      */
     private function tokenize(string $text): array
     {
-        $parts = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text)) ?: [];
+        // One word, or the hyphen leaves a bare "step" that any step counter also has.
+        $text = preg_replace('/\bmulti[- ]step\b/u', 'multistep', mb_strtolower($text)) ?? '';
+        $parts = preg_split('/[^\p{L}\p{N}]+/u', $text) ?: [];
         $tokens = [];
         foreach ($parts as $part) {
             if ($part === '') {

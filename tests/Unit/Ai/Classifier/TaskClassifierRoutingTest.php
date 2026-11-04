@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Classifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Classifier\ClassificationResult;
 use Semitexa\Dev\Application\Service\Ai\Classifier\TaskClassifier;
 
 /**
@@ -33,6 +34,24 @@ final class TaskClassifierRoutingTest extends TestCase
         yield 'a wizard' => ['build a multi-step order wizard with three steps', 'add_wizard_form'];
         yield 'uk: a grid' => ['таблиця замовлень із сортуванням і фільтром', 'add_data_grid'];
         yield 'uk: a wizard' => ['майстер замовлення на три кроки', 'add_wizard_form'];
+        yield 'a grid in few words' => ['build an order grid with sorting and paging', 'add_data_grid'];
+        yield 'a wizard in few words' => ['a multi-step order wizard', 'add_wizard_form'];
+        yield 'a service stays a service' => ['build a service for invoices', 'add_service'];
+        yield 'a page to build stays a page' => ['build a page for orders', 'add_html_page'];
+        yield 'a filter service is a service' => ['build a filter service', 'add_service'];
+        yield 'a multi-tenant service is no wizard' => ['a multi-tenant service', 'add_service'];
+        yield 'the first verb is the task' => ['build a grid on a page with a twig template to delete rows', 'add_data_grid'];
+        yield 'explaining a wizard builds nothing' => ['explain how to build a wizard', 'document_or_explain'];
+        yield 'documenting a board builds nothing' => ['document the live board', 'document_or_explain'];
+        yield 'a live listener is a listener' => ['create a live event listener', 'add_event_listener'];
+        yield 'a step counter is no wizard' => ['build a step counter service', 'add_service'];
+        yield 'a board service is a service' => ['build a board service', 'add_service'];
+        yield 'a live console command is a command' => ['build a live console command', 'add_cli_command'];
+        yield 'a grid in the admin console is a grid' => ['build a grid for the admin console', 'add_data_grid'];
+        yield 'a live counter is live' => ['add a live counter to the page', 'add_live_region'];
+        yield 'a multi-step form is a wizard' => ['build a multi-step form', 'add_wizard_form'];
+        yield 'mending a widget is a bug' => ['fix broken dashboard widgets', 'debug_investigate'];
+        yield 'a typo in a wizard is copy' => ['fix a typo in a wizard step template', 'fix_template_text'];
         yield 'a plain page stays a page' => ['add a page that shows the order', 'add_html_page'];
         yield 'a bug is investigated, not re-worded' => ['fix the 500 error on /login', 'debug_investigate'];
         yield 'a template typo is still a template fix' => ['fix a typo in the login template', 'fix_template_text'];
@@ -59,6 +78,20 @@ final class TaskClassifierRoutingTest extends TestCase
     public function a_real_request_lands_on_its_recipe(string $request, string $recipe): void
     {
         self::assertSame($recipe, (new TaskClassifier())->classify($request)->recipe->id);
+    }
+
+    #[Test]
+    public function a_short_ui_request_is_confident_enough_not_to_be_sent_back(): void
+    {
+        foreach (['build an order grid with sorting and paging', 'a multi-step order wizard', 'build an order wizard', 'live board that updates by itself'] as $request) {
+            self::assertSame(ClassificationResult::CONFIDENCE_HIGH, (new TaskClassifier())->classify($request)->confidence, $request);
+        }
+    }
+
+    #[Test]
+    public function deleting_a_grid_never_lands_on_building_one(): void
+    {
+        self::assertNotSame('add_data_grid', (new TaskClassifier())->classify('delete the data grid')->recipe->id);
     }
 
     #[Test]

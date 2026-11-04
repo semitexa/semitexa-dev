@@ -145,7 +145,7 @@ final class RecipeRegistry
                 label: 'Add HTML page',
                 summary: 'Scaffold a complete server-rendered page (Payload + Handler + Resource + Twig template).',
                 keywords: ['page', 'view', 'twig', 'html', 'template', 'screen'],
-                verbs: ['add', 'create', 'render', 'show', 'display'],
+                verbs: ['add', 'create', 'build', 'render', 'show', 'display'],
                 generator_chain: ['make:page'],
                 context_signals: ['Resource\\Response', 'View\\templates', 'HtmlResponse'],
                 arg_hints: [
@@ -166,11 +166,12 @@ final class RecipeRegistry
                     . 'The page shows its skeleton, the slot follows by itself; page data reaches the slot handler as '
                     . '$slot->getRenderContext(). Run: ai:ask mechanisms --id=ssr.deferred',
                 keywords: ['slow', 'deferred', 'widget', 'widgets', 'skeleton', 'loading', 'afterwards', 'lazy', 'expensive', 'fills', 'dashboard'],
-                verbs: ['defer', 'fill', 'stream', 'load'],
+                verbs: ['widget', 'defer', 'fill', 'stream', 'load'],
                 generator_chain: [],
                 context_signals: ['Resource\\Slot', 'Handler\\SlotHandler', 'View\\templates'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_live_region',
@@ -179,11 +180,12 @@ final class RecipeRegistry
                     . 'Signed-in visitors: a component implementing UiIslandInterface. Public pages: an SSE feed payload. '
                     . 'Run: ai:ask mechanisms --id=ssr.transport',
                 keywords: ['live', 'realtime', 'real-time', 'board', 'itself', 'automatically', 'sse', 'push', 'polling', 'reload', 'viewers', 'watch', 'move'],
-                verbs: ['watch', 'push', 'subscribe', 'broadcast'],
+                verbs: ['live', 'watch', 'push', 'subscribe', 'broadcast'],
                 generator_chain: [],
                 context_signals: ['Component', 'UiIslandInterface', 'WatchScopes'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_data_grid',
@@ -192,11 +194,12 @@ final class RecipeRegistry
                     . 'hand-written table and script. Custom markup: one #[AsComponent] with #[UiUrl] props. '
                     . 'Run: ai:ask mechanisms --id=crud.collection-feed, then ai:ask components --name=platform.grid',
                 keywords: ['grid', 'table', 'sort', 'sorting', 'sortable', 'filter', 'filters', 'filtering', 'paging', 'pagination', 'paginated', 'rows', 'bulk'],
-                verbs: ['sort', 'filter', 'paginate', 'list'],
+                verbs: ['grid', 'paginate'],
                 generator_chain: [],
                 context_signals: ['Payload\\Request', 'CollectionFeed', 'Component'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_wizard_form',
@@ -204,12 +207,15 @@ final class RecipeRegistry
                 summary: 'The framework has no wizard: one server component holds the steps, the draft lives in the session, '
                     . 'and each step validates on the server through #[UiOn] handlers. '
                     . 'Run: ai:ask mechanisms --id=ui.event-intent, then ai:ask components --name=platform.form',
-                keywords: ['wizard', 'steps', 'step', 'multi-step', 'multistep', 'checkout', 'draft'],
-                verbs: ['guide'],
+                keywords: ['wizard', 'steps', 'step', 'multistep', 'checkout', 'draft', 'guided'],
+                // The telling noun weighs like a verb in these four (see noun_led): a general
+                // verb such as "build" would take ordinary requests away from add_service.
+                verbs: ['guide', 'wizard', 'multistep'],
                 generator_chain: [],
                 context_signals: ['Component', 'View\\templates'],
                 arg_hints: [],
                 default_risk: 'medium',
+                noun_led: true,
             ),
             new Recipe(
                 id: 'add_event_listener',
@@ -232,7 +238,7 @@ final class RecipeRegistry
                 label: 'Add domain service',
                 summary: 'Scaffold a #[AsService] class inside a module.',
                 keywords: ['service', 'helper', 'logic', 'domain'],
-                verbs: ['add', 'create', 'extract', 'introduce'],
+                verbs: ['add', 'build', 'create', 'extract', 'introduce'],
                 generator_chain: ['make:service'],
                 context_signals: ['Domain\\Service', 'AsService'],
                 arg_hints: [
