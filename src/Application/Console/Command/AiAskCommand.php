@@ -93,6 +93,7 @@ final class AiAskCommand extends BaseCommand
             ->addOption('kind', null, InputOption::VALUE_REQUIRED, 'primitive, component or behavior (for subject=components)')
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Capability id (for subject=mechanisms)')
             ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Capability area prefix, e.g. ssr|ui (for subject=mechanisms)')
+            ->addOption('state', null, InputOption::VALUE_REQUIRED, 'installed or available (for subject=mechanisms)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (target-dependent shape)');
     }
 

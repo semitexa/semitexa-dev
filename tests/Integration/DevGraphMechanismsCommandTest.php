@@ -41,6 +41,18 @@ final class DevGraphMechanismsCommandTest extends TestCase
         return new CommandTester($app->find('dev:graph:mechanisms'));
     }
 
+    /** @param array<string, mixed> $fields */
+    private static function rendered(array $fields): string
+    {
+        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        (new \ReflectionMethod(DevGraphMechanismsCommand::class, 'renderCapability'))->invoke(new DevGraphMechanismsCommand(), $output, $fields + [
+            'id' => 'a.b', 'kind' => 'mechanism', 'state' => 'installed', 'declared_by' => 'A\\B', 'declared_by_short' => 'B',
+            'package' => 'a', 'summary' => 's', 'use_when' => 'u', 'avoid_when' => 'v', 'replaces' => [], 'see_also' => '',
+        ]);
+
+        return $output->fetch();
+    }
+
     /** @return array<string, mixed> */
     private static function json(CommandTester $t): array
     {
@@ -166,6 +178,33 @@ final class DevGraphMechanismsCommandTest extends TestCase
             $this->assertArrayNotHasKey('usage', $mechanism, $mechanism['id']);
             $this->assertIsBool($mechanism['has_usage'], $mechanism['id']);
         }
+    }
+
+    #[Test]
+    public function a_listed_entry_says_whether_it_has_a_usage_without_carrying_it(): void
+    {
+        $listed = new \ReflectionMethod(DevGraphMechanismsCommand::class, 'listed');
+
+        $this->assertSame(['id' => 'a.b', 'has_usage' => true], $listed->invoke(null, ['id' => 'a.b', 'usage' => 'code']));
+        $this->assertSame(['id' => 'a.b', 'has_usage' => false], $listed->invoke(null, ['id' => 'a.b', 'usage' => '']));
+        $this->assertSame(['id' => 'a.b', 'has_usage' => false], $listed->invoke(null, ['id' => 'a.b']));
+    }
+
+    #[Test]
+    public function the_text_list_points_at_the_usage_of_an_entry_that_has_one(): void
+    {
+        $this->assertStringContainsString('ai:ask mechanisms --id=a.b', self::rendered(['has_usage' => true]));
+        $this->assertStringNotContainsString('--id=a.b', self::rendered(['has_usage' => false]));
+    }
+
+    #[Test]
+    public function a_usage_prints_line_by_line_and_the_formatter_leaves_its_markup_alone(): void
+    {
+        $text = self::rendered(['usage' => "{{ component('x') }}\n#[Foo]\n<info>list<string></info>"]);
+
+        $this->assertStringContainsString("{{ component('x') }}", $text);
+        $this->assertStringContainsString('#[Foo]', $text);
+        $this->assertStringContainsString('<info>list<string></info>', $text);
     }
 
     #[Test]

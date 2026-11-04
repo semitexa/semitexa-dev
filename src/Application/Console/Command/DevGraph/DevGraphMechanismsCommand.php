@@ -98,12 +98,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         // the size of an answer that is already too long to read.
         $oneAtATime = is_string($id) && $id !== '';
         if (!$oneAtATime) {
-            $capabilities = array_map(static function (array $capability): array {
-                $capability['has_usage'] = ($capability['usage'] ?? '') !== '';
-                unset($capability['usage']);
-
-                return $capability;
-            }, $capabilities);
+            $capabilities = array_map(self::listed(...), $capabilities);
         }
 
         if ((bool) $input->getOption('json')) {
@@ -186,6 +181,19 @@ final class DevGraphMechanismsCommand extends BaseCommand
     }
 
     /**
+     * @param array<string, mixed> $capability
+     *
+     * @return array<string, mixed> Says whether a usage exists, without carrying it.
+     */
+    private static function listed(array $capability): array
+    {
+        $capability['has_usage'] = ($capability['usage'] ?? '') !== '';
+        unset($capability['usage']);
+
+        return $capability;
+    }
+
+    /**
      * Render one capability.
      *
      * Extracted so the available branch is reachable from a test. Inline in the
@@ -210,6 +218,9 @@ final class DevGraphMechanismsCommand extends BaseCommand
             $output->writeln('    <info>Avoid when:</info> ' . $c['avoid_when']);
             foreach ((array) $c['replaces'] as $r) {
                 $output->writeln('    <info>Instead of:</info> ' . $r);
+            }
+            if (($c['has_usage'] ?? false) === true) {
+                $output->writeln('    <info>How:</info>        ai:ask mechanisms --id=' . $c['id']);
             }
             if (($c['usage'] ?? '') !== '') {
                 $output->writeln('    <info>How:</info>');
