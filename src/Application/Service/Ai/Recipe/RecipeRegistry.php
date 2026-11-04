@@ -210,7 +210,7 @@ final class RecipeRegistry
                 keywords: ['wizard', 'steps', 'step', 'multistep', 'checkout', 'draft', 'guided'],
                 // The telling noun weighs like a verb in these four (see noun_led): a general
                 // verb such as "build" would take ordinary requests away from add_service.
-                verbs: ['guide', 'wizard', 'step'],
+                verbs: ['guide', 'wizard', 'multistep'],
                 generator_chain: [],
                 context_signals: ['Component', 'View\\templates'],
                 arg_hints: [],

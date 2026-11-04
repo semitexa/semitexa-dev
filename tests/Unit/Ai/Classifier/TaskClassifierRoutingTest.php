@@ -40,6 +40,16 @@ final class TaskClassifierRoutingTest extends TestCase
         yield 'a page to build stays a page' => ['build a page for orders', 'add_html_page'];
         yield 'a filter service is a service' => ['build a filter service', 'add_service'];
         yield 'a multi-tenant service is no wizard' => ['a multi-tenant service', 'add_service'];
+        yield 'the first verb is the task' => ['build a grid on a page with a twig template to delete rows', 'add_data_grid'];
+        yield 'explaining a wizard builds nothing' => ['explain how to build a wizard', 'document_or_explain'];
+        yield 'documenting a board builds nothing' => ['document the live board', 'document_or_explain'];
+        yield 'a live listener is a listener' => ['create a live event listener', 'add_event_listener'];
+        yield 'a step counter is no wizard' => ['build a step counter service', 'add_service'];
+        yield 'a board service is a service' => ['build a board service', 'add_service'];
+        yield 'a live console command is a command' => ['build a live console command', 'add_cli_command'];
+        yield 'a grid in the admin console is a grid' => ['build a grid for the admin console', 'add_data_grid'];
+        yield 'a live counter is live' => ['add a live counter to the page', 'add_live_region'];
+        yield 'a multi-step form is a wizard' => ['build a multi-step form', 'add_wizard_form'];
         yield 'mending a widget is a bug' => ['fix broken dashboard widgets', 'debug_investigate'];
         yield 'a typo in a wizard is copy' => ['fix a typo in a wizard step template', 'fix_template_text'];
         yield 'a plain page stays a page' => ['add a page that shows the order', 'add_html_page'];
@@ -76,6 +86,12 @@ final class TaskClassifierRoutingTest extends TestCase
         foreach (['build an order grid with sorting and paging', 'a multi-step order wizard', 'build an order wizard', 'live board that updates by itself'] as $request) {
             self::assertSame(ClassificationResult::CONFIDENCE_HIGH, (new TaskClassifier())->classify($request)->confidence, $request);
         }
+    }
+
+    #[Test]
+    public function deleting_a_grid_never_lands_on_building_one(): void
+    {
+        self::assertNotSame('add_data_grid', (new TaskClassifier())->classify('delete the data grid')->recipe->id);
     }
 
     #[Test]
