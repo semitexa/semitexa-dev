@@ -161,8 +161,10 @@ final class DevGraphMechanismsCommandTest extends TestCase
         $decoded = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertStringContainsString('--id=', $decoded['how_to_use_one']);
+        $this->assertNotEmpty($decoded['mechanisms']);
         foreach ($decoded['mechanisms'] as $mechanism) {
             $this->assertArrayNotHasKey('usage', $mechanism, $mechanism['id']);
+            $this->assertIsBool($mechanism['has_usage'], $mechanism['id']);
         }
     }
 

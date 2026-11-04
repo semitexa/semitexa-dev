@@ -53,7 +53,7 @@ final class CapabilityRegistry
                 name: 'dev:graph:mechanisms',
                 kind: 'introspection',
                 summary: 'List what the installed FRAMEWORK can do - deferred rendering, components, live transport, UI behaviors - each with when to use it and when not to.',
-                use_when: 'Before building or changing a page, a region or an interaction. Answers "is there already a mechanism for this?" - which is the question that stops a capability being hand-rolled. Prefer `ai:ask mechanisms`; `--id=<id>` adds a working example and how data gets in and out.',
+                use_when: 'Before building or changing a page, a region or an interaction. Answers "is there already a mechanism for this?" - which is the question that stops a capability being hand-rolled. Prefer `ai:ask mechanisms`; `--id=<id>` adds a working example and how data gets in and out, where the entry has one.',
                 avoid_when: 'You want the list of CLI commands to run - that is `dev:graph:capabilities`, a different question.',
                 optional_inputs: [
                     'id' => ['type' => 'string', 'description' => 'Single capability by id (e.g. ssr.deferred)'],

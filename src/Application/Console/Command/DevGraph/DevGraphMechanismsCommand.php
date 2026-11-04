@@ -99,6 +99,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $oneAtATime = is_string($id) && $id !== '';
         if (!$oneAtATime) {
             $capabilities = array_map(static function (array $capability): array {
+                $capability['has_usage'] = ($capability['usage'] ?? '') !== '';
                 unset($capability['usage']);
 
                 return $capability;
@@ -115,7 +116,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // `ai:ask` stamps its own envelope with the CURRENT time, which
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
-                'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out',
+                'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out, for an entry with has_usage',
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
