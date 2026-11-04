@@ -45,9 +45,13 @@ final class CapabilityUsageIsRealTest extends TestCase
 
             preg_match_all('/\b([A-Z]\w+)::([a-z]\w*)\(/', $usage, $calls, PREG_SET_ORDER);
             foreach ($calls as [, $class, $method]) {
-                foreach ($api->resolve($class) as $resolved) {
-                    /** @var class-string $resolved */
-                    if (!(new ReflectionClass($resolved))->hasMethod($method)) {
+                $resolved = $api->resolve($class);
+                if ($resolved === []) {
+                    $wrong[] = "{$capability['id']}: no class {$class}";
+                }
+                foreach ($resolved as $candidate) {
+                    /** @var class-string $candidate */
+                    if (!(new ReflectionClass($candidate))->hasMethod($method)) {
                         $wrong[] = "{$capability['id']}: no method {$class}::{$method}";
                     }
                 }
