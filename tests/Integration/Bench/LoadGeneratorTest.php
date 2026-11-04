@@ -98,14 +98,42 @@ final class LoadGeneratorTest extends TestCase
     }
 
     #[Test]
-    public function a_connection_swoole_refuses_to_start_is_named_and_the_others_are_released(): void
+    public function connections_past_the_coroutine_limit_are_refused_before_any_starts(): void
     {
+        $error = null;
+        $running = null;
+        Coroutine::set(['max_coroutine' => 8]);
+        try {
+            Coroutine\run(function () use (&$error, &$running): void {
+                try {
+                    (new LoadGenerator('127.0.0.1', 1, 0.2))->run('/', 32, 0.2);
+                } catch (\RuntimeException $e) {
+                    $error = $e->getMessage();
+                    $running = Coroutine::stats()['coroutine_num'];
+                }
+            });
+        } finally {
+            Coroutine::set(['max_coroutine' => 100000]);
+        }
+
+        self::assertIsString($error, 'the run stops with an error, not a hang or a segfault');
+        self::assertStringContainsString('32 connections could not start', $error);
+        self::assertStringContainsString('max_coroutine 8', $error);
+        self::assertSame(1, $running, 'none of the connections was started and then abandoned');
+    }
+
+    #[Test]
+    public function the_last_free_coroutine_can_be_used_and_the_next_cannot(): void
+    {
+        $fits = null;
         $error = null;
         Coroutine::set(['max_coroutine' => 8]);
         try {
-            Coroutine\run(function () use (&$error): void {
+            Coroutine\run(function () use (&$fits, &$error): void {
+                $generator = new LoadGenerator('127.0.0.1', 1, 0.05);
+                $fits = $generator->run('/', 7, 0.05);
                 try {
-                    (new LoadGenerator('127.0.0.1', 1, 0.2))->run('/', 32, 0.2);
+                    $generator->run('/', 8, 0.05);
                 } catch (\RuntimeException $e) {
                     $error = $e->getMessage();
                 }
@@ -114,7 +142,23 @@ final class LoadGeneratorTest extends TestCase
             Coroutine::set(['max_coroutine' => 100000]);
         }
 
-        self::assertIsString($error, 'the run stops with an error, not a hang');
-        self::assertStringContainsString('of 32 could not start', $error);
+        self::assertSame(7, $fits?->concurrency);
+        self::assertIsString($error);
+    }
+
+    #[Test]
+    public function a_limit_of_zero_means_the_default_as_it_does_to_swoole(): void
+    {
+        $run = null;
+        Coroutine::set(['max_coroutine' => 0]);
+        try {
+            Coroutine\run(function () use (&$run): void {
+                $run = (new LoadGenerator('127.0.0.1', 1, 0.05))->run('/', 2, 0.05);
+            });
+        } finally {
+            Coroutine::set(['max_coroutine' => 100000]);
+        }
+
+        self::assertSame(2, $run?->concurrency);
     }
 }
