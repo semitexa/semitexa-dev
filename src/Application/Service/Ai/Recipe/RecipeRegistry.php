@@ -156,6 +156,61 @@ final class RecipeRegistry
                 ],
                 default_risk: 'low',
             ),
+            // ep-bench-rich-ui-findings: "live board that updates by itself" routed to
+            // fix_template_text, and agents hand-wrote what these replace. Each summary
+            // says where the worked example is, because a recipe cannot hold it.
+            new Recipe(
+                id: 'add_deferred_region',
+                label: 'Add a region that fills in after the page loads',
+                summary: 'A slow region must not hold the page back: a deferred slot, no script and no JSON route. '
+                    . 'The page shows its skeleton, the slot follows by itself; page data reaches the slot handler as '
+                    . '$slot->getRenderContext(). Run: ai:ask mechanisms --id=ssr.deferred',
+                keywords: ['slow', 'deferred', 'widget', 'widgets', 'skeleton', 'loading', 'afterwards', 'lazy', 'expensive', 'fills', 'dashboard'],
+                verbs: ['defer', 'fill', 'stream', 'load'],
+                generator_chain: [],
+                context_signals: ['Resource\\Slot', 'Handler\\SlotHandler', 'View\\templates'],
+                arg_hints: [],
+                default_risk: 'medium',
+            ),
+            new Recipe(
+                id: 'add_live_region',
+                label: 'Add a region that updates by itself',
+                summary: 'Data changing elsewhere shows on every open page: no polling and no setInterval. '
+                    . 'Signed-in visitors: a component implementing UiIslandInterface. Public pages: an SSE feed payload. '
+                    . 'Run: ai:ask mechanisms --id=ssr.transport',
+                keywords: ['live', 'realtime', 'real-time', 'board', 'itself', 'automatically', 'sse', 'push', 'polling', 'reload', 'viewers', 'watch', 'move'],
+                verbs: ['watch', 'push', 'subscribe', 'broadcast'],
+                generator_chain: [],
+                context_signals: ['Component', 'UiIslandInterface', 'WatchScopes'],
+                arg_hints: [],
+                default_risk: 'medium',
+            ),
+            new Recipe(
+                id: 'add_data_grid',
+                label: 'Add a grid over a table',
+                summary: 'Paging, sorting, search and filters run on the server: #[AsCollectionFeed] and platform.grid, no '
+                    . 'hand-written table and script. Custom markup: one #[AsComponent] with #[UiUrl] props. '
+                    . 'Run: ai:ask mechanisms --id=crud.collection-feed, then ai:ask components --name=platform.grid',
+                keywords: ['grid', 'table', 'sort', 'sorting', 'sortable', 'filter', 'filters', 'filtering', 'paging', 'pagination', 'paginated', 'rows', 'bulk'],
+                verbs: ['sort', 'filter', 'paginate', 'list'],
+                generator_chain: [],
+                context_signals: ['Payload\\Request', 'CollectionFeed', 'Component'],
+                arg_hints: [],
+                default_risk: 'medium',
+            ),
+            new Recipe(
+                id: 'add_wizard_form',
+                label: 'Add a multi-step form',
+                summary: 'The framework has no wizard: one server component holds the steps, the draft lives in the session, '
+                    . 'and each step validates on the server through #[UiOn] handlers. '
+                    . 'Run: ai:ask mechanisms --id=ui.event-intent, then ai:ask components --name=platform.form',
+                keywords: ['wizard', 'steps', 'step', 'multi-step', 'multistep', 'checkout', 'draft'],
+                verbs: ['guide'],
+                generator_chain: [],
+                context_signals: ['Component', 'View\\templates'],
+                arg_hints: [],
+                default_risk: 'medium',
+            ),
             new Recipe(
                 id: 'add_event_listener',
                 label: 'Add event listener',

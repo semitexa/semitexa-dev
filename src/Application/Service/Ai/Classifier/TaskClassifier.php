@@ -182,7 +182,8 @@ final class TaskClassifier
      */
     private const UKRAINIAN_STEMS = [
         'дода' => ['add'], 'створ' => ['create'], 'виправ' => ['fix'], 'полагод' => ['fix'],
-        'сторінк' => ['page'], 'шаблон' => ['template'], 'текст' => ['text'], 'одрук' => ['typo'],
+        'таблиц' => ['table'], 'сортув' => ['sort'], 'фільтр' => ['filter'], 'майстр' => ['wizard'], 'крок' => ['step'],
+        'оновлюєт' => ['itself'], 'сторінк' => ['page'], 'шаблон' => ['template'], 'текст' => ['text'], 'одрук' => ['typo'],
         'помилк' => ['error'], 'падає' => ['failing'], 'зламан' => ['broken'],
         'чому' => ['why'], 'дослід' => ['investigate'], 'розслід' => ['investigate'],
         'команд' => ['command'], 'консол' => ['console'], 'консольн' => ['console'],

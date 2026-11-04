@@ -24,6 +24,16 @@ final class TaskClassifierRoutingTest extends TestCase
      */
     public static function requests(): iterable
     {
+        // ep-bench-rich-ui-findings, in the words of the benchmark's own tickets.
+        yield 'a slow widget' => ['build a dashboard with four widgets, the revenue widget is expensive and fills in afterwards', 'add_deferred_region'];
+        yield 'a live board' => ['live board that updates by itself', 'add_live_region'];
+        yield 'watching without reload' => ['build a board so the team can watch orders move without touching the page', 'add_live_region'];
+        yield 'live stock for viewers' => ['show live stock to 20 viewers without a page reload', 'add_live_region'];
+        yield 'a grid' => ['build an order grid with sorting, filtering and paging over 100000 rows', 'add_data_grid'];
+        yield 'a wizard' => ['build a multi-step order wizard with three steps', 'add_wizard_form'];
+        yield 'uk: a grid' => ['таблиця замовлень із сортуванням і фільтром', 'add_data_grid'];
+        yield 'uk: a wizard' => ['майстер замовлення на три кроки', 'add_wizard_form'];
+        yield 'a plain page stays a page' => ['add a page that shows the order', 'add_html_page'];
         yield 'a bug is investigated, not re-worded' => ['fix the 500 error on /login', 'debug_investigate'];
         yield 'a template typo is still a template fix' => ['fix a typo in the login template', 'fix_template_text'];
         yield 'a vague "wrong" does not steal a template fix' => ['fix wrong label in the header template', 'fix_template_text'];
