@@ -28,6 +28,9 @@ final class LoadGenerator
      */
     public const MAX_SAMPLES = 1_000_000;
 
+    /** What Swoole allows when nothing set max_coroutine: getOptions() is then empty. */
+    private const SWOOLE_DEFAULT_MAX_COROUTINE = 100_000;
+
     public function __construct(
         private readonly string $host,
         private readonly int $port,
@@ -60,6 +63,8 @@ final class LoadGenerator
     /** @param array<string, string> $headers */
     private function window(string $path, int $concurrency, float $seconds, array $headers): LoadRun
     {
+        $this->refuseWhatSwooleWouldRefuse($concurrency);
+
         $latencies = [];
         $answered = 0;
         $statuses = [];
@@ -67,10 +72,8 @@ final class LoadGenerator
         $deadline = 0;
         $go = new Coroutine\Channel($concurrency);
         $done = new Coroutine\Channel($concurrency);
-        $started = 0;
         for ($i = 0; $i < $concurrency; $i++) {
-            // @: past max_coroutine Swoole warns and returns false; the error below names it.
-            $cid = @Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
+            Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
                 $client = new Client($this->host, $this->port);
                 $client->set(['timeout' => $this->timeoutS, 'keep_alive' => true]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
@@ -103,18 +106,6 @@ final class LoadGenerator
                 $client->close();
                 $done->push(true);
             });
-            if ($cid === false) {
-                // The coroutine limit (max_coroutine): release the ones that
-                // started — the deadline is still 0, so each closes at once.
-                for ($j = 0; $j < $started; $j++) {
-                    $go->push(true);
-                }
-                for ($j = 0; $j < $started; $j++) {
-                    $done->pop();
-                }
-                throw new \RuntimeException(sprintf('connection %d of %d could not start: Swoole refused the coroutine (max_coroutine); lower --concurrency', $i + 1, $concurrency));
-            }
-            $started++;
         }
         $start = hrtime(true);
         $deadline = $start + (int) ($seconds * 1e9);
@@ -127,5 +118,35 @@ final class LoadGenerator
         $elapsed = (hrtime(true) - $start) / 1e9;
 
         return new LoadRun('GET ' . $path, $concurrency, $elapsed, $answered, $errors, $statuses, LatencyStats::of($latencies));
+    }
+
+    /**
+     * Asked before the first coroutine, not found out from the one that fails:
+     * a refused Coroutine::create() segfaults the process once a coroutine HTTP
+     * server has run in it (Swoole 6.2.3, 7 runs of 8), and nothing in PHP can
+     * catch that. Nothing yields while the connections are created, so what is
+     * free here is still free for the last of them.
+     */
+    private function refuseWhatSwooleWouldRefuse(int $concurrency): void
+    {
+        $limit = $this->coroutineLimit();
+        $free = $limit - (int) Coroutine::stats()['coroutine_num'];
+        if ($concurrency > $free) {
+            throw new \RuntimeException(sprintf('%d connections could not start: Swoole has room for %d more coroutines (max_coroutine %d); lower --concurrency', $concurrency, $free, $limit));
+        }
+    }
+
+    /**
+     * Read the way Swoole reads it: both spellings, and 0 meaning the default.
+     * Its options keep every value ever set, so a stale max_coroutine can sit
+     * beside a lower max_coro_num that is the one in force. The smaller is taken:
+     * refusing a run that would have fitted is a message, the other way a segfault.
+     */
+    private function coroutineLimit(): int
+    {
+        $options = Coroutine::getOptions() ?? [];
+        $set = array_filter([(int) ($options['max_coroutine'] ?? 0), (int) ($options['max_coro_num'] ?? 0)], static fn (int $limit): bool => $limit > 0);
+
+        return $set === [] ? self::SWOOLE_DEFAULT_MAX_COROUTINE : min($set);
     }
 }

@@ -15,14 +15,15 @@ final class CapabilityRegistry
             new CommandCapability(
                 name: 'ai:ask',
                 kind: 'introspection',
-                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, mechanisms, project, module, route, event, path, logs).',
+                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, mechanisms, project, module, route, event, path, api, logs).',
                 use_when: 'Any agent read-only question: start here instead of the underlying dev:graph:* / logs:app commands.',
                 avoid_when: 'You are writing code or performing non-introspection work.',
                 required_inputs: [
-                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, mechanisms, project, module, route, event, path, logs'],
+                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, mechanisms, project, module, route, event, path, api, logs'],
                 ],
                 optional_inputs: [
-                    'name' => ['type' => 'string', 'description' => 'Module/event name (for subject=module|event)'],
+                    'name' => ['type' => 'string', 'description' => 'Module/event name, or a framework class (for subject=module|event|api)'],
+                    'search' => ['type' => 'string', 'description' => 'Find framework classes and members by name or doc summary (for subject=api)'],
                     'path' => ['type' => 'string', 'description' => 'Route path (for subject=route)'],
                     'method' => ['type' => 'string', 'description' => 'HTTP method (for subject=route)'],
                     'file' => ['type' => 'string', 'description' => 'Log file alias (for subject=logs)'],
@@ -58,6 +59,19 @@ final class CapabilityRegistry
                     'area' => ['type' => 'string', 'description' => 'Filter by area prefix (ssr, ui)'],
                 ],
                 outputs: ['envelope' => 'JSON mechanism catalog (semitexa.dev.mechanisms/v1), derived from #[Capability] across installed packages'],
+                supports: ['--json'],
+            ),
+            new CommandCapability(
+                name: 'dev:graph:api',
+                kind: 'introspection',
+                summary: 'Show the signatures of a framework class - attribute parameters, trait and public methods, enum cases - or search the framework API by name and doc summary.',
+                use_when: 'Before opening anything under vendor/ to learn how a framework class is called: an attribute\'s parameters, a validation helper, a method\'s signature. Prefer `ai:ask api --name=…` or `ai:ask api --search=…`.',
+                avoid_when: 'You want what the framework can do as a mechanism (`ai:ask mechanisms`) or how to run something (`ai:ask capabilities`).',
+                optional_inputs: [
+                    'name' => ['type' => 'string', 'description' => 'Short or full class name (e.g. Column)'],
+                    'search' => ['type' => 'string', 'description' => 'Words to find in class and member names and doc summaries (e.g. "max length")'],
+                ],
+                outputs: ['envelope' => 'JSON class description (semitexa-dev.api/v1) or ranked hits (semitexa-dev.api-search/v1)'],
                 supports: ['--json'],
             ),
             new CommandCapability(

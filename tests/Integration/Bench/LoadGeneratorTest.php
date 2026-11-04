@@ -98,23 +98,91 @@ final class LoadGeneratorTest extends TestCase
     }
 
     #[Test]
-    public function a_connection_swoole_refuses_to_start_is_named_and_the_others_are_released(): void
+    public function connections_past_the_coroutine_limit_are_refused_before_any_starts(): void
     {
         $error = null;
-        Coroutine::set(['max_coroutine' => 8]);
-        try {
-            Coroutine\run(function () use (&$error): void {
-                try {
-                    (new LoadGenerator('127.0.0.1', 1, 0.2))->run('/', 32, 0.2);
-                } catch (\RuntimeException $e) {
-                    $error = $e->getMessage();
-                }
-            });
-        } finally {
-            Coroutine::set(['max_coroutine' => 100000]);
-        }
+        $running = null;
+        $this->underCoroutineOptions(['max_coroutine' => 8], function () use (&$error, &$running): void {
+            try {
+                (new LoadGenerator('127.0.0.1', 1, 0.2))->run('/', 32, 0.2);
+            } catch (\RuntimeException $e) {
+                $error = $e->getMessage();
+                $running = Coroutine::stats()['coroutine_num'];
+            }
+        });
 
-        self::assertIsString($error, 'the run stops with an error, not a hang');
-        self::assertStringContainsString('of 32 could not start', $error);
+        self::assertIsString($error, 'the run stops with an error, not a hang or a segfault');
+        self::assertStringContainsString('32 connections could not start', $error);
+        self::assertStringContainsString('max_coroutine 8', $error);
+        self::assertSame(1, $running, 'none of the connections was started and then abandoned');
+    }
+
+    #[Test]
+    public function the_last_free_coroutine_can_be_used_and_the_next_cannot(): void
+    {
+        $fits = null;
+        $error = null;
+        $this->underCoroutineOptions(['max_coroutine' => 8], function () use (&$fits, &$error): void {
+            $generator = new LoadGenerator('127.0.0.1', 1, 0.05);
+            $fits = $generator->run('/', 7, 0.05);
+            try {
+                $generator->run('/', 8, 0.05);
+            } catch (\RuntimeException $e) {
+                $error = $e->getMessage();
+            }
+        });
+
+        self::assertGreaterThan(0, $fits?->requests, 'the seven connections really ran');
+        self::assertIsString($error);
+        self::assertStringContainsString('8 connections could not start', $error);
+        // 6 when the last connection of the run before has pushed its result and not yet ended.
+        self::assertMatchesRegularExpression('/room for [67] more/', $error);
+    }
+
+    #[Test]
+    public function a_limit_of_zero_means_the_default_as_it_does_to_swoole(): void
+    {
+        $run = null;
+        $this->underCoroutineOptions(['max_coroutine' => 0], function () use (&$run): void {
+            $run = (new LoadGenerator('127.0.0.1', 1, 0.05))->run('/', 2, 0.05);
+        });
+
+        self::assertGreaterThan(0, $run?->requests);
+    }
+
+    #[Test]
+    public function the_old_spelling_of_the_limit_counts_even_beside_a_stale_new_one(): void
+    {
+        $error = null;
+        Coroutine::set(['max_coroutine' => 100000]);
+        $this->underCoroutineOptions(['max_coro_num' => 8], function () use (&$error): void {
+            try {
+                (new LoadGenerator('127.0.0.1', 1, 0.05))->run('/', 32, 0.05);
+            } catch (\RuntimeException $e) {
+                $error = $e->getMessage();
+            }
+        });
+
+        self::assertIsString($error);
+        self::assertStringContainsString('max_coroutine 8', $error);
+    }
+
+    /**
+     * Coroutine options are process-wide: whatever a test sets is put back, under
+     * both spellings, or it leaks into whichever test runs next.
+     *
+     * @param array<string, int> $options
+     */
+    private function underCoroutineOptions(array $options, callable $work): void
+    {
+        $before = Coroutine::getOptions() ?? [];
+        Coroutine::set($options);
+        try {
+            Coroutine\run($work);
+        } finally {
+            $limit = (int) ($before['max_coroutine'] ?? 0);
+            $limit = $limit > 0 ? $limit : 100000;
+            Coroutine::set(['max_coroutine' => $limit, 'max_coro_num' => (int) ($before['max_coro_num'] ?? $limit)]);
+        }
     }
 }
