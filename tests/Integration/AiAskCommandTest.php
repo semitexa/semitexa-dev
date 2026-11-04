@@ -49,6 +49,18 @@ class AiAskCommandTest extends TestCase
         $this->assertTrue($log[0]['options']['json']);
     }
 
+    public function test_api_subject_forwards_name_and_search(): void
+    {
+        $log = new \ArrayObject();
+        $tester = $this->newAskWithFakes($log);
+        $tester->execute(['subject' => 'api', '--name' => 'Column', '--search' => 'regex', '--json' => true]);
+
+        $this->assertSame('dev:graph:api', $log[0]['command']);
+        $this->assertSame('Column', $log[0]['options']['name']);
+        $this->assertSame('regex', $log[0]['options']['search']);
+        $this->assertTrue($log[0]['options']['json']);
+    }
+
     public function test_project_subject_delegates_to_dev_graph_project(): void
     {
         $log = new \ArrayObject();
@@ -227,6 +239,11 @@ class AiAskCommandTest extends TestCase
             'dev:graph:event' => [
                 'name' => InputOption::VALUE_OPTIONAL,
                 'json' => InputOption::VALUE_NONE,
+            ],
+            'dev:graph:api' => [
+                'name'   => InputOption::VALUE_REQUIRED,
+                'search' => InputOption::VALUE_REQUIRED,
+                'json'   => InputOption::VALUE_NONE,
             ],
             'logs:app' => [
                 'file'    => InputOption::VALUE_REQUIRED,

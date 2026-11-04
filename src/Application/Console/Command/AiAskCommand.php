@@ -22,13 +22,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   ai:ask module       --name=Billing [--json]
  *   ai:ask route        --path=/billing/{id} [--method=GET] [--json]
  *   ai:ask event        [--name=InvoicePaid] [--json]
+ *   ai:ask api          --name=Column | --search=regex [--json]
  *   ai:ask logs         [--file=app] [--lines=200] [--grep=…] [--json]
  *
  * Output contracts (envelope shapes, JSON keys, exit codes) belong to the
  * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
  * commands own behavior.
  */
-#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, project, module, route, event, path, logs)')]
+#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, project, module, route, event, path, api, logs)')]
 final class AiAskCommand extends BaseCommand
 {
     /**
@@ -50,6 +51,7 @@ final class AiAskCommand extends BaseCommand
         'module'       => 'dev:graph:module',
         'route'        => 'dev:graph:route',
         'event'        => 'dev:graph:event',
+        'api'          => 'dev:graph:api',
         'logs'         => 'logs:app',
         // `path` explains a file/directory path using global module-structure
         // rules + any package-local extension. Auto-selected when --path is
@@ -73,7 +75,8 @@ final class AiAskCommand extends BaseCommand
             // Union of options accepted by the delegated targets. Only the
             // ones the target actually declares are forwarded (see
             // CommandDelegator). Anything else is silently dropped.
-            ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name (for subject=module|event)')
+            ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name, or a framework class (for subject=module|event|api)')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Find framework classes and members by name or doc summary (for subject=api)')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Path: route path (subject=route) | file/directory path (subject=path, default when --path used)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method (for subject=route)')
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file alias (for subject=logs)')
