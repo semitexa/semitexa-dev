@@ -15,6 +15,7 @@ use Semitexa\Dev\Application\Service\Api\ApiReflector;
 use Semitexa\Dev\Tests\Fixtures\Api\One\SampleTwin as TwinOne;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleAttribute;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleBase;
+use Semitexa\Dev\Tests\Fixtures\Api\SampleCollector;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleContract;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleContractAbstract;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleContractDeep;
@@ -24,6 +25,8 @@ use Semitexa\Dev\Tests\Fixtures\Api\SampleHelperTrait;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleMode;
 use Semitexa\Dev\Tests\Fixtures\Api\SamplePlace;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleService;
+use Semitexa\Dev\Tests\Fixtures\Api\SampleTitled;
+use Semitexa\Dev\Tests\Fixtures\Api\SampleTitledChild;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleTraitUser;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleVariadic;
 use Semitexa\Dev\Tests\Fixtures\Api\Three\SampleTwin as TwinThree;
@@ -118,7 +121,7 @@ final class ApiCatalogTest extends TestCase
         $class = $this->catalog(SampleService::class)->lookup('SampleService');
 
         $this->assertInstanceOf(ApiClass::class, $class);
-        $this->assertSame(['LIMIT', 'pattern', 'owner', 'perform', 'make', 'old', '__invoke', 'inheritedByAll'], $this->memberNames($class));
+        $this->assertSame(['LIMIT', 'pattern', 'owner', 'perform', 'make', 'byReference', 'old', '__invoke', 'inheritedByAll'], $this->memberNames($class));
         $this->assertSame(SampleBase::class, $class->extends);
         $this->assertNull($this->member($class, 'perform')->from);
     }
@@ -154,6 +157,25 @@ final class ApiCatalogTest extends TestCase
         $this->assertFalse($scopes->toArray()['required']);
     }
 
+    public function test_a_by_reference_constructor_parameter_shows_it(): void
+    {
+        $class = $this->catalog(SampleCollector::class)->lookup('SampleCollector');
+
+        $this->assertInstanceOf(ApiClass::class, $class);
+        $errors = $this->parameter($class, 'errors');
+        $this->assertSame('array &$errors', $errors->signature());
+        $this->assertTrue($errors->toArray()['by_reference']);
+    }
+
+    public function test_a_parents_promoted_property_stays_when_a_child_constructor_reuses_the_name(): void
+    {
+        $class = $this->catalog(SampleTitledChild::class)->lookup('SampleTitledChild');
+
+        $this->assertInstanceOf(ApiClass::class, $class);
+        $this->assertSame('string $title', $this->parameter($class, 'title')->signature());
+        $this->assertSame(SampleTitled::class, $this->member($class, 'title')->from);
+    }
+
     public function test_a_promoted_property_stays_when_its_constructor_is_not_on_show(): void
     {
         $class = $this->catalog(SamplePlace::class)->lookup('SamplePlace');
@@ -171,6 +193,7 @@ final class ApiCatalogTest extends TestCase
         $this->assertSame('private(set) string $owner', $this->member($class, 'owner')->signature);
         $this->assertSame("const LIMIT = 'limit'", $this->member($class, 'LIMIT')->signature);
         $this->assertSame('Deprecated.', $this->member($class, 'old')->summary);
+        $this->assertSame('&byReference(): array', $this->member($class, 'byReference')->signature);
     }
 
     public function test_a_default_expression_is_printed_and_never_evaluated(): void
@@ -217,6 +240,20 @@ final class ApiCatalogTest extends TestCase
 
         $this->assertNull($catalog->lookup('SampleTwin'));
         $this->assertSame([TwinThree::class, TwinTwo::class], $catalog->resolve('SampleTwin'));
+    }
+
+    public function test_a_class_that_cannot_load_is_not_called_ambiguous(): void
+    {
+        $file = (string) (new ReflectionClass(SampleMode::class))->getFileName();
+        $catalog = new ApiCatalog([SampleMode::class . 'Gone' => $file], new ApiReflector('/nowhere'));
+
+        $this->assertNull($catalog->lookup('SampleModeGone'));
+        $this->assertStringContainsString('cannot be loaded', $catalog->refusalFor('SampleModeGone'));
+    }
+
+    public function test_equal_classes_are_refused_as_ambiguous(): void
+    {
+        $this->assertStringContainsString('names 2 classes', $this->catalog(TwinTwo::class, TwinThree::class)->refusalFor('SampleTwin'));
     }
 
     public function test_an_unknown_name_is_not_answered(): void
@@ -282,6 +319,14 @@ final class ApiCatalogTest extends TestCase
         $result = $catalog->search('check pattern validator');
         $this->assertTrue($result->partial);
         $this->assertSame('checkPattern', $result->hits[0]->member);
+    }
+
+    public function test_nothing_at_all_is_not_reported_as_partial(): void
+    {
+        $result = $this->catalog(SampleMode::class)->search('zzqq yyww');
+
+        $this->assertSame([], $result->hits);
+        $this->assertFalse($result->partial);
     }
 
     public function test_the_class_of_exactly_that_name_comes_first(): void

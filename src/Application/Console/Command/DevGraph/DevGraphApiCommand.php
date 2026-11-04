@@ -76,7 +76,7 @@ final class DevGraphApiCommand extends BaseCommand
                 $input,
                 $output,
                 self::CLASS_ARTIFACT,
-                sprintf('"%s" names %d classes; ask for one by its full name.', $name, count($matches)),
+                $this->catalog()->refusalFor($name),
                 'Classes',
                 $matches,
             );
@@ -239,7 +239,7 @@ final class DevGraphApiCommand extends BaseCommand
      */
     private function writeJson(OutputInterface $output, array $payload): void
     {
-        $output->writeln((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
+        $output->writeln((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
     private function catalog(): ApiCatalog

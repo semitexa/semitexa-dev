@@ -19,6 +19,13 @@ final class SampleService extends SampleBase
         return new self();
     }
 
+    public function &byReference(): array
+    {
+        static $held = [];
+
+        return $held;
+    }
+
     /** @deprecated Use make() */
     public function old(): void {}
 

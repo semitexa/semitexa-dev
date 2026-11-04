@@ -84,6 +84,21 @@ final class DevGraphApiCommandTest extends TestCase
         $this->assertStringContainsString('<info>', $display, 'Symfony would swallow it as a style tag');
     }
 
+    public function test_bytes_that_are_not_utf8_still_get_a_json_answer(): void
+    {
+        $decoded = json_decode(trim($this->ask(['--search' => "regex\xff", '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame('ok', $decoded['status']);
+    }
+
+    public function test_a_class_sharing_a_file_with_its_trait_keeps_its_own_methods(): void
+    {
+        $decoded = json_decode(trim($this->ask(['--name' => 'IncrementalEngine', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $own = array_column(array_filter($decoded['class']['members'], static fn (array $member): bool => $member['from'] === null), 'name');
+        $this->assertContains('fullBuild', $own);
+    }
+
     public function test_a_phrase_with_no_exact_match_still_finds_the_validator(): void
     {
         $decoded = json_decode(trim($this->ask(['--search' => 'max length validator', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);

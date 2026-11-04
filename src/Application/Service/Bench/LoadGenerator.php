@@ -136,12 +136,17 @@ final class LoadGenerator
         }
     }
 
-    /** Read the way Swoole reads it: both spellings, and 0 meaning the default. */
+    /**
+     * Read the way Swoole reads it: both spellings, and 0 meaning the default.
+     * Its options keep every value ever set, so a stale max_coroutine can sit
+     * beside a lower max_coro_num that is the one in force. The smaller is taken:
+     * refusing a run that would have fitted is a message, the other way a segfault.
+     */
     private function coroutineLimit(): int
     {
         $options = Coroutine::getOptions() ?? [];
-        $limit = (int) ($options['max_coroutine'] ?? $options['max_coro_num'] ?? 0);
+        $set = array_filter([(int) ($options['max_coroutine'] ?? 0), (int) ($options['max_coro_num'] ?? 0)], static fn (int $limit): bool => $limit > 0);
 
-        return $limit > 0 ? $limit : self::SWOOLE_DEFAULT_MAX_COROUTINE;
+        return $set === [] ? self::SWOOLE_DEFAULT_MAX_COROUTINE : min($set);
     }
 }

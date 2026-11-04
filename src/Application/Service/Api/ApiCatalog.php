@@ -104,6 +104,16 @@ final class ApiCatalog
         return count($described) === 1 ? $this->withImplementers($described[0]) : null;
     }
 
+    /** Why lookup() gave nothing for a name resolve() knows. */
+    public function refusalFor(string $name): string
+    {
+        $matches = $this->resolve($name);
+
+        return count($matches) === 1
+            ? sprintf('%s exists but cannot be loaded; a package it needs is probably not installed.', $matches[0])
+            : sprintf('"%s" names %d classes; ask for one by its full name.', $name, count($matches));
+    }
+
     /**
      * Classes whose short name contains the name, the closest first.
      *
@@ -220,7 +230,9 @@ final class ApiCatalog
             return $result;
         }
 
-        return $this->matching($tokens, intdiv(count($tokens) + 1, 2), partial: true);
+        $closest = $this->matching($tokens, intdiv(count($tokens) + 1, 2), partial: true);
+
+        return $closest->hits === [] ? $result : $closest;
     }
 
     /**

@@ -114,6 +114,7 @@ final class ApiReflector
                 summary: $this->parameterSummary($reflection, $parameter),
                 cases: $this->enumCasesOf($parameter),
                 variadic: $parameter->isVariadic(),
+                byReference: $parameter->isPassedByReference(),
             );
         }
 
@@ -227,9 +228,9 @@ final class ApiReflector
     }
 
     /**
-     * A promoted property is only left out when its parameter is on show: a
-     * private constructor or a parent's promotion leaves the property as the
-     * sole way to learn it exists.
+     * A promoted property is only left out when the constructor on show is the
+     * one that promotes it: a private constructor, or a child's constructor that
+     * merely reuses the name, leaves the property as the only way to learn of it.
      *
      * @param ReflectionClass<object> $reflection
      * @param list<ApiParameter>      $parameters
@@ -242,12 +243,12 @@ final class ApiReflector
             return []; // name and value belong to the engine; the cases say it all.
         }
 
-        $shown = array_map(static fn (ApiParameter $parameter): string => $parameter->name, $parameters);
+        $promotedBy = $parameters === [] ? null : $reflection->getConstructor()?->getDeclaringClass()->getName();
 
         $members = [];
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             $declaring = $property->getDeclaringClass();
-            if (($property->isPromoted() && in_array($property->getName(), $shown, true)) || !$this->isFramework($declaring->getName())) {
+            if (($property->isPromoted() && $declaring->getName() === $promotedBy) || !$this->isFramework($declaring->getName())) {
                 continue;
             }
             $members[] = new ApiMember(
@@ -298,7 +299,7 @@ final class ApiReflector
                 $method->getName(),
                 $this->methodSignature($method),
                 $this->summary($method->getDocComment()),
-                $this->traitWith($method->getDeclaringClass(), static fn (ReflectionClass $trait): bool => $trait->getFileName() === $method->getFileName())
+                $this->traitWith($method->getDeclaringClass(), fn (ReflectionClass $trait): bool => $this->declaresSame($trait, $method))
                     ?? $this->fromOther($reflection, $method->getDeclaringClass()->getName()),
             );
         }
@@ -323,7 +324,25 @@ final class ApiReflector
         $modifiers = ($abstract ? 'abstract ' : '') . ($method->isProtected() ? 'protected ' : '') . ($method->isStatic() ? 'static ' : '');
         $returns = $method->hasReturnType() ? ': ' . $method->getReturnType() : '';
 
-        return $modifiers . $method->getName() . '(' . implode(', ', $parameters) . ')' . $returns;
+        return $modifiers . ($method->returnsReference() ? '&' : '') . $method->getName() . '(' . implode(', ', $parameters) . ')' . $returns;
+    }
+
+    /**
+     * The same file is not enough: a class and the trait it uses can share one,
+     * and the class's own methods would then be credited to the trait and vanish
+     * from search.
+     *
+     * @param ReflectionClass<object> $trait
+     */
+    private function declaresSame(ReflectionClass $trait, ReflectionMethod $method): bool
+    {
+        if (!$trait->hasMethod($method->getName())) {
+            return false;
+        }
+
+        $declared = $trait->getMethod($method->getName());
+
+        return $declared->getFileName() === $method->getFileName() && $declared->getStartLine() === $method->getStartLine();
     }
 
     /**
