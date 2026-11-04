@@ -235,7 +235,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 24/718 -> 25/747 on 2026-11-03: fits() lets the renderers ask whether a
         // deferred request can be stored (context and snapshot) and render inline
         // instead of a 500 on a long request URL (HTTP edge probe).
-        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [25, 747],
+        'semitexa-ssr/src/Application/Service/Isomorphic/DeferredRequestRegistry.php' => [22, 692],
         // NEW on 2026-09-17, at 701 lines, and recorded rather than trimmed.
         // The class did not gain a method or a branch: `slot.resolve` stopped
         // being a begin/end pair and became a mark carrying its own duration,
