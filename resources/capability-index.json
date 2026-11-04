@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-10-21T13:18:33+00:00",
+    "generated_at": "2026-11-04T13:58:15+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "0ad1341d6d851f24a00e820e84ebbb63c18cd3da0ea478452c80513e264105c6",
+    "content_hash": "3ec0a4a45223b800a9aa5944a4442e5a651f0cb3a1f11398842b0fdc0713b8b8",
     "capabilities": [
         {
             "id": "api.external",
@@ -65,6 +65,7 @@
                 "a parallel set of controllers duplicating handlers for machine callers",
                 "an API key check and a version prefix bolted onto each route by hand"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Api\\Capabilities",
@@ -80,6 +81,7 @@
                 "a password_verify call and a $_SESSION write in a login handler",
                 "a token check copy-pasted into each protected route"
             ],
+            "usage": "",
             "see_also": "semitexa/authorization",
             "kind": "package",
             "declared_by": "Semitexa\\Auth\\Capabilities",
@@ -95,6 +97,7 @@
                 "an if on the user role at the top of every handler",
                 "an access check that runs after the payload is hydrated, too late to be a gate"
             ],
+            "usage": "",
             "see_also": "semitexa/rbac",
             "kind": "package",
             "declared_by": "Semitexa\\Authorization\\Capabilities",
@@ -110,6 +113,7 @@
                 "a static array that survives one request and leaks between coroutines",
                 "cache keys assembled by string concatenation, with the tenant forgotten in one place"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Cache\\Capabilities",
@@ -125,6 +129,7 @@
                 "an admin menu hand-written per site, and rewritten whenever the structure changes",
                 "a tree built by dumping a content table into the UI, where 40 exhibition texts sit beside the contacts page as equals"
             ],
+            "usage": "",
             "see_also": "semitexa/weave",
             "kind": "package",
             "declared_by": "Semitexa\\Cms\\Capabilities",
@@ -140,6 +145,7 @@
                 "a container and a route table wired by hand in a bootstrap file",
                 "a service locator resolving dependencies at the call site"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Core\\Capabilities",
@@ -154,6 +160,7 @@
             "replaces": [
                 "a POST route, handler and permission check per grid action"
             ],
+            "usage": "",
             "see_also": "crud.screen",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCrudAction",
@@ -170,6 +177,7 @@
                 "a feed handler with a field map, a query and a projection",
                 "a JSON response class carrying the #[Collection*] attributes"
             ],
+            "usage": "",
             "see_also": "ui.field-type",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCollectionFeed",
@@ -185,6 +193,7 @@
                 "list, create, edit and delete pages, each a payload, handler and template",
                 "a feed payload, handler, JSON response and Resource DTO per grid"
             ],
+            "usage": "",
             "see_also": "crud.screen",
             "kind": "package",
             "declared_by": "Semitexa\\Crud\\Capabilities",
@@ -201,6 +210,7 @@
                 "a feed payload and handler for the grid",
                 "create and update form actions that copy the form into the model"
             ],
+            "usage": "",
             "see_also": "crud.collection-feed",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCrud",
@@ -216,6 +226,7 @@
                 "a settings page, handler, form action and store calls per group of options",
                 "reading a setting with its default repeated at every call site"
             ],
+            "usage": "",
             "see_also": "crud.screen",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsSettingsPage",
@@ -231,6 +242,7 @@
                 "a scratch module written to try a feature out and then left in the project",
                 "reading a package test suite to work out how the feature is meant to be assembled"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Demo\\Capabilities",
@@ -247,6 +259,7 @@
                 "grepping for a class name to work out what a change would break",
                 "a bespoke shell script chaining lint and test over a diff"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Dev\\Capabilities",
@@ -263,6 +276,7 @@
                 "var_dump-and-restart cycles to see a payload or a query",
                 "hand-built scripts that re-send a request to reproduce a case"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Dev\\Capabilities",
@@ -278,6 +292,7 @@
                 "assembling the package set, container files and module layout by hand for each new project",
                 "copying the previous project and deleting whatever does not apply"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Ultimate\\Capabilities",
@@ -293,6 +308,7 @@
                 "framework documentation pasted into the project, drifting from the version installed",
                 "reading package source to recover a convention nobody wrote down"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Docs\\Capabilities",
@@ -308,6 +324,7 @@
                 "a bespoke file-browser UI plus custom endpoints for listing and reading directories",
                 "shelling out to the filesystem from a handler and rendering the result by hand"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Files\\Capabilities",
@@ -323,6 +340,7 @@
                 "grep for a class name, missing every alias, subclass and interface reference",
                 "opening files one by one to reconstruct who calls what"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\ProjectGraph\\Capabilities",
@@ -338,6 +356,7 @@
                 "a hand-written endpoint per view shape, each with its own serialiser",
                 "stitching several endpoint responses together in the browser"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Graphql\\Capabilities",
@@ -353,6 +372,7 @@
                 "an audit table anyone with UPDATE can rewrite",
                 "a message broker wired up by hand, with ordering and replay reinvented per aggregate"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Ledger\\Capabilities",
@@ -368,6 +388,7 @@
                 "direct HTTP calls to a provider with prompt strings inline in the handler",
                 "a hand-rolled loop parsing model output to decide which function to call"
             ],
+            "usage": "",
             "see_also": "semitexa/prompt",
             "kind": "package",
             "declared_by": "Semitexa\\Llm\\Capabilities",
@@ -383,6 +404,7 @@
                 "translated strings selected by an if-branch on the current locale",
                 "a per-tenant copy of a template, forked to change three words"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Locale\\Capabilities",
@@ -398,6 +420,7 @@
                 "a mail() or raw SMTP call in a handler, blocking the response until the server answers",
                 "string concatenation for the body, and base64 attachment handling written by hand"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Mail\\Capabilities",
@@ -413,6 +436,7 @@
                 "a hand-written MCP server wrapping bin/semitexa commands",
                 "pasting framework conventions into every agent session"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Mcp\\Capabilities",
@@ -428,6 +452,7 @@
                 "an imagick resize in the upload handler, blocking the request on every image",
                 "a naming convention for thumbnail paths, regenerated by a script when it drifts"
             ],
+            "usage": "",
             "see_also": "semitexa/storage",
             "kind": "package",
             "declared_by": "Semitexa\\Media\\Capabilities",
@@ -443,6 +468,7 @@
                 "a chat or SMS client call pasted next to every mail send",
                 "an if-per-channel block deciding where each event goes"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Notifications\\Attribute\\AsNotificationChannel",
@@ -457,6 +483,7 @@
             "replaces": [
                 "a hand-made notifications table with read flags and its own queries"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Notifications\\Capabilities",
@@ -472,6 +499,7 @@
                 "a mail send plus a hand-written inbox INSERT in each handler that reports an event",
                 "a per-user settings column checked before every send"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Notifications\\Capabilities",
@@ -487,6 +515,7 @@
                 "hand-written PDO queries plus a bespoke row-to-object mapper",
                 "a migration file written by hand for every column added to a model"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Orm\\Capabilities",
@@ -502,6 +531,7 @@
                 "an <audio> element wired into a bespoke route with its own playback state",
                 "sourcing and clearing background tracks before the feature can ship at all"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Music\\Capabilities",
@@ -517,6 +547,7 @@
                 "a bespoke dashboard wiring every action to its own route and button",
                 "a command palette that maps typed text to a hard-coded list of actions"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Os\\Capabilities",
@@ -532,6 +563,7 @@
                 "a client-side minimax opponent that never touches the skill loop",
                 "a scripted game demo with no real turn taking behind the board"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\TicTacToe\\Capabilities",
@@ -548,6 +580,7 @@
                 "a failed-attempt counter that each handler increments its own way, or not at all",
                 "a UserProviderInterface implementation written per project so session auth stops being inert"
             ],
+            "usage": "",
             "see_also": "semitexa/auth",
             "kind": "package",
             "declared_by": "Semitexa\\Platform\\User\\Capabilities",
@@ -564,6 +597,7 @@
                 "a per-tenant if-branch selecting between copies of the same prompt",
                 "rewriting a whole prompt to honour one sentence of operator feedback"
             ],
+            "usage": "",
             "see_also": "semitexa/llm",
             "kind": "package",
             "declared_by": "Semitexa\\Prompt\\Capabilities",
@@ -579,6 +613,7 @@
                 "a roles column parsed into an array and compared by string in each check",
                 "a permission matrix kept in a config file and in a database, drifting apart"
             ],
+            "usage": "",
             "see_also": "semitexa/authorization",
             "kind": "package",
             "declared_by": "Semitexa\\Rbac\\Capabilities",
@@ -594,6 +629,7 @@
                 "crontab entries calling CLI scripts, with overlap handled by a lock file",
                 "a sleep loop in a worker process that re-checks the time"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Scheduler\\Capabilities",
@@ -609,6 +645,7 @@
                 "LIKE %term% concatenated into a query, with tenant scoping remembered per call site",
                 "a bespoke filter parser reinvented per screen"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Search\\Capabilities",
@@ -624,6 +661,7 @@
                 "a hard-coded featureFlags array per tenant",
                 "an env variable per feature, changed by redeploying"
             ],
+            "usage": "",
             "see_also": "bin/semitexa feature:list, feature:set; FeatureFlagsInterface; Twig feature()",
             "kind": "package",
             "declared_by": "Semitexa\\Platform\\Settings\\Capabilities",
@@ -639,6 +677,7 @@
                 "a settings table plus accessor written per module",
                 "configuration keys read from the environment and then overridden in the database anyway"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Platform\\Settings\\Capabilities",
@@ -654,6 +693,7 @@
                 "a copy of the first site with its palette and text edited in place",
                 "a hand-maintained navigation tree that has to be touched every time a page is added"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "App\\Modules\\ShowcaseKit\\Capabilities",
@@ -669,6 +709,7 @@
                 "the same Twig include copied across several templates",
                 "per-page <script> tags wiring one block by hand"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsComponent",
@@ -683,6 +724,7 @@
             "replaces": [
                 "repeating the same metadata in every component declaration"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsComponentMetadataProvider",
@@ -697,6 +739,7 @@
             "replaces": [
                 "fetching the same data again in each page handler"
             ],
+            "usage": "",
             "see_also": "ssr.with-data-provider",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsDataProvider",
@@ -713,6 +756,7 @@
                 "blocking the whole page render on one slow dependency",
                 "a hand-written loading skeleton toggled by page JavaScript"
             ],
+            "usage": "",
             "see_also": "ssr.transport",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsDeferred",
@@ -728,6 +772,7 @@
                 "editing every page template to include the same block",
                 "threading a region data through handlers that have nothing to do with it"
             ],
+            "usage": "",
             "see_also": "ssr.slot-resource",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsLayoutSlot",
@@ -742,6 +787,7 @@
             "replaces": [
                 "a live wire that only the handler body knows about, which reads as dead to anything that joins watchers to publishers"
             ],
+            "usage": "",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\PublishesScope",
@@ -757,6 +803,7 @@
                 "a JSON API paired with a separate frontend build that re-renders what the server already knew",
                 "a template loader and asset manifest hand-rolled once per project"
             ],
+            "usage": "",
             "see_also": "ssr.deferred",
             "kind": "package",
             "declared_by": "Semitexa\\Ssr\\Capabilities",
@@ -772,6 +819,7 @@
                 "computing region content inside the page handler and passing it down",
                 "an if/else chain deciding what a shared region shows"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotHandler",
@@ -786,6 +834,7 @@
             "replaces": [
                 "assembling a region markup as a string inside the page handler"
             ],
+            "usage": "",
             "see_also": "ssr.slot-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotResource",
@@ -801,6 +850,7 @@
                 "a hand-written EventSource or WebSocket client plus a bespoke endpoint",
                 "setInterval polling a JSON route"
             ],
+            "usage": "",
             "see_also": "ssr.deferred",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\WithTransport",
@@ -815,6 +865,7 @@
             "replaces": [
                 "registering the extension manually during server boot"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsTwigExtension",
@@ -829,6 +880,7 @@
             "replaces": [
                 "resolving the provider by hand inside the resource"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\WithDataProvider",
@@ -844,6 +896,7 @@
                 "file_put_contents against a path assembled in a handler, then an S3 SDK call once the disk fills",
                 "a driver switch written by hand in every place that touches a file"
             ],
+            "usage": "",
             "see_also": "semitexa/media",
             "kind": "package",
             "declared_by": "Semitexa\\Storage\\Capabilities",
@@ -859,6 +912,7 @@
                 "a hand-rolled todo table with status columns and a cron job to notice completion",
                 "tracking in-flight work in a comment field nobody queries"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Tasks\\Capabilities",
@@ -874,6 +928,7 @@
                 "a tenant_id argument threaded through every method and forgotten in one",
                 "a WHERE clause remembered per query, with no guard when it is missed"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Tenancy\\Capabilities",
@@ -889,6 +944,7 @@
                 "a hand-written request per field, rewritten whenever the payload changes",
                 "trusting that a typed payload cannot be violated by a real client"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Testing\\Capabilities",
@@ -904,6 +960,7 @@
                 "a forked copy of every template to change colours",
                 "a stylesheet per tenant, hand-kept in sync with the markup"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Theme\\Capabilities",
@@ -919,6 +976,7 @@
                 "a base layout and header/footer partials written from scratch in each project",
                 "colours and spacing hard-coded into stylesheets where a token should have been read"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\ThemeSky\\Capabilities",
@@ -934,6 +992,7 @@
                 "a bespoke ESM module wired by hand per page",
                 "inline onclick handlers, which the CSP forbids anyway"
             ],
+            "usage": "",
             "see_also": "ui.primitive",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiBehavior",
@@ -949,6 +1008,7 @@
                 "a last-write-wins form that silently discards a concurrent edit",
                 "a hand-built polling or locking scheme over a plain form"
             ],
+            "usage": "",
             "see_also": "ssr.transport",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\CollaborativeForm",
@@ -963,6 +1023,7 @@
             "replaces": [
                 "a bespoke search endpoint and dropdown per application"
             ],
+            "usage": "",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsCommandSource",
@@ -978,6 +1039,7 @@
                 "state carried in the page, copied into every signed context and capped at 4 KB",
                 "a handler that reads its props, computes, and returns a re-render with the new value"
             ],
+            "usage": "",
             "see_also": "ui.dashboard-widget",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiState",
@@ -993,6 +1055,7 @@
                 "prose documentation that drifts from the template it describes",
                 "reading the Twig to guess which props exist and what values they take"
             ],
+            "usage": "",
             "see_also": "ui.primitive",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiContract",
@@ -1008,6 +1071,7 @@
                 "a dashboard page whose handler gathers every number and checks every permission by hand",
                 "a JavaScript chart library for a sparkline"
             ],
+            "usage": "",
             "see_also": "crud.screen",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsDashboardWidget",
@@ -1022,6 +1086,7 @@
             "replaces": [
                 "putting handler logic with its dependencies inside the component class"
             ],
+            "usage": "",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\HandlesUiEvent",
@@ -1036,6 +1101,7 @@
             "replaces": [
                 "wiring an event listener in page JavaScript and posting to an ad-hoc route"
             ],
+            "usage": "",
             "see_also": "ui.event-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
@@ -1050,6 +1116,7 @@
             "replaces": [
                 "the same field described separately for the form, the grid column, the filter and the validation"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsFieldType",
@@ -1065,6 +1132,7 @@
                 "replacing UiFormSubmitActionRegistry by hand to add one action",
                 "a fetch() to an ad-hoc endpoint from page JavaScript on submit"
             ],
+            "usage": "",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsFormSubmitAction",
@@ -1080,6 +1148,7 @@
                 "a POST route per grid action, called with fetch() and a CSRF header",
                 "hand-written row checkboxes and a bulk bar"
             ],
+            "usage": "",
             "see_also": "ui.form-submit-action",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsGridAction",
@@ -1095,6 +1164,7 @@
                 "per-project CSS choosing colours and spacing again at every call site",
                 "hand-written JavaScript for behaviours the grammar already declares"
             ],
+            "usage": "",
             "see_also": "ui.behavior",
             "kind": "package",
             "declared_by": "Semitexa\\PlatformUi\\Capabilities",
@@ -1109,6 +1179,7 @@
             "replaces": [
                 "hard-coding child markup inside the component template"
             ],
+            "usage": "",
             "see_also": "ui.primitive",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiPart",
@@ -1123,6 +1194,7 @@
             "replaces": [
                 "computing part props inline in the template"
             ],
+            "usage": "",
             "see_also": "ui.part",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\ProvidesUiPart",
@@ -1137,6 +1209,7 @@
             "replaces": [
                 "re-declaring the same markup and classes in every template"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiPrimitive",
@@ -1151,6 +1224,7 @@
             "replaces": [
                 "passing markup as a pre-rendered HTML string prop"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiSlot",
@@ -1165,6 +1239,7 @@
             "replaces": [
                 "letting a model put an arbitrary URL or handler name into a screen"
             ],
+            "usage": "",
             "see_also": "ui.component-state",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsUiTreeAction",
@@ -1180,6 +1255,7 @@
                 "reading $_GET in a page handler and threading it into component props by hand",
                 "history.pushState calls in page JavaScript"
             ],
+            "usage": "",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiUrl",
@@ -1195,6 +1271,7 @@
                 "a shell script that composer-updates and hopes the schema kept up",
                 "a one-off SQL file run manually on each environment, with no record of where it ran"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Update\\Capabilities",
@@ -1210,6 +1287,7 @@
                 "nested folder hierarchies used to express what is related to what",
                 "ad-hoc join tables added one at a time as new relationships appear"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Weave\\Capabilities",
@@ -1225,6 +1303,7 @@
                 "an iframe hard-coded into a template, blank because the site refuses to be framed",
                 "a link that drops the user out of the shell and loses their session context"
             ],
+            "usage": "",
             "see_also": "semitexa/os",
             "kind": "package",
             "declared_by": "Semitexa\\WebApps\\Capabilities",
@@ -1240,6 +1319,7 @@
                 "a signature check copy-pasted per provider into each endpoint",
                 "a processed-ids table written by hand to survive redeliveries"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Webhooks\\Capabilities",
@@ -1255,6 +1335,7 @@
                 "a fire-and-forget HTTP call from the handler that raised the event",
                 "a retry loop and dead-letter table written per integration"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Webhooks\\Capabilities",
@@ -1270,6 +1351,7 @@
                 "a status column plus if-statements scattered across handlers",
                 "a hand-rolled transition table with no history and no guard on illegal moves"
             ],
+            "usage": "",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Workflow\\Capabilities",

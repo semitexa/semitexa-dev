@@ -23,13 +23,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   ai:ask route        --path=/billing/{id} [--method=GET] [--json]
  *   ai:ask event        [--name=InvoicePaid] [--json]
  *   ai:ask api          --name=Column | --search=regex [--json]
+ *   ai:ask components   [--name=platform.grid] [--kind=component] [--json]
  *   ai:ask logs         [--file=app] [--lines=200] [--grep=…] [--json]
  *
  * Output contracts (envelope shapes, JSON keys, exit codes) belong to the
  * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
  * commands own behavior.
  */
-#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, project, module, route, event, path, api, logs)')]
+#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, components, project, module, route, event, path, api, logs)')]
 final class AiAskCommand extends BaseCommand
 {
     /**
@@ -52,6 +53,8 @@ final class AiAskCommand extends BaseCommand
         'route'        => 'dev:graph:route',
         'event'        => 'dev:graph:event',
         'api'          => 'dev:graph:api',
+        // The UI catalog: what can be rendered, its props and how to call it.
+        'components'   => 'platform-ui:catalog',
         'logs'         => 'logs:app',
         // `path` explains a file/directory path using global module-structure
         // rules + any package-local extension. Auto-selected when --path is
@@ -75,7 +78,7 @@ final class AiAskCommand extends BaseCommand
             // Union of options accepted by the delegated targets. Only the
             // ones the target actually declares are forwarded (see
             // CommandDelegator). Anything else is silently dropped.
-            ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name, or a framework class (for subject=module|event|api)')
+            ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name, a framework class, or a UI entry (for subject=module|event|api|components)')
             ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Find framework classes and members by name or doc summary (for subject=api)')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Path: route path (subject=route) | file/directory path (subject=path, default when --path used)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method (for subject=route)')
@@ -87,8 +90,10 @@ final class AiAskCommand extends BaseCommand
             ->addOption('around', null, InputOption::VALUE_REQUIRED, 'Context timestamp (for subject=logs)')
             ->addOption('context', null, InputOption::VALUE_REQUIRED, 'Context radius (for subject=logs)')
             ->addOption('list', null, InputOption::VALUE_NONE, 'List available logs (for subject=logs)')
+            ->addOption('kind', null, InputOption::VALUE_REQUIRED, 'primitive, component or behavior (for subject=components)')
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Capability id (for subject=mechanisms)')
             ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Capability area prefix, e.g. ssr|ui (for subject=mechanisms)')
+            ->addOption('state', null, InputOption::VALUE_REQUIRED, 'installed or available (for subject=mechanisms)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (target-dependent shape)');
     }
 

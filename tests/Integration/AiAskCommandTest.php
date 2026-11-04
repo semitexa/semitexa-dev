@@ -61,6 +61,28 @@ class AiAskCommandTest extends TestCase
         $this->assertTrue($log[0]['options']['json']);
     }
 
+    public function test_mechanisms_subject_forwards_state(): void
+    {
+        $log = new \ArrayObject();
+        $tester = $this->newAskWithFakes($log);
+        $tester->execute(['subject' => 'mechanisms', '--state' => 'available']);
+
+        $this->assertSame('dev:graph:mechanisms', $log[0]['command']);
+        $this->assertSame('available', $log[0]['options']['state']);
+    }
+
+    public function test_components_subject_forwards_name_and_kind_to_the_ui_catalog(): void
+    {
+        $log = new \ArrayObject();
+        $tester = $this->newAskWithFakes($log);
+        $tester->execute(['subject' => 'components', '--name' => 'platform.grid', '--kind' => 'component', '--json' => true]);
+
+        $this->assertSame('platform-ui:catalog', $log[0]['command']);
+        $this->assertSame('platform.grid', $log[0]['options']['name']);
+        $this->assertSame('component', $log[0]['options']['kind']);
+        $this->assertTrue($log[0]['options']['json']);
+    }
+
     public function test_project_subject_delegates_to_dev_graph_project(): void
     {
         $log = new \ArrayObject();
@@ -238,6 +260,17 @@ class AiAskCommandTest extends TestCase
             ],
             'dev:graph:event' => [
                 'name' => InputOption::VALUE_OPTIONAL,
+                'json' => InputOption::VALUE_NONE,
+            ],
+            'dev:graph:mechanisms' => [
+                'id'    => InputOption::VALUE_REQUIRED,
+                'area'  => InputOption::VALUE_REQUIRED,
+                'state' => InputOption::VALUE_REQUIRED,
+                'json'  => InputOption::VALUE_NONE,
+            ],
+            'platform-ui:catalog' => [
+                'name' => InputOption::VALUE_REQUIRED,
+                'kind' => InputOption::VALUE_REQUIRED,
                 'json' => InputOption::VALUE_NONE,
             ],
             'dev:graph:api' => [

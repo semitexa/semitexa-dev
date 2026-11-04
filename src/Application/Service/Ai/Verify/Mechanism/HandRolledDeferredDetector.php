@@ -10,7 +10,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Mechanism;
  * The shape it looks for is narrow on purpose: a `fetch()` at a same-origin
  * path whose result is written into `innerHTML` shortly afterwards. That is
  * server-rendered content being fetched and injected by the client — precisely
- * what `#[AsDeferred]` already does, with a skeleton, a cache TTL and no bespoke
+ * what a deferred slot, `#[AsSlotResource(deferred: true)]`, already does, with a skeleton, a cache TTL and no bespoke
  * endpoint.
  *
  * Three deliberate limits, because a rule that fires on plausible code gets the

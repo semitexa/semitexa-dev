@@ -15,14 +15,15 @@ final class CapabilityRegistry
             new CommandCapability(
                 name: 'ai:ask',
                 kind: 'introspection',
-                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, mechanisms, project, module, route, event, path, api, logs).',
+                summary: 'Agent-facing introspection facade. One entry point, one subject argument (capabilities, mechanisms, components, project, module, route, event, path, api, logs).',
                 use_when: 'Any agent read-only question: start here instead of the underlying dev:graph:* / logs:app commands.',
                 avoid_when: 'You are writing code or performing non-introspection work.',
                 required_inputs: [
-                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, mechanisms, project, module, route, event, path, api, logs'],
+                    'subject' => ['type' => 'string', 'description' => 'One of: capabilities, mechanisms, components, project, module, route, event, path, api, logs'],
                 ],
                 optional_inputs: [
-                    'name' => ['type' => 'string', 'description' => 'Module/event name, or a framework class (for subject=module|event|api)'],
+                    'name' => ['type' => 'string', 'description' => 'Module/event name, a framework class, or a UI entry (for subject=module|event|api|components)'],
+                    'kind' => ['type' => 'string', 'description' => 'primitive, component or behavior (for subject=components)'],
                     'search' => ['type' => 'string', 'description' => 'Find framework classes and members by name or doc summary (for subject=api)'],
                     'path' => ['type' => 'string', 'description' => 'Route path (for subject=route)'],
                     'method' => ['type' => 'string', 'description' => 'HTTP method (for subject=route)'],
@@ -52,7 +53,7 @@ final class CapabilityRegistry
                 name: 'dev:graph:mechanisms',
                 kind: 'introspection',
                 summary: 'List what the installed FRAMEWORK can do - deferred rendering, components, live transport, UI behaviors - each with when to use it and when not to.',
-                use_when: 'Before building or changing a page, a region or an interaction. Answers "is there already a mechanism for this?" - which is the question that stops a capability being hand-rolled. Prefer `ai:ask mechanisms`.',
+                use_when: 'Before building or changing a page, a region or an interaction. Answers "is there already a mechanism for this?" - which is the question that stops a capability being hand-rolled. Prefer `ai:ask mechanisms`; `--id=<id>` adds a working example and how data gets in and out, where the entry has one.',
                 avoid_when: 'You want the list of CLI commands to run - that is `dev:graph:capabilities`, a different question.',
                 optional_inputs: [
                     'id' => ['type' => 'string', 'description' => 'Single capability by id (e.g. ssr.deferred)'],
