@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Classifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Classifier\ClassificationResult;
 use Semitexa\Dev\Application\Service\Ai\Classifier\TaskClassifier;
 
 /**
@@ -61,6 +62,14 @@ final class TaskClassifierRoutingTest extends TestCase
     public function a_real_request_lands_on_its_recipe(string $request, string $recipe): void
     {
         self::assertSame($recipe, (new TaskClassifier())->classify($request)->recipe->id);
+    }
+
+    #[Test]
+    public function a_short_ui_request_is_confident_enough_not_to_be_sent_back(): void
+    {
+        foreach (['build an order grid with sorting and paging', 'a multi-step order wizard', 'live board that updates by itself'] as $request) {
+            self::assertSame(ClassificationResult::CONFIDENCE_HIGH, (new TaskClassifier())->classify($request)->confidence, $request);
+        }
     }
 
     #[Test]

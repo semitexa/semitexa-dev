@@ -118,7 +118,7 @@ final class AiContextCommand extends BaseCommand
             $output->writeln(json_encode([
                 'kind'   => 'note',
                 'note'   => $truncated === []
-                    ? 'no prior art in this project; that does not make it greenfield: the recipe says which ai:ask gives a worked example'
+                    ? 'no prior art in this project, which does not make it greenfield: check ai:ask mechanisms and ai:ask components before writing it by hand'
                     : 'no prior art found, but the scan was truncated — this is not evidence of greenfield',
                 'action' => 'none',
             ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
