@@ -33,7 +33,7 @@ final readonly class FrameworkCapabilityCatalog
 
     /**
      * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
-     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    replaces: list<string>, see_also: string, usage: string, kind: string,
      *                    declared_by: string, declared_by_short: string, package: string}>
      */
     public function all(): array
@@ -219,7 +219,7 @@ final readonly class FrameworkCapabilityCatalog
      *
      * @param ReflectionClass<object> $reflection
      * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
-     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    replaces: list<string>, see_also: string, usage: string, kind: string,
      *                    declared_by: string, declared_by_short: string, package: string}>
      */
     private static function describe(ReflectionClass $reflection): array
@@ -233,6 +233,7 @@ final readonly class FrameworkCapabilityCatalog
                 'use_when' => $capability->useWhen,
                 'avoid_when' => $capability->avoidWhen,
                 'replaces' => array_values($capability->replaces),
+                'usage' => $capability->usage,
                 'see_also' => $capability->seeAlso,
                 // A declaring class that is itself an attribute describes a
                 // mechanism someone writes into their code; anything else
@@ -250,7 +251,7 @@ final readonly class FrameworkCapabilityCatalog
 
     /**
      * @return list<array{id: string, summary: string, use_when: string, avoid_when: string,
-     *                    replaces: list<string>, see_also: string, kind: string,
+     *                    replaces: list<string>, see_also: string, usage: string, kind: string,
      *                    declared_by: string, declared_by_short: string, package: string}>
      */
     public function inArea(string $area): array

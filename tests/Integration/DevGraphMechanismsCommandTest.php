@@ -154,6 +154,29 @@ final class DevGraphMechanismsCommandTest extends TestCase
     }
 
     #[Test]
+    public function the_list_leaves_examples_out_and_says_how_to_get_one(): void
+    {
+        $tester = self::tester();
+        $tester->execute(['--json' => true]);
+        $decoded = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertStringContainsString('--id=', $decoded['how_to_use_one']);
+        foreach ($decoded['mechanisms'] as $mechanism) {
+            $this->assertArrayNotHasKey('usage', $mechanism, $mechanism['id']);
+        }
+    }
+
+    #[Test]
+    public function one_mechanism_carries_its_usage(): void
+    {
+        $tester = self::tester();
+        $tester->execute(['--id' => 'ssr.deferred', '--json' => true]);
+        $decoded = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertArrayHasKey('usage', $decoded['mechanisms'][0]);
+    }
+
+    #[Test]
     public function replaces_entries_survive_into_the_output(): void
     {
         // These are the hook the verify rules will key on, so their presence in

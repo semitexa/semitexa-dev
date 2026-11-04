@@ -94,6 +94,17 @@ final class DevGraphMechanismsCommand extends BaseCommand
             }
         }
 
+        // How to use one is asked of one: every example in the list would multiply
+        // the size of an answer that is already too long to read.
+        $oneAtATime = is_string($id) && $id !== '';
+        if (!$oneAtATime) {
+            $capabilities = array_map(static function (array $capability): array {
+                unset($capability['usage']);
+
+                return $capability;
+            }, $capabilities);
+        }
+
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa.dev.mechanisms/v1',
@@ -104,6 +115,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // `ai:ask` stamps its own envelope with the CURRENT time, which
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
+                'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out',
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
@@ -197,6 +209,12 @@ final class DevGraphMechanismsCommand extends BaseCommand
             $output->writeln('    <info>Avoid when:</info> ' . $c['avoid_when']);
             foreach ((array) $c['replaces'] as $r) {
                 $output->writeln('    <info>Instead of:</info> ' . $r);
+            }
+            if (($c['usage'] ?? '') !== '') {
+                $output->writeln('    <info>How:</info>');
+                foreach (explode("\n", (string) $c['usage']) as $line) {
+                    $output->writeln('      ' . $line, OutputInterface::OUTPUT_RAW);
+                }
             }
             if ($c['see_also'] !== '') {
                 $output->writeln('    <info>See also:</info>   ' . $c['see_also']);
