@@ -85,6 +85,23 @@ final class LoadGeneratorTest extends TestCase
     }
 
     #[Test]
+    public function a_request_limit_ends_the_window_early_and_counts_what_was_sent(): void
+    {
+        $run = null;
+        Coroutine\run(function () use (&$run): void {
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', static fn (Request $request, Response $response) => $response->end('ok'));
+            Coroutine::create(static fn () => $server->start());
+            $run = (new LoadGenerator('127.0.0.1', $server->port, maxRequests: 50))->run('/', 2, 30.0);
+            $server->shutdown();
+        });
+
+        self::assertGreaterThanOrEqual(50, $run->requests);
+        self::assertLessThanOrEqual(52, $run->requests, 'the two in flight may each finish');
+        self::assertLessThan(10.0, $run->seconds, 'it stopped at the limit, not at the 30 s deadline');
+    }
+
+    #[Test]
     public function a_duration_that_is_no_finite_number_is_refused(): void
     {
         foreach ([[NAN, 0.0], [INF, 0.0], [1.0, NAN], [1.0, -1.0]] as [$seconds, $warmup]) {

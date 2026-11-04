@@ -36,6 +36,10 @@ final class LoadGenerator
         private readonly int $port,
         private readonly float $timeoutS = 10.0,
         private readonly int $maxSamples = self::MAX_SAMPLES,
+        /** Off for a warm-up: a new connection per request is a new draw of the worker. */
+        private readonly bool $keepAlive = true,
+        /** Ends a window early once this many requests are answered; 0 for none. */
+        private readonly int $maxRequests = 0,
     ) {}
 
     /** @param array<string, string> $headers */
@@ -75,13 +79,13 @@ final class LoadGenerator
         for ($i = 0; $i < $concurrency; $i++) {
             Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
                 $client = new Client($this->host, $this->port);
-                $client->set(['timeout' => $this->timeoutS, 'keep_alive' => true]);
+                $client->set(['timeout' => $this->timeoutS, 'keep_alive' => $this->keepAlive]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
                 $client->setHeaders($headers + ['Host' => $this->host, 'Accept' => 'text/html']);
                 // Every connection starts the window together: one created last
                 // would otherwise get less of it.
                 $go->pop();
-                while (hrtime(true) < $deadline) {
+                while (hrtime(true) < $deadline && ($this->maxRequests === 0 || $answered < $this->maxRequests)) {
                     $sent = hrtime(true);
                     $client->get($path);
                     $latency = (hrtime(true) - $sent) / 1e6;
