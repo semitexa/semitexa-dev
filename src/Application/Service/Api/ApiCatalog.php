@@ -232,7 +232,8 @@ final class ApiCatalog
 
         $closest = $this->matching($tokens, intdiv(count($tokens) + 1, 2), partial: true);
 
-        return $closest->hits === [] ? $result : $closest;
+        // The wider pass read more classes, so what it could not read still counts.
+        return $closest->hits === [] ? new ApiSearchResult([], 0, $closest->unread) : $closest;
     }
 
     /**

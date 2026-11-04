@@ -13,6 +13,7 @@ use Semitexa\Dev\Application\Service\Api\ApiMember;
 use Semitexa\Dev\Application\Service\Api\ApiParameter;
 use Semitexa\Dev\Application\Service\Api\ApiReflector;
 use Semitexa\Dev\Tests\Fixtures\Api\One\SampleTwin as TwinOne;
+use Semitexa\Dev\Tests\Fixtures\Api\SampleAliasing;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleAttribute;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleBase;
 use Semitexa\Dev\Tests\Fixtures\Api\SampleCollector;
@@ -145,6 +146,22 @@ final class ApiCatalogTest extends TestCase
         $result = $catalog->search('helpPublicly');
         $this->assertSame(1, $result->total);
         $this->assertSame(SampleHelperTrait::class, $result->hits[0]->class);
+    }
+
+    public function test_an_aliased_trait_method_still_names_the_trait(): void
+    {
+        $class = $this->catalog(SampleAliasing::class)->lookup('SampleAliasing');
+
+        $this->assertInstanceOf(ApiClass::class, $class);
+        $this->assertSame(SampleHelperTrait::class, $this->member($class, 'helpUnderAnotherName')->from);
+    }
+
+    public function test_a_promoted_property_shown_as_a_parameter_is_not_listed_again(): void
+    {
+        $class = $this->catalog(SampleAttribute::class)->lookup('SampleAttribute');
+
+        $this->assertInstanceOf(ApiClass::class, $class);
+        $this->assertSame([], $this->memberNames($class));
     }
 
     public function test_a_variadic_constructor_parameter_is_optional_and_says_so(): void
@@ -327,6 +344,18 @@ final class ApiCatalogTest extends TestCase
 
         $this->assertSame([], $result->hits);
         $this->assertFalse($result->partial);
+    }
+
+    public function test_a_class_only_the_wider_pass_read_is_still_reported_as_unread(): void
+    {
+        $file = (string) (new ReflectionClass(SampleService::class))->getFileName();
+        $catalog = new ApiCatalog([SampleService::class . 'Gone' => $file], new ApiReflector('/nowhere'));
+
+        $result = $catalog->search('perform zzqq');
+
+        $this->assertSame([], $result->hits);
+        $this->assertFalse($result->partial);
+        $this->assertSame([SampleService::class . 'Gone'], $result->unread);
     }
 
     public function test_the_class_of_exactly_that_name_comes_first(): void

@@ -330,19 +330,20 @@ final class ApiReflector
     /**
      * The same file is not enough: a class and the trait it uses can share one,
      * and the class's own methods would then be credited to the trait and vanish
-     * from search.
+     * from search. Compared by position, not name: `foo as bar` has no `bar` in
+     * the trait.
      *
      * @param ReflectionClass<object> $trait
      */
     private function declaresSame(ReflectionClass $trait, ReflectionMethod $method): bool
     {
-        if (!$trait->hasMethod($method->getName())) {
-            return false;
+        foreach ($trait->getMethods() as $declared) {
+            if ($declared->getFileName() === $method->getFileName() && $declared->getStartLine() === $method->getStartLine()) {
+                return true;
+            }
         }
 
-        $declared = $trait->getMethod($method->getName());
-
-        return $declared->getFileName() === $method->getFileName() && $declared->getStartLine() === $method->getStartLine();
+        return false;
     }
 
     /**
