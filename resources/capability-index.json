@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-04T13:58:15+00:00",
+    "generated_at": "2026-11-04T14:34:47+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "3ec0a4a45223b800a9aa5944a4442e5a651f0cb3a1f11398842b0fdc0713b8b8",
+    "content_hash": "fa5fdb78bec949d68fbb5cb77de1ef0eb5e017f96a8ba9f3f16c51ff87f2b68c",
     "capabilities": [
         {
             "id": "api.external",
@@ -177,7 +177,7 @@
                 "a feed handler with a field map, a query and a projection",
                 "a JSON response class carrying the #[Collection*] attributes"
             ],
-            "usage": "",
+            "usage": "#[AsCollectionFeed(path: '/orders/feed', name: 'orders.feed', model: OrderResource::class,\n    defaultPerPage: 50, perPageOptions: [50, 100])]\nfinal class OrdersFeed extends CollectionFeed\n{\n    public function fields(): array\n    {\n        return [\n            Field::id()->sortable(),\n            Field::text('number')->searchable()->sortable(),\n            Field::choice('status', ['new' => 'New', 'paid' => 'Paid'])->sortable()->filterable(),\n            Field::integer('total')->sortable(),\n        ];\n    }\n}\n\n// In the page, with paging, sorting, search and live updates on the server (100,000 rows\n// measured: first rows 206 ms, next page 313 ms):\n{{ component('platform.grid', {endpoint: '/orders/feed', urlState: 'o'}) }}\n\n// The model's primary key has to be `id`. Search and filters apply on Enter or Apply, and\n// the row markup is the grid's. For other markup or search-as-you-type, write one\n// #[AsComponent] with #[UiUrl] props and #[UiOn] handlers: ai:ask mechanisms --id=ui.url-state.",
             "see_also": "ui.field-type",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCollectionFeed",
@@ -709,7 +709,7 @@
                 "the same Twig include copied across several templates",
                 "per-page <script> tags wiring one block by hand"
             ],
-            "usage": "",
+            "usage": "#[AsComponent(name: 'shop.card', template: '@project-layouts-Shop/card.html.twig')]\nfinal class CardComponent {}\n\n// In any template; the props are the template's context:\n{{ component('shop.card', {title: 'Orders'}) }}\n\n// Own data comes from #[WithDataProvider(CardData::class)], an #[AsService] implementing\n// DataProviderInterface::resolve(DataProviderContext $context, array $hint = []): array.\n// A component that reacts to the visitor needs #[UiPart] and #[UiOn], and\n// {{ ui_page_sse_session_meta() }} on the page. Before writing one, check what exists\n// with ai:ask components: a form, grid, table or card is already there.",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsComponent",
@@ -756,11 +756,11 @@
                 "blocking the whole page render on one slow dependency",
                 "a hand-written loading skeleton toggled by page JavaScript"
             ],
-            "usage": "",
+            "usage": "// The slot, its handle being the page's #[AsResource] handle:\n#[AsSlotResource(handle: 'dashboard', slot: 'revenue', deferred: true, mode: 'template',\n    template: '@project-layouts-Shop/slots/revenue.html.twig',\n    skeletonTemplate: '@project-layouts-Shop/slots/revenue.skeleton.html.twig')]\nfinal class RevenueSlot extends HtmlSlotResponse {}\n\n// The page template: the skeleton is in the first response, the slot follows by itself.\n{{ layout_slot_deferred('revenue') }}\n\n// The slot handler. It has no request: what the page knows reaches it as render context.\n#[AsSlotHandler(slot: RevenueSlot::class)]\nfinal class RevenueSlotHandler implements TypedSlotHandlerInterface\n{\n    public function handle(object $slot): object\n    {\n        $year = $slot->getRenderContext()['year'];\n\n        return $slot->withRenderContext(['revenue' => $this->total($year)]);\n    }\n}\n\n// The page's resource puts it there, a query value coming through the payload:\npublic function withYear(int $year): self { return $this->with('year', $year); }\nreturn $resource->withYear($payload->getYear());   // in the page handler\n\n// No script and no route: never write a fetch() for this. A failure is the handler's\n// to catch and show, through its context, so the rest of the page is unaffected.",
             "see_also": "ssr.transport",
             "kind": "mechanism",
-            "declared_by": "Semitexa\\Ssr\\Attribute\\AsDeferred",
-            "declared_by_short": "AsDeferred",
+            "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotResource",
+            "declared_by_short": "AsSlotResource",
             "package": "semitexa/ssr"
         },
         {
@@ -819,7 +819,7 @@
                 "computing region content inside the page handler and passing it down",
                 "an if/else chain deciding what a shared region shows"
             ],
-            "usage": "",
+            "usage": "#[AsSlotHandler(slot: StatsSlot::class)]\nfinal class StatsSlotHandler implements TypedSlotHandlerInterface\n{\n    public function handle(object $slot): object\n    {\n        return $slot->withRenderContext(['orders' => $this->orders->count()]);\n    }\n}\n\n// handle() gets the slot and nothing else: there is no request here. What the page\n// knows arrives in $slot->getRenderContext(), from what the page's resource was given\n// with $this->with('key', $value). The slot's template reads the context by key.",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotHandler",
@@ -834,7 +834,7 @@
             "replaces": [
                 "assembling a region markup as a string inside the page handler"
             ],
-            "usage": "",
+            "usage": "#[AsSlotResource(handle: 'dashboard', slot: 'stats',\n    template: '@project-layouts-Shop/slots/stats.html.twig')]\nfinal class StatsSlot extends HtmlSlotResponse {}\n\n// handle is the page's #[AsResource] handle. In the page template:\n{{ layout_slot('stats') }}\n\n// Data comes from a #[AsSlotHandler] for this class, or the page's own context.",
             "see_also": "ssr.slot-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsSlotResource",
@@ -850,7 +850,7 @@
                 "a hand-written EventSource or WebSocket client plus a bespoke endpoint",
                 "setInterval polling a JSON route"
             ],
-            "usage": "",
+            "usage": "// A region every open page keeps current, for signed-in visitors. No script, no polling:\n#[AsComponent(name: 'shop.board', template: '@project-layouts-Shop/board.html.twig', cacheable: false)]\n#[WithDataProvider(BoardData::class)]\nfinal class BoardComponent implements UiIslandInterface\n{\n    public function watches(array $props): array\n    {\n        return [ResourceMetadata::for(OrderResource::class)->getResourceKey()];\n    }\n}\n\n// In the page: {{ component('shop.board', {}) }}. Any ORM write to that resource, from\n// anywhere, redraws it on every open page and a dropped connection catches up by itself.\n// A raw SQL write is not seen: call ScopeInvalidatorInterface::touch() after it.\n// #[WithTransport] itself is not needed for this.\n\n// An island does not update for guests. For a public page, serve a feed instead:\n#[AsPublicPayload(path: '/board/feed', name: 'board.feed', methods: ['GET'],\n    responseWith: JsonResourceResponse::class, renderProfile: RenderProfile::Json,\n    transport: TransportType::Sse, sseGateModel: SseGateModel::BearerSession)]\n#[WatchScopes('orders')]\nfinal class BoardFeedPayload implements SseFeedPayloadInterface { /* stream id and request accessors */ }\n\n// Its handler extends AbstractSseFeedHandler; buildResponse() returns ['data' => ['html' => $html]].\n// The page calls {{ ui_page_sse_session_meta('live') }} and, after asset_body(), a small\n// script with openFeedChannel({feed, dataEvent: 'ui.collection.data',\n// errorEvent: 'ui.collection.error', onData}) that swaps the html in.",
             "see_also": "ssr.deferred",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\WithTransport",
@@ -1101,7 +1101,7 @@
             "replaces": [
                 "wiring an event listener in page JavaScript and posting to an ad-hoc route"
             ],
-            "usage": "",
+            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// In its template: {{ ui_part('increment', {label: '+1'}) }}\n// The root element carries data-ui-component=\"shop.counter\" and\n// data-ui-component-instance-id=\"{{ ui_component_instance_for(instanceId|default(null)) }}\".\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part binds one element: rendered per row, only the first row responds. Use one\n// <form> part for the rows and read $event->formValues. A child cannot rerender its parent.",
             "see_also": "ui.event-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
@@ -1148,7 +1148,7 @@
                 "a POST route per grid action, called with fetch() and a CSRF header",
                 "hand-written row checkboxes and a bulk bar"
             ],
-            "usage": "",
+            "usage": "#[AsService]\n#[ExecutionScoped]\n#[AsGridAction('orders')]\nfinal class OrderGridActions implements UiGridActionInterface\n{\n    public function name(): string { return 'orders'; }\n\n    public function handle(UiGridActionContext $context): UiGridActionResult\n    {\n        foreach ($context->ids as $id) { /* act on the row */ }\n\n        return UiGridActionResult::done('Marked paid', count($context->ids));\n    }\n}\n\n// In the page:\n{{ component('platform.grid', {endpoint: '/orders/feed', actionHandler: 'orders',\n    serverActions: [{id: 'paid', label: 'Mark paid', scopes: ['bulk']}]}) }}",
             "see_also": "ui.form-submit-action",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\AsGridAction",
@@ -1255,7 +1255,7 @@
                 "reading $_GET in a page handler and threading it into component props by hand",
                 "history.pushState calls in page JavaScript"
             ],
-            "usage": "",
+            "usage": "#[AsComponent(name: 'shop.orders', template: '@project-layouts-Shop/orders.html.twig', cacheable: false)]\n#[UiUrl(prop: 'q', maxLength: 80)]\n#[UiUrl(prop: 'status', values: ['new', 'paid'])]\n#[UiUrl(prop: 'page', type: 'int', min: 1, except: 1)]\nfinal class OrdersComponent {}\n\n// The value arrives as a prop on load and is validated. A rerender with changed props\n// updates the address bar, so the view can be shared and reloaded:\nreturn UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, ['q' => $q, 'page' => 1])]);",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiUrl",
