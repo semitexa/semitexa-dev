@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T04:30:20+00:00",
+    "generated_at": "2026-11-05T06:24:16+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "4933a93e9f788608097675c58a8e3ccc1843cfcb2dbcec07c465ea66ef1b4469",
+    "content_hash": "be3a4a7b96539a37d531b7eeb9fe86855444f9d85ae8e7ad34bbe8e8431bf06f",
     "capabilities": [
         {
             "id": "api.external",
@@ -1101,7 +1101,7 @@
             "replaces": [
                 "wiring an event listener in page JavaScript and posting to an ad-hoc route"
             ],
-            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// Its template. Without the manifest line nothing fires, and nothing says so:\n{%- set _ui_instance = ui_component_instance_for(instanceId|default(null)) -%}\n<div data-ui-component=\"shop.counter\" data-ui-component-instance-id=\"{{ _ui_instance }}\">\n    {{ ui_part('increment', {label: '+1'}) }}\n    {{ ui_event_manifest(_ui_instance) }}\n</div>\n\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part can repeat per row. The element's value says which row, so write the element\n// itself, ui_part() does not pass value on:\n<button type=\"button\" data-ui-part=\"remove\" value=\"{{ line.id }}\">Remove</button>\n// A row that can come and go carries a stable key, or a re-render pairs rows by position\n// and a half-typed draft lands on the next row:\n<li data-key=\"{{ line.id }}\">...</li>\n// and read $event->value(). A patch from a stream has no row: to change one row from the\n// server, give it <span data-ui-patch-target=\"total-{{ line.id }}\"> and aim at that name.\n// A child cannot rerender its parent.",
+            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// Its template. Without the manifest line nothing fires, and nothing says so:\n{%- set _ui_instance = ui_component_instance_for(instanceId|default(null)) -%}\n<div data-ui-component=\"shop.counter\" data-ui-component-instance-id=\"{{ _ui_instance }}\">\n    {{ ui_part('increment', {label: '+1'}) }}\n    {{ ui_event_manifest(_ui_instance) }}\n</div>\n\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part can repeat per row. The element's value says which row, so write the element\n// itself, ui_part() does not pass value on:\n<button type=\"button\" data-ui-part=\"remove\" value=\"{{ line.id }}\">Remove</button>\n// and read $event->value(). A row that can come and go carries a stable key, or a re-render\n// pairs rows by position and a half-typed draft lands on the next row:\n<li data-key=\"{{ line.id }}\">...</li>\n// A patch from a stream has no row: to change one row from the server, give it\n// <span data-ui-patch-target=\"total-{{ line.id }}\"> and aim at that name.\n// A component can rerender only itself: its props are the only ones the request vouches for.\n// When a row's action changes the list, the row is a part of the list's component, not a\n// child component, and the list handles the event and rerenders.",
             "see_also": "ui.event-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
