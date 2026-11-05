@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T02:49:28+00:00",
+    "generated_at": "2026-11-05T04:21:35+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "4a8612c45861c510fa43de6415576d1bb27ab89dc923a0b94df3a9e34e83aecc",
+    "content_hash": "4be9e50a47573abf60e5bced470fe3f1144e579f577f5ee1ee9eddb3fb399b3a",
     "capabilities": [
         {
             "id": "api.external",
@@ -113,7 +113,7 @@
                 "a static array that survives one request and leaks between coroutines",
                 "cache keys assembled by string concatenation, with the tenant forgotten in one place"
             ],
-            "usage": "",
+            "usage": "#[AsService]\nfinal class ProductCatalog\n{\n    #[InjectAsReadonly]\n    protected CacheManagerInterface $cache;\n\n    public function featured(): array\n    {\n        // The closure runs only on a miss.\n        return $this->cache->remember('featured-products', fn (): array => $this->load(),\n            ttlSeconds: 600, tags: ['products']);\n    }\n\n    // Call this when a product changes.\n    public function productChanged(): void\n    {\n        $this->cache->flushTags('products');\n    }\n\n    private function load(): array\n    {\n        return ['...'];\n    }\n}\n\n// Keys are separate per tenant of the current context. With no tenant in context, as in a\n// job that did not get one, every caller shares tenant:default, so put the tenant in the\n// key there or give the job its tenant.\n// A flush during a running load can be overwritten by that load until the TTL ends.\n// Store scalars and arrays of them, in valid UTF-8: base64_encode() binary data. An object\n// needs CACHE_SIGNING_KEY. CACHE_DRIVER=array is per worker; use redis across workers.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Cache\\Capabilities",
@@ -420,7 +420,7 @@
                 "a mail() or raw SMTP call in a handler, blocking the response until the server answers",
                 "string concatenation for the body, and base64 attachment handling written by hand"
             ],
-            "usage": "",
+            "usage": "#[InjectAsReadonly]\nprotected MailServiceInterface $mail;\n\n$envelope = new MailEnvelope();\n$envelope->to = [new MailRecipient('ada@example.com', 'Ada Lovelace')];\n$envelope->templateHandle = 'welcome';\n$envelope->variables = ['name' => 'Ada'];\n$envelope->idempotencyKey = 'welcome:' . $userId;\n\n$result = $this->mail->send($envelope);\nif (!$result->succeeded()) {\n    // $result->status, $result->errorCode, $result->errorMessage\n}\n\n// The template lives in the module's templates: mail/welcome.subject.txt.twig is required,\n// with mail/welcome.body.html.twig next to it. Inline content is $envelope->subject and\n// ->htmlBody instead. A body holding a secret, such as a reset link, sets ->sensitive.\n// send() queues by default. With EVENTS_ASYNC=0 that delivers at once; on a real queue\n// bin/semitexa mail:work delivers it, so check $result before telling anyone it was sent.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Mail\\Capabilities",
@@ -629,7 +629,7 @@
                 "crontab entries calling CLI scripts, with overlap handled by a lock file",
                 "a sleep loop in a worker process that re-checks the time"
             ],
-            "usage": "",
+            "usage": "// On a clock. A job is a service, and its dependencies are injected as usual.\n#[AsService]\n#[AsScheduledJob(key: 'shop.nightly_report', cronExpression: '0 3 * * *', tenantMode: 'per_tenant')]\nfinal class NightlyReportJob implements ScheduledJobInterface\n{\n    public function handle(ScheduledJobContext $context): void\n    {\n        // per_tenant runs once per tenant with $context->tenantId set; it is null when no\n        // tenants are configured. A retry has $context->attemptNumber > 1.\n    }\n}\n\n// Once, later. Inject SchedulerInterface; the same job class runs with this payload:\n$this->scheduler->dispatchAfter(SendReminderJob::class, new \\DateInterval('PT15M'), ['orderId' => $id]);\n\n// Nothing runs by itself: scheduler:plan makes due runs and scheduler:work executes them.\n// bin/semitexa scheduler:list shows what is declared. scheduler:run-now queues a run for a\n// worker, and with --inline it runs here and now.\n// overlapPolicy is allow, skip or delay. tenantMode is global or per_tenant.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Scheduler\\Capabilities",
