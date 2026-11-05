@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Route;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Discovery\ClassDiscovery;
@@ -72,6 +73,16 @@ final class PersistenceChainTest extends TestCase
     }
 
     #[Test]
+    public function a_module_answers_for_the_handlers_in_its_namespace(): void
+    {
+        $namespace = 'Semitexa\\Dev\\Tests\\Fixtures\\Persistence';
+
+        self::assertSame(OrderTable::class, $this->chain()->ofNamespace($namespace)['tables'][0]['resource'] ?? null);
+        self::assertSame([], $this->chain()->ofNamespace('Semitexa\\Dev\\Tests\\Fixtures\\Other')['tables']);
+        self::assertNotSame([], $this->chain()->ofNamespace($namespace . '\\')['tables'], 'a registry may hand it with the separator.');
+    }
+
+    #[Test]
     public function a_service_that_names_a_table_is_no_repository(): void
     {
         $chain = $this->tables([QueryingHandler::class]);
@@ -109,7 +120,8 @@ final class PersistenceChainTest extends TestCase
     {
         $chain = $this->chain([], ['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone' => 'its parent is gone'])->of([PlainHandler::class]);
 
-        self::assertSame(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone'], $chain['unreadable']);
+        self::assertSame(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone'], $chain['unloadable_in_project']);
+        self::assertSame([], $chain['unreadable'], 'this walk read everything it met.');
     }
 
     #[Test]
@@ -221,6 +233,7 @@ final class PersistenceChainTest extends TestCase
         $discovery->method('findClassesWithAttribute')->willReturnCallback(static fn (string $attribute): array => match ($attribute) {
             SatisfiesRepositoryContract::class => [DbOrderStore::class, ...$extraRepositories],
             SatisfiesServiceContract::class => [BilledOrders::class],
+            AsPayloadHandler::class => [PlaceOrderHandler::class],
             AsMapper::class => [OrderTableMapper::class, ...$extraMappers],
             default => [],
         });
