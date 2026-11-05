@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+/** The tags are pushed, and Packagist had not listed every one when the wait ran out. */
+const PACKAGIST_UNVERIFIED_EXIT = 3;
+
 /**
  * Skill-local release helper for Semitexa packages.
  *
@@ -1542,7 +1545,10 @@ function packagistWorthRetrying(string $reason): bool
 
 function verifyPackagistForPackages(array $updatedPackages): void
 {
-    $timeoutSeconds = max(15, (int) (getenv('PACKAGIST_VERIFY_TIMEOUT') ?: 180));
+    // Indexing a tag took about 7 minutes on 2026-11-05: 180 s called a good
+    // release failed. One deadline for the whole sweep: per package, a Packagist
+    // that is down would hold the release for hours, 600 s at a time.
+    $sweepEndsAt = time() + max(15, (int) (getenv('PACKAGIST_VERIFY_TIMEOUT') ?: 600));
     $intervalSeconds = max(1, (int) (getenv('PACKAGIST_VERIFY_INTERVAL') ?: 5));
     $strictWebhookVerification = getenv('PACKAGIST_VERIFY_WEBHOOKS_STRICT') === '1';
     $packagistWebhookUsername = (string) (getenv('PACKAGIST_GITHUB_USERNAME') ?: getenv('PACKAGIST_USERNAME') ?: '');
@@ -1550,6 +1556,7 @@ function verifyPackagistForPackages(array $updatedPackages): void
     echo "Packagist: verifying webhook deliveries and published versions...\n";
 
     $failures = [];
+    $webhookFailures = [];
 
     foreach ($updatedPackages as $package) {
         $packageName = $package['name'];
@@ -1557,15 +1564,17 @@ function verifyPackagistForPackages(array $updatedPackages): void
         $expectedReference = (string) ($package['info']['head_sha'] ?? '');
         $releaseStartedAt = (string) ($package['released_at'] ?? gmdate(DATE_ATOM));
 
+        // Past the deadline each package still gets its one look.
+        $timeoutSeconds = max(0, $sweepEndsAt - time());
         $webhookStatus = verifyGithubWebhookDelivery($package, $packagistWebhookUsername, $releaseStartedAt, $timeoutSeconds, $intervalSeconds);
         if ($webhookStatus !== null) {
             echo $webhookStatus['message'] . "\n";
             if ($strictWebhookVerification && !$webhookStatus['ok'] && !$webhookStatus['skipped']) {
-                $failures[] = $webhookStatus['message'];
+                $webhookFailures[] = $webhookStatus['message'];
             }
         }
 
-        $published = waitForPackagistVersion($packageName, $expectedVersion, $expectedReference, $timeoutSeconds, $intervalSeconds);
+        $published = waitForPackagistVersion($packageName, $expectedVersion, $expectedReference, max(0, $sweepEndsAt - time()), $intervalSeconds);
         if ($published !== null && ($published['skipped'] ?? false) === true) {
             echo $published['message'] . "\n";
             continue;
@@ -1581,11 +1590,17 @@ function verifyPackagistForPackages(array $updatedPackages): void
         echo "Packagist: {$packageName} published as {$details}\n";
     }
 
-    if ($failures !== []) {
-        foreach ($failures as $failure) {
-            fwrite(STDERR, $failure . "\n");
-        }
+    foreach ([...$webhookFailures, ...$failures] as $failure) {
+        fwrite(STDERR, $failure . "\n");
+    }
+    // A broken hook is what strict mode exists to stop, and waiting does not mend it.
+    if ($webhookFailures !== []) {
         exit(1);
+    }
+    if ($failures !== []) {
+        // Not 1: the tags are out, so the release exists. release-finalize.sh
+        // goes on to the Published install, which is the real answer.
+        exit(PACKAGIST_UNVERIFIED_EXIT);
     }
 }
 
