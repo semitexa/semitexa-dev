@@ -11,6 +11,7 @@ use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\Discovery\RouteRegistry;
 use Semitexa\Core\ModuleRegistry;
 use Semitexa\Dev\Application\Service\Console\LookupRefusal;
+use Semitexa\Dev\Application\Service\Route\PersistenceChain;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -188,6 +189,9 @@ final class DevGraphRouteCommand extends BaseCommand
             ];
         }
 
+        $description['persistence'] = (new PersistenceChain($this->classDiscovery()))
+            ->of([$payloadClass, ...array_column($description['handlers'], 'class')]);
+
         return $description;
     }
 
@@ -220,6 +224,16 @@ final class DevGraphRouteCommand extends BaseCommand
 
         if ($info['template']) {
             $io->text("  Template: {$info['template']}");
+        }
+
+        foreach ($info['persistence'] as $chain) {
+            $io->newLine();
+            $io->section("Persistence: {$chain['table']}");
+            foreach (['resource' => 'Resource', 'mapper' => 'Mapper', 'domain' => 'Domain', 'repository' => 'Repository'] as $key => $label) {
+                if ($chain[$key] !== null) {
+                    $io->text(sprintf('  %-11s %s', $label . ':', $chain[$key]));
+                }
+            }
         }
     }
 
