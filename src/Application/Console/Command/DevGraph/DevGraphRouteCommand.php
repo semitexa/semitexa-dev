@@ -189,8 +189,10 @@ final class DevGraphRouteCommand extends BaseCommand
             ];
         }
 
-        $description['persistence'] = (new PersistenceChain($this->classDiscovery()))
+        $chain = (new PersistenceChain($this->classDiscovery()))
             ->of([$payloadClass, ...array_column($description['handlers'], 'class')]);
+        $description['persistence'] = $chain['tables'];
+        $description['persistence_unreadable'] = $chain['unreadable'];
 
         return $description;
     }
@@ -234,6 +236,10 @@ final class DevGraphRouteCommand extends BaseCommand
                     $io->text(sprintf('  %-11s %s', $label . ':', $chain[$key]));
                 }
             }
+            $io->text(sprintf('  %-11s %s', 'Named by:', $chain['named_by']));
+        }
+        if ($info['persistence_unreadable'] !== []) {
+            $io->warning('Not followed, these classes did not load: ' . implode(', ', $info['persistence_unreadable']));
         }
     }
 
