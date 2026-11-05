@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Tests\Unit\Route;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Discovery\ClassDiscovery;
@@ -69,6 +70,15 @@ final class PersistenceChainTest extends TestCase
 
         self::assertCount(1, $tables);
         self::assertSame([DbOrderStore::class, InheritingStore::class], $tables[0]['repositories']);
+    }
+
+    #[Test]
+    public function a_module_answers_for_the_handlers_in_its_namespace(): void
+    {
+        $namespace = 'Semitexa\\Dev\\Tests\\Fixtures\\Persistence';
+
+        self::assertSame(OrderTable::class, $this->chain()->ofNamespace($namespace)['tables'][0]['resource'] ?? null);
+        self::assertSame([], $this->chain()->ofNamespace('Semitexa\\Dev\\Tests\\Fixtures\\Other')['tables']);
     }
 
     #[Test]
@@ -221,6 +231,7 @@ final class PersistenceChainTest extends TestCase
         $discovery->method('findClassesWithAttribute')->willReturnCallback(static fn (string $attribute): array => match ($attribute) {
             SatisfiesRepositoryContract::class => [DbOrderStore::class, ...$extraRepositories],
             SatisfiesServiceContract::class => [BilledOrders::class],
+            AsPayloadHandler::class => [PlaceOrderHandler::class],
             AsMapper::class => [OrderTableMapper::class, ...$extraMappers],
             default => [],
         });

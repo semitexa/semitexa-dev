@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command\DevGraph;
 
-use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Core\ModuleRegistry;
 use Semitexa\Dev\Application\Service\Console\LookupRefusal;
+use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
+use Semitexa\Dev\Application\Service\Route\PersistenceChain;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -75,6 +77,12 @@ final class DevGraphModuleCommand extends BaseCommand
             'commands' => $buckets['commands'],
             'templates' => $templates,
         ];
+        $chain = $description['namespace'] === null
+            ? ['tables' => [], 'unreadable' => [], 'stopped_at' => []]
+            : (new PersistenceChain(new ClassDiscovery()))->ofNamespace($description['namespace']);
+        $description['persistence'] = $chain['tables'];
+        $description['persistence_unreadable'] = $chain['unreadable'];
+        $description['persistence_stopped_at'] = $chain['stopped_at'];
 
         if ($input->getOption('json')) {
             $output->writeln(json_encode([
@@ -105,6 +113,8 @@ final class DevGraphModuleCommand extends BaseCommand
             'Listeners' => $description['listeners'],
             'Commands' => $description['commands'],
             'Templates' => $description['templates'],
+            'Tables' => array_column($description['persistence'], 'table'),
+            'Not followed, did not load' => $description['persistence_unreadable'],
         ];
 
         foreach ($sections as $label => $files) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Route;
 
+use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsFactory;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -115,6 +116,19 @@ final class PersistenceChain
             'unreadable' => array_values(array_unique($this->unreadable)),
             'stopped_at' => array_values(array_unique($this->stoppedAt)),
         ];
+    }
+
+    /**
+     * The same answer for a module: every payload handler in its namespace.
+     *
+     * @return array{tables: list<array<string, mixed>>, unreadable: list<string>, stopped_at: list<string>}
+     */
+    public function ofNamespace(string $namespace): array
+    {
+        return $this->of(array_values(array_filter(
+            $this->classes->findClassesWithAttribute(AsPayloadHandler::class),
+            static fn (string $class): bool => str_starts_with($class, $namespace . '\\'),
+        )));
     }
 
     /** @return array<string, list<string>> contract → the classes that satisfy it */
