@@ -232,10 +232,13 @@ final class DevGraphRouteCommand extends BaseCommand
         foreach ($info['persistence'] as $chain) {
             $io->newLine();
             $io->section("Persistence: {$chain['table']}");
-            foreach (['resource' => 'Resource', 'mapper' => 'Mapper', 'domain' => 'Domain', 'repository' => 'Repository'] as $key => $label) {
+            foreach (['resource' => 'Resource', 'mapper' => 'Mapper', 'domain' => 'Domain'] as $key => $label) {
                 if ($chain[$key] !== null) {
                     $io->text(sprintf('  %-11s %s', $label . ':', $chain[$key]));
                 }
+            }
+            foreach ($chain['repositories'] as $repository) {
+                $io->text(sprintf('  %-11s %s', 'Repository:', $repository));
             }
             $io->text(sprintf('  %-11s %s', 'Named by:', $chain['named_by']));
         }

@@ -49,7 +49,7 @@ final class PersistenceChainTest extends TestCase
         self::assertSame([[
             'table' => 'chain_orders',
             'resource' => OrderTable::class,
-            'repository' => DbOrderStore::class,
+            'repositories' => [DbOrderStore::class],
             'mapper' => OrderTableMapper::class,
             'domain' => Order::class,
             'named_by' => DbOrderStore::class,
@@ -59,7 +59,16 @@ final class PersistenceChainTest extends TestCase
     #[Test]
     public function a_service_between_the_handler_and_the_interface_changes_nothing(): void
     {
-        self::assertSame(DbOrderStore::class, $this->tables([PlaceOrderThroughServiceHandler::class])[0]['repository'] ?? null);
+        self::assertSame([DbOrderStore::class], $this->tables([PlaceOrderThroughServiceHandler::class])[0]['repositories'] ?? null);
+    }
+
+    #[Test]
+    public function every_repository_behind_a_contract_is_listed(): void
+    {
+        $tables = $this->chain([], [], [InheritingStore::class])->of([PlaceOrderHandler::class])['tables'];
+
+        self::assertCount(1, $tables);
+        self::assertSame([DbOrderStore::class, InheritingStore::class], $tables[0]['repositories']);
     }
 
     #[Test]
@@ -69,7 +78,7 @@ final class PersistenceChainTest extends TestCase
 
         self::assertCount(1, $chain);
         self::assertSame(OrderTable::class, $chain[0]['resource']);
-        self::assertNull($chain[0]['repository']);
+        self::assertSame([], $chain[0]['repositories']);
     }
 
     #[Test]
@@ -126,7 +135,7 @@ final class PersistenceChainTest extends TestCase
     #[Test]
     public function a_factory_leads_to_its_contract(): void
     {
-        self::assertSame(DbOrderStore::class, $this->tables([FactoryHandler::class])[0]['repository'] ?? null);
+        self::assertSame([DbOrderStore::class], $this->tables([FactoryHandler::class])[0]['repositories'] ?? null);
     }
 
     #[Test]
@@ -152,7 +161,7 @@ final class PersistenceChainTest extends TestCase
     #[Test]
     public function a_service_contract_leads_on_to_the_repository_behind_it(): void
     {
-        self::assertSame(DbOrderStore::class, $this->tables([BillOrdersHandler::class])[0]['repository'] ?? null);
+        self::assertSame([DbOrderStore::class], $this->tables([BillOrdersHandler::class])[0]['repositories'] ?? null);
     }
 
     #[Test]
@@ -164,7 +173,7 @@ final class PersistenceChainTest extends TestCase
     #[Test]
     public function a_repository_keeps_the_table_it_inherits(): void
     {
-        self::assertSame(InheritingStore::class, $this->tables([InheritingStore::class])[0]['repository'] ?? null);
+        self::assertSame([InheritingStore::class], $this->tables([InheritingStore::class])[0]['repositories'] ?? null);
     }
 
     #[Test]
@@ -203,13 +212,14 @@ final class PersistenceChainTest extends TestCase
     /**
      * @param list<string> $extraMappers
      * @param array<string, string> $unloadable
+     * @param list<string> $extraRepositories
      */
-    private function chain(array $extraMappers = [], array $unloadable = []): PersistenceChain
+    private function chain(array $extraMappers = [], array $unloadable = [], array $extraRepositories = []): PersistenceChain
     {
         $discovery = $this->createMock(ClassDiscovery::class);
         $discovery->method('unloadableClasses')->willReturn($unloadable);
         $discovery->method('findClassesWithAttribute')->willReturnCallback(static fn (string $attribute): array => match ($attribute) {
-            SatisfiesRepositoryContract::class => [DbOrderStore::class],
+            SatisfiesRepositoryContract::class => [DbOrderStore::class, ...$extraRepositories],
             SatisfiesServiceContract::class => [BilledOrders::class],
             AsMapper::class => [OrderTableMapper::class, ...$extraMappers],
             default => [],

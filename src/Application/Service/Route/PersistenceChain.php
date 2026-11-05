@@ -41,7 +41,7 @@ final class PersistenceChain
     /**
      * @param list<string> $classes the route's payload and handlers
      * @return array{
-     *     tables: list<array{table: string, resource: string, repository: ?string, mapper: ?string, domain: ?string, named_by: string}>,
+     *     tables: list<array{table: string, resource: string, repositories: list<string>, mapper: ?string, domain: ?string, named_by: string}>,
      *     unreadable: list<string>,
      *     stopped_at: list<string>
      * } `unreadable` names the classes the walk could not load, and `stopped_at` those whose
@@ -75,12 +75,14 @@ final class PersistenceChain
                 $found[$resource] ??= [
                     'table' => $this->tableOf($resource),
                     'resource' => $resource,
-                    'repository' => null,
+                    'repositories' => [],
                     'mapper' => $mappers[$resource]['mapper'] ?? null,
                     'domain' => $mappers[$resource]['domain'] ?? null,
                     'named_by' => $class,
                 ];
-                $found[$resource]['repository'] ??= $repository;
+                if ($repository !== null && !in_array($repository, $found[$resource]['repositories'], true)) {
+                    $found[$resource]['repositories'][] = $repository;
+                }
             }
 
             // Same step, so to the front: the queue stays in order of depth, and the
@@ -217,8 +219,14 @@ final class PersistenceChain
     {
         $names = $this->modelsOnAttributes($class);
         $file = $class->getFileName();
+        $source = is_string($file) ? @file_get_contents($file) : '';
+        if ($source === false) {
+            $this->unreadable[] = $class->getName();
+
+            return $names;
+        }
         $tokens = array_values(array_filter(
-            \PhpToken::tokenize(is_string($file) ? (string) file_get_contents($file) : ''),
+            \PhpToken::tokenize($source),
             static fn (\PhpToken $token): bool => !$token->isIgnorable(),
         ));
         [$imports, $body] = self::splitImports($tokens);
