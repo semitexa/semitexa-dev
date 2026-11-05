@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T04:21:35+00:00",
+    "generated_at": "2026-11-05T04:30:20+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "4be9e50a47573abf60e5bced470fe3f1144e579f577f5ee1ee9eddb3fb399b3a",
+    "content_hash": "4933a93e9f788608097675c58a8e3ccc1843cfcb2dbcec07c465ea66ef1b4469",
     "capabilities": [
         {
             "id": "api.external",
@@ -629,7 +629,7 @@
                 "crontab entries calling CLI scripts, with overlap handled by a lock file",
                 "a sleep loop in a worker process that re-checks the time"
             ],
-            "usage": "// On a clock. A job is a service, and its dependencies are injected as usual.\n#[AsService]\n#[AsScheduledJob(key: 'shop.nightly_report', cronExpression: '0 3 * * *', tenantMode: 'per_tenant')]\nfinal class NightlyReportJob implements ScheduledJobInterface\n{\n    public function handle(ScheduledJobContext $context): void\n    {\n        // per_tenant runs once per tenant with $context->tenantId set; it is null when no\n        // tenants are configured. A retry has $context->attemptNumber > 1.\n    }\n}\n\n// Once, later. Inject SchedulerInterface; the same job class runs with this payload:\n$this->scheduler->dispatchAfter(SendReminderJob::class, new \\DateInterval('PT15M'), ['orderId' => $id]);\n\n// Nothing runs by itself: scheduler:plan makes due runs and scheduler:work executes them.\n// bin/semitexa scheduler:list shows what is declared. scheduler:run-now queues a run for a\n// worker, and with --inline it runs here and now.\n// overlapPolicy is allow, skip or delay. tenantMode is global or per_tenant.",
+            "usage": "// On a clock. A job is a service, and its dependencies are injected as usual.\n#[AsService]\n#[AsScheduledJob(key: 'shop.nightly_report', cronExpression: '0 3 * * *', tenantMode: 'per_tenant')]\nfinal class NightlyReportJob implements ScheduledJobInterface\n{\n    public function handle(ScheduledJobContext $context): void\n    {\n        // per_tenant runs once per tenant with $context->tenantId set; it is null when no\n        // tenants are configured. A retry has $context->attemptNumber > 1.\n    }\n}\n\n// Once, later. Inject SchedulerInterface; the job reads $context->payload:\n$this->scheduler->dispatchAfter(NightlyReportJob::class, new \\DateInterval('PT15M'), ['orderId' => $id]);\n\n// Nothing runs by itself: scheduler:plan makes due runs and scheduler:work executes them.\n// bin/semitexa scheduler:list shows what is declared. scheduler:run-now queues a run for a\n// worker, and with --inline it runs here and now.\n// overlapPolicy is allow, skip or delay. tenantMode is global or per_tenant.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Scheduler\\Capabilities",
