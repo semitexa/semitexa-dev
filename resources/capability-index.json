@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T09:08:32+00:00",
+    "generated_at": "2026-11-05T10:47:54+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "b053b29c3cb85b10ad0a5a92701f2dba7c104ca5bc9d0b1da3a0cedabd10b28d",
+    "content_hash": "c62df08ab413fe9e664064570cdb26de27bb47dc7b83c3e0538aca42eb1e875b",
     "capabilities": [
         {
             "id": "api.external",
@@ -97,7 +97,7 @@
                 "an if on the user role at the top of every handler",
                 "an access check that runs after the payload is hydrated, too late to be a gate"
             ],
-            "usage": "",
+            "usage": "// On the payload: 401 for a guest, 403 for a subject without it, before the handler runs.\n#[RequiresPermission('orders.read')]\n#[AsProtectedPayload(path: '/orders', methods: ['GET'], responseWith: OrdersResource::class)]\nfinal class OrdersPayload\n{\n}\n\n// Several #[RequiresPermission] on one payload must all hold. It needs #[AsProtectedPayload]:\n// on a public payload it is refused, and bin/semitexa lint:access finds that for every route.\n\n// Hide what would be refused, in a template. can() comes with semitexa/platform-ui:\n{% if can('orders.read') %}<a href=\"/orders\">Orders</a>{% endif %}\n\n// A form submit or grid action runs outside a guarded route, so it checks by itself.\n// UiPermissions comes with semitexa/platform-ui too:\nUiPermissions::allows('orders.read');\n\n// Hiding a control is never the check: the route or action behind it still refuses.\n// Give roles their permissions with bin/semitexa role:grant. That command comes with\n// semitexa/platform-user, which this package does not install: require it first.",
             "see_also": "semitexa/rbac",
             "kind": "package",
             "declared_by": "Semitexa\\Authorization\\Capabilities",
