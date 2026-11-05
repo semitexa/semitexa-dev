@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-04T23:42:31+00:00",
+    "generated_at": "2026-11-05T02:49:28+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "b7b04f9d18bb353c01c826a2fa05b296eb00391553fdc6ee8b510c6778f2eb35",
+    "content_hash": "4a8612c45861c510fa43de6415576d1bb27ab89dc923a0b94df3a9e34e83aecc",
     "capabilities": [
         {
             "id": "api.external",
@@ -160,7 +160,7 @@
             "replaces": [
                 "a POST route, handler and permission check per grid action"
             ],
-            "usage": "",
+            "usage": "// On the screen. Overriding actions() replaces the default: list delete to keep it.\npublic function actions(): array\n{\n    return [\n        CrudAction::of('activate', 'Activate', ActivateProducts::class)->onRows()->inBulk(),\n        CrudAction::delete(),\n    ];\n}\n\n// The work. The permission is checked and the records are found before run():\n// an id the screen's query() does not hold never reaches it.\n#[AsService]\n#[AsCrudAction]\nfinal class ActivateProducts implements CrudActionHandlerInterface\n{\n    #[InjectAsReadonly]\n    protected CrudRecords $records;\n\n    public function run(CrudDefinition $screen, array $records): UiGridActionResult\n    {\n        foreach ($records as $record) {\n            $this->records->save($screen, $record, ['status' => 'active']);\n        }\n\n        return UiGridActionResult::done(sprintf('Activated %d products.', count($records)), count($records));\n    }\n}\n\n// An action needs the screen's edit permission unless ->requires('delete') names another.\n// inHeader() puts it above the grid; confirm('...') asks first. Refuse with UiGridActionResult::refused('...').",
             "see_also": "crud.screen",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCrudAction",
@@ -193,7 +193,7 @@
                 "list, create, edit and delete pages, each a payload, handler and template",
                 "a feed payload, handler, JSON response and Resource DTO per grid"
             ],
-            "usage": "",
+            "usage": "// Which one to reach for, each with its own usage (ai:ask mechanisms --id=...):\n// crud.screen          an admin lists and edits the records of one model\n// crud.collection-feed a grid over one model, on a page of your own\n// crud.action          an operation on a screen's rows beyond create, edit and delete\n// crud.settings-page   editable configuration: names, thresholds, switches\n//\n// A dashboard or a wizard is not about one model's rows: use platform-ui components.",
             "see_also": "crud.screen",
             "kind": "package",
             "declared_by": "Semitexa\\Crud\\Capabilities",
@@ -210,7 +210,7 @@
                 "a feed payload and handler for the grid",
                 "create and update form actions that copy the form into the model"
             ],
-            "usage": "",
+            "usage": "// Start from the model; this writes the class below and a test:\n// bin/semitexa make:crud --module=Shop --model=ProductResource --permission=catalog --nav=Content --write\n\n#[AsCrud(id: 'shop.products', path: '/products', model: ProductResource::class, label: 'Product',\n    permission: 'catalog', nav: 'Content', defaultSort: '-updatedAt')]\nfinal class ProductCrud extends CrudDefinition\n{\n    public function fields(): array\n    {\n        return [\n            Field::id(),\n            Field::text('name')->required()->searchable()->sortable(),\n            Field::choice('status', ['draft' => 'Draft', 'active' => 'Active'])->required()->default('draft')->filterable(),\n            Field::decimal('price')->required()->set('min', 0)->sortable(),\n            Field::datetime('updatedAt')->readOnly()->sortable(),\n        ];\n    }\n\n    // Rules across fields: field name => message. $existing is null on create.\n    public function check(array $values, ?object $existing): array\n    {\n        return ($values['price'] ?? 0) > 1000 && $existing === null ? ['price' => 'Too high for a new product.'] : [];\n    }\n}\n\n// permission: 'catalog' means catalog.read, .create, .edit and .delete, granted to a role;\n// with no permission any signed-in visitor may do all four. The screen's feed, forms,\n// live updates and delete come with the class.\n//\n// nav: needs crud_nav() in the layout, or the screen is reachable but listed nowhere:\n{% set appNav = crud_nav([]) %}",
             "see_also": "crud.collection-feed",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCrud",
@@ -226,7 +226,7 @@
                 "a settings page, handler, form action and store calls per group of options",
                 "reading a setting with its default repeated at every call site"
             ],
-            "usage": "",
+            "usage": "#[AsSettingsPage(id: 'shop.store', path: '/settings/store', title: 'Store', group: 'shop',\n    permission: 'settings.manage', nav: 'Account')]\nfinal class StoreSettings extends SettingsDefinition\n{\n    public function fields(): array\n    {\n        return [\n            Field::text('storeName')->required()->default('My shop'),\n            Field::integer('lowStockThreshold')->required()->set('min', 0)->default(5),\n        ];\n    }\n\n    // Rules across fields: field name => message. Empty means valid.\n    public function check(array $values): array\n    {\n        return $values['lowStockThreshold'] === 0 ? ['lowStockThreshold' => 'Zero marks nothing as low.'] : [];\n    }\n}\n\n// Read a value where it is needed, with SettingsValues injected: what was saved, else the\n// field's default, so the default is never repeated at the call site.\n$threshold = $this->settings->of(StoreSettings::class)['lowStockThreshold'];\n\n// Stored per tenant. Pages of one group are sections of one settings area.",
             "see_also": "crud.screen",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsSettingsPage",
@@ -515,7 +515,7 @@
                 "hand-written PDO queries plus a bespoke row-to-object mapper",
                 "a migration file written by hand for every column added to a model"
             ],
-            "usage": "",
+            "usage": "// The table is declared on the class, and bin/semitexa orm:sync creates or alters it.\n#[FromTable(name: 'orders')]\n#[TenantScoped(strategy: 'same_storage', column: 'tenantId')]\nfinal readonly class OrderResource\n{\n    public function __construct(\n        #[PrimaryKey(strategy: 'uuid')]\n        #[Column(type: MySqlType::Varchar, length: 36)]\n        public string $id,\n        #[Column(type: MySqlType::Varchar, length: 64)]\n        public string $tenantId,\n        #[Column(type: MySqlType::Varchar, length: 32)]\n        public string $status,\n    ) {}\n}\n\n// Read through a service. Column names go through ColumnRef, which refuses an unknown one.\n#[AsService]\nfinal class OrderStore\n{\n    use OrmBackedStore;\n\n    #[InjectAsReadonly]\n    protected OrmManager $orm;\n\n    public function open(string $tenantId): array\n    {\n        return $this->domainRepository(OrderResource::class)\n            ->forTenant($tenantId)\n            ->query()\n            ->where(ColumnRef::for(OrderResource::class, 'status'), Operator::Equals, 'open')\n            ->fetchAll();\n    }\n}\n\n// A #[TenantScoped] read names its authority or throws: forTenant() for one tenant, or\n// withoutTenantScope() with a system token for all of them. There is no silent global read.\n// Injection is refused inside a trait, so $orm lives on the class.\n// With one class argument only query() works, and rows come back as the resource.\n// findById(), insert(), update() and delete() go through a mapper: pass the business class\n// as the second argument, with an #[AsMapper] class between the two. Writes are atomic with\n// their owned children.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Orm\\Capabilities",
@@ -787,7 +787,7 @@
             "replaces": [
                 "a live wire that only the handler body knows about, which reads as dead to anything that joins watchers to publishers"
             ],
-            "usage": "",
+            "usage": "// The service that changes the data says which scope it touches, and touches it:\n#[AsService]\n#[AsScheduledJob(key: 'wallet.cron', cronExpression: '* * * * *', overlapPolicy: 'skip')]\n#[PublishesScope('wallet_cron')]\nfinal class WalletCronJob implements ScheduledJobInterface\n{\n    #[InjectAsReadonly]\n    protected WalletAccount $wallet;\n\n    #[InjectAsReadonly]\n    protected ScopeInvalidatorInterface $scopes;\n\n    public function handle(ScheduledJobContext $context): void\n    {\n        $this->wallet->credit('cron', 10);\n        $this->scopes->touch('wallet_cron');\n    }\n}\n\n// The attribute calls nothing: touch() is what re-runs the watchers. It tells the\n// live-tenancy check that the wire is real, because no resource owns this scope.",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\PublishesScope",
@@ -803,7 +803,7 @@
                 "a JSON API paired with a separate frontend build that re-renders what the server already knew",
                 "a template loader and asset manifest hand-rolled once per project"
             ],
-            "usage": "",
+            "usage": "// Which one to reach for, each with its own usage (ai:ask mechanisms --id=...):\n// ssr.slot-resource  a region of a page with its own data and template\n// ssr.deferred       that region filled in after the page, or updating by itself\n// ssr.component      a reusable piece of markup with its own template\n// ssr.twig-extension a new function or filter for templates\n//\n// What a page shows goes through its response resource: the handler calls a typed setter\n// such as withTitle(), the setter calls $this->with('title', $title), and the template\n// reads {{ title }}. with() is protected, so a handler cannot call it directly.",
             "see_also": "ssr.deferred",
             "kind": "package",
             "declared_by": "Semitexa\\Ssr\\Capabilities",
@@ -865,7 +865,7 @@
             "replaces": [
                 "registering the extension manually during server boot"
             ],
-            "usage": "",
+            "usage": "#[AsTwigExtension]\nfinal class MoneyTwigExtension\n{\n    public function registerFunctions(): void\n    {\n        TwigExtensionRegistry::registerFunction('money', self::money(...));\n    }\n\n    public static function money(int $cents): string\n    {\n        return number_format($cents / 100, 2);\n    }\n}\n\n// In a template:\n{{ money(order.total) }}\n\n// registerFilters() and TwigExtensionRegistry::registerFilter() work the same way.\n// Injection needs #[AsService] as well, or the class is built with new and the first call\n// fails inside a template with an uninitialised property.",
             "see_also": "",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Ssr\\Attribute\\AsTwigExtension",
@@ -1101,7 +1101,7 @@
             "replaces": [
                 "wiring an event listener in page JavaScript and posting to an ad-hoc route"
             ],
-            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// Its template. Without the manifest line nothing fires, and nothing says so:\n{%- set _ui_instance = ui_component_instance_for(instanceId|default(null)) -%}\n<div data-ui-component=\"shop.counter\" data-ui-component-instance-id=\"{{ _ui_instance }}\">\n    {{ ui_part('increment', {label: '+1'}) }}\n    {{ ui_event_manifest(_ui_instance) }}\n</div>\n\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part can repeat per row. The element's value says which row, so write the element\n// itself, ui_part() does not pass value on:\n<button type=\"button\" data-ui-part=\"remove\" value=\"{{ line.id }}\">Remove</button>\n// and read $event->value(). A patch from a stream has no row: to change one row from the\n// server, give it <span data-ui-patch-target=\"total-{{ line.id }}\"> and aim at that name.\n// A child cannot rerender its parent.",
+            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // the component is drawn again with it and morphed in place\n    }\n}\n\n// Its template. Without the manifest line nothing fires, and nothing says so:\n{%- set _ui_instance = ui_component_instance_for(instanceId|default(null)) -%}\n<div data-ui-component=\"shop.counter\" data-ui-component-instance-id=\"{{ _ui_instance }}\">\n    {{ ui_part('increment', {label: '+1'}) }}\n    {{ ui_event_manifest(_ui_instance) }}\n</div>\n\n// The page calls {{ ui_page_sse_session_meta() }}.\n\n// Data in: $event->props(), $event->value(), and $event->formValues for a form part.\n// Data out: return UiInteractionResult::patch([UiResponsePatch::rerender($event->instanceId, $changedProps)]),\n// or ::toast(), ::redirect(). An input can debounce: #[UiOn(part: 'search', event: 'input', debounce: 200)].\n\n// A part can repeat per row. The element's value says which row, so write the element\n// itself, ui_part() does not pass value on:\n<button type=\"button\" data-ui-part=\"remove\" value=\"{{ line.id }}\">Remove</button>\n// A row that can come and go carries a stable key, or a re-render pairs rows by position\n// and a half-typed draft lands on the next row:\n<li data-key=\"{{ line.id }}\">...</li>\n// and read $event->value(). A patch from a stream has no row: to change one row from the\n// server, give it <span data-ui-patch-target=\"total-{{ line.id }}\"> and aim at that name.\n// A child cannot rerender its parent.",
             "see_also": "ui.event-handler",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiOn",
@@ -1179,7 +1179,7 @@
             "replaces": [
                 "hard-coding child markup inside the component template"
             ],
-            "usage": "",
+            "usage": "#[UiPart(name: 'save', uses: ButtonPrimitive::class, defaults: ['variant' => 'solid'])]\n#[UiPart(name: 'email', uses: InputPrimitive::class, bind: 'user.email')]\nfinal class ProfileFormComponent { ... }\n\n// In the component's template. Props given here win over defaults:\n{{ ui_part('email') }}\n{{ ui_part('save', {label: 'Save'}) }}\n\n// bind: fills the part's value from the component's props when it renders; it does not\n// write back. To react to a part, add #[UiOn]: ai:ask mechanisms --id=ui.event-intent.",
             "see_also": "ui.primitive",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiPart",
