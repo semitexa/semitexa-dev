@@ -10,6 +10,8 @@ use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Dev\Application\Service\Route\PersistenceChain;
+use Semitexa\Dev\Tests\Fixtures\Persistence\AliasPrefixHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\BrokenAttributeHandler;
 use Semitexa\Dev\Tests\Fixtures\Persistence\BilledOrders;
 use Semitexa\Dev\Tests\Fixtures\Persistence\BillOrdersHandler;
 use Semitexa\Dev\Tests\Fixtures\Persistence\BrokenMapper;
@@ -25,6 +27,16 @@ use Semitexa\Dev\Tests\Fixtures\Persistence\OrderTableMapper;
 use Semitexa\Dev\Tests\Fixtures\Persistence\PlaceOrderHandler;
 use Semitexa\Dev\Tests\Fixtures\Persistence\PlaceOrderThroughServiceHandler;
 use Semitexa\Dev\Tests\Fixtures\Persistence\PlainHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\CommaImportHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\FactoryHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\GroupImportHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\MethodNamedLikeImportHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\NewLocalHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\NewQualifiedHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\ThirdHop;
+use Semitexa\Dev\Tests\Fixtures\Persistence\TraitHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\TwoWaysHandler;
+use Semitexa\Dev\Tests\Fixtures\Persistence\ZerothHop;
 use Semitexa\Dev\Tests\Fixtures\Persistence\QueryingHandler;
 use Semitexa\Dev\Tests\Fixtures\Persistence\ReadsBrokenStoreHandler;
 use Semitexa\Orm\Attribute\AsMapper;
@@ -73,9 +85,68 @@ final class PersistenceChainTest extends TestCase
     }
 
     #[Test]
-    public function a_class_that_does_not_exist_is_skipped(): void
+    public function a_class_that_does_not_exist_is_named(): void
     {
-        self::assertSame([], $this->tables(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\Gone']));
+        // verify:accept-test-change an empty answer with nothing said about why was the untruthful case
+        $gone = 'Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\Gone';
+        $chain = $this->chain()->of([$gone]);
+
+        self::assertSame([], $chain['tables']);
+        self::assertSame([$gone], $chain['unreadable']);
+    }
+
+    #[Test]
+    public function a_class_discovery_could_not_load_is_named(): void
+    {
+        $chain = $this->chain([], ['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone' => 'its parent is gone'])->of([PlainHandler::class]);
+
+        self::assertSame(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone'], $chain['unreadable']);
+    }
+
+    #[Test]
+    public function the_walk_says_where_it_stopped(): void
+    {
+        self::assertSame([ThirdHop::class], $this->chain()->of([ZerothHop::class])['stopped_at']);
+    }
+
+    #[Test]
+    public function an_attribute_that_cannot_be_read_is_named(): void
+    {
+        $chain = $this->chain()->of([BrokenAttributeHandler::class]);
+
+        self::assertSame([BrokenAttributeHandler::class], $chain['unreadable']);
+    }
+
+    #[Test]
+    public function a_shorter_way_to_a_class_wins_over_a_longer_one_found_first(): void
+    {
+        self::assertSame(OrderTable::class, $this->tables([TwoWaysHandler::class])[0]['resource'] ?? null);
+    }
+
+    #[Test]
+    public function a_factory_leads_to_its_contract(): void
+    {
+        self::assertSame(DbOrderStore::class, $this->tables([FactoryHandler::class])[0]['repository'] ?? null);
+    }
+
+    #[Test]
+    public function every_way_of_writing_a_class_name_counts(): void
+    {
+        foreach ([GroupImportHandler::class, AliasPrefixHandler::class, NewLocalHandler::class, NewQualifiedHandler::class, CommaImportHandler::class] as $handler) {
+            self::assertSame(OrderTable::class, $this->tables([$handler])[0]['resource'] ?? null, $handler);
+        }
+    }
+
+    #[Test]
+    public function a_table_named_in_a_trait_counts(): void
+    {
+        self::assertSame(OrderTable::class, $this->tables([TraitHandler::class])[0]['resource'] ?? null);
+    }
+
+    #[Test]
+    public function a_method_named_like_an_import_is_no_use_of_it(): void
+    {
+        self::assertSame([], $this->tables([MethodNamedLikeImportHandler::class]));
     }
 
     #[Test]
@@ -129,10 +200,14 @@ final class PersistenceChainTest extends TestCase
         return $this->chain()->of($classes)['tables'];
     }
 
-    /** @param list<string> $extraMappers */
-    private function chain(array $extraMappers = []): PersistenceChain
+    /**
+     * @param list<string> $extraMappers
+     * @param array<string, string> $unloadable
+     */
+    private function chain(array $extraMappers = [], array $unloadable = []): PersistenceChain
     {
         $discovery = $this->createMock(ClassDiscovery::class);
+        $discovery->method('unloadableClasses')->willReturn($unloadable);
         $discovery->method('findClassesWithAttribute')->willReturnCallback(static fn (string $attribute): array => match ($attribute) {
             SatisfiesRepositoryContract::class => [DbOrderStore::class],
             SatisfiesServiceContract::class => [BilledOrders::class],

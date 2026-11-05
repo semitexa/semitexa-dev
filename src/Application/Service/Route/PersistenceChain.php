@@ -31,6 +31,9 @@ final class PersistenceChain
     /** @var list<string> */
     private array $unreadable = [];
 
+    /** @var list<string> */
+    private array $stoppedAt = [];
+
     public function __construct(private readonly ClassDiscovery $classes)
     {
     }
@@ -39,12 +42,15 @@ final class PersistenceChain
      * @param list<string> $classes the route's payload and handlers
      * @return array{
      *     tables: list<array{table: string, resource: string, repository: ?string, mapper: ?string, domain: ?string, named_by: string}>,
-     *     unreadable: list<string>
-     * } `unreadable` names the classes the walk could not load, so an empty `tables` is never a guess
+     *     unreadable: list<string>,
+     *     stopped_at: list<string>
+     * } `unreadable` names the classes the walk could not load, and `stopped_at` those whose
+     *   injections lie past its last step, so an empty `tables` is never a guess
      */
     public function of(array $classes): array
     {
-        $this->unreadable = [];
+        $this->unreadable = array_keys($this->classes->unloadableClasses());
+        $this->stoppedAt = [];
         $implementations = $this->implementationsByContract();
         $mappers = $this->mappersByResource();
         $found = [];
@@ -60,6 +66,7 @@ final class PersistenceChain
             $seen[$visit] = true;
             $reflection = $this->reflect($class);
             if ($reflection === null) {
+                $this->unreadable[] = $class;
                 continue;
             }
             $repository ??= self::isRepository($reflection) ? $class : null;
@@ -76,21 +83,36 @@ final class PersistenceChain
                 $found[$resource]['repository'] ??= $repository;
             }
 
-            foreach ($implementations[$class] ?? [] as $implementation) {
-                $queue[] = [$implementation, $depth, null];
+            // Same step, so to the front: the queue stays in order of depth, and the
+            // first visit to a class is the shortest way to it.
+            $sameStep = array_map(
+                static fn (string $implementation): array => [$implementation, $depth, null],
+                $implementations[$class] ?? [],
+            );
+            foreach ($reflection->getTraitNames() as $trait) {
+                $sameStep[] = [$trait, $depth, $repository];
             }
             $parent = $reflection->getParentClass();
             if ($parent !== false) {
-                $queue[] = [$parent->getName(), $depth, $repository];
+                $sameStep[] = [$parent->getName(), $depth, $repository];
             }
-            if ($depth < self::MAX_DEPTH) {
-                foreach (self::injectedTypes($reflection) as $type) {
+            array_unshift($queue, ...$sameStep);
+
+            $injected = array_values(array_filter(self::injectedTypes($reflection), self::isOurs(...)));
+            if ($depth >= self::MAX_DEPTH && $injected !== []) {
+                $this->stoppedAt[] = $class;
+            } elseif ($depth < self::MAX_DEPTH) {
+                foreach ($injected as $type) {
                     $queue[] = [$type, $depth + 1, null];
                 }
             }
         }
 
-        return ['tables' => array_values($found), 'unreadable' => array_values(array_unique($this->unreadable))];
+        return [
+            'tables' => array_values($found),
+            'unreadable' => array_values(array_unique($this->unreadable)),
+            'stopped_at' => array_values(array_unique($this->stoppedAt)),
+        ];
     }
 
     /** @return array<string, list<string>> contract → the classes that satisfy it */
@@ -144,7 +166,7 @@ final class PersistenceChain
     private function reflect(string $class): ?\ReflectionClass
     {
         try {
-            if (class_exists($class) || interface_exists($class)) {
+            if (class_exists($class) || interface_exists($class) || trait_exists($class)) {
                 return new \ReflectionClass($class);
             }
         } catch (\Throwable) {
@@ -164,72 +186,160 @@ final class PersistenceChain
     {
         $types = [];
         foreach ($class->getProperties() as $property) {
-            $injected = $property->getAttributes(InjectAsReadonly::class) !== []
-                || $property->getAttributes(InjectAsMutable::class) !== []
-                || $property->getAttributes(InjectAsFactory::class) !== [];
+            $factory = $property->getAttributes(InjectAsFactory::class)[0] ?? null;
+            $injected = $factory !== null
+                || $property->getAttributes(InjectAsReadonly::class) !== []
+                || $property->getAttributes(InjectAsMutable::class) !== [];
             $type = $property->getType();
             if ($injected && $type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
-                $types[] = $type->getName();
+                $types[] = $factory === null ? $type->getName() : self::contractOfFactory($factory, $type->getName());
             }
         }
 
         return $types;
     }
 
+    /** A factory's type names its contract: FactoryStorageInterface is the factory of StorageInterface. */
+    private static function contractOfFactory(\ReflectionAttribute $factory, string $type): string
+    {
+        $of = $factory->getArguments()['of'] ?? null;
+
+        return is_string($of) ? $of : (string) preg_replace('/\\\\Factory(\w+)$/', '\\\\$1', $type);
+    }
+
     /**
-     * The resource models a class's code names: an import it uses, a `::class` in its
-     * namespace or fully qualified, and a `model:` on its route attribute.
+     * The resource models a class's code names, read from its tokens: a comment or a
+     * string names nothing, and an import names something only where it is used.
      *
      * @return list<string>
      */
     private function resourcesNamedIn(\ReflectionClass $class): array
     {
-        $names = [];
-        foreach ($class->getAttributes() as $attribute) {
-            $model = $attribute->getArguments()['model'] ?? null;
-            if (is_string($model)) {
-                $names[] = $model;
-            }
-        }
+        $names = $this->modelsOnAttributes($class);
         $file = $class->getFileName();
-        $code = self::codeOf(is_string($file) ? (string) file_get_contents($file) : '');
-        $importLine = '/^use\s+([A-Za-z0-9_\\\\]+)(?:\s+as\s+(\w+))?;/m';
-        $body = (string) preg_replace($importLine, '', $code);
-        if (preg_match_all($importLine, $code, $imports, PREG_SET_ORDER) > 0) {
-            foreach ($imports as $import) {
-                $short = $import[2] ?? substr((string) strrchr('\\' . $import[1], '\\'), 1);
-                if (preg_match('/(?<![\\\\\w$])' . preg_quote($short, '/') . '\b/', $body) === 1) {
-                    $names[] = $import[1];
-                }
-            }
-        }
-        if (preg_match_all('/(?<![\\\\\w])\\\\([A-Z][\w\\\\]+)::class/', $code, $qualified) > 0) {
-            array_push($names, ...$qualified[1]);
-        }
-        // A class of the same namespace needs no import.
-        if (preg_match_all('/(?<![\\\\\w])([A-Z]\w*)::class/', $code, $local) > 0) {
-            foreach ($local[1] as $short) {
-                $names[] = $class->getNamespaceName() . '\\' . $short;
+        $tokens = array_values(array_filter(
+            \PhpToken::tokenize(is_string($file) ? (string) file_get_contents($file) : ''),
+            static fn (\PhpToken $token): bool => !$token->isIgnorable(),
+        ));
+        [$imports, $body] = self::splitImports($tokens);
+
+        foreach ($body as $index => $token) {
+            $before = $body[$index - 1] ?? null;
+            $after = $body[$index + 1] ?? null;
+            if ($token->is(T_NAME_FULLY_QUALIFIED)) {
+                $names[] = ltrim($token->text, '\\');
+            } elseif ($token->is(T_NAME_QUALIFIED) && $before?->is(T_NAMESPACE) !== true) {
+                $names[] = self::resolved($token->text, $imports, $class->getNamespaceName());
+            } elseif ($token->is(T_STRING) && self::canBeAClass($before, $after)) {
+                $names[] = self::resolved($token->text, $imports, $class->getNamespaceName());
             }
         }
 
-        return array_values(array_unique(array_filter(
-            $names,
+        return array_values(array_filter(
+            array_unique($names),
             fn (string $name): bool => self::isOurs($name) && $this->isResource($name),
-        )));
+        ));
     }
 
-    /** The source without comments and strings: a table mentioned there is not a table the class names. */
-    private static function codeOf(string $source): string
+    /** @return list<string> a `model:` on the class's attributes, a route's among them */
+    private function modelsOnAttributes(\ReflectionClass $class): array
     {
-        $code = '';
-        foreach (\PhpToken::tokenize($source) as $token) {
-            if (!$token->is([T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE])) {
-                $code .= $token->text;
+        $models = [];
+        foreach ($class->getAttributes() as $attribute) {
+            try {
+                $model = $attribute->getArguments()['model'] ?? null;
+            } catch (\Throwable) {
+                $this->unreadable[] = $class->getName();
+                continue;
+            }
+            if (is_string($model)) {
+                $models[] = $model;
             }
         }
 
-        return $code;
+        return $models;
+    }
+
+    /** A name in code that is not a member, a declaration or a function call. */
+    private static function canBeAClass(?\PhpToken $before, ?\PhpToken $after): bool
+    {
+        if ($before?->is([T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION, T_CONST, T_NAMESPACE]) === true) {
+            return false;
+        }
+
+        return $after?->text !== '(' || $before?->is(T_NEW) === true;
+    }
+
+    /**
+     * The file's imports, alias → class, and its tokens without them. Only what
+     * stands before the first brace: `use` after it is a trait or a closure's.
+     *
+     * @param list<\PhpToken> $tokens
+     * @return array{array<string, string>, list<\PhpToken>}
+     */
+    private static function splitImports(array $tokens): array
+    {
+        $imports = [];
+        $body = [];
+        $statement = null;
+        $header = true;
+        foreach ($tokens as $token) {
+            if ($statement !== null) {
+                if ($token->text === ';') {
+                    $imports += self::importsIn($statement);
+                    $statement = null;
+                } else {
+                    $statement[] = $token;
+                }
+            } elseif ($header && $token->is(T_USE)) {
+                $statement = [];
+            } else {
+                $header = $header && $token->text !== '{';
+                $body[] = $token;
+            }
+        }
+
+        return [$imports, $body];
+    }
+
+    /**
+     * @param list<\PhpToken> $statement what stands between `use` and `;`
+     * @return array<string, string>
+     */
+    private static function importsIn(array $statement): array
+    {
+        if ($statement === [] || $statement[0]->is([T_FUNCTION, T_CONST])) {
+            return [];
+        }
+        $text = implode(' ', array_map(static fn (\PhpToken $token): string => $token->text, $statement));
+        $prefix = '';
+        if (preg_match('/^(.*?)\s*\\\\\s*\{(.*)\}\s*$/s', $text, $group) === 1) {
+            $prefix = $group[1] . '\\';
+            $text = $group[2];
+        }
+        $imports = [];
+        foreach (explode(',', $text) as $part) {
+            $pieces = preg_split('/\s+as\s+/i', trim($part));
+            $class = is_array($pieces) ? ltrim($prefix . trim($pieces[0]), '\\') : '';
+            if ($class !== '' && is_array($pieces)) {
+                $alias = $pieces[1] ?? substr((string) strrchr('\\' . $class, '\\'), 1);
+                $imports[strtolower(trim($alias))] = $class;
+            }
+        }
+
+        return $imports;
+    }
+
+    /** @param array<string, string> $imports */
+    private static function resolved(string $name, array $imports, string $namespace): string
+    {
+        [$first, $rest] = array_pad(explode('\\', $name, 2), 2, null);
+        $imported = $imports[strtolower($first)] ?? null;
+        if ($imported !== null) {
+            return $rest === null ? $imported : $imported . '\\' . $rest;
+        }
+
+        return $namespace === '' ? $name : $namespace . '\\' . $name;
     }
 
     private function isResource(string $class): bool

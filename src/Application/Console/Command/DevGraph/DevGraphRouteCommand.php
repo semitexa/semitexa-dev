@@ -193,6 +193,7 @@ final class DevGraphRouteCommand extends BaseCommand
             ->of([$payloadClass, ...array_column($description['handlers'], 'class')]);
         $description['persistence'] = $chain['tables'];
         $description['persistence_unreadable'] = $chain['unreadable'];
+        $description['persistence_stopped_at'] = $chain['stopped_at'];
 
         return $description;
     }
@@ -240,6 +241,9 @@ final class DevGraphRouteCommand extends BaseCommand
         }
         if ($info['persistence_unreadable'] !== []) {
             $io->warning('Not followed, these classes did not load: ' . implode(', ', $info['persistence_unreadable']));
+        }
+        if ($info['persistence_stopped_at'] !== []) {
+            $io->note('The walk stopped at: ' . implode(', ', $info['persistence_stopped_at']));
         }
     }
 
