@@ -28,6 +28,15 @@ final class LoadGenerator
      */
     public const MAX_SAMPLES = 1_000_000;
 
+    /**
+     * Seconds between opening two connections of a window. Opened in the same
+     * instant, one worker wakes first and accepts them all: 16 connections landed
+     * [2, 2, 12] on a shared listener, and the window measured how they happened
+     * to fall (390-590 req/s) rather than the server (780). 2 ms already spread
+     * them; clients do not arrive at once, so neither do these.
+     */
+    public const CONNECT_GAP_S = 0.01;
+
     /** What Swoole allows when nothing set max_coroutine: getOptions() is then empty. */
     private const SWOOLE_DEFAULT_MAX_COROUTINE = 100_000;
 
@@ -82,6 +91,10 @@ final class LoadGenerator
                 $client->set(['timeout' => $this->timeoutS, 'keep_alive' => $this->keepAlive]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
                 $client->setHeaders($headers + ['Host' => $this->host, 'Accept' => 'text/html']);
+                // Connected before the window, and left out of it.
+                if ($this->keepAlive) {
+                    $client->get($path);
+                }
                 // Every connection starts the window together: one created last
                 // would otherwise get less of it.
                 $go->pop();
@@ -110,6 +123,9 @@ final class LoadGenerator
                 $client->close();
                 $done->push(true);
             });
+            if ($this->keepAlive) {
+                Coroutine::sleep(self::CONNECT_GAP_S);
+            }
         }
         $start = hrtime(true);
         $deadline = $start + (int) ($seconds * 1e9);

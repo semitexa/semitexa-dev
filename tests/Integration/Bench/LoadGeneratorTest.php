@@ -20,6 +20,33 @@ use Swoole\Http\Response;
 final class LoadGeneratorTest extends TestCase
 {
     #[Test]
+    public function connections_open_one_at_a_time_before_the_window(): void
+    {
+        $firstSeen = [];
+        $run = null;
+        Coroutine\run(function () use (&$firstSeen, &$run): void {
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', function (Request $request, Response $response) use (&$firstSeen): void {
+                $firstSeen[$request->fd] ??= microtime(true);
+                $response->end('ok');
+            });
+            Coroutine::create(static fn () => $server->start());
+            $run = (new LoadGenerator('127.0.0.1', $server->port))->run('/', 4, 0.2);
+            $server->shutdown();
+        });
+
+        self::assertCount(4, $firstSeen, 'keep-alive: one connection per client, for the whole window');
+        $times = array_values($firstSeen);
+        sort($times);
+        for ($i = 1; $i < 4; $i++) {
+            // Sleep can only run late, so the gap is a floor; a little under it is timer rounding.
+            self::assertGreaterThan(LoadGenerator::CONNECT_GAP_S * 0.8, $times[$i] - $times[$i - 1], 'opened apart, not in one burst');
+        }
+        self::assertNotNull($run);
+        self::assertGreaterThanOrEqual(0.2, $run->seconds, 'the opening is not taken from the window');
+    }
+
+    #[Test]
     public function it_loads_a_server_for_the_window_and_counts_answers_by_status(): void
     {
         $runs = [];
