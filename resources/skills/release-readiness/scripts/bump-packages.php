@@ -1556,6 +1556,7 @@ function verifyPackagistForPackages(array $updatedPackages): void
     echo "Packagist: verifying webhook deliveries and published versions...\n";
 
     $failures = [];
+    $webhookFailures = [];
 
     foreach ($updatedPackages as $package) {
         $packageName = $package['name'];
@@ -1569,7 +1570,7 @@ function verifyPackagistForPackages(array $updatedPackages): void
         if ($webhookStatus !== null) {
             echo $webhookStatus['message'] . "\n";
             if ($strictWebhookVerification && !$webhookStatus['ok'] && !$webhookStatus['skipped']) {
-                $failures[] = $webhookStatus['message'];
+                $webhookFailures[] = $webhookStatus['message'];
             }
         }
 
@@ -1589,10 +1590,14 @@ function verifyPackagistForPackages(array $updatedPackages): void
         echo "Packagist: {$packageName} published as {$details}\n";
     }
 
+    foreach ([...$webhookFailures, ...$failures] as $failure) {
+        fwrite(STDERR, $failure . "\n");
+    }
+    // A broken hook is what strict mode exists to stop, and waiting does not mend it.
+    if ($webhookFailures !== []) {
+        exit(1);
+    }
     if ($failures !== []) {
-        foreach ($failures as $failure) {
-            fwrite(STDERR, $failure . "\n");
-        }
         // Not 1: the tags are out, so the release exists. release-finalize.sh
         // goes on to the Published install, which is the real answer.
         exit(PACKAGIST_UNVERIFIED_EXIT);

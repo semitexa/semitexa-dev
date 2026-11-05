@@ -116,8 +116,22 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
         $sweep = substr($sweep, 0, (int) strpos($sweep, 'function notifyPackagist('));
 
         self::assertSame(1, substr_count($sweep, '$sweepEndsAt = time()'));
+        self::assertLessThan(strpos($sweep, 'foreach ($updatedPackages'), strpos($sweep, '$sweepEndsAt = time()'));
         self::assertStringNotContainsString('$timeoutSeconds = max(15', $sweep);
         self::assertStringContainsString('waitForPackagistVersion($packageName, $expectedVersion, $expectedReference, max(0, $sweepEndsAt - time())', $sweep);
+    }
+
+    #[Test]
+    public function a_strict_webhook_failure_stays_a_failure(): void
+    {
+        // Exit 3 reads as a finished release, so a broken hook there would never block READY.
+        $source = (string) file_get_contents(self::SCRIPTS . '/bump-packages.php');
+        $sweep = substr($source, (int) strpos($source, 'function verifyPackagistForPackages'));
+        $sweep = substr($sweep, 0, (int) strpos($sweep, 'function notifyPackagist('));
+
+        self::assertStringContainsString("\$webhookFailures[] = \$webhookStatus['message'];", $sweep);
+        self::assertStringNotContainsString("\$failures[] = \$webhookStatus['message'];", $sweep);
+        self::assertLessThan(strpos($sweep, 'exit(PACKAGIST_UNVERIFIED_EXIT)'), strpos($sweep, 'exit(1)'));
     }
 
     /** @return array{int, string} */
