@@ -53,6 +53,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Show one capability by id (e.g. ssr.deferred)')
             ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Filter by area prefix (e.g. ssr, ui)')
             ->addOption('state', null, InputOption::VALUE_REQUIRED, 'Filter: installed | available')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Filter by a word in the id, summary, when to use it or what it replaces')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope');
     }
 
@@ -81,6 +82,14 @@ final class DevGraphMechanismsCommand extends BaseCommand
             ));
         }
 
+        $search = $input->getOption('search');
+        if (is_string($search) && $search !== '') {
+            $capabilities = array_values(array_filter(
+                $capabilities,
+                static fn (array $c): bool => self::mentions($c, $search),
+            ));
+        }
+
         $id = $input->getOption('id');
         if (is_string($id) && $id !== '') {
             $capabilities = array_values(array_filter(
@@ -100,6 +109,13 @@ final class DevGraphMechanismsCommand extends BaseCommand
         if (!$oneAtATime) {
             $capabilities = array_map(self::listed(...), $capabilities);
         }
+        // The whole catalog in full is more than an agent reads: it was cut with
+        // head -c and the entry it needed went with it. So the whole catalog is an
+        // index, and a filter brings the detail.
+        $index = !$oneAtATime && !(is_string($area) && $area !== '') && !(is_string($search) && $search !== '');
+        if ($index) {
+            $capabilities = array_map(self::indexed(...), $capabilities);
+        }
 
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode([
@@ -111,6 +127,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // `ai:ask` stamps its own envelope with the CURRENT time, which
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
+                'index' => $index,
                 'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out, for an entry with has_usage',
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
@@ -119,7 +136,9 @@ final class DevGraphMechanismsCommand extends BaseCommand
         }
 
         if ($capabilities === []) {
-            $output->writeln('<comment>No framework mechanisms declared by the installed packages.</comment>');
+            $output->writeln(is_string($search) && $search !== ''
+                ? sprintf('<comment>No mechanism mentions "%s". ai:ask api --search=%s looks through classes and methods.</comment>', $search, $search)
+                : '<comment>No framework mechanisms declared by the installed packages.</comment>');
 
             return Command::SUCCESS;
         }
@@ -128,6 +147,11 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $output->writeln('====================');
         $output->writeln('');
 
+        if ($index) {
+            $output->writeln('--search=<word> or --area=<prefix> gives when to use each; --id=<id> gives working code.');
+            $output->writeln('');
+        }
+
         $currentArea = null;
         foreach ($capabilities as $c) {
             $capArea = (string) strstr((string) $c['id'], '.', true);
@@ -135,6 +159,11 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 $currentArea = $capArea;
                 $output->writeln(sprintf('<info>%s</info>', strtoupper($capArea)));
                 $output->writeln('');
+            }
+
+            if ($index) {
+                $output->writeln(sprintf('  <comment>%s</comment>  %s', $c['id'], $c['summary']));
+                continue;
             }
 
             $this->renderCapability($output, $c);
@@ -191,6 +220,28 @@ final class DevGraphMechanismsCommand extends BaseCommand
         unset($capability['usage']);
 
         return $capability;
+    }
+
+    /**
+     * @param array<string, mixed> $capability
+     * @return array<string, mixed>
+     */
+    private static function indexed(array $capability): array
+    {
+        return array_intersect_key($capability, array_flip(['id', 'kind', 'state', 'summary', 'package', 'has_usage']));
+    }
+
+    /** @param array<string, mixed> $capability */
+    private static function mentions(array $capability, string $word): bool
+    {
+        $text = implode(' ', [
+            $capability['id'] ?? '',
+            $capability['summary'] ?? '',
+            $capability['use_when'] ?? '',
+            implode(' ', (array) ($capability['replaces'] ?? [])),
+        ]);
+
+        return stripos($text, $word) !== false;
     }
 
     /**

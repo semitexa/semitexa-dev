@@ -79,7 +79,7 @@ final class AiAskCommand extends BaseCommand
             // ones the target actually declares are forwarded (see
             // CommandDelegator). Anything else is silently dropped.
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name, a framework class, or a UI entry (for subject=module|event|api|components)')
-            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Find framework classes and members by name or doc summary (for subject=api)')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Find framework classes and members by name or doc summary (for subject=api), or mechanisms by a word (for subject=mechanisms)')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Path: route path (subject=route) | file/directory path (subject=path, default when --path used)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method (for subject=route)')
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Log file alias (for subject=logs)')

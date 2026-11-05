@@ -90,14 +90,62 @@ final class DevGraphMechanismsCommandTest extends TestCase
     {
         // `useWhen` alone gets a capability applied everywhere. The catalog is
         // only safe to follow if it also says when not to.
+        // verify:accept-test-change the whole catalog is an index now; a word every id holds brings every entry in full
         $t = self::tester();
-        $t->execute(['--json' => true]);
+        $t->execute(['--search' => '.', '--json' => true]);
 
         foreach ((array) self::json($t)['mechanisms'] as $m) {
             self::assertNotSame('', trim((string) $m['use_when']), $m['id'] . ' has no use_when');
             self::assertNotSame('', trim((string) $m['avoid_when']), $m['id'] . ' has no avoid_when');
             self::assertNotSame('', trim((string) $m['summary']), $m['id'] . ' has no summary');
         }
+    }
+
+    #[Test]
+    public function the_whole_catalog_is_an_index_short_enough_to_read(): void
+    {
+        $t = self::tester();
+        $t->execute([]);
+        $text = $t->getDisplay();
+
+        self::assertLessThan(16_000, strlen($text), 'an agent cut the full answer with head -c and lost the entry it needed.');
+        self::assertStringContainsString('--id=<id>', $text);
+        self::assertStringNotContainsString('Use when:', $text);
+
+        $t->execute(['--json' => true]);
+        $decoded = self::json($t);
+        self::assertTrue($decoded['index']);
+        self::assertArrayNotHasKey('use_when', $decoded['mechanisms'][0]);
+    }
+
+    #[Test]
+    public function search_finds_by_what_an_entry_replaces_and_keeps_the_detail(): void
+    {
+        $t = self::tester();
+        $t->execute(['--search' => 'DEFERRED', '--json' => true]);
+        $decoded = self::json($t);
+
+        self::assertFalse($decoded['index']);
+        self::assertNotEmpty($decoded['mechanisms']);
+        self::assertLessThan(self::wholeCatalogCount(), $decoded['count']);
+        self::assertNotSame('', $decoded['mechanisms'][0]['use_when']);
+    }
+
+    #[Test]
+    public function a_search_that_finds_nothing_says_where_to_look_next(): void
+    {
+        $t = self::tester();
+        $t->execute(['--search' => 'zzz-nothing']);
+
+        self::assertStringContainsString('ai:ask api --search=zzz-nothing', $t->getDisplay());
+    }
+
+    private static function wholeCatalogCount(): int
+    {
+        $t = self::tester();
+        $t->execute(['--json' => true]);
+
+        return (int) self::json($t)['count'];
     }
 
     #[Test]
