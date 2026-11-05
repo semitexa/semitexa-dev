@@ -28,6 +28,26 @@ final class LoadGenerator
      */
     public const MAX_SAMPLES = 1_000_000;
 
+    /**
+     * Seconds between opening two connections of a window. Opened in the same
+     * instant, one worker wakes first and accepts them all: 16 connections landed
+     * [2, 2, 12] on a shared listener, and the window measured how they happened
+     * to fall (390-590 req/s) rather than the server (780). 2 ms already spread
+     * them; clients do not arrive at once, so neither do these.
+     */
+    public const CONNECT_GAP_S = 0.01;
+
+    /**
+     * About the longest all connections of a window take to open. Past 100
+     * connections the gap shrinks to fit: at the full gap 1024 of them need 10 s,
+     * and a server's keep-alive timeout would close the first ones before the
+     * window. It stops at CONNECT_GAP_MIN_S, so past 1000 the ramp runs longer.
+     */
+    public const CONNECT_RAMP_MAX_S = 1.0;
+
+    /** Below a millisecond a coroutine sleep may be no more than a yield, and the burst is back. */
+    public const CONNECT_GAP_MIN_S = 0.001;
+
     /** What Swoole allows when nothing set max_coroutine: getOptions() is then empty. */
     private const SWOOLE_DEFAULT_MAX_COROUTINE = 100_000;
 
@@ -64,6 +84,11 @@ final class LoadGenerator
         return $result;
     }
 
+    public static function connectGapFor(int $concurrency): float
+    {
+        return max(self::CONNECT_GAP_MIN_S, min(self::CONNECT_GAP_S, self::CONNECT_RAMP_MAX_S / max(1, $concurrency)));
+    }
+
     /** @param array<string, string> $headers */
     private function window(string $path, int $concurrency, float $seconds, array $headers): LoadRun
     {
@@ -74,14 +99,21 @@ final class LoadGenerator
         $statuses = [];
         $errors = 0;
         $deadline = 0;
+        $ready = new Coroutine\Channel($concurrency);
         $go = new Coroutine\Channel($concurrency);
         $done = new Coroutine\Channel($concurrency);
+        $gap = self::connectGapFor($concurrency);
         for ($i = 0; $i < $concurrency; $i++) {
-            Coroutine::create(function () use ($path, $headers, &$deadline, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
+            Coroutine::create(function () use ($path, $headers, &$deadline, $ready, $go, $done, &$latencies, &$answered, &$statuses, &$errors): void {
                 $client = new Client($this->host, $this->port);
                 $client->set(['timeout' => $this->timeoutS, 'keep_alive' => $this->keepAlive]);
                 // The caller's headers win: a tenant or locale is chosen by Host.
                 $client->setHeaders($headers + ['Host' => $this->host, 'Accept' => 'text/html']);
+                // Connected before the window, and left out of it.
+                if ($this->keepAlive) {
+                    $client->get($path);
+                }
+                $ready->push(true);
                 // Every connection starts the window together: one created last
                 // would otherwise get less of it.
                 $go->pop();
@@ -110,6 +142,13 @@ final class LoadGenerator
                 $client->close();
                 $done->push(true);
             });
+            if ($this->keepAlive) {
+                Coroutine::sleep($gap);
+            }
+        }
+        // A slow first answer must not eat the window, or a client measures nothing.
+        for ($i = 0; $i < $concurrency; $i++) {
+            $ready->pop();
         }
         $start = hrtime(true);
         $deadline = $start + (int) ($seconds * 1e9);

@@ -20,6 +20,65 @@ use Swoole\Http\Response;
 final class LoadGeneratorTest extends TestCase
 {
     #[Test]
+    public function connections_open_one_at_a_time_before_the_window(): void
+    {
+        $firstSeen = [];
+        $run = null;
+        Coroutine\run(function () use (&$firstSeen, &$run): void {
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', function (Request $request, Response $response) use (&$firstSeen): void {
+                $firstSeen[$request->fd] ??= microtime(true);
+                $response->end('ok');
+            });
+            Coroutine::create(static fn () => $server->start());
+            $run = (new LoadGenerator('127.0.0.1', $server->port))->run('/', 4, 0.2);
+            $server->shutdown();
+        });
+
+        self::assertCount(4, $firstSeen, 'keep-alive: one connection per client, for the whole window');
+        $times = array_values($firstSeen);
+        sort($times);
+        for ($i = 1; $i < 4; $i++) {
+            // Sleep can only run late, so the gap is a floor; a little under it is timer rounding.
+            self::assertGreaterThan(LoadGenerator::CONNECT_GAP_S * 0.8, $times[$i] - $times[$i - 1], 'opened apart, not in one burst');
+        }
+        self::assertNotNull($run);
+        self::assertGreaterThanOrEqual(0.2, $run->seconds, 'the opening is not taken from the window');
+    }
+
+    #[Test]
+    public function a_slow_first_answer_does_not_eat_the_window(): void
+    {
+        $run = null;
+        Coroutine\run(function () use (&$run): void {
+            $first = true;
+            $server = new Server('127.0.0.1', 0);
+            $server->handle('/', function (Request $request, Response $response) use (&$first): void {
+                if ($first) {
+                    $first = false;
+                    Coroutine::sleep(0.4);
+                }
+                $response->end('ok');
+            });
+            Coroutine::create(static fn () => $server->start());
+            $run = (new LoadGenerator('127.0.0.1', $server->port))->run('/', 1, 0.2);
+            $server->shutdown();
+        });
+
+        self::assertNotNull($run);
+        self::assertGreaterThan(0, $run->requests, 'the window opens after the slow answer, not during it');
+    }
+
+    #[Test]
+    public function the_connect_gap_shrinks_to_keep_the_ramp_short(): void
+    {
+        self::assertSame(LoadGenerator::CONNECT_GAP_S, LoadGenerator::connectGapFor(1));
+        self::assertSame(LoadGenerator::CONNECT_GAP_S, LoadGenerator::connectGapFor(64));
+        self::assertEqualsWithDelta(LoadGenerator::CONNECT_RAMP_MAX_S, LoadGenerator::connectGapFor(500) * 500, 1e-9);
+        self::assertSame(LoadGenerator::CONNECT_GAP_MIN_S, LoadGenerator::connectGapFor(1024), 'never so short that it stops spacing them');
+    }
+
+    #[Test]
     public function it_loads_a_server_for_the_window_and_counts_answers_by_status(): void
     {
         $runs = [];
