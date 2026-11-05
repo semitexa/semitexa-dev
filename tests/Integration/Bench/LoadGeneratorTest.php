@@ -74,7 +74,8 @@ final class LoadGeneratorTest extends TestCase
     {
         self::assertSame(LoadGenerator::CONNECT_GAP_S, LoadGenerator::connectGapFor(1));
         self::assertSame(LoadGenerator::CONNECT_GAP_S, LoadGenerator::connectGapFor(64));
-        self::assertEqualsWithDelta(LoadGenerator::CONNECT_RAMP_MAX_S, LoadGenerator::connectGapFor(1024) * 1024, 1e-9);
+        self::assertEqualsWithDelta(LoadGenerator::CONNECT_RAMP_MAX_S, LoadGenerator::connectGapFor(500) * 500, 1e-9);
+        self::assertSame(LoadGenerator::CONNECT_GAP_MIN_S, LoadGenerator::connectGapFor(1024), 'never so short that it stops spacing them');
     }
 
     #[Test]

@@ -38,11 +38,15 @@ final class LoadGenerator
     public const CONNECT_GAP_S = 0.01;
 
     /**
-     * The longest all connections of a window take to open. Past 100 connections
-     * the gap shrinks to fit: at the full gap 1024 of them need 10 s, and a
-     * server's keep-alive timeout would close the first ones before the window.
+     * About the longest all connections of a window take to open. Past 100
+     * connections the gap shrinks to fit: at the full gap 1024 of them need 10 s,
+     * and a server's keep-alive timeout would close the first ones before the
+     * window. It stops at CONNECT_GAP_MIN_S, so past 1000 the ramp runs longer.
      */
     public const CONNECT_RAMP_MAX_S = 1.0;
+
+    /** Below a millisecond a coroutine sleep may be no more than a yield, and the burst is back. */
+    public const CONNECT_GAP_MIN_S = 0.001;
 
     /** What Swoole allows when nothing set max_coroutine: getOptions() is then empty. */
     private const SWOOLE_DEFAULT_MAX_COROUTINE = 100_000;
@@ -82,7 +86,7 @@ final class LoadGenerator
 
     public static function connectGapFor(int $concurrency): float
     {
-        return min(self::CONNECT_GAP_S, self::CONNECT_RAMP_MAX_S / max(1, $concurrency));
+        return max(self::CONNECT_GAP_MIN_S, min(self::CONNECT_GAP_S, self::CONNECT_RAMP_MAX_S / max(1, $concurrency)));
     }
 
     /** @param array<string, string> $headers */
