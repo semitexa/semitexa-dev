@@ -155,7 +155,7 @@ final class DevBenchCommand extends BaseCommand
             // This process's env: the server's own when --base-url is the local one, not otherwise.
             'cli_env' => ['workers' => getenv('SWOOLE_WORKER_NUM') ?: null, 'app_env' => getenv('APP_ENV') ?: null, 'app_debug' => getenv('APP_DEBUG') ?: null],
             'request' => ['accept' => $headers['Accept']],
-            'method' => ['loop' => 'closed', 'connect_gap_ms' => LoadGenerator::CONNECT_GAP_S * 1000, 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration, 'windows' => $repeat, 'warm_connections' => $warmup > 0 ? $warmConnections : 0, 'warm_max_requests' => self::WARM_PASS_MAX_REQUESTS],
+            'method' => ['loop' => 'closed', 'connect_gap_ms' => LoadGenerator::CONNECT_GAP_S * 1000, 'connect_ramp_max_s' => LoadGenerator::CONNECT_RAMP_MAX_S, 'concurrency' => $levels, 'warmup_s' => $warmup, 'duration_s' => $duration, 'windows' => $repeat, 'warm_connections' => $warmup > 0 ? $warmConnections : 0, 'warm_max_requests' => self::WARM_PASS_MAX_REQUESTS],
             'runs' => $runs,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
 
