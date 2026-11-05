@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T06:24:16+00:00",
+    "generated_at": "2026-11-05T09:08:32+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "be3a4a7b96539a37d531b7eeb9fe86855444f9d85ae8e7ad34bbe8e8431bf06f",
+    "content_hash": "b053b29c3cb85b10ad0a5a92701f2dba7c104ca5bc9d0b1da3a0cedabd10b28d",
     "capabilities": [
         {
             "id": "api.external",
@@ -515,7 +515,7 @@
                 "hand-written PDO queries plus a bespoke row-to-object mapper",
                 "a migration file written by hand for every column added to a model"
             ],
-            "usage": "// The table is declared on the class, and bin/semitexa orm:sync creates or alters it.\n#[FromTable(name: 'orders')]\n#[TenantScoped(strategy: 'same_storage', column: 'tenantId')]\nfinal readonly class OrderResource\n{\n    public function __construct(\n        #[PrimaryKey(strategy: 'uuid')]\n        #[Column(type: MySqlType::Varchar, length: 36)]\n        public string $id,\n        #[Column(type: MySqlType::Varchar, length: 64)]\n        public string $tenantId,\n        #[Column(type: MySqlType::Varchar, length: 32)]\n        public string $status,\n    ) {}\n}\n\n// Read through a service. Column names go through ColumnRef, which refuses an unknown one.\n#[AsService]\nfinal class OrderStore\n{\n    use OrmBackedStore;\n\n    #[InjectAsReadonly]\n    protected OrmManager $orm;\n\n    public function open(string $tenantId): array\n    {\n        return $this->domainRepository(OrderResource::class)\n            ->forTenant($tenantId)\n            ->query()\n            ->where(ColumnRef::for(OrderResource::class, 'status'), Operator::Equals, 'open')\n            ->fetchAll();\n    }\n}\n\n// A #[TenantScoped] read names its authority or throws: forTenant() for one tenant, or\n// withoutTenantScope() with a system token for all of them. There is no silent global read.\n// Injection is refused inside a trait, so $orm lives on the class.\n// With one class argument only query() works, and rows come back as the resource.\n// findById(), insert(), update() and delete() go through a mapper: pass the business class\n// as the second argument, with an #[AsMapper] class between the two. Writes are atomic with\n// their owned children.",
+            "usage": "// The table is declared on the class, and bin/semitexa orm:sync creates or alters it.\n#[FromTable(name: 'orders')]\n#[TenantScoped(strategy: 'same_storage', column: 'tenantId')]\nfinal readonly class OrderResource\n{\n    public function __construct(\n        #[PrimaryKey(strategy: 'uuid')]\n        #[Column(type: MySqlType::Varchar, length: 36)]\n        public string $id,\n        #[Column(type: MySqlType::Varchar, length: 64)]\n        public string $tenantId,\n        #[Column(type: MySqlType::Varchar, length: 32)]\n        public string $status,\n        #[Column(type: MySqlType::Varchar, length: 36)]\n        public string $customer_id,\n        // A plain column gets no foreign key: BelongsTo is what makes orm:sync add one.\n        #[BelongsTo(target: CustomerResource::class, foreignKey: 'customer_id', onDelete: ForeignKeyAction::Restrict)]\n        public ?CustomerResource $customer = null,\n    ) {}\n}\n\n// Read through a service. Column names go through ColumnRef, which refuses an unknown one.\n#[AsService]\nfinal class OrderStore\n{\n    use OrmBackedStore;\n\n    #[InjectAsReadonly]\n    protected OrmManager $orm;\n\n    public function open(string $tenantId): array\n    {\n        return $this->domainRepository(OrderResource::class)\n            ->forTenant($tenantId)\n            ->query()\n            ->where(ColumnRef::for(OrderResource::class, 'status'), Operator::Equals, 'open')\n            ->fetchAll();\n    }\n}\n\n// A #[TenantScoped] read names its authority or throws: forTenant() for one tenant, or\n// withoutTenantScope() with a system token for all of them. There is no silent global read.\n// Injection is refused inside a trait, so $orm lives on the class.\n// With one class argument only query() works, and rows come back as the resource.\n// findById(), insert(), update() and delete() go through a mapper: pass the business class\n// as the second argument, with an #[AsMapper] class between the two. Writes are atomic with\n// their owned children.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Orm\\Capabilities",
