@@ -44,13 +44,16 @@ final class PersistenceChain
      * @return array{
      *     tables: list<array{table: string, resource: string, repositories: list<string>, mapper: ?string, domain: ?string, named_by: string}>,
      *     unreadable: list<string>,
+     *     unloadable_in_project: list<string>,
      *     stopped_at: list<string>
-     * } `unreadable` names the classes the walk could not load, and `stopped_at` those whose
-     *   injections lie past its last step, so an empty `tables` is never a guess
+     * } `unreadable` names the classes this walk could not load, `unloadable_in_project` every
+     *   class discovery could not, any of which may be an implementation the walk never saw,
+     *   and `stopped_at` those whose injections lie past its last step: an empty `tables` is
+     *   never a guess
      */
     public function of(array $classes): array
     {
-        $this->unreadable = array_keys($this->classes->unloadableClasses());
+        $this->unreadable = [];
         $this->stoppedAt = [];
         $implementations = $this->implementationsByContract();
         $mappers = $this->mappersByResource();
@@ -114,6 +117,7 @@ final class PersistenceChain
         return [
             'tables' => array_values($found),
             'unreadable' => array_values(array_unique($this->unreadable)),
+            'unloadable_in_project' => array_keys($this->classes->unloadableClasses()),
             'stopped_at' => array_values(array_unique($this->stoppedAt)),
         ];
     }
@@ -121,13 +125,13 @@ final class PersistenceChain
     /**
      * The same answer for a module: every payload handler in its namespace.
      *
-     * @return array{tables: list<array<string, mixed>>, unreadable: list<string>, stopped_at: list<string>}
+     * @return array{tables: list<array<string, mixed>>, unreadable: list<string>, unloadable_in_project: list<string>, stopped_at: list<string>}
      */
     public function ofNamespace(string $namespace): array
     {
         return $this->of(array_values(array_filter(
             $this->classes->findClassesWithAttribute(AsPayloadHandler::class),
-            static fn (string $class): bool => str_starts_with($class, $namespace . '\\'),
+            static fn (string $class): bool => str_starts_with($class, rtrim($namespace, '\\') . '\\'),
         )));
     }
 

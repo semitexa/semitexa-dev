@@ -79,6 +79,7 @@ final class PersistenceChainTest extends TestCase
 
         self::assertSame(OrderTable::class, $this->chain()->ofNamespace($namespace)['tables'][0]['resource'] ?? null);
         self::assertSame([], $this->chain()->ofNamespace('Semitexa\\Dev\\Tests\\Fixtures\\Other')['tables']);
+        self::assertNotSame([], $this->chain()->ofNamespace($namespace . '\\')['tables'], 'a registry may hand it with the separator.');
     }
 
     #[Test]
@@ -119,7 +120,8 @@ final class PersistenceChainTest extends TestCase
     {
         $chain = $this->chain([], ['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone' => 'its parent is gone'])->of([PlainHandler::class]);
 
-        self::assertSame(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone'], $chain['unreadable']);
+        self::assertSame(['Semitexa\\Dev\\Tests\\Fixtures\\Persistence\\ImplementsGone'], $chain['unloadable_in_project']);
+        self::assertSame([], $chain['unreadable'], 'this walk read everything it met.');
     }
 
     #[Test]

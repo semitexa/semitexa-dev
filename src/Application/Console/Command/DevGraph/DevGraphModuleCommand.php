@@ -78,10 +78,11 @@ final class DevGraphModuleCommand extends BaseCommand
             'templates' => $templates,
         ];
         $chain = $description['namespace'] === null
-            ? ['tables' => [], 'unreadable' => [], 'stopped_at' => []]
+            ? ['tables' => [], 'unreadable' => [], 'unloadable_in_project' => [], 'stopped_at' => []]
             : (new PersistenceChain(new ClassDiscovery()))->ofNamespace($description['namespace']);
         $description['persistence'] = $chain['tables'];
         $description['persistence_unreadable'] = $chain['unreadable'];
+        $description['persistence_unloadable_in_project'] = $chain['unloadable_in_project'];
         $description['persistence_stopped_at'] = $chain['stopped_at'];
 
         if ($input->getOption('json')) {
@@ -115,6 +116,8 @@ final class DevGraphModuleCommand extends BaseCommand
             'Templates' => $description['templates'],
             'Tables' => array_column($description['persistence'], 'table'),
             'Not followed, did not load' => $description['persistence_unreadable'],
+            'Not loadable anywhere in the project' => $description['persistence_unloadable_in_project'],
+            'Walk stopped at' => $description['persistence_stopped_at'],
         ];
 
         foreach ($sections as $label => $files) {
