@@ -10,6 +10,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Orm\Attribute\AsMapper;
+use Semitexa\Orm\Attribute\AsRepository;
 use Semitexa\Orm\Attribute\FromTable;
 
 /**
@@ -55,7 +56,7 @@ final class PersistenceChain
                     'mapper' => $mappers[$resource]['mapper'] ?? null,
                     'domain' => $mappers[$resource]['domain'] ?? null,
                 ];
-                if ($depth > 0) {
+                if (self::isRepository($reflection)) {
                     $found[$resource]['repository'] ??= $class;
                 }
             }
@@ -65,6 +66,10 @@ final class PersistenceChain
             }
             foreach ($repositories[$class] ?? [] as $implementation) {
                 $queue[] = [$implementation, $depth + 1];
+            }
+            $parent = $reflection->getParentClass();
+            if ($parent !== false) {
+                $queue[] = [$parent->getName(), $depth];
             }
             foreach (self::injectedTypes($reflection) as $type) {
                 $queue[] = [$type, $depth + 1];
@@ -101,6 +106,11 @@ final class PersistenceChain
         return $byResource;
     }
 
+    private static function isRepository(\ReflectionClass $class): bool
+    {
+        return $class->getAttributes(SatisfiesRepositoryContract::class) !== [] || $class->getAttributes(AsRepository::class) !== [];
+    }
+
     /** @return list<string> */
     private static function injectedTypes(\ReflectionClass $class): array
     {
@@ -119,7 +129,8 @@ final class PersistenceChain
     }
 
     /**
-     * The resource models a class names: its imports, its own namespace's `::class`, and a `model:` on its route attribute.
+     * The resource models a class names: its imports, a `::class` in its namespace or fully
+     * qualified, and a `model:` on its route attribute.
      *
      * @return list<string>
      */
@@ -136,6 +147,9 @@ final class PersistenceChain
         $source = is_string($file) ? (string) file_get_contents($file) : '';
         if (preg_match_all('/^use\s+([A-Za-z0-9_\\\\]+)(?:\s+as\s+\w+)?;/m', $source, $imports) > 0) {
             array_push($names, ...$imports[1]);
+        }
+        if (preg_match_all('/(?<![\\\\\w])\\\\([A-Z][\w\\\\]+)::class/', $source, $qualified) > 0) {
+            array_push($names, ...$qualified[1]);
         }
         // A class of the same namespace needs no import.
         if (preg_match_all('/(?<![\\\\\w])([A-Z]\w*)::class/', $source, $local) > 0) {
