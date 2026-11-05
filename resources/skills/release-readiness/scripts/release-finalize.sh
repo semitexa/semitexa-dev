@@ -25,13 +25,25 @@ RELEASE READINESS: NOT READY
 trap on_exit EXIT
 
 info "Tagging untagged package master heads with the UTC release version ${RELEASE_VERSION} (${RELEASE_CHANNEL})..."
-RELEASE_ROOT="$RELEASE_ROOT" php "$SCRIPT_DIR/bump-packages.php" --yes --summary-json "$RELEASE_SUMMARY_FILE"
+tag_status=0
+RELEASE_ROOT="$RELEASE_ROOT" php "$SCRIPT_DIR/bump-packages.php" --yes --summary-json "$RELEASE_SUMMARY_FILE" || tag_status=$?
+
+# 3: the tags are out and Packagist was still indexing when the wait ran out.
+# That is a release, so it is closed like one, and the Published install below
+# installs from Packagist itself. Anything else stopped before the cut was done.
+if [ "$tag_status" -ne 0 ] && [ "$tag_status" -ne 3 ]; then
+    exit "$tag_status"
+fi
 
 # The cut is done: close the session so the next preflight mints a fresh
 # version instead of handing back one that is already tagged.
 mark_release_finalized
 
 write_success_report
+
+if [ "$tag_status" -eq 3 ]; then
+    warn "Packagist had not listed every package yet; the tags are out. The Published install decides."
+fi
 
 # Did it reach people? The ultimate tag starts a clean-runner install from
 # public sources (semitexa-ultimate published-install.yml); wait for its verdict.
