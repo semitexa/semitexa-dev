@@ -99,7 +99,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
 
             if ($capabilities === []) {
                 // --json callers got this as plain text.
-                return $this->refuse($input, $output, self::missingIdMessage($everything, $id));
+                return $this->refuse($input, $output, self::missingIdMessage($everything, $id, self::filtersIn($input)));
             }
         }
 
@@ -112,7 +112,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         // The whole catalog in full is more than an agent reads: it was cut with
         // head -c and the entry it needed went with it. So the whole catalog is an
         // index, and a filter brings the detail.
-        $index = !$oneAtATime && !(is_string($area) && $area !== '') && !(is_string($search) && $search !== '');
+        $index = !$oneAtATime && self::filtersIn($input) === [];
         if ($index) {
             $capabilities = array_map(self::indexed(...), $capabilities);
         }
@@ -128,6 +128,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
                 'index' => $index,
+                'nothing_found' => $capabilities === [] ? self::nothingFound($input) : null,
                 'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out, for an entry with has_usage',
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
@@ -136,9 +137,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         }
 
         if ($capabilities === []) {
-            $output->writeln(is_string($search) && $search !== ''
-                ? sprintf('<comment>No mechanism mentions "%s". ai:ask api --search=%s looks through classes and methods.</comment>', $search, $search)
-                : '<comment>No framework mechanisms declared by the installed packages.</comment>');
+            $output->writeln(sprintf('<comment>%s</comment>', OutputFormatter::escape(self::nothingFound($input))));
 
             return Command::SUCCESS;
         }
@@ -162,7 +161,12 @@ final class DevGraphMechanismsCommand extends BaseCommand
             }
 
             if ($index) {
-                $output->writeln(sprintf('  <comment>%s</comment>  %s', $c['id'], $c['summary']));
+                $output->writeln(sprintf(
+                    '  <comment>%s</comment>%s  %s',
+                    $c['id'],
+                    $c['state'] === 'installed' ? '' : '  <info>[available]</info>',
+                    $c['summary'],
+                ));
                 continue;
             }
 
@@ -189,15 +193,17 @@ final class DevGraphMechanismsCommand extends BaseCommand
      * actually has.
      *
      * @param list<array<string, mixed>> $everything the merged catalog, before filters
+     * @param list<string> $filters the filters the caller passed
      */
-    private static function missingIdMessage(array $everything, string $id): string
+    private static function missingIdMessage(array $everything, string $id, array $filters): string
     {
         foreach ($everything as $capability) {
             if ($capability['id'] === $id) {
                 return sprintf(
-                    'Capability "%s" exists but was filtered out: its state is "%s". Drop --state to see it.',
+                    'Capability "%s" exists but was filtered out: its state is "%s". Drop %s to see it.',
                     $id,
                     (string) $capability['state'],
+                    implode(' and ', $filters),
                 );
             }
         }
@@ -222,6 +228,33 @@ final class DevGraphMechanismsCommand extends BaseCommand
         return $capability;
     }
 
+    /** @return list<string> the filters this call passed, as they are written */
+    private static function filtersIn(InputInterface $input): array
+    {
+        return array_values(array_filter(
+            ['--state', '--area', '--search'],
+            static function (string $option) use ($input): bool {
+                $value = $input->getOption(substr($option, 2));
+
+                return is_string($value) && $value !== '';
+            },
+        ));
+    }
+
+    /** Where to look next. A word nothing mentions anywhere and a filter that hid it are different answers. */
+    private static function nothingFound(InputInterface $input): string
+    {
+        $search = $input->getOption('search');
+        if (!is_string($search) || $search === '') {
+            return 'No framework mechanisms match. Drop the filters to see the catalog.';
+        }
+        $narrowing = array_values(array_diff(self::filtersIn($input), ['--search']));
+
+        return $narrowing === []
+            ? sprintf('No mechanism mentions "%s". ai:ask api --search=%s looks through classes and methods.', $search, escapeshellarg($search))
+            : sprintf('No mechanism matches "%s" under %s. Drop that to search the whole catalog.', $search, implode(' and ', $narrowing));
+    }
+
     /**
      * @param array<string, mixed> $capability
      * @return array<string, mixed>
@@ -238,6 +271,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
             $capability['id'] ?? '',
             $capability['summary'] ?? '',
             $capability['use_when'] ?? '',
+            $capability['avoid_when'] ?? '',
             implode(' ', (array) ($capability['replaces'] ?? [])),
         ]);
 

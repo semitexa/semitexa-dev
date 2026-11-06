@@ -94,6 +94,7 @@ final class DevGraphMechanismsCommandTest extends TestCase
         $t = self::tester();
         $t->execute(['--search' => '.', '--json' => true]);
 
+        self::assertSame(self::wholeCatalogCount(), self::json($t)['count'], 'the word has to reach every entry.');
         foreach ((array) self::json($t)['mechanisms'] as $m) {
             self::assertNotSame('', trim((string) $m['use_when']), $m['id'] . ' has no use_when');
             self::assertNotSame('', trim((string) $m['avoid_when']), $m['id'] . ' has no avoid_when');
@@ -137,7 +138,40 @@ final class DevGraphMechanismsCommandTest extends TestCase
         $t = self::tester();
         $t->execute(['--search' => 'zzz-nothing']);
 
-        self::assertStringContainsString('ai:ask api --search=zzz-nothing', $t->getDisplay());
+        self::assertStringContainsString("ai:ask api --search='zzz-nothing'", $t->getDisplay());
+
+        $t->execute(['--search' => 'zzz-nothing', '--json' => true]);
+        self::assertStringContainsString('ai:ask api', (string) self::json($t)['nothing_found']);
+    }
+
+    #[Test]
+    public function a_search_a_filter_hid_says_which_filter(): void
+    {
+        $t = self::tester();
+        $t->execute(['--search' => 'deferred', '--area' => 'zzz']);
+
+        self::assertStringContainsString('under --area', $t->getDisplay());
+        self::assertStringNotContainsString('ai:ask api', $t->getDisplay());
+    }
+
+    #[Test]
+    public function a_state_filter_keeps_the_advice(): void
+    {
+        $t = self::tester();
+        $t->execute(['--state' => 'installed', '--json' => true]);
+        $decoded = self::json($t);
+
+        self::assertFalse($decoded['index']);
+        self::assertArrayHasKey('use_when', $decoded['mechanisms'][0]);
+    }
+
+    #[Test]
+    public function an_id_hidden_by_a_search_names_the_search(): void
+    {
+        $t = self::tester();
+        $t->execute(['--id' => 'ssr.deferred', '--search' => 'zzz-nothing']);
+
+        self::assertStringContainsString('Drop --search', $t->getDisplay());
     }
 
     private static function wholeCatalogCount(): int
