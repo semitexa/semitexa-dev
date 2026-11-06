@@ -107,13 +107,18 @@ final class AiWorkApproveCommand extends BaseCommand
         $unchanged = [];
         $failed = [];
         foreach ($tasks as $task) {
-            if (self::alreadyThere($task, $revoke) || ($revoke && $task->status !== TaskStatus::DISCARDED && TaskFiling::isBug($task->recipe))) {
+            if (self::staysAsItIs($task, $revoke)) {
                 $unchanged[] = $task->id;
                 continue;
             }
             // One broken task file must not stop the rest, or a rerun stops at it forever.
             try {
-                $this->taskStore->change($task->id, static fn (Task $current): Task => self::alreadyThere($current, $revoke) ? $current : $current->withApproval($approval, $now));
+                // Judged again under the lock: the task may have moved since the listing.
+                $after = $this->taskStore->change($task->id, static fn (Task $current): Task => self::staysAsItIs($current, $revoke) ? $current : $current->withApproval($approval, $now));
+                if ($after->approval?->toArray() !== $approval?->toArray()) {
+                    $unchanged[] = $task->id;
+                    continue;
+                }
             } catch (\RuntimeException | \InvalidArgumentException $e) {
                 $failed[$task->id] = $e->getMessage();
                 continue;
@@ -133,10 +138,16 @@ final class AiWorkApproveCommand extends BaseCommand
         return $failed === [] ? self::SUCCESS : self::FAILURE;
     }
 
-    /** An approval by rule does not count as already approved: the owner's word goes on the task, and outlives the rule. */
-    private static function alreadyThere(Task $task, bool $revoke): bool
+    /**
+     * What this run leaves alone. An approval by rule does not count as already
+     * approved: the owner's word goes on the task, and outlives the rule. A
+     * discarded task takes no approval, and a live bug cannot lose one.
+     */
+    private static function staysAsItIs(Task $task, bool $revoke): bool
     {
-        return $revoke ? !$task->isApproved() : TaskFiling::hasOwnersApproval($task);
+        return $revoke
+            ? !$task->isApproved() || ($task->status !== TaskStatus::DISCARDED && TaskFiling::isBug($task->recipe))
+            : TaskFiling::hasOwnersApproval($task) || $task->status === TaskStatus::DISCARDED;
     }
 
     /** @return list<Task> */

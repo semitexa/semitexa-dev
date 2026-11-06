@@ -230,6 +230,19 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertStringContainsString('returned task to ideas', $log);
     }
 
+    /**
+     * The rule that runs under the lock on the task as it is then, so what a
+     * concurrent ai:work update did after the listing counts.
+     */
+    public function test_under_the_lock_a_discarded_task_takes_no_approval(): void
+    {
+        $stays = new \ReflectionMethod(AiWorkApproveCommand::class, 'staysAsItIs');
+        $task = new Task('tk-a', 'ep-a', 't', TaskStatus::DISCARDED, '', 'low', [], null, 'tk-a', self::NOW, self::NOW);
+
+        self::assertTrue($stays->invoke(null, $task, false));
+        self::assertFalse($stays->invoke(null, $task->with(status: TaskStatus::NEW), false));
+    }
+
     public function test_the_owners_word_replaces_an_approval_by_rule(): void
     {
         $this->task('tk-a', approval: new TaskApproval('rule', 'x', self::NOW));
