@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\State;
 
+use Semitexa\Core\Environment;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskFiling;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
@@ -29,6 +30,8 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  */
 final readonly class BacklogProgress
 {
+    public const WITH_FRAMEWORK_ENV = 'SEMITEXA_STATE_WITH_FRAMEWORK';
+
     private const FRAMEWORK_REFS = ['packages/', 'vendor/semitexa/', 'Semitexa\\'];
     private const PROJECT_REFS = ['src/', 'Semitexa\\Modules\\'];
 
@@ -49,10 +52,10 @@ final readonly class BacklogProgress
         $ideas = 0;
         $noPhase = 0;
         foreach ($tasks as $task) {
-            if ($task->status === TaskStatus::DISCARDED || (!$withFramework && self::isFrameworkOnly($task))) {
+            if ($task->status === TaskStatus::DISCARDED || !self::inScope($task, $withFramework)) {
                 continue;
             }
-            if (!$task->isApproved() && !TaskFiling::isBug($task->recipe)) {
+            if (!self::counts($task)) {
                 // Closed work nobody approved is history, not a proposal.
                 $ideas += $task->status === TaskStatus::DONE ? 0 : 1;
                 continue;
@@ -81,6 +84,23 @@ final readonly class BacklogProgress
         }
 
         return new self($phases, $ideas, $noPhase, $withFramework);
+    }
+
+    /** The option, from the command line or the project's .env. */
+    public static function withFramework(bool $flag): bool
+    {
+        return $flag || filter_var(Environment::getEnvValue(self::WITH_FRAMEWORK_ENV, ''), FILTER_VALIDATE_BOOL);
+    }
+
+    public static function inScope(Task $task, bool $withFramework): bool
+    {
+        return $withFramework || !self::isFrameworkOnly($task);
+    }
+
+    /** Approved, or a bug: everything else is an idea. */
+    public static function counts(Task $task): bool
+    {
+        return $task->isApproved() || TaskFiling::isBug($task->recipe);
     }
 
     /** "work 80% (8/10, 1 open, 1 unproven) · right not measured · fast 100% (3/3) · 4 ideas" */

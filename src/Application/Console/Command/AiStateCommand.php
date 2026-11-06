@@ -7,7 +7,6 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
-use Semitexa\Core\Environment;
 use Semitexa\Dev\Application\Service\Ai\Decision\Expiry;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\FrameworkEvidence;
@@ -38,7 +37,6 @@ final class AiStateCommand extends BaseCommand
 {
     private const ARTIFACT = 'semitexa.ai-state/v1';
     private const DEFAULT_DAYS = 30;
-    private const WITH_FRAMEWORK_ENV = 'SEMITEXA_STATE_WITH_FRAMEWORK';
 
     #[InjectAsReadonly]
     protected ScoreStore $scoreStore;
@@ -55,7 +53,7 @@ final class AiStateCommand extends BaseCommand
     {
         $this
             ->addArgument('action', InputArgument::OPTIONAL, 'show | score', 'show')
-            ->addOption('with-framework', null, InputOption::VALUE_NONE, 'show: count the framework\'s code as well as ./src (or ' . self::WITH_FRAMEWORK_ENV . '=1)')
+            ->addOption('with-framework', null, InputOption::VALUE_NONE, 'show: count the framework\'s code as well as ./src (or ' . BacklogProgress::WITH_FRAMEWORK_ENV . '=1)')
             ->addOption('criterion', null, InputOption::VALUE_REQUIRED, 'score: the criterion id, e.g. right.test-quality')
             ->addOption('points', null, InputOption::VALUE_REQUIRED, 'score: its points, 0 to its weight')
             ->addOption('evidence', null, InputOption::VALUE_REQUIRED, 'score: the command, PR or report that sets them')
@@ -71,7 +69,7 @@ final class AiStateCommand extends BaseCommand
         $human = $input->isInteractive() && !(bool) $input->getOption('json');
         try {
             return match ($action) {
-                'show' => $this->show($output, $now, $human, (bool) $input->getOption('with-framework') || filter_var(Environment::getEnvValue(self::WITH_FRAMEWORK_ENV, ''), FILTER_VALIDATE_BOOL)),
+                'show' => $this->show($output, $now, $human, BacklogProgress::withFramework((bool) $input->getOption('with-framework'))),
                 'score' => $this->score($input, $output, $now),
                 default => $this->fail($output, 'unknown action "' . (is_string($action) ? $action : '') . '" (expected show | score)'),
             };

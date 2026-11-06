@@ -1,0 +1,165 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Tests\Unit\Ai\State;
+
+use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
+use Semitexa\Dev\Application\Service\Ai\State\Phase;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
+
+final class MakeItPlanTest extends TestCase
+{
+    private const NOW = '2026-11-06T00:00:00+00:00';
+
+    /** @param list<string> $refs */
+    private function task(
+        string $id,
+        ?Phase $phase = Phase::WORK,
+        TaskStatus $status = TaskStatus::NEW,
+        bool $approved = true,
+        string $recipe = '',
+        string $created = self::NOW,
+        array $refs = [],
+    ): Task {
+        return new Task($id, 'ep-a', 't', $status, $recipe, 'low', $refs, null, $id, $created, $created, $approved ? new TaskApproval('owner', 'Так', self::NOW) : null, $phase);
+    }
+
+    /**
+     * @param list<Task> $tasks
+     * @param list<string> $held
+     */
+    private function plan(array $tasks, array $held = [], ?string $mine = null, bool $withFramework = false): MakeItPlan
+    {
+        return MakeItPlan::of($tasks, $withFramework, static fn (string $id): bool => in_array($id, $held, true), $mine);
+    }
+
+    public function test_an_empty_backlog_asks_for_the_interview_and_stops_the_loop(): void
+    {
+        $plan = $this->plan([]);
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+        self::assertFalse($plan->goOn());
+        self::assertStringContainsString('ai:charter next', $plan->steps('x')[0]);
+    }
+
+    public function test_a_backlog_of_discarded_tasks_is_empty(): void
+    {
+        self::assertSame(MakeItPlan::EMPTY, $this->plan([$this->task('tk-a', status: TaskStatus::DISCARDED)])->state);
+    }
+
+    public function test_an_approved_task_is_taken_and_the_loop_goes_on(): void
+    {
+        $plan = $this->plan([$this->task('tk-a')]);
+
+        self::assertSame(MakeItPlan::WORK, $plan->state);
+        self::assertTrue($plan->goOn());
+        self::assertSame('tk-a', $plan->tasks[0]['id']);
+    }
+
+    public function test_the_order_is_bugs_work_right_fast_then_no_phase(): void
+    {
+        $tasks = [
+            $this->task('tk-none', phase: null),
+            $this->task('tk-fast', Phase::FAST),
+            $this->task('tk-right', Phase::RIGHT),
+            $this->task('tk-work'),
+            $this->task('tk-bug', phase: null, approved: false, recipe: 'fix_bug'),
+        ];
+
+        foreach (['tk-bug', 'tk-work', 'tk-right', 'tk-fast', 'tk-none'] as $expected) {
+            $plan = $this->plan($tasks);
+            self::assertSame($expected, $plan->tasks[0]['id']);
+            $tasks = array_values(array_filter($tasks, static fn (Task $t): bool => $t->id !== $expected));
+        }
+    }
+
+    public function test_a_bug_filed_under_fast_still_comes_first(): void
+    {
+        self::assertSame('tk-bug', $this->plan([$this->task('tk-work'), $this->task('tk-bug', Phase::FAST, recipe: 'fix_bug')])->tasks[0]['id']);
+    }
+
+    public function test_the_oldest_goes_first_within_a_rank(): void
+    {
+        $plan = $this->plan([$this->task('tk-new', created: '2026-11-06T02:00:00+00:00'), $this->task('tk-old', created: '2026-11-06T01:00:00+00:00')]);
+
+        self::assertSame('tk-old', $plan->tasks[0]['id']);
+    }
+
+    public function test_what_this_session_holds_comes_before_a_bug(): void
+    {
+        $plan = $this->plan([$this->task('tk-bug', recipe: 'fix_bug'), $this->task('tk-mine', Phase::FAST, TaskStatus::IN_PROGRESS)], mine: 'tk-mine');
+
+        self::assertSame('tk-mine', $plan->tasks[0]['id']);
+    }
+
+    public function test_blocked_and_held_tasks_are_passed_over(): void
+    {
+        $plan = $this->plan([$this->task('tk-blocked', status: TaskStatus::BLOCKED), $this->task('tk-held', status: TaskStatus::IN_PROGRESS), $this->task('tk-free', Phase::FAST)], ['tk-held']);
+
+        self::assertSame('tk-free', $plan->tasks[0]['id']);
+    }
+
+    public function test_when_all_that_is_open_waits_the_loop_stops_and_names_it(): void
+    {
+        $plan = $this->plan([$this->task('tk-blocked', status: TaskStatus::BLOCKED), $this->task('tk-held', status: TaskStatus::IN_PROGRESS), $this->task('tk-idea', approved: false)], ['tk-held']);
+
+        self::assertSame(MakeItPlan::WAITING, $plan->state);
+        self::assertFalse($plan->goOn());
+        self::assertSame(2, $plan->total);
+    }
+
+    public function test_ideas_are_offered_never_taken(): void
+    {
+        $plan = $this->plan([$this->task('tk-closed', status: TaskStatus::DONE), $this->task('tk-idea', approved: false)]);
+
+        self::assertSame(MakeItPlan::IDEAS, $plan->state);
+        self::assertFalse($plan->goOn());
+        self::assertSame('tk-idea', $plan->tasks[0]['id']);
+    }
+
+    public function test_a_long_list_of_ideas_is_cut_but_counted(): void
+    {
+        $ideas = array_map(fn (int $i): Task => $this->task("tk-{$i}", approved: false), range(1, 25));
+
+        $plan = $this->plan($ideas);
+
+        self::assertCount(10, $plan->tasks);
+        self::assertSame(25, $plan->total);
+    }
+
+    public function test_everything_closed_is_done_and_asks_for_new_ideas(): void
+    {
+        $plan = $this->plan([$this->task('tk-a', status: TaskStatus::DONE), $this->task('tk-b', status: TaskStatus::DISCARDED)]);
+
+        self::assertSame(MakeItPlan::DONE, $plan->state);
+        self::assertFalse($plan->goOn());
+        self::assertStringContainsString('new ideas', $plan->say());
+    }
+
+    public function test_closed_work_nobody_approved_is_not_an_idea(): void
+    {
+        self::assertSame(MakeItPlan::DONE, $this->plan([$this->task('tk-a', status: TaskStatus::DONE, approved: false)])->state);
+    }
+
+    public function test_framework_tasks_are_left_out_without_the_option(): void
+    {
+        $tasks = [$this->task('tk-fw', refs: ['packages/semitexa-orm/src/X.php'])];
+
+        self::assertSame(MakeItPlan::EMPTY, $this->plan($tasks)->state);
+        self::assertSame(MakeItPlan::WORK, $this->plan($tasks, withFramework: true)->state);
+    }
+
+    public function test_the_steps_name_the_task_the_commit_line_and_the_way_back(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('run-me'));
+
+        self::assertStringContainsString('--id=tk-a --status=in_progress', $steps);
+        self::assertStringContainsString('Task: tk-a', $steps);
+        self::assertStringContainsString('--status=blocked', $steps);
+        self::assertStringContainsString('Run run-me again', $steps);
+    }
+}
