@@ -3,7 +3,10 @@
 Structure, without changing behaviour. The question each change answers: is it
 built the way it should be, and can nobody quietly undo that?
 
-## Where the next change comes from
+## Where tickets come from
+
+The next task is what `ai:make-it --phase=right` names. With none open, look here and
+file what you find.
 
 1. `bin/semitexa ai:quality next --limit=10` — the ledger names the largest
    remaining share of each metric that may only go down: `tests.skip-calls`

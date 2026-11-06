@@ -175,6 +175,8 @@ final class AiMakeItCommandTest extends TestCase
     {
         $this->file('tk-a');
 
+        self::assertSame('done', $this->run_(['--phase' => 'fast'])['state'], 'a work task is not taken under fast');
+
         $result = $this->run_(['--phase' => 'work']);
 
         self::assertSame('tk-a', $result['tasks'][0]['id']);

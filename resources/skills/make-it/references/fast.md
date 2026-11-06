@@ -3,7 +3,10 @@
 Cost, measured before and after. The question each change answers: does the
 same thing now cost less, and by how much?
 
-## Where the next change comes from
+## Where tickets come from
+
+The next task is what `ai:make-it --phase=fast` names. With none open, look here and
+file what you find.
 
 1. `bin/semitexa ai:quality next --limit=10`, the `requests.*` metrics, probed
    through real traced requests: `requests.query-shapes` (distinct queries a

@@ -92,6 +92,27 @@ final class MakeItPlanTest extends TestCase
         self::assertFalse($plan->goOn());
     }
 
+    public function test_a_phase_does_not_skip_an_open_interview(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-idea', Phase::RIGHT, approved: false)], false, static fn (): bool => false, null, 6, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+    }
+
+    public function test_what_this_session_holds_stays_first_under_another_phase(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-fast', Phase::FAST), $this->task('tk-mine', Phase::WORK, TaskStatus::IN_PROGRESS)], false, static fn (): bool => false, 'tk-mine', only: Phase::FAST);
+
+        self::assertSame('tk-mine', $plan->tasks[0]['id']);
+    }
+
+    public function test_the_task_named_says_where_it_lives(): void
+    {
+        $plan = $this->plan([$this->task('tk-a', refs: ['packages/semitexa-orm/src/X.php'])], withFramework: true);
+
+        self::assertSame(['packages/semitexa-orm/src/X.php'], $plan->tasks[0]['context_refs']);
+    }
+
     public function test_a_phase_with_what_is_open_blocked_waits(): void
     {
         $plan = MakeItPlan::of([$this->task('tk-a', Phase::RIGHT, TaskStatus::BLOCKED)], false, static fn (): bool => false, null, only: Phase::RIGHT);

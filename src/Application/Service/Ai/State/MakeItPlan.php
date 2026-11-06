@@ -35,7 +35,7 @@ final readonly class MakeItPlan
     private const LISTED = 10;
 
     /**
-     * @param list<array{id: string, title: string, epic: string, status: string, phase: ?string, bug: bool, next_step: ?string}> $tasks what the state names: the task to take, the ones left, or the ideas
+     * @param list<array{id: string, title: string, epic: string, status: string, phase: ?string, bug: bool, next_step: ?string, context_refs: list<string>}> $tasks what the state names: the task to take, the ones left, or the ideas
      */
     private function __construct(
         public string $state,
@@ -64,7 +64,7 @@ final readonly class MakeItPlan
         }
 
         $open = array_values(array_filter($inScope, static fn (Task $t): bool => $t->status !== TaskStatus::DONE));
-        $approved = array_values(array_filter($open, static fn (Task $t): bool => BacklogProgress::counts($t) && ($only === null || TaskFiling::phaseOf($t->phase, $t->recipe) === $only)));
+        $approved = array_values(array_filter($open, static fn (Task $t): bool => BacklogProgress::counts($t) && ($only === null || $t->id === $mine || TaskFiling::phaseOf($t->phase, $t->recipe) === $only)));
         usort($approved, static fn (Task $a, Task $b): int => [self::rank($a, $mine), $a->createdAt, $a->id] <=> [self::rank($b, $mine), $b->createdAt, $b->id]);
         foreach ($approved as $task) {
             if ($task->status !== TaskStatus::BLOCKED && !$heldByAnother($task->id)) {
@@ -74,13 +74,13 @@ final readonly class MakeItPlan
         if ($approved !== []) {
             return self::listing(self::WAITING, $approved);
         }
-        if ($only !== null) {
-            return new self(self::DONE, [], 0, only: $only);
-        }
         // Only before the first approval: a project that has done its work is done,
         // whatever its charter still lacks.
         if (($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
             return new self(self::EMPTY, [], 0, $openQuestions, $charterError, true);
+        }
+        if ($only !== null) {
+            return new self(self::DONE, [], 0, only: $only);
         }
 
         $ideas = array_values(array_filter($open, static fn (Task $t): bool => !BacklogProgress::counts($t)));
@@ -107,7 +107,7 @@ final readonly class MakeItPlan
         return new self($state, array_map(self::row(...), array_slice($tasks, 0, self::LISTED)), count($tasks));
     }
 
-    /** @return array{id: string, title: string, epic: string, status: string, phase: ?string, bug: bool, next_step: ?string} */
+    /** @return array{id: string, title: string, epic: string, status: string, phase: ?string, bug: bool, next_step: ?string, context_refs: list<string>} */
     private static function row(Task $task): array
     {
         return [
@@ -118,6 +118,7 @@ final readonly class MakeItPlan
             'phase' => TaskFiling::phaseOf($task->phase, $task->recipe)?->value,
             'bug' => TaskFiling::isBug($task->recipe),
             'next_step' => $task->nextStep,
+            'context_refs' => $task->contextRefs,
         ];
     }
 
@@ -138,7 +139,7 @@ final readonly class MakeItPlan
                 default => 'The backlog is empty and the charter is complete: find out what must work first.',
             } . ($this->total > 0 ? sprintf(' %d framework tasks are left out: --with-framework counts them.', $this->total) : ''),
             self::WORK => sprintf('Taking %s: %s (%d open).', $this->tasks[0]['id'], $this->tasks[0]['title'], $this->total),
-            self::WAITING => sprintf('Nothing to take now: %d open, all blocked or held by another agent. Show the architect what they wait for.', $this->total),
+            self::WAITING => sprintf('Nothing to take now: %d open, all blocked, set aside or held by another agent. Show the architect what they wait for.', $this->total),
             self::IDEAS => sprintf('Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.', $this->total),
             default => $this->only !== null
                 ? "Nothing approved is open under {$this->only->value}."

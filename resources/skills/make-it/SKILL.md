@@ -50,26 +50,34 @@ re-arms. Each tick, in this order:
    have one, and how many review slots are free. On the first tick of a run,
    read `bin/semitexa ai:state --with-framework`.
 2. **Review first.** Run the codereview skill's cycle on the open PRs: answer and
-   fix new comments, merge what passes the gate. Merging frees a slot and a
-   repository, so it always comes before starting something new.
+   fix new comments, merge what passes the gate. Close each merged task at once
+   (`ai:work update --status=done`, with a fresh `ai:verify --trace=<task>
+   --files=<its files>` if the last one is older than the merge): an open task is
+   what Pick names next. Merging frees a slot and a repository, so it always comes
+   before starting something new.
 3. **Pick.** If a slot is free, `bin/semitexa ai:make-it --with-framework
-   [--phase=<phase>] --json` names the task. Its repository has an open PR
-   (`scripts/wip.sh --can-open <repo>` exits 1): ask again with `--except=<task>`.
-   Nothing named under a phase: the profile's source is where its tickets come
-   from. Look there, file what you find (`ai:work start --phase=<phase>`), record
-   it (`ai:audit record`), and ask again.
+   [--phase=<phase>] --json`, and read `state`:
+   - `work`: it names the task. Its `context_refs` give the repositories. If one
+     has an open PR (`scripts/wip.sh --can-open <repo>` exits 1), or the task names
+     none and you cannot tell from its text, ask again with `--except=<task>`,
+     keeping the earlier ones. Hold that list for this tick only.
+   - `waiting`: everything open is blocked or set aside. End the tick.
+   - `done` under `right` or `fast`: the profile's source is where its tickets come
+     from. Look there, file what you find (`ai:work start --phase=<phase>`, which
+     counts at once), record it (`ai:audit record`), and ask again. Under `work`,
+     new work waits for the operator: end the tick and say so.
+   - anything else: say what `say` says and end the tick.
 4. **Make.** Follow the task through the steps `ai:make-it` gives, held to the
    profile's definition of done; phpstan must not rise above its baseline. Those
-   steps end at a local commit and closing the task: here the task stays open
-   until its PR merges.
+   steps end at a local commit, closing the task and asking again: here stop at
+   the commit, the task stays open until its PR merges, and Ship comes next.
 5. **Ship.** The review-prep skill for that one repository: commit with a last
    line `Task: <task>`, checks, a PR from `develop` to `master` whose title says
    the one change it carries.
-6. **Count.** After a merge, close its task: `ai:work update --status=done` takes
-   the proof from its last `ai:verify`. A finding — in this phase or another — is a
-   ticket filed at once: `--recipe=fix_bug`, `--phase=right` or `--phase=fast` count
-   from then on, so a bug found while making it fast lowers `work` by itself. New
-   work under `--phase=work` waits for the operator's yes.
+6. **Count.** A finding — in this phase or another — is a ticket filed at once:
+   `--recipe=fix_bug`, `--phase=right` or `--phase=fast` count from then on, so a
+   bug found while making it fast lowers `work` by itself. New work under
+   `--phase=work` waits for the operator's yes.
 7. **Release, often.** After every few merges (default 5) or once a day, run the
    release-readiness skill — small releases, not one at the end. See the release
    rule below for when a release may start.
