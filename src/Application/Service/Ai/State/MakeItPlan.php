@@ -50,7 +50,8 @@ final readonly class MakeItPlan
     {
         $inScope = array_values(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED && BacklogProgress::inScope($t, $withFramework)));
         if ($inScope === []) {
-            return new self(self::EMPTY, [], 0);
+            // Not the same as nothing at all: say what the option would show.
+            return new self(self::EMPTY, [], count(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED)));
         }
 
         $open = array_values(array_filter($inScope, static fn (Task $t): bool => $t->status !== TaskStatus::DONE));
@@ -113,7 +114,8 @@ final readonly class MakeItPlan
     public function say(): string
     {
         return match ($this->state) {
-            self::EMPTY => 'The backlog is empty. Before any code, find out what this project is: interview the architect.',
+            self::EMPTY => 'The backlog is empty. Before any code, find out what this project is: interview the architect.'
+                . ($this->total > 0 ? sprintf(' %d framework tasks are left out: --with-framework counts them.', $this->total) : ''),
             self::WORK => sprintf('Taking %s: %s (%d open).', $this->tasks[0]['id'], $this->tasks[0]['title'], $this->total),
             self::WAITING => sprintf('Nothing to take now: %d open, all blocked or held by another agent. Show the architect what they wait for.', $this->total),
             self::IDEAS => sprintf('Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.', $this->total),
@@ -130,7 +132,7 @@ final readonly class MakeItPlan
         return match ($this->state) {
             self::EMPTY => [
                 'Ask the architect one question at a time: bin/semitexa ai:charter next tells you which, ai:charter answer records the reply. Repeat until it has no more.',
-                'As the answers come, file them: bin/semitexa ai:epic start, then bin/semitexa ai:work start --phase=work for each piece of work.',
+                'As the answers come, file them: bin/semitexa ai:epic start --id=<id> --title="<what>" --goal="<why>", then bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --phase=work for each piece of work.',
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',
             ],
@@ -147,8 +149,8 @@ final readonly class MakeItPlan
         return [
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
-            'Found a bug or debt off your path? File it and carry on: ai:work start --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
-            'Run bin/semitexa ai:verify. Three failures in a row, or a decision that is the architect\'s: bin/semitexa ai:work update --id=' . $id . ' --status=blocked --next-step="<what it needs>", and go to the last step.',
+            'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
+            "Run bin/semitexa ai:verify --trace={$id}. Three failures in a row, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",
             "Commit this task alone, with a last line: Task: {$id}. Do not push unless the project's charter says to.",
             "Close it: bin/semitexa ai:work update --id={$id} --status=done.",
             'Run ' . $command . ' again and do what it says. Stop only when it says go_on: false.',

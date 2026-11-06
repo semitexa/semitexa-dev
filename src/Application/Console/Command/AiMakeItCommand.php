@@ -11,6 +11,9 @@ use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -34,6 +37,9 @@ final class AiMakeItCommand extends BaseCommand
     #[InjectAsReadonly]
     protected TaskStore $taskStore;
 
+    #[InjectAsReadonly]
+    protected EpicStore $epicStore;
+
     public function __construct()
     {
         parent::__construct('ai:make-it');
@@ -48,31 +54,21 @@ final class AiMakeItCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $flag = (bool) $input->getOption('with-framework');
-        $withFramework = BacklogProgress::withFramework($flag);
-        $tasks = $this->taskStore->list();
+        $withFramework = BacklogProgress::withFramework((bool) $input->getOption('with-framework'));
+        $tasks = $this->liveTasks();
         $registry = new AgentRegistry(ProjectRoot::get());
         $self = $registry->current();
         $plan = MakeItPlan::of(
             $tasks,
             $withFramework,
             static fn (string $id): bool => $registry->holderOf($id, $self?->id) !== null,
-            $self?->task,
+            $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
         );
-        $steps = $plan->steps('bin/semitexa ai:make-it' . ($flag ? ' --with-framework' : ''));
+        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
         $line = BacklogProgress::of($tasks, $withFramework)->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
-            $output->writeln(OutputFormatter::escape($plan->say()));
-            $output->writeln(OutputFormatter::escape($line));
-            foreach ($plan->tasks as $task) {
-                $output->writeln(OutputFormatter::escape(sprintf('  %s: %s', $task['id'], $task['title'])));
-            }
-            foreach ($steps as $number => $step) {
-                $output->writeln(OutputFormatter::escape(sprintf('%d. %s', $number + 1, $step)));
-            }
-
-            return self::SUCCESS;
+            return $this->print($output, $plan, $line, $steps);
         }
 
         $output->writeln(json_encode([
@@ -85,6 +81,56 @@ final class AiMakeItCommand extends BaseCommand
             'total' => $plan->total,
             'steps' => $steps,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * A task of a closed epic is not work to take, and one whose epic is gone is
+     * hidden from every listing that starts at an epic.
+     *
+     * @return list<Task>
+     */
+    private function liveTasks(): array
+    {
+        $live = [];
+
+        return array_values(array_filter($this->taskStore->list(), function (Task $task) use (&$live): bool {
+            return $live[$task->epicId] ??= $this->epicIsLive($task->epicId);
+        }));
+    }
+
+    private function epicIsLive(string $id): bool
+    {
+        try {
+            return !in_array($this->epicStore->get($id)->status, [EpicStatus::ARCHIVED, EpicStatus::DISCARDED], true);
+        } catch (\RuntimeException | \InvalidArgumentException) {
+            return false;
+        }
+    }
+
+    /**
+     * An agent's shell can look interactive through a pipe, so what the loop
+     * turns on is printed here as well, never only in the JSON.
+     *
+     * @param list<string> $steps
+     */
+    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps): int
+    {
+        $text = [$plan->say(), $line];
+        foreach ($plan->tasks as $task) {
+            $text[] = sprintf('  %s: %s', $task['id'], $task['title']);
+            if ($task['next_step'] !== null) {
+                $text[] = '    next: ' . $task['next_step'];
+            }
+        }
+        foreach ($steps as $number => $step) {
+            $text[] = sprintf('%d. %s', $number + 1, $step);
+        }
+        $text[] = sprintf('state: %s, go_on: %s', $plan->state, $plan->goOn() ? 'true' : 'false');
+        foreach ($text as $row) {
+            $output->writeln(OutputFormatter::escape((str_starts_with($row, '  ') ? substr($row, 0, strspn($row, ' ')) : '') . AiStateCommand::oneLine($row)));
+        }
 
         return self::SUCCESS;
     }

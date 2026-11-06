@@ -181,7 +181,7 @@ final class AiStateCommand extends BaseCommand
      * screen dropped. Other format characters stay: a zero-width joiner is
      * part of an emoji or a script, not a terminal command.
      */
-    private static function oneLine(string $text): string
+    public static function oneLine(string $text): string
     {
         return trim((string) preg_replace('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
     }

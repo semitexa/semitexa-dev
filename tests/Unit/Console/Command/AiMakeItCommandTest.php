@@ -9,6 +9,9 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiMakeItCommand;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
+use Semitexa\Dev\Application\Service\Ai\Work\Epic;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
@@ -49,8 +52,7 @@ final class AiMakeItCommandTest extends TestCase
     private function run_(array $input = []): array
     {
         $command = new AiMakeItCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore()]));
-        $tester = new CommandTester($command);
+        $tester = $this->tester($command);
         self::assertSame(0, $tester->execute($input, ['interactive' => false]));
         $result = json_decode($tester->getDisplay(), true);
         self::assertIsArray($result);
@@ -58,9 +60,30 @@ final class AiMakeItCommandTest extends TestCase
         return $result;
     }
 
+    private function tester(AiMakeItCommand $command): CommandTester
+    {
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), EpicStore::class => $this->epics()]));
+
+        return new CommandTester($command);
+    }
+
+    private function epics(): EpicStore
+    {
+        $epics = new EpicStore();
+        PropertyInjector::inject($epics, new ArrayContainer([TaskStore::class => new TaskStore()]));
+
+        return $epics;
+    }
+
+    private function epic(string $id, EpicStatus $status): void
+    {
+        $this->epics()->save(new Epic($id, 'T', 'G', $status, self::NOW, self::NOW));
+    }
+
     /** @param list<string> $refs */
     private function file(string $id, array $refs = [], TaskStatus $status = TaskStatus::NEW): void
     {
+        $this->epic('ep-a', EpicStatus::NEW);
         (new TaskStore())->save(new Task($id, 'ep-a', 't', $status, '', 'low', $refs, null, $id, self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
     }
 
@@ -85,6 +108,70 @@ final class AiMakeItCommandTest extends TestCase
 
         $last = $this->run_();
         self::assertSame(['done', false], [$last['state'], $last['go_on']]);
+    }
+
+    public function test_a_shell_that_looks_interactive_still_gets_go_on(): void
+    {
+        $this->file('tk-a');
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertStringContainsString('state: work, go_on: true', $tester->getDisplay());
+    }
+
+    public function test_the_human_output_drops_control_bytes_and_shows_the_next_step(): void
+    {
+        $this->epic('ep-a', EpicStatus::NEW);
+        (new TaskStore())->save(new Task('tk-a', 'ep-a', "bad\x1b[2Jtitle", TaskStatus::NEW, '', 'low', [], 'read this first', 'tk-a', self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertStringNotContainsString("\x1b", $tester->getDisplay());
+        self::assertStringContainsString('next: read this first', $tester->getDisplay());
+    }
+
+    public function test_a_task_of_a_closed_epic_is_not_taken(): void
+    {
+        foreach ([EpicStatus::ARCHIVED, EpicStatus::DISCARDED] as $status) {
+            $this->epic('ep-closed', $status);
+            (new TaskStore())->save(new Task('tk-x', 'ep-closed', 't', TaskStatus::NEW, '', 'low', [], null, 'tk-x', self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+
+            self::assertSame('empty', $this->run_()['state'], $status->value);
+        }
+    }
+
+    public function test_a_task_whose_epic_is_gone_is_not_taken(): void
+    {
+        (new TaskStore())->save(new Task('tk-x', 'ep-gone', 't', TaskStatus::NEW, '', 'low', [], null, 'tk-x', self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+
+        self::assertSame('empty', $this->run_()['state']);
+    }
+
+    public function test_the_verify_step_names_the_task_so_closing_finds_the_proof(): void
+    {
+        $this->file('tk-a');
+
+        self::assertStringContainsString('ai:verify --trace=tk-a', implode("\n", $this->run_()['steps']));
+    }
+
+    public function test_an_empty_backlog_that_hides_framework_tasks_says_so(): void
+    {
+        $this->file('tk-fw', ['packages/semitexa-orm/src/X.php']);
+
+        self::assertStringContainsString('--with-framework', (string) $this->run_()['say']);
+    }
+
+    public function test_the_environment_option_stays_in_the_steps(): void
+    {
+        $this->file('tk-fw', ['packages/semitexa-orm/src/X.php']);
+        putenv('SEMITEXA_STATE_WITH_FRAMEWORK=1');
+        try {
+            self::assertStringContainsString('ai:make-it --with-framework again', implode("\n", $this->run_()['steps']));
+        } finally {
+            putenv('SEMITEXA_STATE_WITH_FRAMEWORK');
+        }
     }
 
     public function test_the_option_reaches_the_framework_and_the_steps_keep_it(): void
