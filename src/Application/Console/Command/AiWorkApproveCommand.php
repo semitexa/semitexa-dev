@@ -107,13 +107,13 @@ final class AiWorkApproveCommand extends BaseCommand
         $unchanged = [];
         $failed = [];
         foreach ($tasks as $task) {
-            if ($task->isApproved() === ($approval !== null) || ($revoke && $task->status !== TaskStatus::DISCARDED && TaskFiling::isBug($task->recipe))) {
+            if (self::alreadyThere($task, $revoke) || ($revoke && $task->status !== TaskStatus::DISCARDED && TaskFiling::isBug($task->recipe))) {
                 $unchanged[] = $task->id;
                 continue;
             }
             // One broken task file must not stop the rest, or a rerun stops at it forever.
             try {
-                $this->taskStore->change($task->id, static fn (Task $current): Task => $current->isApproved() === ($approval !== null) ? $current : $current->withApproval($approval, $now));
+                $this->taskStore->change($task->id, static fn (Task $current): Task => self::alreadyThere($current, $revoke) ? $current : $current->withApproval($approval, $now));
             } catch (\RuntimeException | \InvalidArgumentException $e) {
                 $failed[$task->id] = $e->getMessage();
                 continue;
@@ -131,6 +131,12 @@ final class AiWorkApproveCommand extends BaseCommand
         ]);
 
         return $failed === [] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /** An approval by rule does not count as already approved: the owner's word goes on the task, and outlives the rule. */
+    private static function alreadyThere(Task $task, bool $revoke): bool
+    {
+        return $revoke ? !$task->isApproved() : TaskFiling::hasOwnersApproval($task);
     }
 
     /** @return list<Task> */

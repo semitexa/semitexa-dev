@@ -230,6 +230,16 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertStringContainsString('returned task to ideas', $log);
     }
 
+    public function test_the_owners_word_replaces_an_approval_by_rule(): void
+    {
+        $this->task('tk-a', approval: new TaskApproval('rule', 'x', self::NOW));
+
+        $result = $this->run_(['--id' => 'tk-a', '--words' => 'Так, робимо']);
+
+        self::assertSame(['tk-a'], $result['changed']);
+        self::assertSame('owner', $this->tasks->get('tk-a')->approval?->by);
+    }
+
     public function test_revoking_a_bug_says_to_discard_it_instead(): void
     {
         $this->tasks->save(new Task('tk-bug', 'ep-a', 't', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-bug', self::NOW, self::NOW, new TaskApproval('rule', 'x', self::NOW)));

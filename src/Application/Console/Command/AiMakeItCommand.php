@@ -94,19 +94,11 @@ final class AiMakeItCommand extends BaseCommand
     private function liveTasks(): array
     {
         $live = [];
-
-        return array_values(array_filter($this->taskStore->list(), function (Task $task) use (&$live): bool {
-            return $live[$task->epicId] ??= $this->epicIsLive($task->epicId);
-        }));
-    }
-
-    private function epicIsLive(string $id): bool
-    {
-        try {
-            return !in_array($this->epicStore->get($id)->status, [EpicStatus::ARCHIVED, EpicStatus::DISCARDED], true);
-        } catch (\RuntimeException | \InvalidArgumentException) {
-            return false;
+        foreach ($this->epicStore->list() as $epic) {
+            $live[$epic->id] = !in_array($epic->status, [EpicStatus::ARCHIVED, EpicStatus::DISCARDED], true);
         }
+
+        return array_values(array_filter($this->taskStore->list(), static fn (Task $task): bool => $live[$task->epicId] ?? false));
     }
 
     /**

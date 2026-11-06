@@ -71,6 +71,12 @@ final class TaskFiling
         return $task;
     }
 
+    /** Approved by the owner's word, not only by the rule of filing. */
+    public static function hasOwnersApproval(Task $task): bool
+    {
+        return $task->approval !== null && $task->approval->by !== self::BY_RULE;
+    }
+
     public static function isBug(string $recipe): bool
     {
         return in_array($recipe, FrameworkEvidence::BUG_RECIPES, true);

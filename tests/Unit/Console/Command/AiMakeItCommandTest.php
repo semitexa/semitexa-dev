@@ -166,11 +166,12 @@ final class AiMakeItCommandTest extends TestCase
     public function test_the_environment_option_stays_in_the_steps(): void
     {
         $this->file('tk-fw', ['packages/semitexa-orm/src/X.php']);
+        $previous = getenv('SEMITEXA_STATE_WITH_FRAMEWORK');
         putenv('SEMITEXA_STATE_WITH_FRAMEWORK=1');
         try {
             self::assertStringContainsString('ai:make-it --with-framework again', implode("\n", $this->run_()['steps']));
         } finally {
-            putenv('SEMITEXA_STATE_WITH_FRAMEWORK');
+            putenv($previous === false ? 'SEMITEXA_STATE_WITH_FRAMEWORK' : 'SEMITEXA_STATE_WITH_FRAMEWORK=' . $previous);
         }
     }
 
