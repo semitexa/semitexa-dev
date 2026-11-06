@@ -37,7 +37,33 @@ final readonly class Task
         public string $traceId,
         public string $createdAt,
         public string $updatedAt,
+        public ?TaskApproval $approval = null,
     ) {}
+
+    /** An idea until someone approves it for implementation. */
+    public function isApproved(): bool
+    {
+        return $this->approval !== null;
+    }
+
+    /** The same task approved, or back to an idea with null ({@see with()} reads null as "keep"). */
+    public function withApproval(?TaskApproval $approval, string $updatedAt): self
+    {
+        return new self(
+            id:           $this->id,
+            epicId:       $this->epicId,
+            title:        $this->title,
+            status:       $this->status,
+            recipe:       $this->recipe,
+            risk:         $this->risk,
+            contextRefs:  $this->contextRefs,
+            nextStep:     $this->nextStep,
+            traceId:      $this->traceId,
+            createdAt:    $this->createdAt,
+            updatedAt:    $updatedAt,
+            approval:     $approval,
+        );
+    }
 
     /**
      * The same task with some fields replaced.
@@ -72,6 +98,7 @@ final readonly class Task
             traceId:      $this->traceId,
             createdAt:    $this->createdAt,
             updatedAt:    $updatedAt ?? $this->updatedAt,
+            approval:     $this->approval,
         );
     }
 
@@ -94,6 +121,7 @@ final readonly class Task
             'trace_id'       => $this->traceId,
             'created_at'     => $this->createdAt,
             'updated_at'     => $this->updatedAt,
+            'approval'       => $this->approval?->toArray(),
         ];
     }
 
@@ -125,6 +153,7 @@ final readonly class Task
             traceId:      (string) ($row['trace_id'] ?? ''),
             createdAt:    (string) ($row['created_at'] ?? ''),
             updatedAt:    (string) ($row['updated_at'] ?? ''),
+            approval:     TaskApproval::fromStored($row['approval'] ?? null),
         );
     }
 }

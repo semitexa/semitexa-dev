@@ -70,6 +70,8 @@ final class BacklogActivity
             $this->record('moved task', $after->id, "from epic {$before->epicId} to epic {$after->epicId}");
         } elseif ($before->nextStep !== $after->nextStep || $before->title !== $after->title) {
             $this->record('updated task', $after->id, $after->nextStep ?? $after->title);
+        } elseif ($before->isApproved() !== $after->isApproved()) {
+            $this->record($after->isApproved() ? 'approved task' : 'returned task to ideas', $after->id, $after->title);
         }
     }
 
