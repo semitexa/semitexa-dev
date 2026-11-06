@@ -109,6 +109,19 @@ class TaskStoreTest extends TestCase
         self::assertSame('200', $store->get('tk-a')->nextStep);
     }
 
+    public function test_a_bad_status_is_passed_over_unless_strict(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+        file_put_contents($store->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
+
+        self::assertCount(1, $store->list());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $store->list(strict: true);
+    }
+
     public function test_save_and_get_round_trip(): void
     {
         $store = new TaskStore();

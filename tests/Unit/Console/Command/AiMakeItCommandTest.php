@@ -209,6 +209,38 @@ final class AiMakeItCommandTest extends TestCase
         self::assertStringContainsString('Record: bin/semitexa ai:charter answer', $tester->getDisplay());
     }
 
+    public function test_a_task_file_that_does_not_read_stops_the_answer(): void
+    {
+        $this->file('tk-a');
+        file_put_contents((new TaskStore())->pathFor('tk-b'), '{"id":"tk-b"');
+        $tester = $this->tester(new AiMakeItCommand());
+
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+        $result = json_decode($tester->getDisplay(), true);
+        self::assertFalse($result['go_on']);
+        self::assertStringContainsString('repair or remove', (string) $result['error']);
+    }
+
+    public function test_a_task_with_a_bad_status_stops_the_answer(): void
+    {
+        $this->file('tk-a');
+        file_put_contents((new TaskStore())->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
+        $tester = $this->tester(new AiMakeItCommand());
+
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+    }
+
+    public function test_a_person_sees_the_warning(): void
+    {
+        $this->file('tk-a');
+        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n");
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertStringContainsString('Warning:', $tester->getDisplay());
+    }
+
     public function test_an_audit_file_that_does_not_read_is_said_and_stops_nothing(): void
     {
         $this->file('tk-a');

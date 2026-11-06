@@ -42,12 +42,15 @@ final class AuditStore
         if (!is_file($file)) {
             throw new \RuntimeException(self::PATH . ' is not a file');
         }
-        $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $lines = @file($file, FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
             throw new \RuntimeException('cannot read ' . self::PATH);
         }
         $audits = [];
         foreach ($lines as $number => $line) {
+            if (trim($line) === '') {
+                continue;
+            }
             // Skipped, a damaged line could leave an older audit saying nothing is open.
             $audit = AuditRecord::fromStored(json_decode($line, true));
             if ($audit === null) {

@@ -53,7 +53,7 @@ final class AiStateCommand extends BaseCommand
             $progress = BacklogProgress::of($this->taskStore->list(strict: true), BacklogProgress::withFramework((bool) $input->getOption('with-framework')), $this->auditStore->all());
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             // A task file that does not read is a finding, never a number with a hole in it.
-            $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
+            $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage() . ': repair or remove it'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
 
             return self::FAILURE;
         }

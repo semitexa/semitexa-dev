@@ -79,7 +79,14 @@ final class AiMakeItCommand extends BaseCommand
         /** @var list<string> $except */
         $except = (array) $input->getOption('except');
         $withFramework = BacklogProgress::withFramework((bool) $input->getOption('with-framework'));
-        $tasks = $this->liveTasks();
+        try {
+            $tasks = $this->liveTasks();
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
+            // A task that does not read could be the one left to do: no answer beats a wrong one.
+            $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage() . ': repair or remove that task file', 'go_on' => false], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
+
+            return self::FAILURE;
+        }
         $registry = new AgentRegistry(ProjectRoot::get());
         $self = $registry->current();
         $questions = OwnerQuestions::of($this->charterStore);
@@ -103,7 +110,7 @@ final class AiMakeItCommand extends BaseCommand
         $line = BacklogProgress::of($tasks, $withFramework, $audits)->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
-            return $this->print($output, $plan, $line, $steps, $interview);
+            return $this->print($output, $plan, $line, $steps, $interview, $warning);
         }
 
         $output->writeln(json_encode([
@@ -165,7 +172,7 @@ final class AiMakeItCommand extends BaseCommand
             $live[$epic->id] = !in_array($epic->status, [EpicStatus::ARCHIVED, EpicStatus::DISCARDED], true);
         }
 
-        return array_values(array_filter($this->taskStore->list(), static fn (Task $task): bool => $live[$task->epicId] ?? false));
+        return array_values(array_filter($this->taskStore->list(strict: true), static fn (Task $task): bool => $live[$task->epicId] ?? false));
     }
 
     /**
@@ -175,9 +182,12 @@ final class AiMakeItCommand extends BaseCommand
      * @param list<string> $steps
      * @param array<string, mixed>|null $interview
      */
-    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview): int
+    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview, ?string $warning): int
     {
         $text = [$plan->say(), $line];
+        if ($warning !== null) {
+            $text[] = 'Warning: ' . $warning;
+        }
         $next = $interview['next'] ?? null;
         if (is_array($next) && is_string($next['question'] ?? null) && is_string($next['record'] ?? null)) {
             $text[] = '  Ask: ' . $next['question'];

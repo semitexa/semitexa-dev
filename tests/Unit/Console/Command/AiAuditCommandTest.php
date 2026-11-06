@@ -100,6 +100,15 @@ final class AiAuditCommandTest extends TestCase
         (new AuditStore())->all();
     }
 
+    public function test_the_error_names_the_real_line_past_a_blank_one(): void
+    {
+        $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => 'a']);
+        file_put_contents($this->root . '/' . AuditStore::PATH, "\n{\n", FILE_APPEND);
+
+        $this->expectExceptionMessage('line 3 does not read');
+        (new AuditStore())->all();
+    }
+
     public function test_a_path_that_is_no_file_is_an_error_not_no_audits(): void
     {
         mkdir($this->root . '/' . AuditStore::PATH, 0755, true);
@@ -117,6 +126,7 @@ final class AiAuditCommandTest extends TestCase
         self::assertNull(AuditRecord::fromStored(['at' => '@-9223372036854775808'] + $line));
         self::assertNull(AuditRecord::fromStored(['phase' => 'work'] + $line));
         self::assertNull(AuditRecord::fromStored(['at' => '2026-02-30T00:00:00+00:00'] + $line), 'no such day');
+        self::assertNull(AuditRecord::fromStored(['at' => '2026-11-06T00:00:00+99:00'] + $line), 'no such offset');
         self::assertNull(AuditRecord::fromStored(['by' => ' '] + $line));
         self::assertNull(AuditRecord::fromStored(['covered' => ''] + $line));
     }

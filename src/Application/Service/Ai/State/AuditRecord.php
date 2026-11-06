@@ -39,8 +39,16 @@ final readonly class AuditRecord
     {
         $date = \DateTimeImmutable::createFromFormat(DATE_ATOM, $at);
         $errors = \DateTimeImmutable::getLastErrors();
+        if ($date === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            return false;
+        }
+        try {
+            new \DateTimeImmutable($at); // an offset of +99:00 passes the format and not this
 
-        return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
+            return true;
+        } catch (\Exception) {
+            return false;
+        }
     }
 
     /** A date to come is a clock or a hand-edit, not a look that happened. */

@@ -112,7 +112,7 @@ final class TaskStore
             }
             try {
                 $task = Task::fromArray(JsonFile::read($dir . '/' . $entry));
-            } catch (\RuntimeException $e) {
+            } catch (\RuntimeException | \InvalidArgumentException $e) {
                 if ($strict) {
                     throw $e;
                 }
