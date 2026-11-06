@@ -81,12 +81,21 @@ final class AiWorkApproveCommandTest extends TestCase
         return $result;
     }
 
-    public function test_a_task_with_no_approval_on_disk_is_an_idea(): void
+    public function test_a_task_file_written_before_approval_existed_is_an_idea(): void
     {
-        // A backlog written before approval existed has no such field at all.
-        $task = Task::fromArray(['id' => 'tk-old', 'status' => 'done']);
+        $this->writeTaskFile('tk-old', ['trace_id' => 'tk-old', 'status' => 'done']);
 
-        self::assertFalse($task->isApproved());
+        self::assertFalse($this->tasks->get('tk-old')->isApproved());
+    }
+
+    /** @param array<string, mixed> $fields */
+    private function writeTaskFile(string $id, array $fields): void
+    {
+        $file = $this->tasks->pathFor($id);
+        if (!is_dir(dirname($file))) {
+            mkdir(dirname($file), 0755, true);
+        }
+        file_put_contents($file, (string) json_encode(['id' => $id, 'epic_id' => 'ep-a', 'created_at' => self::NOW] + $fields));
     }
 
     public function test_an_incomplete_stored_approval_is_not_an_approval(): void
@@ -149,6 +158,73 @@ final class AiWorkApproveCommandTest extends TestCase
 
         self::assertSame('revoked', $result['action']);
         self::assertFalse($this->tasks->get('tk-a')->isApproved());
+    }
+
+    public function test_revoking_an_epic_reaches_its_discarded_tasks(): void
+    {
+        $this->task('tk-a', approval: new TaskApproval('owner', 'Так', self::NOW));
+        $this->task('tk-gone', TaskStatus::DISCARDED, new TaskApproval('owner', 'Так', self::NOW));
+
+        $this->run_(['--epic' => 'ep-a', '--revoke' => true, '--words' => 'Відкладаємо']);
+
+        self::assertFalse($this->tasks->get('tk-a')->isApproved());
+        self::assertFalse($this->tasks->get('tk-gone')->isApproved());
+    }
+
+    public function test_a_discarded_task_cannot_be_approved_by_id(): void
+    {
+        $this->task('tk-gone', TaskStatus::DISCARDED);
+
+        $result = $this->run_(['--id' => 'tk-gone', '--words' => 'Так']);
+
+        self::assertSame(1, $this->tester->getStatusCode());
+        self::assertStringContainsString('discarded', (string) $result['error']);
+        self::assertFalse($this->tasks->get('tk-gone')->isApproved());
+    }
+
+    public function test_one_broken_task_does_not_stop_the_epic_and_is_named(): void
+    {
+        $this->task('tk-a');
+        $this->writeTaskFile('tk-broken', ['status' => 'new']); // no trace id: it cannot be saved
+        $this->task('tk-z');
+
+        $result = $this->run_(['--epic' => 'ep-a', '--words' => 'Так']);
+
+        self::assertSame(1, $this->tester->getStatusCode());
+        self::assertSame('partial', $result['status']);
+        self::assertArrayHasKey('tk-broken', $result['failed']);
+        self::assertEqualsCanonicalizing(['tk-a', 'tk-z'], $result['changed']);
+    }
+
+    public function test_by_names_who_decided(): void
+    {
+        $this->task('tk-a');
+
+        $this->run_(['--id' => 'tk-a', '--words' => 'Так', '--by' => 'product owner']);
+
+        self::assertSame('product owner', $this->tasks->get('tk-a')->approval?->by);
+    }
+
+    public function test_words_that_are_not_utf8_are_refused(): void
+    {
+        $this->task('tk-a');
+
+        $this->run_(['--id' => 'tk-a', '--words' => "\xC3\x28"]);
+
+        self::assertSame(1, $this->tester->getStatusCode());
+        self::assertFalse($this->tasks->get('tk-a')->isApproved());
+    }
+
+    public function test_the_activity_log_says_when_a_task_is_approved_and_returned(): void
+    {
+        $this->task('tk-a');
+
+        $this->run_(['--id' => 'tk-a', '--words' => 'Так']);
+        $this->run_(['--id' => 'tk-a', '--revoke' => true, '--words' => 'Ні']);
+
+        $log = (string) file_get_contents($this->root . '/var/ai-work/activity.ndjson');
+        self::assertStringContainsString('approved task', $log);
+        self::assertStringContainsString('returned task to ideas', $log);
     }
 
     public function test_the_trace_keeps_the_words(): void

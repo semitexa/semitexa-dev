@@ -7,6 +7,9 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
@@ -27,8 +30,10 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   bin/semitexa ai:work:approve --id=tk-login --revoke --words="Поки відкладаємо"
  *
  * The owner usually says this to an agent, so the agent runs the command and
- * --words keeps what the owner said. An epic takes every task in it but the
- * discarded ones, and leaves an approval already given as it was.
+ * --words keeps what the owner said. A discarded task cannot be approved: an
+ * epic passes over it and --id refuses it. --revoke reaches discarded tasks too,
+ * because one reopened later must not come back approved. An approval already
+ * given stays as it was.
  */
 #[AsCommand(name: 'ai:work:approve', description: 'Approve a task or a whole epic for implementation, or return it to ideas; only approved tasks count towards progress')]
 final class AiWorkApproveCommand extends BaseCommand
@@ -62,6 +67,7 @@ final class AiWorkApproveCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        BacklogActivity::announce($output, new AgentRegistry(ProjectRoot::get()), ProjectRoot::get());
         $id = self::text($input, 'id');
         $epicId = self::text($input, 'epic');
         $words = self::text($input, 'words');
@@ -71,39 +77,58 @@ final class AiWorkApproveCommand extends BaseCommand
         if ($words === '') {
             return $this->fail($output, '--words is required: what the owner said');
         }
+        $by = self::text($input, 'by');
+        if (!mb_check_encoding($words . $by, 'UTF-8')) {
+            return $this->fail($output, '--words and --by must be valid UTF-8');
+        }
+        $revoke = (bool) $input->getOption('revoke');
 
         try {
-            $tasks = $id !== '' ? [$this->taskStore->get($id)] : $this->tasksOfEpic($epicId);
+            $tasks = $id !== '' ? [$this->taskStore->get($id)] : $this->tasksOfEpic($epicId, $revoke);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             return $this->fail($output, $e->getMessage());
         }
 
-        $by = self::text($input, 'by');
+        if (!$revoke && $tasks !== [] && $tasks[0]->status === TaskStatus::DISCARDED) {
+            return $this->fail($output, "task '{$id}' is discarded: reopen it first if it is wanted after all");
+        }
+
+        $by = $by !== '' ? $by : 'owner';
         $now = date('c');
-        $approval = (bool) $input->getOption('revoke') ? null : new TaskApproval($by !== '' ? $by : 'owner', $words, $now);
+        $approval = $revoke ? null : new TaskApproval($by, $words, $now);
 
         $changed = [];
         $unchanged = [];
+        $failed = [];
         foreach ($tasks as $task) {
             if ($task->isApproved() === ($approval !== null)) {
                 $unchanged[] = $task->id;
                 continue;
             }
-            $this->taskStore->save($task->withApproval($approval, $now));
-            $this->trace($task, $approval === null ? "task '{$task->id}' returned to ideas" : "task '{$task->id}' approved", $words);
+            // One broken task file must not stop the rest, or a rerun stops at it forever.
+            try {
+                $this->taskStore->save($task->withApproval($approval, $now));
+            } catch (\RuntimeException | \InvalidArgumentException $e) {
+                $failed[$task->id] = $e->getMessage();
+                continue;
+            }
+            $this->trace($task, $revoke ? "task '{$task->id}' returned to ideas" : "task '{$task->id}' approved", $words, $by);
             $changed[] = $task->id;
         }
 
-        return $this->emit($output, [
-            'status' => 'ok',
-            'action' => $approval === null ? 'revoked' : 'approved',
+        $this->emit($output, [
+            'status' => $failed === [] ? 'ok' : 'partial',
+            'action' => $revoke ? 'revoked' : 'approved',
             'changed' => $changed,
             'unchanged' => $unchanged,
+            'failed' => $failed,
         ]);
+
+        return $failed === [] ? self::SUCCESS : self::FAILURE;
     }
 
     /** @return list<Task> */
-    private function tasksOfEpic(string $epicId): array
+    private function tasksOfEpic(string $epicId, bool $withDiscarded): array
     {
         WorkId::assertValid($epicId, 'epic id');
         if (!$this->epicStore->exists($epicId)) {
@@ -112,14 +137,14 @@ final class AiWorkApproveCommand extends BaseCommand
 
         return array_values(array_filter(
             $this->taskStore->list($epicId),
-            static fn (Task $task): bool => $task->status !== TaskStatus::DISCARDED,
+            static fn (Task $task): bool => $withDiscarded || $task->status !== TaskStatus::DISCARDED,
         ));
     }
 
     /** Best effort, as in ai:work: the approval is saved, a trace that cannot be written must not undo that. */
-    private function trace(Task $task, string $summary, string $words): void
+    private function trace(Task $task, string $summary, string $words, string $by): void
     {
-        if ($task->traceId === '' || !$this->traceStore->exists($task->traceId)) {
+        if (!$this->traceStore->exists($task->traceId)) {
             return;
         }
         try {
@@ -127,6 +152,7 @@ final class AiWorkApproveCommand extends BaseCommand
                 'artifact' => self::ARTIFACT,
                 'task_id' => $task->id,
                 'words' => $words,
+                'by' => $by,
             ]);
         } catch (\RuntimeException) {
         }
@@ -140,11 +166,9 @@ final class AiWorkApproveCommand extends BaseCommand
     }
 
     /** @param array<string, mixed> $payload */
-    private function emit(OutputInterface $output, array $payload): int
+    private function emit(OutputInterface $output, array $payload): void
     {
         $output->writeln(json_encode(['artifact' => self::ARTIFACT] + $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
-
-        return self::SUCCESS;
     }
 
     private function fail(OutputInterface $output, string $message): int
