@@ -222,6 +222,20 @@ final class BacklogProgressTest extends TestCase
         self::assertSame(1, BacklogProgress::of([$this->task(refs: ['./packages/semitexa-orm/src/X.php', './src/modules/Shop/Y.php'])], false)->phases['work']['approved']);
     }
 
+    public function test_an_absolute_path_reads_by_what_it_points_into(): void
+    {
+        $framework = [$this->task(refs: ['/home/me/project/packages/semitexa-orm/src/X.php']), $this->task(refs: ['/var/www/html/vendor/semitexa/core/src/Y.php'])];
+        $project = [
+            $this->task(refs: ['/home/me/project/src/modules/Shop/Z.php']),
+            $this->task(refs: ['/home/me/notes.md']),
+            $this->task(refs: ['/home/me/packages/shop/src/Foo.php']),
+            $this->task(refs: ['/home/me/src/packages/y']),
+        ];
+
+        self::assertSame(0, BacklogProgress::of($framework, false)->phases['work']['approved']);
+        self::assertSame(4, BacklogProgress::of($project, false)->phases['work']['approved']);
+    }
+
     public function test_a_task_touching_src_or_pointing_at_nothing_is_the_projects(): void
     {
         $tasks = [$this->task(refs: ['packages/semitexa-orm/src/X.php', 'src/modules/Shop/Y.php']), $this->task(refs: ['src/modules/Shop/Z.php']), $this->task(), $this->task(refs: ['Semitexa\\Modules\\Shop\\X'])];

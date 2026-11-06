@@ -172,11 +172,35 @@ final readonly class BacklogProgress
         ];
     }
 
+    /**
+     * The path as it reads from the project root. An absolute one is cut at what
+     * it points into, not at the project root: a task filed on the host and read
+     * in the container have different roots. Framework first, because a package
+     * has a src/ of its own.
+     */
+    private static function relative(string $ref): string
+    {
+        if (str_starts_with($ref, './')) {
+            return substr($ref, 2);
+        }
+        if (str_starts_with($ref, '/')) {
+            // Named exactly: a project can itself live under a folder called packages.
+            foreach (['packages/semitexa-', 'vendor/semitexa/', 'src/'] as $marker) {
+                $at = strpos($ref, '/' . $marker);
+                if ($at !== false) {
+                    return substr($ref, $at + 1);
+                }
+            }
+        }
+
+        return $ref;
+    }
+
     private static function isFrameworkOnly(Task $task): bool
     {
         $framework = false;
         foreach ($task->contextRefs as $ref) {
-            $ref = str_starts_with($ref, './') ? substr($ref, 2) : $ref;
+            $ref = self::relative($ref);
             foreach (self::PROJECT_REFS as $prefix) {
                 if (str_starts_with($ref, $prefix)) {
                     return false;
