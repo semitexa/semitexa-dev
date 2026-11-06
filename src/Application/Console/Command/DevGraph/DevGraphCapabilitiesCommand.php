@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Capability\RuntimeCommandCatalog;
 use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
 use Semitexa\Dev\Application\Service\Generation\Support\CapabilityManifestFormatter;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -24,7 +25,9 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
 
     protected function configure(): void
     {
-        $this->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON manifest');
+        $this
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON manifest')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Only the commands with this word in their name, summary or advice');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -42,6 +45,17 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         }
 
         $capabilities = (new RuntimeCommandCatalog())->all($application);
+        // The whole manifest is 150 KB of JSON: more than an agent reads to find one command.
+        $search = $input->getOption('search');
+        if (is_string($search) && $search !== '') {
+            $capabilities = array_values(array_filter(
+                $capabilities,
+                static fn (object $cap): bool => array_filter(
+                    [$cap->name, $cap->summary, $cap->use_when],
+                    static fn (string $field): bool => mb_stripos($field, $search) !== false,
+                ) !== [],
+            ));
+        }
 
         $manifest = new CapabilityManifest(
             artifact: 'semitexa.ai-capabilities/v1',
@@ -52,6 +66,12 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         if ($input->getOption('json')) {
             $formatter = new CapabilityManifestFormatter();
             $output->writeln($formatter->format($manifest));
+            return self::SUCCESS;
+        }
+
+        if ($capabilities === []) {
+            $io->text(sprintf('No command mentions "%s".', OutputFormatter::escape((string) $search)));
+
             return self::SUCCESS;
         }
 
