@@ -45,7 +45,14 @@ final class AiStateCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $progress = BacklogProgress::of($this->taskStore->list(), BacklogProgress::withFramework((bool) $input->getOption('with-framework')));
+        try {
+            $progress = BacklogProgress::of($this->taskStore->list(), BacklogProgress::withFramework((bool) $input->getOption('with-framework')));
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
+            // A task file that does not read is a finding, never a number with a hole in it.
+            $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
+
+            return self::FAILURE;
+        }
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
             $output->writeln(OutputFormatter::escape($progress->line()));
 
@@ -55,16 +62,5 @@ final class AiStateCommand extends BaseCommand
         $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'line' => $progress->line(), 'backlog' => $progress->toArray()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Whitespace collapsed to single spaces; control characters (ESC and the
-     * rest of Cc) and the bidirectional overrides that can reorder a line on
-     * screen dropped. Other format characters stay: a zero-width joiner is
-     * part of an emoji or a script, not a terminal command.
-     */
-    public static function oneLine(string $text): string
-    {
-        return trim((string) preg_replace('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
     }
 }

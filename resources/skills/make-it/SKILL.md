@@ -51,22 +51,26 @@ re-arms. Each tick, in this order:
 3. **Pick.** If a slot is free, take the next change from the profile's source
    whose repository has no open PR (`scripts/wip.sh --can-open <repo>` exits 0).
    Prefer a change that lives in one repository.
-4. **Make.** `ai:work start` under the phase's epic, then the change itself, held
-   to the profile's definition of done. `ai:verify` must pass; phpstan must not
-   rise above its baseline.
-5. **Ship.** The review-prep skill for that one repository: commit, checks, a PR
-   from `develop` to `master` whose title says the one change it carries.
-6. **Count.** After a merge, close its task with its proof. A finding — in this
-   phase or another — is a ticket filed at once (`ai:work start`, a bug recipe or
-   `--phase`): a bug found while making it fast lowers `work`, and the number
-   moves by itself.
+4. **Make.** `ai:work start --phase=<phase>` under the phase's epic, unless the
+   task already exists; `work` that is not a bug also needs the operator's yes
+   (`ai:work:approve`). Then the change itself, with a test, held to the profile's
+   definition of done. `ai:verify --trace=<task>` must pass, so that closing finds
+   the proof; phpstan must not rise above its baseline.
+5. **Ship.** The review-prep skill for that one repository: commit with a last
+   line `Task: <task>`, checks, a PR from `develop` to `master` whose title says
+   the one change it carries.
+6. **Count.** After a merge, close its task: `ai:work update --status=done` takes
+   the proof from its last `ai:verify`. A finding — in this phase or another — is a
+   ticket filed at once: `--recipe=fix_bug`, `--phase=right` or `--phase=fast` count
+   from then on, so a bug found while making it fast lowers `work` by itself. New
+   work under `--phase=work` waits for the operator's yes.
 7. **Release, often.** After every few merges (default 5) or once a day, run the
    release-readiness skill — small releases, not one at the end. See the release
    rule below for when a release may start.
 
 Report each tick to the operator in their language, briefly, starting with the
-three scores on one line (`work 86% · right 60% · fast 47%`, with what moved since
-the last report): then merged, opened, waiting, and why.
+`ai:state --with-framework` line (`work 80% (8/10, 1 open, 1 unproven) · right not
+measured · …`, with what moved since the last report): then merged, opened, waiting, and why.
 
 ## Rules
 

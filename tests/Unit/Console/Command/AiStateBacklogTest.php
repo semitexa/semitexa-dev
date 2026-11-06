@@ -103,6 +103,19 @@ final class AiStateBacklogTest extends TestCase
         self::assertSame('work not measured · right not measured · fast not measured', trim($tester->getDisplay()));
     }
 
+    public function test_a_task_file_that_does_not_read_is_an_error_not_a_number(): void
+    {
+        $store = new TaskStore();
+        $this->file('tk-a', []);
+        file_put_contents($store->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
+        $command = new AiStateCommand();
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store]));
+        $tester = new CommandTester($command);
+
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+        self::assertStringContainsString('bogus', $tester->getDisplay());
+    }
+
     public function test_the_environment_turns_the_option_on(): void
     {
         $this->file('tk-framework', ['packages/semitexa-orm/src/Y.php']);

@@ -121,9 +121,20 @@ final class AiMakeItCommand extends BaseCommand
         }
         $text[] = sprintf('state: %s, go_on: %s', $plan->state, $plan->goOn() ? 'true' : 'false');
         foreach ($text as $row) {
-            $output->writeln(OutputFormatter::escape((str_starts_with($row, '  ') ? substr($row, 0, strspn($row, ' ')) : '') . AiStateCommand::oneLine($row)));
+            $output->writeln(OutputFormatter::escape((str_starts_with($row, '  ') ? substr($row, 0, strspn($row, ' ')) : '') . self::oneLine($row)));
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Whitespace collapsed to single spaces; control characters (ESC and the
+     * rest of Cc) and the bidirectional overrides that can reorder a line on
+     * screen dropped. Other format characters stay: a zero-width joiner is
+     * part of an emoji or a script, not a terminal command.
+     */
+    private static function oneLine(string $text): string
+    {
+        return trim((string) preg_replace('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', '', (string) preg_replace('/\s+/u', ' ', $text)));
     }
 }

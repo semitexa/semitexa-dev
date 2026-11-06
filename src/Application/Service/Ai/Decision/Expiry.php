@@ -8,8 +8,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Decision;
  * An expiry as an agent writes it on the command line: a bare YYYY-MM-DD
  * holds through that day (UTC), anything else is a full ISO-8601 time with
  * its offset. Nothing relative: "tomorrow" or "+1 week" would mean a
- * different moment to every agent reading it. Shared by ai:decision and
- * ai:state.
+ * different moment to every agent reading it.
  */
 final class Expiry
 {

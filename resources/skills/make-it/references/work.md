@@ -7,8 +7,7 @@ what it says?
 
 1. `bin/semitexa ai:work list --status=new --json` under the phase's epic, then
    the other active epics (`ai:epic list --json`), prerequisites first.
-2. Defects found while working, filed with `ai:report` when they are the
-   framework's.
+2. Defects found while working, filed at once with `ai:work start --recipe=fix_bug`.
 
 ## Done means
 
