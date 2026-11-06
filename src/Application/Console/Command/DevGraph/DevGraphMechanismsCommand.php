@@ -147,7 +147,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $output->writeln('');
 
         if ($index) {
-            $output->writeln('--search=<word> or --area=<prefix> gives when to use each; --id=<id> gives working code.');
+            $output->writeln('--search=<word> or --area=<prefix> gives when to use each; --id=<id> gives all there is on one.');
             $output->writeln('');
         }
 
@@ -199,12 +199,14 @@ final class DevGraphMechanismsCommand extends BaseCommand
     {
         foreach ($everything as $capability) {
             if ($capability['id'] === $id) {
-                return sprintf(
-                    'Capability "%s" exists but was filtered out: its state is "%s". Drop %s to see it.',
-                    $id,
-                    (string) $capability['state'],
-                    implode(' and ', $filters),
-                );
+                return in_array('--state', $filters, true)
+                    ? sprintf(
+                        'Capability "%s" exists but was filtered out: its state is "%s". Drop %s to see it.',
+                        $id,
+                        (string) $capability['state'],
+                        implode(' and ', $filters),
+                    )
+                    : sprintf('Capability "%s" exists but was filtered out. Drop %s to see it.', $id, implode(' and ', $filters));
             }
         }
 
@@ -272,6 +274,8 @@ final class DevGraphMechanismsCommand extends BaseCommand
             $capability['summary'] ?? '',
             $capability['use_when'] ?? '',
             $capability['avoid_when'] ?? '',
+            $capability['declared_by'] ?? '',
+            $capability['package'] ?? '',
             implode(' ', (array) ($capability['replaces'] ?? [])),
         ]);
 

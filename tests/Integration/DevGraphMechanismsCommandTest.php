@@ -155,6 +155,15 @@ final class DevGraphMechanismsCommandTest extends TestCase
     }
 
     #[Test]
+    public function search_finds_a_mechanism_by_its_attribute(): void
+    {
+        $t = self::tester();
+        $t->execute(['--search' => 'AsSlotResource', '--json' => true]);
+
+        self::assertNotEmpty(self::json($t)['mechanisms']);
+    }
+
+    #[Test]
     public function a_state_filter_keeps_the_advice(): void
     {
         $t = self::tester();
