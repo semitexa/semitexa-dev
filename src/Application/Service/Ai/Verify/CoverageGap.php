@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
+
 /**
  * The changed files no check read.
  *
@@ -48,6 +50,10 @@ final readonly class CoverageGap
         $checked = [];
         foreach ($results as $result) {
             $target = $result->target;
+            // Selected by every package file and reads one: the index itself.
+            if ($result->completed() && $target->type === VerificationTarget::TYPE_CAPABILITY_INDEX) {
+                $checked[CapabilityIndex::RELATIVE_PATH] = true;
+            }
             if (!$result->completed() || in_array($target->type, self::STRUCTURAL_ONLY, true) || in_array($target->id, self::PATH_ONLY_IDS, true)) {
                 continue;
             }
