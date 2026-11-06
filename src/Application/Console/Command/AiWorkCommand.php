@@ -20,6 +20,8 @@ use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\ResumeService;
 use Semitexa\Dev\Application\Service\Ai\Work\ResumeSnapshot;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskFiling;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskNextCommands;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Application\Service\Ai\Work\WorkId;
@@ -31,10 +33,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Work item (task) CLI — the main surface for agent decomposition and resume.
  *
- *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--trace=...] [--context-ref=...]* [--next-step=...]
+ *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--phase=work|right|fast] [--trace=...] [--context-ref=...]* [--next-step=...]
  *   bin/semitexa ai:work list   [--epic=...] [--status=new|in_progress|blocked|done[,...]] [--json]
  *   bin/semitexa ai:work show   --id=tk-fix-wm [--json]
- *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--next-step=...] [--context-ref=...]* [--epic=...]
+ *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--phase=...] [--next-step=...] [--context-ref=...]* [--epic=...]
  *   bin/semitexa ai:work note   --id=tk-fix-wm --note="..." [--next-step=...]
  *   bin/semitexa ai:work resume --id=tk-fix-wm [--tail=5]
  *
@@ -83,6 +85,7 @@ final class AiWorkCommand extends BaseCommand
             ->addOption('title', null, InputOption::VALUE_REQUIRED, 'Task title')
             ->addOption('recipe', null, InputOption::VALUE_REQUIRED, 'Recipe id (see ai:task)')
             ->addOption('risk', null, InputOption::VALUE_REQUIRED, 'Risk: ' . implode('|', self::ALLOWED_RISK))
+            ->addOption('phase', null, InputOption::VALUE_REQUIRED, 'work | right | fast. Filed under right or fast, or under a bug recipe, it counts at once; other new work is an idea until ai:work:approve')
             ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Status: ' . implode('|', TaskStatus::all()) . ' (list accepts a comma list)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'List filter: ' . implode('|', BacklogScope::all()) . ' (default: active)')
             ->addOption('take-over', null, InputOption::VALUE_NONE, 'Take an in_progress task another live agent holds (update)')
@@ -148,6 +151,7 @@ final class AiWorkCommand extends BaseCommand
         $traceId = (string) ($input->getOption('trace') ?? $id);
         try {
             WorkId::assertValid($traceId, 'trace id');
+            $phase = TaskFiling::phaseOf(TaskFiling::parsePhase($this->optionalString($input, 'phase')), $recipe);
         } catch (\InvalidArgumentException $e) {
             return $this->error($output, $e->getMessage(), $jsonMode);
         }
@@ -167,6 +171,8 @@ final class AiWorkCommand extends BaseCommand
             traceId:      $traceId,
             createdAt:    $now,
             updatedAt:    $now,
+            approval:     TaskFiling::approvalOnFiling($phase, $recipe, $now),
+            phase:        $phase,
         );
         $this->taskStore->save($task);
 
@@ -176,6 +182,7 @@ final class AiWorkCommand extends BaseCommand
             'epic_id'      => $epicId,
             'recipe'       => $recipe,
             'risk'         => $risk,
+            'phase'        => $phase?->value,
             'context_refs' => $refs,
             'next_step'    => $task->nextStep,
         ]);
@@ -302,6 +309,11 @@ final class AiWorkCommand extends BaseCommand
                 return self::FAILURE;
             }
         }
+        try {
+            $phase = TaskFiling::parsePhase($this->optionalString($input, 'phase'));
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($output, $e->getMessage(), $jsonMode);
+        }
         $nextStep = $this->optionalString($input, 'next-step');
         $refs = $this->contextRefs($input);
         $refsOpt = $refs === [] ? null : $refs;
@@ -337,8 +349,8 @@ final class AiWorkCommand extends BaseCommand
         $note = $this->optionalString($input, 'note');
 
         if ($title === null && $recipe === null && $risk === null && $status === null
-            && $nextStep === null && $refsOpt === null && $note === null && $epicId === null) {
-            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --next-step, --context-ref, --note, --epic', $jsonMode);
+            && $nextStep === null && $refsOpt === null && $note === null && $epicId === null && $phase === null) {
+            return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --phase, --next-step, --context-ref, --note, --epic', $jsonMode);
         }
 
         if (($refused = TaskClaim::claim(ProjectRoot::get(), $id, $status, (bool) $input->getOption('take-over'))) !== null) {
@@ -353,6 +365,7 @@ final class AiWorkCommand extends BaseCommand
             nextStep:    $nextStep,
             updatedAt:   date('c'),
             epicId:      $epicId,
+            phase:       $phase,
         );
         $this->taskStore->save($updated);
 
@@ -369,6 +382,7 @@ final class AiWorkCommand extends BaseCommand
             'recipe'       => $recipe,
             'risk'         => $risk,
             'status'       => $status?->value,
+            'phase'        => $phase?->value,
             'next_step'    => $nextStep,
             'context_refs' => $refsOpt,
             'epic_id'      => $epicId,
@@ -539,62 +553,12 @@ final class AiWorkCommand extends BaseCommand
             $output->writeln(json_encode([
                 'artifact'     => 'semitexa.ai-work.task/v1',
                 'task'         => $task->toArray(),
-                'next_command' => $this->buildTaskNextCommands($task),
+                'next_command' => TaskNextCommands::for($task),
             ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             return self::SUCCESS;
         }
         $output->writeln(json_encode(['kind' => $kind] + $task->toArray(), JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         return self::SUCCESS;
-    }
-
-    /**
-     * @return list<array{cmd: string, args: list<string>, why: string}>
-     */
-    private function buildTaskNextCommands(Task $task): array
-    {
-        $out = [];
-        $status = $task->status->value;
-
-        if ($status === 'new') {
-            $out[] = [
-                'cmd'  => 'ai:work',
-                'args' => ['update', '--id=' . $task->id, '--status=in_progress', '--json'],
-                'why'  => 'mark the task started before editing',
-            ];
-        }
-
-        if ($status === 'in_progress' || $status === 'blocked') {
-            if ($task->contextRefs !== []) {
-                $out[] = [
-                    'cmd'  => 'ai:verify',
-                    'args' => ['--files=' . implode(',', $task->contextRefs), '--json'],
-                    'why'  => 'verify the current state of the files this task anchors to',
-                ];
-            }
-            if ($task->recipe !== '' && $task->recipe !== 'unknown_task') {
-                $out[] = [
-                    'cmd'  => 'ai:context',
-                    'args' => [$task->recipe, '--json'],
-                    'why'  => 'prior art for recipe ' . $task->recipe,
-                ];
-            }
-        }
-
-        if ($status === 'done') {
-            $out[] = [
-                'cmd'  => 'ai:orient',
-                'args' => ['--json'],
-                'why'  => 'pick up the next task in the epic',
-            ];
-        }
-
-        $out[] = [
-            'cmd'  => 'ai:trace',
-            'args' => ['show', '--id=' . $task->traceId, '--json'],
-            'why'  => 'full trace history for this task',
-        ];
-
-        return $out;
     }
 
     /**

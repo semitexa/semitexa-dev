@@ -554,7 +554,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 704 -> 707 on 2026-10-17: the command agents run most tells them what
         // the other agents changed in the backlog (one call, two imports). The
         // recording lives in the stores and BacklogActivity, not here.
-        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [21, 707],
+        // 707 -> 671 on 2026-11-06: what to run next moved to TaskNextCommands to make
+        // room for --phase; the rules of filing live in TaskFiling.
+        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [20, 671],
         // 933 -> 936 on 2026-10-07: lint:components joined the plan — one row
         // for the new component kind and one entry in each of the cross-file
         // and all-lints lists (the template row only grew a name). Data, not

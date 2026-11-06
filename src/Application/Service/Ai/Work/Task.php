@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Work;
 
+use Semitexa\Dev\Application\Service\Ai\State\Phase;
+
 /**
  * Task: the unit of executable work an agent picks up and resumes.
  *
@@ -38,6 +40,7 @@ final readonly class Task
         public string $createdAt,
         public string $updatedAt,
         public ?TaskApproval $approval = null,
+        public ?Phase $phase = null,
     ) {}
 
     /** An idea until someone approves it for implementation. */
@@ -62,6 +65,7 @@ final readonly class Task
             createdAt:    $this->createdAt,
             updatedAt:    $updatedAt,
             approval:     $approval,
+            phase:        $this->phase,
         );
     }
 
@@ -85,6 +89,7 @@ final readonly class Task
         ?string $nextStep = null,
         ?string $updatedAt = null,
         ?string $epicId = null,
+        ?Phase $phase = null,
     ): self {
         return new self(
             id:           $this->id,
@@ -99,6 +104,7 @@ final readonly class Task
             createdAt:    $this->createdAt,
             updatedAt:    $updatedAt ?? $this->updatedAt,
             approval:     $this->approval,
+            phase:        $phase ?? $this->phase,
         );
     }
 
@@ -122,6 +128,7 @@ final readonly class Task
             'created_at'     => $this->createdAt,
             'updated_at'     => $this->updatedAt,
             'approval'       => $this->approval?->toArray(),
+            'phase'          => $this->phase?->value,
         ];
     }
 
@@ -154,6 +161,7 @@ final readonly class Task
             createdAt:    (string) ($row['created_at'] ?? ''),
             updatedAt:    (string) ($row['updated_at'] ?? ''),
             approval:     TaskApproval::fromStored($row['approval'] ?? null),
+            phase:        is_string($row['phase'] ?? null) ? Phase::tryFrom($row['phase']) : null,
         );
     }
 }
