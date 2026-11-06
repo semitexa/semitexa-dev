@@ -170,8 +170,13 @@ final class AiBacklogCommand extends BaseCommand
             if ($apply) {
                 $newStatus = TaskStatus::parse($assessment->suggestedStatus);
                 // Judged on the listing: a task someone moved since is theirs, not junk.
-                $this->taskStore->change($task->id, static fn (Task $current): Task => $current->status === $task->status ? $current->with(status: $newStatus, updatedAt: date('c')) : $current);
-                $action['applied'] = true;
+                try {
+                    $this->taskStore->change($task->id, static fn (Task $current): Task => $current->status === $task->status ? $current->with(status: $newStatus, updatedAt: date('c')) : $current);
+                    $action['applied'] = true;
+                } catch (\RuntimeException $e) {
+                    // One task gone since the listing must not stop the sweep half way.
+                    $action['error'] = $e->getMessage();
+                }
             }
             $taskActions[] = $action;
         }

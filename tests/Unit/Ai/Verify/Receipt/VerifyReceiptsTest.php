@@ -31,14 +31,14 @@ final class VerifyReceiptsTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
-    /** @return array<string, mixed> */
     public function test_a_run_told_its_trace_names_it_over_the_claimed_task_and_the_environment(): void
     {
+        $previous = getenv('SEMITEXA_AI_TRACE_ID');
         putenv('SEMITEXA_AI_TRACE_ID=tk-env');
         try {
             $envelope = (new VerifyReceipts($this->root))->attach($this->envelope('pass'), [], null, 'tk-told');
         } finally {
-            putenv('SEMITEXA_AI_TRACE_ID');
+            putenv($previous === false ? 'SEMITEXA_AI_TRACE_ID' : 'SEMITEXA_AI_TRACE_ID=' . $previous);
         }
 
         $receipt = json_decode((string) file_get_contents($this->root . '/' . $envelope['receipt']['path']), true);
@@ -61,6 +61,21 @@ final class VerifyReceiptsTest extends TestCase
         self::assertSame('tk-held', $found);
     }
 
+    public function test_an_empty_trace_is_no_trace(): void
+    {
+        $previous = getenv('SEMITEXA_AI_TRACE_ID');
+        putenv('SEMITEXA_AI_TRACE_ID=tk-env');
+        try {
+            $envelope = (new VerifyReceipts($this->root))->attach($this->envelope('pass'), [], null, '');
+        } finally {
+            putenv($previous === false ? 'SEMITEXA_AI_TRACE_ID' : 'SEMITEXA_AI_TRACE_ID=' . $previous);
+        }
+
+        $receipt = json_decode((string) file_get_contents($this->root . '/' . $envelope['receipt']['path']), true);
+        self::assertSame('tk-env', $receipt['run_by']['trace']);
+    }
+
+    /** @return array<string, mixed> */
     private function envelope(string $verdict): array
     {
         return [

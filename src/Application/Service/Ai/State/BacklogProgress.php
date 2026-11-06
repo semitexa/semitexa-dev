@@ -142,6 +142,7 @@ final readonly class BacklogProgress
     {
         $framework = false;
         foreach ($task->contextRefs as $ref) {
+            $ref = str_starts_with($ref, './') ? substr($ref, 2) : $ref;
             foreach (self::PROJECT_REFS as $prefix) {
                 if (str_starts_with($ref, $prefix)) {
                     return false;

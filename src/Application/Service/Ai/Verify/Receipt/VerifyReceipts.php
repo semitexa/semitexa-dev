@@ -65,7 +65,7 @@ final class VerifyReceipts
             'cwd'          => (string) getcwd(),
             // Who ran it: a subagent's run carries its own session, so a parent
             // can tell its own runs from the ones it was only told about.
-            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => $trace ?? self::env('SEMITEXA_AI_TRACE_ID') ?? $this->claimedTask()],
+            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => ($trace !== '' ? $trace : null) ?? self::env('SEMITEXA_AI_TRACE_ID') ?? $this->claimedTask()],
             'verdict'      => $envelope['verdict'] ?? null,
             'targets'      => array_map(static fn (mixed $r): array => is_array($r) ? [
                 'id'            => $r['id'] ?? null,

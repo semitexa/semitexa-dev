@@ -135,6 +135,12 @@ final class BacklogProgressTest extends TestCase
         self::assertSame(3, BacklogProgress::of($tasks, true)->phases['work']['approved']);
     }
 
+    public function test_a_leading_dot_slash_changes_nothing(): void
+    {
+        self::assertSame(0, BacklogProgress::of([$this->task(refs: ['./packages/semitexa-orm/src/X.php'])], false)->phases['work']['approved']);
+        self::assertSame(1, BacklogProgress::of([$this->task(refs: ['./packages/semitexa-orm/src/X.php', './src/modules/Shop/Y.php'])], false)->phases['work']['approved']);
+    }
+
     public function test_a_task_touching_src_or_pointing_at_nothing_is_the_projects(): void
     {
         $tasks = [$this->task(refs: ['packages/semitexa-orm/src/X.php', 'src/modules/Shop/Y.php']), $this->task(refs: ['src/modules/Shop/Z.php']), $this->task(), $this->task(refs: ['Semitexa\\Modules\\Shop\\X'])];

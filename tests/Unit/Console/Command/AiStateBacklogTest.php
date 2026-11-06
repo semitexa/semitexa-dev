@@ -101,13 +101,20 @@ final class AiStateBacklogTest extends TestCase
         $this->file('tk-framework', ['packages/semitexa-orm/src/Y.php']);
         putenv('SEMITEXA_STATE_WITH_FRAMEWORK=1');
 
-        self::assertTrue($this->show()['backlog']['with_framework']);
+        $result = $this->show();
+
+        self::assertTrue($result['backlog']['with_framework']);
+        self::assertStringStartsWith('work 0% (0/1, 1 open)', (string) $result['line'], 'the framework task is counted');
     }
 
     public function test_the_environment_set_to_off_leaves_it_off(): void
     {
+        $this->file('tk-framework', ['packages/semitexa-orm/src/Y.php']);
         putenv('SEMITEXA_STATE_WITH_FRAMEWORK=0');
 
-        self::assertFalse($this->show()['backlog']['with_framework']);
+        $result = $this->show();
+
+        self::assertFalse($result['backlog']['with_framework']);
+        self::assertStringStartsWith('work not measured', (string) $result['line'], 'the framework task is left out');
     }
 }
