@@ -7,12 +7,15 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Core\Environment;
 use Semitexa\Dev\Application\Service\Ai\Decision\Expiry;
+use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\FrameworkEvidence;
 use Semitexa\Dev\Application\Service\Ai\State\FrameworkRubric;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreRecord;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreStore;
 use Semitexa\Dev\Application\Service\Ai\State\StateReport;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -22,20 +25,26 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * The project's state: make it work · right · fast (ep-system-state).
  *
- *   bin/semitexa ai:state                        the line, every criterion, what raises each phase most
+ *   bin/semitexa ai:state                        done over approved per phase, from the backlog, for the code in ./src
+ *   bin/semitexa ai:state --with-framework       the same with the framework's tasks, and its rubric until those are tickets
  *   bin/semitexa ai:state score --criterion=right.test-quality --points=7 --evidence="ai:quality check: skip-calls 87"
  *
+ * SEMITEXA_STATE_WITH_FRAMEWORK=1 in .env turns the option on for good.
  * A score counts until its expiry (30 days unless --expires says otherwise);
  * after that it is stale, shown as unknown and adds nothing until scored again.
  */
-#[AsCommand(name: 'ai:state', description: 'The project state, work · right · fast: every criterion with its points, evidence, age and expiry, and what would raise each phase most: show | score')]
+#[AsCommand(name: 'ai:state', description: 'The project state, work · right · fast: done over approved tasks per phase, for ./src, with the framework on request: show | score')]
 final class AiStateCommand extends BaseCommand
 {
     private const ARTIFACT = 'semitexa.ai-state/v1';
     private const DEFAULT_DAYS = 30;
+    private const WITH_FRAMEWORK_ENV = 'SEMITEXA_STATE_WITH_FRAMEWORK';
 
     #[InjectAsReadonly]
     protected ScoreStore $scoreStore;
+
+    #[InjectAsReadonly]
+    protected TaskStore $taskStore;
 
     public function __construct()
     {
@@ -46,6 +55,7 @@ final class AiStateCommand extends BaseCommand
     {
         $this
             ->addArgument('action', InputArgument::OPTIONAL, 'show | score', 'show')
+            ->addOption('with-framework', null, InputOption::VALUE_NONE, 'show: count the framework\'s code as well as ./src (or ' . self::WITH_FRAMEWORK_ENV . '=1)')
             ->addOption('criterion', null, InputOption::VALUE_REQUIRED, 'score: the criterion id, e.g. right.test-quality')
             ->addOption('points', null, InputOption::VALUE_REQUIRED, 'score: its points, 0 to its weight')
             ->addOption('evidence', null, InputOption::VALUE_REQUIRED, 'score: the command, PR or report that sets them')
@@ -61,7 +71,7 @@ final class AiStateCommand extends BaseCommand
         $human = $input->isInteractive() && !(bool) $input->getOption('json');
         try {
             return match ($action) {
-                'show' => $this->show($output, $now, $human),
+                'show' => $this->show($output, $now, $human, (bool) $input->getOption('with-framework') || filter_var(Environment::getEnvValue(self::WITH_FRAMEWORK_ENV, ''), FILTER_VALIDATE_BOOL)),
                 'score' => $this->score($input, $output, $now),
                 default => $this->fail($output, 'unknown action "' . (is_string($action) ? $action : '') . '" (expected show | score)'),
             };
@@ -70,14 +80,27 @@ final class AiStateCommand extends BaseCommand
         }
     }
 
-    private function show(OutputInterface $output, \DateTimeImmutable $now, bool $human): int
+    private function show(OutputInterface $output, \DateTimeImmutable $now, bool $human, bool $withFramework): int
     {
-        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, FrameworkEvidence::forProject($this->getProjectRoot())->read(), FrameworkRubric::formulas());
-        if (!$human) {
-            return $this->emit($output, ['line' => StateReport::line($report)] + $report);
+        $progress = BacklogProgress::of($this->taskStore->list(), $withFramework);
+        if (!$withFramework) {
+            if ($human) {
+                $output->writeln(OutputFormatter::escape($progress->line()));
+
+                return self::SUCCESS;
+            }
+
+            return $this->emit($output, ['line' => $progress->line(), 'backlog' => $progress->toArray()]);
         }
 
-        $output->writeln(StateReport::line($report));
+        $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, FrameworkEvidence::forProject($this->getProjectRoot())->read(), FrameworkRubric::formulas());
+        if (!$human) {
+            return $this->emit($output, ['line' => $progress->line(), 'backlog' => $progress->toArray(), 'rubric_line' => StateReport::line($report)] + $report);
+        }
+
+        $output->writeln(OutputFormatter::escape($progress->line()));
+        $output->writeln('');
+        $output->writeln('Framework rubric: ' . StateReport::line($report));
         foreach ($report['phases'] as $phase => $data) {
             $output->writeln('');
             $output->writeln(sprintf('Make it %s: %s', $phase, $data['percent'] === null ? 'unknown' : $data['percent'] . '%'));

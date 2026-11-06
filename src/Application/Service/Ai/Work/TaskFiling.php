@@ -71,7 +71,7 @@ final class TaskFiling
         return $task;
     }
 
-    private static function isBug(string $recipe): bool
+    public static function isBug(string $recipe): bool
     {
         return in_array($recipe, FrameworkEvidence::BUG_RECIPES, true);
     }
