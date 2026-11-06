@@ -150,6 +150,7 @@ final class AiBacklogCommand extends BaseCommand
         }
 
         $taskActions = [];
+        $failed = false;
         foreach ($this->taskStore->list() as $task) {
             $assessment = $this->hygiene->assessTask($task);
             if ($assessment->suggestedStatus === null) {
@@ -169,9 +170,15 @@ final class AiBacklogCommand extends BaseCommand
             ];
             if ($apply) {
                 $newStatus = TaskStatus::parse($assessment->suggestedStatus);
-                $updated = $task->with(status: $newStatus, updatedAt: date('c'));
-                $this->taskStore->save($updated);
-                $action['applied'] = true;
+                // Judged on the listing: a task someone moved since is theirs, not junk.
+                try {
+                    $after = $this->taskStore->change($task->id, static fn (Task $current): Task => $current->status === $task->status ? $current->with(status: $newStatus, updatedAt: date('c')) : $current);
+                    $action['applied'] = $after->status === $newStatus;
+                } catch (\RuntimeException $e) {
+                    // One task gone since the listing must not stop the sweep half way; the run still ends as failed.
+                    $action['error'] = $e->getMessage();
+                    $failed = true;
+                }
             }
             $taskActions[] = $action;
         }
@@ -187,7 +194,7 @@ final class AiBacklogCommand extends BaseCommand
 
         if ($jsonMode) {
             $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
-            return self::SUCCESS;
+            return $failed ? self::FAILURE : self::SUCCESS;
         }
 
         $output->writeln(json_encode([
@@ -202,7 +209,7 @@ final class AiBacklogCommand extends BaseCommand
         foreach ($taskActions as $row) {
             $output->writeln(json_encode($row, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
         }
-        return self::SUCCESS;
+        return $failed ? self::FAILURE : self::SUCCESS;
     }
 
     /**

@@ -21,6 +21,94 @@ class TaskStoreTest extends TestCase
         $this->root = $this->enterFixtureProjectRoot('ai-work-task');
     }
 
+    public function test_change_works_on_the_task_as_it_is_now_not_as_it_was_read(): void
+    {
+        $now = '2026-11-06T00:00:00+00:00';
+        $store = new TaskStore();
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+        $stale = $store->get('tk-a');
+        $store->save($stale->withApproval(new \Semitexa\Dev\Application\Service\Ai\Work\TaskApproval('owner', 'Так', $now), $now));
+
+        $store->change('tk-a', static fn (Task $current): Task => $current->with(status: TaskStatus::DONE));
+
+        $task = $store->get('tk-a');
+        self::assertTrue($task->isApproved(), 'a write from a stale read would have dropped this');
+        self::assertSame(TaskStatus::DONE, $task->status);
+    }
+
+    public function test_change_of_a_task_that_is_not_there_fails(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+
+        $this->expectException(\RuntimeException::class);
+        $store->change('tk-none', static fn (Task $current): Task => $current);
+    }
+
+    public function test_change_lets_go_of_the_lock_when_the_change_throws(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+
+        try {
+            $store->change('tk-a', static fn (Task $current): Task => throw new \RuntimeException('no'));
+            self::fail('the exception must reach the caller');
+        } catch (\RuntimeException $e) {
+            self::assertSame('no', $e->getMessage());
+        }
+
+        // A lock still held would hang here, on a new file description.
+        self::assertSame(TaskStatus::DONE, $store->change('tk-a', static fn (Task $current): Task => $current->with(status: TaskStatus::DONE))->status);
+    }
+
+    public function test_change_on_a_project_with_no_tasks_says_the_task_is_missing(): void
+    {
+        $this->expectExceptionMessage("task 'tk-none' does not exist");
+        (new TaskStore())->change('tk-none', static fn (Task $current): Task => $current);
+    }
+
+    public function test_the_lock_file_is_open_to_every_user(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+
+        $store->change('tk-a', static fn (Task $current): Task => $current);
+
+        self::assertSame(0666, fileperms(dirname($store->pathFor('tk-a')) . '/.lock') & 0777);
+    }
+
+    /**
+     * Several processes at once, because in one process nothing can interleave.
+     * Measured with four writers of 150 changes: 259 of 600 survive without the
+     * lock, so this fails at once if it goes.
+     */
+    public function test_writers_in_parallel_lose_no_change(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], '0', 'tk-a', $now, $now));
+
+        $autoload = dirname((string) (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName(), 2) . '/autoload.php';
+        $writer = 'require ' . var_export($autoload, true) . ';'
+            . '$store = new ' . TaskStore::class . '();'
+            . 'for ($i = 0; $i < 50; $i++) {'
+            . '$store->change("tk-a", static fn ($t) => $t->with(nextStep: (string) ((int) $t->nextStep + 1)));'
+            . '}';
+        $writers = [];
+        for ($i = 0; $i < 4; $i++) {
+            $writers[] = proc_open([PHP_BINARY, '-r', $writer], [], $pipes, (string) getcwd());
+        }
+        foreach ($writers as $process) {
+            self::assertIsResource($process);
+            self::assertSame(0, proc_close($process));
+        }
+
+        self::assertSame('200', $store->get('tk-a')->nextStep);
+    }
+
     public function test_save_and_get_round_trip(): void
     {
         $store = new TaskStore();

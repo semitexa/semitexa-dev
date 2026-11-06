@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner;
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
 
 /**
@@ -28,6 +29,50 @@ final class VerifyReceiptsTest extends TestCase
     protected function tearDown(): void
     {
         exec('rm -rf ' . escapeshellarg($this->root));
+    }
+
+    public function test_a_run_told_its_trace_names_it_over_the_claimed_task_and_the_environment(): void
+    {
+        $previous = getenv('SEMITEXA_AI_TRACE_ID');
+        putenv('SEMITEXA_AI_TRACE_ID=tk-env');
+        try {
+            $envelope = (new VerifyReceipts($this->root))->attach($this->envelope('pass'), [], null, 'tk-told');
+        } finally {
+            putenv($previous === false ? 'SEMITEXA_AI_TRACE_ID' : 'SEMITEXA_AI_TRACE_ID=' . $previous);
+        }
+
+        $receipt = json_decode((string) file_get_contents($this->root . '/' . $envelope['receipt']['path']), true);
+        self::assertSame('tk-told', $receipt['run_by']['trace']);
+    }
+
+    public function test_a_run_with_no_trace_names_the_task_this_session_holds(): void
+    {
+        $previous = getenv(AgentRegistry::ENV);
+        $registry = new AgentRegistry($this->root, $this->root . '/agents');
+        $session = $registry->join('claude', 'Prove that a receipt names the task this session holds');
+        $registry->recordTask($session, 'tk-held');
+        putenv(AgentRegistry::ENV . '=' . $session->id);
+        try {
+            $found = (new \ReflectionMethod(VerifyReceipts::class, 'holderIn'))->invoke(new VerifyReceipts($this->root), $registry);
+        } finally {
+            putenv($previous === false ? AgentRegistry::ENV : AgentRegistry::ENV . '=' . $previous);
+        }
+
+        self::assertSame('tk-held', $found);
+    }
+
+    public function test_an_empty_trace_is_no_trace(): void
+    {
+        $previous = getenv('SEMITEXA_AI_TRACE_ID');
+        putenv('SEMITEXA_AI_TRACE_ID=tk-env');
+        try {
+            $envelope = (new VerifyReceipts($this->root))->attach($this->envelope('pass'), [], null, '');
+        } finally {
+            putenv($previous === false ? 'SEMITEXA_AI_TRACE_ID' : 'SEMITEXA_AI_TRACE_ID=' . $previous);
+        }
+
+        $receipt = json_decode((string) file_get_contents($this->root . '/' . $envelope['receipt']['path']), true);
+        self::assertSame('tk-env', $receipt['run_by']['trace']);
     }
 
     /** @return array<string, mixed> */

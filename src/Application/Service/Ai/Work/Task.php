@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Work;
 
+use Semitexa\Dev\Application\Service\Ai\State\Phase;
+
 /**
  * Task: the unit of executable work an agent picks up and resumes.
  *
@@ -37,7 +39,58 @@ final readonly class Task
         public string $traceId,
         public string $createdAt,
         public string $updatedAt,
+        public ?TaskApproval $approval = null,
+        public ?Phase $phase = null,
+        public ?TaskProof $proof = null,
     ) {}
+
+    /** An idea until someone approves it for implementation. */
+    public function isApproved(): bool
+    {
+        return $this->approval !== null;
+    }
+
+    /** The same task approved, or back to an idea with null ({@see with()} reads null as "keep"). */
+    public function withApproval(?TaskApproval $approval, string $updatedAt): self
+    {
+        return new self(
+            id:           $this->id,
+            epicId:       $this->epicId,
+            title:        $this->title,
+            status:       $this->status,
+            recipe:       $this->recipe,
+            risk:         $this->risk,
+            contextRefs:  $this->contextRefs,
+            nextStep:     $this->nextStep,
+            traceId:      $this->traceId,
+            createdAt:    $this->createdAt,
+            updatedAt:    $updatedAt,
+            approval:     $approval,
+            phase:        $this->phase,
+            proof:        $this->proof,
+        );
+    }
+
+    /** The same task with what proves it, or with none ({@see with()} reads null as "keep"). */
+    public function withProof(?TaskProof $proof): self
+    {
+        return new self(
+            id:           $this->id,
+            epicId:       $this->epicId,
+            title:        $this->title,
+            status:       $this->status,
+            recipe:       $this->recipe,
+            risk:         $this->risk,
+            contextRefs:  $this->contextRefs,
+            nextStep:     $this->nextStep,
+            traceId:      $this->traceId,
+            createdAt:    $this->createdAt,
+            updatedAt:    $this->updatedAt,
+            approval:     $this->approval,
+            phase:        $this->phase,
+            proof:        $proof,
+        );
+    }
 
     /**
      * The same task with some fields replaced.
@@ -59,6 +112,7 @@ final readonly class Task
         ?string $nextStep = null,
         ?string $updatedAt = null,
         ?string $epicId = null,
+        ?Phase $phase = null,
     ): self {
         return new self(
             id:           $this->id,
@@ -72,6 +126,9 @@ final readonly class Task
             traceId:      $this->traceId,
             createdAt:    $this->createdAt,
             updatedAt:    $updatedAt ?? $this->updatedAt,
+            approval:     $this->approval,
+            phase:        $phase ?? $this->phase,
+            proof:        $this->proof,
         );
     }
 
@@ -94,6 +151,9 @@ final readonly class Task
             'trace_id'       => $this->traceId,
             'created_at'     => $this->createdAt,
             'updated_at'     => $this->updatedAt,
+            'approval'       => $this->approval?->toArray(),
+            'phase'          => $this->phase?->value,
+            'proof'          => $this->proof?->toArray(),
         ];
     }
 
@@ -125,6 +185,9 @@ final readonly class Task
             traceId:      (string) ($row['trace_id'] ?? ''),
             createdAt:    (string) ($row['created_at'] ?? ''),
             updatedAt:    (string) ($row['updated_at'] ?? ''),
+            approval:     TaskApproval::fromStored($row['approval'] ?? null),
+            phase:        is_string($row['phase'] ?? null) ? Phase::tryFrom($row['phase']) : null,
+            proof:        TaskProof::fromStored($row['proof'] ?? null),
         );
     }
 }

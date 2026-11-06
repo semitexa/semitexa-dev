@@ -10,6 +10,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiStateCommand;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreStore;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -45,10 +46,10 @@ final class AiStateCommandTest extends TestCase
         [$status, $out] = $this->state('show');
         // The fixture tree has no tests and no backlog: Semitexa scores test
         // quality 0 and known bugs 15 (none open) itself.
-        self::assertSame([0, 'work 15% (5 unknown) · right 0% (5 unknown) · fast ?'], [$status, $out['line']]);
+        self::assertSame([0, 'work 15% (5 unknown) · right 0% (5 unknown) · fast ?'], [$status, $out['rubric_line']]);
 
         [$status, $out] = $this->state('score', ['--criterion' => 'right.architecture', '--points' => '7', '--evidence' => 'StructuralOutlierBudgetTest: 8 god classes']);
-        self::assertSame([0, 'work 15% (5 unknown) · right 7% (4 unknown) · fast ?'], [$status, $out['line']]);
+        self::assertSame([0, 'work 15% (5 unknown) · right 7% (4 unknown) · fast ?'], [$status, $out['rubric_line']]);
         self::assertIsArray($out['recorded']);
         self::assertSame(['right.architecture', 7, 'agent'], [$out['recorded']['criterion'], $out['recorded']['points'], $out['recorded']['by']]);
         self::assertIsString($out['recorded']['expires_at']);
@@ -104,9 +105,9 @@ final class AiStateCommandTest extends TestCase
         self::assertSame('check complete Make it right: 100% <error>x</error>', (new ScoreStore())->all()['right.architecture']->evidence, 'stored on one line');
 
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore(), TaskStore::class => new TaskStore()]));
         $tester = new CommandTester($command);
-        $tester->execute(['action' => 'show'], ['interactive' => true, 'decorated' => false]);
+        $tester->execute(['action' => 'show', '--with-framework' => true], ['interactive' => true, 'decorated' => false]);
         $lines = array_values(array_filter(explode("\n", $tester->getDisplay()), static fn (string $l): bool => str_contains($l, 'Architecture / god classes')));
 
         self::assertCount(1, $lines);
@@ -121,9 +122,9 @@ final class AiStateCommandTest extends TestCase
         self::assertSame('ok[2J[H done', (new ScoreStore())->all()['right.architecture']->evidence, 'ESC is gone, the text stays');
 
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore(), TaskStore::class => new TaskStore()]));
         $tester = new CommandTester($command);
-        $tester->execute(['action' => 'show'], ['interactive' => true, 'decorated' => false]);
+        $tester->execute(['action' => 'show', '--with-framework' => true], ['interactive' => true, 'decorated' => false]);
 
         // 00:30 at +14:00 is 10:30 UTC the day before.
         self::assertStringContainsString('until 2098-12-31 10:30 UTC: ok[2J[H done', $tester->getDisplay());
@@ -163,9 +164,10 @@ final class AiStateCommandTest extends TestCase
     private function state(string $action, array $options = []): array
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([ScoreStore::class => new ScoreStore(), TaskStore::class => new TaskStore()]));
         $tester = new CommandTester($command);
-        $status = $tester->execute(['action' => $action] + $options, ['interactive' => false]);
+        // The rubric these tests are about is read with the framework; the backlog's own line has AiStateBacklogTest.
+        $status = $tester->execute(['action' => $action] + $options + ($action === 'show' ? ['--with-framework' => true] : []), ['interactive' => false]);
         $decoded = json_decode($tester->getDisplay(), true);
         self::assertIsArray($decoded, $tester->getDisplay());
 
