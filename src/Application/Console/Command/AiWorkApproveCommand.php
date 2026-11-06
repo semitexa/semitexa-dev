@@ -114,8 +114,16 @@ final class AiWorkApproveCommand extends BaseCommand
             // One broken task file must not stop the rest, or a rerun stops at it forever.
             try {
                 // Judged again under the lock: the task may have moved since the listing.
-                $after = $this->taskStore->change($task->id, static fn (Task $current): Task => self::staysAsItIs($current, $revoke) ? $current : $current->withApproval($approval, $now));
-                if ($after->approval?->toArray() !== $approval?->toArray()) {
+                $wrote = false;
+                $this->taskStore->change($task->id, static function (Task $current) use ($approval, $now, $revoke, &$wrote): Task {
+                    if (self::staysAsItIs($current, $revoke)) {
+                        return $current;
+                    }
+                    $wrote = true;
+
+                    return $current->withApproval($approval, $now);
+                });
+                if (!$wrote) {
                     $unchanged[] = $task->id;
                     continue;
                 }
