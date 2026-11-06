@@ -76,6 +76,29 @@ final class MakeItPlanTest extends TestCase
         self::assertSame(MakeItPlan::DONE, MakeItPlan::of([$this->task('tk-a', status: TaskStatus::DONE)], false, static fn (): bool => false, null, 6)->state);
     }
 
+    public function test_a_phase_narrows_what_is_taken(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-bug', recipe: 'fix_bug'), $this->task('tk-fast', Phase::FAST)], false, static fn (): bool => false, null, only: Phase::FAST);
+
+        self::assertSame('tk-fast', $plan->tasks[0]['id']);
+    }
+
+    public function test_with_nothing_under_the_phase_it_says_so_and_no_more(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-work'), $this->task('tk-idea', Phase::RIGHT, approved: false)], false, static fn (): bool => false, null, 3, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::DONE, $plan->state);
+        self::assertSame('Nothing approved is open under right.', $plan->say());
+        self::assertFalse($plan->goOn());
+    }
+
+    public function test_a_phase_with_what_is_open_blocked_waits(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-a', Phase::RIGHT, TaskStatus::BLOCKED)], false, static fn (): bool => false, null, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::WAITING, $plan->state);
+    }
+
     public function test_a_broken_charter_comes_before_ideas(): void
     {
         $plan = MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 0, 'bad json');

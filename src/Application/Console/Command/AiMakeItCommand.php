@@ -18,6 +18,7 @@ use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskFiling;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -29,6 +30,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  *   bin/semitexa ai:make-it                    for the project's own code in ./src
  *   bin/semitexa ai:make-it --with-framework   the framework's tasks as well
+ *   bin/semitexa ai:make-it --phase=right      only that phase
+ *   bin/semitexa ai:make-it --except=tk-a      not this task now: its repository is busy, say
  *
  * Run it, do what it says, and run it again while go_on is true: that is the
  * whole loop, and any agent with a shell can walk it.
@@ -59,11 +62,22 @@ final class AiMakeItCommand extends BaseCommand
     {
         $this
             ->addOption('with-framework', null, InputOption::VALUE_NONE, 'Count the framework\'s tasks as well as ./src (or ' . BacklogProgress::WITH_FRAMEWORK_ENV . '=1)')
+            ->addOption('phase', null, InputOption::VALUE_REQUIRED, 'Only this phase: work | right | fast')
+            ->addOption('except', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'A task not to take now, for a reason outside the backlog: its repository is busy, say (repeatable)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'One JSON envelope (the default when not interactive)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        try {
+            $phase = TaskFiling::parsePhase(is_string($input->getOption('phase')) ? $input->getOption('phase') : null);
+        } catch (\InvalidArgumentException $e) {
+            $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);
+
+            return self::FAILURE;
+        }
+        /** @var list<string> $except */
+        $except = (array) $input->getOption('except');
         $withFramework = BacklogProgress::withFramework((bool) $input->getOption('with-framework'));
         $tasks = $this->liveTasks();
         $registry = new AgentRegistry(ProjectRoot::get());
@@ -72,13 +86,19 @@ final class AiMakeItCommand extends BaseCommand
         $plan = MakeItPlan::of(
             $tasks,
             $withFramework,
-            static fn (string $id): bool => $registry->holderOf($id, $self?->id) !== null,
+            static fn (string $id): bool => in_array($id, $except, true) || $registry->holderOf($id, $self?->id) !== null,
             $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
             $questions['open'],
             $questions['error'],
+            $phase,
         );
         $interview = $plan->state === MakeItPlan::EMPTY ? self::runnable($questions) : null;
-        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
+        $steps = $plan->steps(implode(' ', array_filter([
+            'bin/semitexa ai:make-it',
+            $withFramework ? '--with-framework' : null,
+            $phase !== null ? '--phase=' . $phase->value : null,
+            ...array_map(static fn (string $id): string => '--except=' . $id, $except),
+        ])));
         $line = BacklogProgress::of($tasks, $withFramework, $this->audits())->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {

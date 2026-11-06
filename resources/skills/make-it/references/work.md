@@ -5,8 +5,8 @@ what it says?
 
 ## Where the next change comes from
 
-1. `bin/semitexa ai:work list --status=new --json` under the phase's epic, then
-   the other active epics (`ai:epic list --json`), prerequisites first.
+1. `bin/semitexa ai:make-it --with-framework --phase=work --json`: approved tasks
+   in Semitexa's order. New work waits for the operator's yes.
 2. Defects found while working, filed at once with `ai:work start --recipe=fix_bug`.
 
 ## Done means

@@ -44,6 +44,7 @@ final readonly class MakeItPlan
         private int $openQuestions = 0,
         private ?string $charterError = null,
         private bool $hasTasks = false,
+        private ?Phase $only = null,
     ) {}
 
     /**
@@ -52,8 +53,9 @@ final readonly class MakeItPlan
      * @param string|null $mine the task this session already holds
      * @param int $openQuestions what the charter still needs from the architect
      * @param string|null $charterError why the charter cannot be read, which is no complete charter
+     * @param Phase|null $only narrows the question to one phase: what is not in it is not this run's
      */
-    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions = 0, ?string $charterError = null): self
+    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions = 0, ?string $charterError = null, ?Phase $only = null): self
     {
         $inScope = array_values(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED && BacklogProgress::inScope($t, $withFramework)));
         if ($inScope === []) {
@@ -62,7 +64,7 @@ final readonly class MakeItPlan
         }
 
         $open = array_values(array_filter($inScope, static fn (Task $t): bool => $t->status !== TaskStatus::DONE));
-        $approved = array_values(array_filter($open, BacklogProgress::counts(...)));
+        $approved = array_values(array_filter($open, static fn (Task $t): bool => BacklogProgress::counts($t) && ($only === null || TaskFiling::phaseOf($t->phase, $t->recipe) === $only)));
         usort($approved, static fn (Task $a, Task $b): int => [self::rank($a, $mine), $a->createdAt, $a->id] <=> [self::rank($b, $mine), $b->createdAt, $b->id]);
         foreach ($approved as $task) {
             if ($task->status !== TaskStatus::BLOCKED && !$heldByAnother($task->id)) {
@@ -71,6 +73,9 @@ final readonly class MakeItPlan
         }
         if ($approved !== []) {
             return self::listing(self::WAITING, $approved);
+        }
+        if ($only !== null) {
+            return new self(self::DONE, [], 0, only: $only);
         }
         // Only before the first approval: a project that has done its work is done,
         // whatever its charter still lacks.
@@ -135,7 +140,9 @@ final readonly class MakeItPlan
             self::WORK => sprintf('Taking %s: %s (%d open).', $this->tasks[0]['id'], $this->tasks[0]['title'], $this->total),
             self::WAITING => sprintf('Nothing to take now: %d open, all blocked or held by another agent. Show the architect what they wait for.', $this->total),
             self::IDEAS => sprintf('Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.', $this->total),
-            default => 'Everything is done. Are there any new ideas?',
+            default => $this->only !== null
+                ? "Nothing approved is open under {$this->only->value}."
+                : 'Everything is done. Are there any new ideas?',
         };
     }
 
@@ -157,7 +164,7 @@ final readonly class MakeItPlan
             self::WORK => self::stepsFor($this->tasks[0]['id'], $command),
             self::WAITING => ['Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
             self::IDEAS => ['Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
-            default => ['Stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
+            default => [$this->only !== null ? 'Stop here, or find what this phase owes and file it.' : 'Stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
         };
     }
 

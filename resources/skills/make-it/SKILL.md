@@ -18,11 +18,15 @@ keeps those two in a profile:
 How far each phase has come is what `bin/semitexa ai:state --with-framework`
 says, counted from the backlog; every run reports that line.
 
-**The phase is the argument.** In Claude Code it is typed after the name
+**The phase is an optional argument.** In Claude Code it is typed after the name
 (`/make-it right`) and arrives as `ARGUMENTS: right`; other runtimes pass it the
-same way or in the request ("make it right"). Read the profile it names before
-anything else. No phase, or one that is not `work`, `right` or `fast`: name the
-three and stop — do not guess one.
+same way or in the request ("make it right"). With one, read the profile it names
+before anything else. With none, take what comes next, whatever its phase, and
+read the profile of the task named. Anything but `work`, `right` or `fast`: name
+the three and stop.
+
+**What comes next is Semitexa's answer, the same one every agent gets.** This
+skill adds what is particular to the framework: pull requests and their review.
 
 Script paths below are relative to **this skill's own directory**. This skill is
 a copy: the canonical one is `packages/semitexa-dev/resources/skills/make-it/`,
@@ -48,14 +52,16 @@ re-arms. Each tick, in this order:
 2. **Review first.** Run the codereview skill's cycle on the open PRs: answer and
    fix new comments, merge what passes the gate. Merging frees a slot and a
    repository, so it always comes before starting something new.
-3. **Pick.** If a slot is free, take the next change from the profile's source
-   whose repository has no open PR (`scripts/wip.sh --can-open <repo>` exits 0).
-   Prefer a change that lives in one repository.
-4. **Make.** `ai:work start --phase=<phase>` under the phase's epic, unless the
-   task already exists; `work` that is not a bug also needs the operator's yes
-   (`ai:work:approve`). Then the change itself, with a test, held to the profile's
-   definition of done. `ai:verify --trace=<task>` must pass, so that closing finds
-   the proof; phpstan must not rise above its baseline.
+3. **Pick.** If a slot is free, `bin/semitexa ai:make-it --with-framework
+   [--phase=<phase>] --json` names the task. Its repository has an open PR
+   (`scripts/wip.sh --can-open <repo>` exits 1): ask again with `--except=<task>`.
+   Nothing named under a phase: the profile's source is where its tickets come
+   from. Look there, file what you find (`ai:work start --phase=<phase>`), record
+   it (`ai:audit record`), and ask again.
+4. **Make.** Follow the task through the steps `ai:make-it` gives, held to the
+   profile's definition of done; phpstan must not rise above its baseline. Those
+   steps end at a local commit and closing the task: here the task stays open
+   until its PR merges.
 5. **Ship.** The review-prep skill for that one repository: commit with a last
    line `Task: <task>`, checks, a PR from `develop` to `master` whose title says
    the one change it carries.

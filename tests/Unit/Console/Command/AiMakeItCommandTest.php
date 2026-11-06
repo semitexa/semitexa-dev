@@ -151,6 +151,45 @@ final class AiMakeItCommandTest extends TestCase
         self::assertSame('goal', $result['interview']['next']['field']);
     }
 
+    public function test_except_passes_a_task_over_and_stays_in_the_steps(): void
+    {
+        $this->file('tk-a');
+        $this->file('tk-b');
+
+        $result = $this->run_(['--except' => ['tk-a']]);
+
+        self::assertSame('tk-b', $result['tasks'][0]['id']);
+        self::assertStringContainsString('ai:make-it --except=tk-a again', implode("\n", $result['steps']));
+    }
+
+    public function test_excepting_all_that_is_open_waits_and_stops_the_loop(): void
+    {
+        $this->file('tk-a');
+
+        $result = $this->run_(['--except' => ['tk-a']]);
+
+        self::assertSame(['waiting', false], [$result['state'], $result['go_on']]);
+    }
+
+    public function test_the_phase_reaches_the_plan_and_stays_in_the_steps(): void
+    {
+        $this->file('tk-a');
+
+        $result = $this->run_(['--phase' => 'work']);
+
+        self::assertSame('tk-a', $result['tasks'][0]['id']);
+        self::assertStringContainsString('ai:make-it --phase=work again', implode("\n", $result['steps']));
+    }
+
+    public function test_an_unknown_phase_is_an_error(): void
+    {
+        $command = new AiMakeItCommand();
+        $tester = $this->tester($command);
+
+        self::assertSame(1, $tester->execute(['--phase' => 'later'], ['interactive' => false]));
+        self::assertStringContainsString('invalid phase', $tester->getDisplay());
+    }
+
     public function test_a_backlog_with_work_asks_nothing_of_the_charter(): void
     {
         $this->file('tk-a');
