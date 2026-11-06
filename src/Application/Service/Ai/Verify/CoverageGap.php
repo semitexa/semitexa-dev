@@ -28,7 +28,11 @@ final readonly class CoverageGap
         VerificationTarget::TYPE_CAPABILITY_INDEX,
     ];
 
-    private const INDEX_TAIL = '/resources/capability-index.json';
+    /** The one file the capability index check reads, in the monorepo and in a project. */
+    private const INDEX_PATHS = [
+        'packages/semitexa-dev/resources/capability-index.json',
+        'vendor/semitexa/dev/resources/capability-index.json',
+    ];
 
     /** Targets that decide by a path, never by what the file says. */
     private const PATH_ONLY_IDS = ['lint:var-artifacts'];
@@ -71,8 +75,7 @@ final readonly class CoverageGap
                 continue;
             }
             ++$changed;
-            // By its tail: a project has it under vendor/, the monorepo under packages/.
-            $isIndex = str_ends_with($file->path, self::INDEX_TAIL);
+            $isIndex = in_array($file->path, self::INDEX_PATHS, true);
             if (!isset($checked[$file->path]) && !($isIndex && $indexRead)) {
                 $unchecked[] = $file;
             }

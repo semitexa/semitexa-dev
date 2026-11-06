@@ -56,6 +56,18 @@ final class CoverageGapTest extends TestCase
     }
 
     #[Test]
+    public function a_file_of_that_name_in_another_package_is_not_the_index(): void
+    {
+        $other = 'packages/semitexa-core/resources/capability-index.json';
+        $gap = $this->gap($this->plan(
+            [$this->file($other, ChangedFile::KIND_NON_PHP)],
+            [$this->target(VerificationTarget::TYPE_CAPABILITY_INDEX, ['packages/a/src/A.php'])],
+        ));
+
+        self::assertSame([$other], array_column($gap->toArray()['unchecked_files'], 'path'));
+    }
+
+    #[Test]
     public function a_pass_over_a_change_no_check_could_read_is_incomplete(): void
     {
         // Measured 2026-10-01: .md/.sh/.js changes planned module_structure
