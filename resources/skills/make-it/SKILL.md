@@ -15,8 +15,8 @@ keeps those two in a profile:
 | `right` | [`references/right.md`](references/right.md) — structure, without changing behaviour |
 | `fast`  | [`references/fast.md`](references/fast.md) — cost, measured before and after |
 
-How far each phase has come is kept in one scorecard for all three —
-[`references/scorecard.md`](references/scorecard.md) — and every run reports it.
+How far each phase has come is what `bin/semitexa ai:state --with-framework`
+says, counted from the backlog; every run reports that line.
 
 **The phase is the argument.** In Claude Code it is typed after the name
 (`/make-it right`) and arrives as `ARGUMENTS: right`; other runtimes pass it the
@@ -44,8 +44,7 @@ re-arms. Each tick, in this order:
 
 1. **Look.** `scripts/wip.sh` lists the open Semitexa PRs, the repositories that
    have one, and how many review slots are free. On the first tick of a run,
-   read `var/docs/make-it/scorecard.md` (create it as the scorecard reference
-   says if it is missing).
+   read `bin/semitexa ai:state --with-framework`.
 2. **Review first.** Run the codereview skill's cycle on the open PRs: answer and
    fix new comments, merge what passes the gate. Merging frees a slot and a
    repository, so it always comes before starting something new.
@@ -57,10 +56,10 @@ re-arms. Each tick, in this order:
    rise above its baseline.
 5. **Ship.** The review-prep skill for that one repository: commit, checks, a PR
    from `develop` to `master` whose title says the one change it carries.
-6. **Score.** After a merge, or any finding — in this phase or another — move
-   the criterion it belongs to in `var/docs/make-it/scorecard.md`, with the
-   evidence, and a line in its history. A bug found while making it fast lowers
-   `work`; nothing waits for the end of the run to be counted.
+6. **Count.** After a merge, close its task with its proof. A finding — in this
+   phase or another — is a ticket filed at once (`ai:work start`, a bug recipe or
+   `--phase`): a bug found while making it fast lowers `work`, and the number
+   moves by itself.
 7. **Release, often.** After every few merges (default 5) or once a day, run the
    release-readiness skill — small releases, not one at the end. See the release
    rule below for when a release may start.
@@ -93,14 +92,12 @@ the last report): then merged, opened, waiting, and why.
   therefore needs no unmerged commit at release time. Start a release only when
   no such repository has an open PR or unmerged work.
 - **Stop** when the profile's source has nothing left, or when the operator says
-  so. Give a final report: the scorecard for all three phases (each criterion,
-  its points and evidence), what moved during the run and why, what merged,
-  what was rejected and why, what was found beyond the plan, what is knowingly
-  left open, and what would raise each number most.
+  so. Give a final report: the `ai:state --with-framework` line, what moved
+  during the run and why, what merged, what was rejected and why, what was found
+  beyond the plan, and what is knowingly left open.
 
 ## Resources
 
-- `references/scorecard.md` — the rubric, its rules and the report format
 - `scripts/wip.sh` — open PRs, busy repositories, free slots; `--can-open <repo>`
 - The codereview skill — review cycle and merge gate
 - The review-prep skill — commit, checks and PR for one repository

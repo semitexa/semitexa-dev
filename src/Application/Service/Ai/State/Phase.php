@@ -10,15 +10,4 @@ enum Phase: string
     case WORK = 'work';
     case RIGHT = 'right';
     case FAST = 'fast';
-
-    /** The phase a criterion id names before its dot ("work.installs"). */
-    public static function forCriterion(string $id): self
-    {
-        $phase = self::tryFrom((string) strstr($id, '.', true));
-        if ($phase === null) {
-            throw new \InvalidArgumentException("criterion id \"{$id}\" must start with work., right. or fast.");
-        }
-
-        return $phase;
-    }
 }
