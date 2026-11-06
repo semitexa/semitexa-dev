@@ -15,6 +15,7 @@ use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\ResumeService;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -108,6 +109,7 @@ final class AiWorkPhaseTest extends TestCase
     {
         self::assertSame(1, $this->start('tk-a', ['--phase' => 'later']));
         self::assertFalse($this->tasks->exists('tk-a'));
+        self::assertFileDoesNotExist($this->root . '/var/ai-traces/tk-a.ndjson');
     }
 
     public function test_update_sets_the_phase_and_does_not_approve(): void
@@ -120,6 +122,80 @@ final class AiWorkPhaseTest extends TestCase
         $task = $this->tasks->get('tk-a');
         self::assertSame(Phase::RIGHT, $task->phase);
         self::assertFalse($task->isApproved());
+    }
+
+    /** @param array<string, string> $options */
+    private function update(string $id, array $options): void
+    {
+        $this->tester->execute(['action' => 'update', '--id' => $id, '--json' => true] + $options);
+        self::assertSame(0, $this->tester->getStatusCode());
+    }
+
+    public function test_a_right_ticket_moved_to_work_is_no_longer_approved(): void
+    {
+        $this->start('tk-a', ['--phase' => 'right']);
+
+        $this->update('tk-a', ['--phase' => 'work']);
+
+        self::assertFalse($this->tasks->get('tk-a')->isApproved());
+    }
+
+    public function test_a_bug_that_turns_out_to_be_a_feature_is_no_longer_approved(): void
+    {
+        $this->start('tk-a', ['--recipe' => 'fix_bug']);
+
+        $this->update('tk-a', ['--recipe' => 'add_feature']);
+
+        self::assertFalse($this->tasks->get('tk-a')->isApproved());
+    }
+
+    public function test_a_right_ticket_moved_to_fast_stays_approved(): void
+    {
+        $this->start('tk-a', ['--phase' => 'right']);
+
+        $this->update('tk-a', ['--phase' => 'fast']);
+
+        self::assertTrue($this->tasks->get('tk-a')->isApproved());
+    }
+
+    public function test_the_owners_approval_survives_a_change_of_phase(): void
+    {
+        $this->start('tk-a', ['--phase' => 'work']);
+        $this->tasks->save($this->tasks->get('tk-a')->withApproval(new TaskApproval('owner', 'Так', '2026-11-06T00:00:00+00:00'), '2026-11-06T00:00:00+00:00'));
+
+        $this->update('tk-a', ['--phase' => 'right']);
+        $this->update('tk-a', ['--phase' => 'work']);
+
+        self::assertSame('owner', $this->tasks->get('tk-a')->approval?->by);
+    }
+
+    public function test_a_task_that_becomes_a_bug_gets_the_phase_of_one_but_no_approval(): void
+    {
+        $this->start('tk-a', ['--recipe' => 'add_feature']);
+
+        $this->update('tk-a', ['--recipe' => 'fix_bug']);
+
+        $task = $this->tasks->get('tk-a');
+        self::assertSame(Phase::WORK, $task->phase);
+        self::assertFalse($task->isApproved());
+    }
+
+    public function test_the_activity_log_says_when_an_edit_takes_the_approval_away(): void
+    {
+        $this->start('tk-a', ['--phase' => 'right']);
+
+        $this->update('tk-a', ['--phase' => 'work']);
+
+        self::assertStringContainsString('returned task to ideas', (string) file_get_contents($this->root . '/var/ai-work/activity.ndjson'));
+    }
+
+    public function test_the_activity_log_says_when_the_phase_changes(): void
+    {
+        $this->start('tk-a');
+
+        $this->update('tk-a', ['--phase' => 'work']);
+
+        self::assertStringContainsString('updated task', (string) file_get_contents($this->root . '/var/ai-work/activity.ndjson'));
     }
 
     public function test_update_refuses_an_unknown_phase(): void

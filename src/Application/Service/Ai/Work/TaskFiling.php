@@ -19,6 +19,7 @@ use Semitexa\Dev\Application\Service\Ai\State\Phase;
 final class TaskFiling
 {
     public const RULE = 'ai:decision project-progress-model';
+    private const BY_RULE = 'rule';
 
     /** @throws \InvalidArgumentException on a value that is not a phase */
     public static function parsePhase(?string $value): ?Phase
@@ -42,13 +43,32 @@ final class TaskFiling
     public static function approvalOnFiling(?Phase $phase, string $recipe, string $now): ?TaskApproval
     {
         if (self::isBug($recipe)) {
-            return new TaskApproval('rule', 'a bug counts from the moment it is filed: ' . self::RULE, $now);
+            return new TaskApproval(self::BY_RULE, 'a bug counts from the moment it is filed: ' . self::RULE, $now);
         }
         if ($phase === Phase::RIGHT || $phase === Phase::FAST) {
-            return new TaskApproval('rule', 'right and fast tickets count from the moment they are filed: ' . self::RULE, $now);
+            return new TaskApproval(self::BY_RULE, 'right and fast tickets count from the moment they are filed: ' . self::RULE, $now);
         }
 
         return null;
+    }
+
+    /**
+     * A task after an edit. An approval given by rule lasts only while the rule
+     * holds, or a ticket filed under right and moved to work would be approved
+     * work nobody approved. The owner's approval stays whatever the phase. An
+     * edit never approves: only filing and ai:work:approve do.
+     */
+    public static function afterEdit(Task $task, string $now): Task
+    {
+        $phase = self::phaseOf($task->phase, $task->recipe);
+        if ($phase !== $task->phase) {
+            $task = $task->with(phase: $phase);
+        }
+        if ($task->approval?->by === self::BY_RULE && self::approvalOnFiling($phase, $task->recipe, $now) === null) {
+            return $task->withApproval(null, $now);
+        }
+
+        return $task;
     }
 
     private static function isBug(string $recipe): bool

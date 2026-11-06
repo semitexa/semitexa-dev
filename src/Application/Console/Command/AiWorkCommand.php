@@ -356,7 +356,7 @@ final class AiWorkCommand extends BaseCommand
         if (($refused = TaskClaim::claim(ProjectRoot::get(), $id, $status, (bool) $input->getOption('take-over'))) !== null) {
             return $this->error($output, $refused, $jsonMode);
         }
-        $updated = $task->with(
+        $updated = TaskFiling::afterEdit($task->with(
             title:       $title,
             status:      $status,
             recipe:      $recipe,
@@ -366,7 +366,7 @@ final class AiWorkCommand extends BaseCommand
             updatedAt:   date('c'),
             epicId:      $epicId,
             phase:       $phase,
-        );
+        ), date('c'));
         $this->taskStore->save($updated);
 
         $kind = $status !== null ? TraceEventKind::NEXT_STEP : TraceEventKind::NOTE;
