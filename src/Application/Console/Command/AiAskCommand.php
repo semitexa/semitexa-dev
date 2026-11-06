@@ -17,7 +17,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * argument (the "subject"), forwarded to the underlying command that owns
  * the implementation.
  *
- *   ai:ask capabilities [--json]
+ *   ai:ask capabilities [--search=word] [--json]
  *   ai:ask project      [--json]
  *   ai:ask module       --name=Billing [--json]
  *   ai:ask route        --path=/billing/{id} [--method=GET] [--json]

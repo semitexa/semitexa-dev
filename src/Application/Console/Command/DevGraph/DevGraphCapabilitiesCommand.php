@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Capability\RuntimeCommandCatalog;
 use Semitexa\Dev\Application\Service\Generation\Data\CapabilityManifest;
 use Semitexa\Dev\Application\Service\Generation\Support\CapabilityManifestFormatter;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -65,6 +66,12 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         if ($input->getOption('json')) {
             $formatter = new CapabilityManifestFormatter();
             $output->writeln($formatter->format($manifest));
+            return self::SUCCESS;
+        }
+
+        if ($capabilities === []) {
+            $io->text(sprintf('No command mentions "%s".', OutputFormatter::escape((string) $search)));
+
             return self::SUCCESS;
         }
 
