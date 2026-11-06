@@ -49,7 +49,10 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         if (is_string($search) && $search !== '') {
             $capabilities = array_values(array_filter(
                 $capabilities,
-                static fn (object $cap): bool => stripos($cap->name . ' ' . $cap->summary . ' ' . $cap->use_when, $search) !== false,
+                static fn (object $cap): bool => array_filter(
+                    [$cap->name, $cap->summary, $cap->use_when],
+                    static fn (string $field): bool => mb_stripos($field, $search) !== false,
+                ) !== [],
             ));
         }
 
