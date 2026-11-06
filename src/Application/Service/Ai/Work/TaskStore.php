@@ -73,7 +73,7 @@ final class TaskStore
     public function change(string $taskId, callable $change): Task
     {
         WorkId::assertValid($taskId, 'task id');
-        $lock = @fopen($this->dir() . '/.lock', 'c');
+        $lock = $this->openLock();
         if ($lock === false || !flock($lock, LOCK_EX)) {
             throw new \RuntimeException('cannot lock ' . self::SUBDIR);
         }
@@ -161,6 +161,27 @@ final class TaskStore
             $out[$task->epicId][] = $task;
         }
         return $out;
+    }
+
+    /**
+     * Open to everyone: the container may run as root and the host as its user,
+     * and a lock file only one of them can open would stop the other's writes.
+     *
+     * @return resource|false
+     */
+    private function openLock(): mixed
+    {
+        $dir = $this->dir();
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        $path = $dir . '/.lock';
+        $lock = @fopen($path, 'c');
+        if ($lock !== false) {
+            @chmod($path, 0666);
+        }
+
+        return $lock;
     }
 
     public function pathFor(string $taskId): string

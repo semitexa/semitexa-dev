@@ -107,7 +107,7 @@ final class AiWorkApproveCommand extends BaseCommand
             }
             // One broken task file must not stop the rest, or a rerun stops at it forever.
             try {
-                $this->taskStore->change($task->id, static fn (Task $current): Task => $current->withApproval($approval, $now));
+                $this->taskStore->change($task->id, static fn (Task $current): Task => $current->isApproved() === ($approval !== null) ? $current : $current->withApproval($approval, $now));
             } catch (\RuntimeException | \InvalidArgumentException $e) {
                 $failed[$task->id] = $e->getMessage();
                 continue;

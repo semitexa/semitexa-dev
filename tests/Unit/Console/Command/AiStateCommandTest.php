@@ -49,7 +49,7 @@ final class AiStateCommandTest extends TestCase
         self::assertSame([0, 'work 15% (5 unknown) · right 0% (5 unknown) · fast ?'], [$status, $out['rubric_line']]);
 
         [$status, $out] = $this->state('score', ['--criterion' => 'right.architecture', '--points' => '7', '--evidence' => 'StructuralOutlierBudgetTest: 8 god classes']);
-        self::assertSame([0, 'work 15% (5 unknown) · right 7% (4 unknown) · fast ?'], [$status, $out['line']]);
+        self::assertSame([0, 'work 15% (5 unknown) · right 7% (4 unknown) · fast ?'], [$status, $out['rubric_line']]);
         self::assertIsArray($out['recorded']);
         self::assertSame(['right.architecture', 7, 'agent'], [$out['recorded']['criterion'], $out['recorded']['points'], $out['recorded']['by']]);
         self::assertIsString($out['recorded']['expires_at']);

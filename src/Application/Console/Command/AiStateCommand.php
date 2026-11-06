@@ -174,7 +174,7 @@ final class AiStateCommand extends BaseCommand
         $this->scoreStore->record($record, FrameworkRubric::rubric());
         $report = StateReport::build(FrameworkRubric::rubric(), $this->scoreStore->all(), $now, $readings, FrameworkRubric::formulas());
 
-        return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'line' => StateReport::line($report)]);
+        return $this->emit($output, ['status' => 'ok', 'recorded' => $record->toArray(), 'rubric_line' => StateReport::line($report)]);
     }
 
     /**

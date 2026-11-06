@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Console\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
@@ -241,10 +242,19 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertStringContainsString('Так, робимо', $read);
     }
 
-    public function test_an_approval_cannot_be_built_without_who_words_or_when(): void
+    /** @return iterable<string, array{string, string, string}> */
+    public static function incompleteApprovals(): iterable
+    {
+        yield 'who' => ['', 'Так', self::NOW];
+        yield 'words' => ['owner', '', self::NOW];
+        yield 'when' => ['owner', 'Так', ''];
+    }
+
+    #[DataProvider('incompleteApprovals')]
+    public function test_an_approval_cannot_be_built_without_who_words_or_when(string $by, string $words, string $at): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        new TaskApproval('owner', '', self::NOW);
+        new TaskApproval($by, $words, $at);
     }
 
     public function test_refuses_without_the_owners_words(): void

@@ -22,11 +22,12 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  *
  * Without the framework only the project's own tasks count: one that points at
  * framework code and not at ./src is left out. A task that points at nothing
- * belongs to the project.
+ * belongs to the project, and so does a project module's namespace.
  */
 final readonly class BacklogProgress
 {
     private const FRAMEWORK_REFS = ['packages/', 'vendor/semitexa/', 'Semitexa\\'];
+    private const PROJECT_REFS = ['src/', 'Semitexa\\Modules\\'];
 
     /**
      * @param array<string, array{percent: ?int, done: int, approved: int, open: int}> $phases
@@ -112,8 +113,10 @@ final readonly class BacklogProgress
     {
         $framework = false;
         foreach ($task->contextRefs as $ref) {
-            if (str_starts_with($ref, 'src/')) {
-                return false;
+            foreach (self::PROJECT_REFS as $prefix) {
+                if (str_starts_with($ref, $prefix)) {
+                    return false;
+                }
             }
             foreach (self::FRAMEWORK_REFS as $prefix) {
                 $framework = $framework || str_starts_with($ref, $prefix);

@@ -118,8 +118,8 @@ final class BacklogProgressTest extends TestCase
 
     public function test_a_task_touching_src_or_pointing_at_nothing_is_the_projects(): void
     {
-        $tasks = [$this->task(refs: ['packages/semitexa-orm/src/X.php', 'src/modules/Shop/Y.php']), $this->task(refs: ['src/modules/Shop/Z.php']), $this->task()];
+        $tasks = [$this->task(refs: ['packages/semitexa-orm/src/X.php', 'src/modules/Shop/Y.php']), $this->task(refs: ['src/modules/Shop/Z.php']), $this->task(), $this->task(refs: ['Semitexa\\Modules\\Shop\\X'])];
 
-        self::assertSame(3, BacklogProgress::of($tasks, false)->phases['work']['approved']);
+        self::assertSame(4, BacklogProgress::of($tasks, false)->phases['work']['approved']);
     }
 }
