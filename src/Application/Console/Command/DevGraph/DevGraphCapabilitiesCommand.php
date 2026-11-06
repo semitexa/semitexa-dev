@@ -24,7 +24,9 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
 
     protected function configure(): void
     {
-        $this->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON manifest');
+        $this
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON manifest')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Only the commands with this word in their name, summary or advice');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -42,6 +44,14 @@ final class DevGraphCapabilitiesCommand extends BaseCommand
         }
 
         $capabilities = (new RuntimeCommandCatalog())->all($application);
+        // The whole manifest is 150 KB of JSON: more than an agent reads to find one command.
+        $search = $input->getOption('search');
+        if (is_string($search) && $search !== '') {
+            $capabilities = array_values(array_filter(
+                $capabilities,
+                static fn (object $cap): bool => stripos($cap->name . ' ' . $cap->summary . ' ' . $cap->use_when, $search) !== false,
+            ));
+        }
 
         $manifest = new CapabilityManifest(
             artifact: 'semitexa.ai-capabilities/v1',

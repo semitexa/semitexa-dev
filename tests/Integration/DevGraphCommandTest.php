@@ -23,6 +23,22 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 class DevGraphCommandTest extends TestCase
 {
+    public function test_capabilities_search_narrows_the_manifest(): void
+    {
+        $app = new \Symfony\Component\Console\Application();
+        $app->add(new \Semitexa\Dev\Application\Console\Command\DevGraph\DevGraphCapabilitiesCommand());
+        $app->add(new \Semitexa\Dev\Application\Console\Command\AiAskCommand());
+        $tester = new \Symfony\Component\Console\Tester\CommandTester($app->find('dev:graph:capabilities'));
+
+        $tester->execute(['--json' => true, '--search' => 'ai:ask']);
+        $found = json_decode($tester->getDisplay(), true, 32, JSON_THROW_ON_ERROR);
+
+        $this->assertContains('ai:ask', array_column($found['commands'], 'name'));
+
+        $tester->execute(['--json' => true, '--search' => 'zzz-nothing']);
+        $this->assertSame([], json_decode($tester->getDisplay(), true, 32, JSON_THROW_ON_ERROR)['commands']);
+    }
+
     public function test_dev_graph_capabilities_is_registered_with_json_option(): void
     {
         $app = new Application();
