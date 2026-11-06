@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
-use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
-
 /**
  * The changed files no check read.
  *
@@ -30,6 +28,8 @@ final readonly class CoverageGap
         VerificationTarget::TYPE_CAPABILITY_INDEX,
     ];
 
+    private const INDEX_TAIL = '/resources/capability-index.json';
+
     /** Targets that decide by a path, never by what the file says. */
     private const PATH_ONLY_IDS = ['lint:var-artifacts'];
 
@@ -48,11 +48,12 @@ final readonly class CoverageGap
     public static function of(VerificationPlan $plan, array $results, string $projectRoot): self
     {
         $checked = [];
+        $indexRead = false;
         foreach ($results as $result) {
             $target = $result->target;
             // Selected by every package file and reads one: the index itself.
             if ($result->completed() && $target->type === VerificationTarget::TYPE_CAPABILITY_INDEX) {
-                $checked[CapabilityIndex::RELATIVE_PATH] = true;
+                $indexRead = true;
             }
             if (!$result->completed() || in_array($target->type, self::STRUCTURAL_ONLY, true) || in_array($target->id, self::PATH_ONLY_IDS, true)) {
                 continue;
@@ -70,7 +71,9 @@ final readonly class CoverageGap
                 continue;
             }
             ++$changed;
-            if (!isset($checked[$file->path])) {
+            // By its tail: a project has it under vendor/, the monorepo under packages/.
+            $isIndex = str_ends_with($file->path, self::INDEX_TAIL);
+            if (!isset($checked[$file->path]) && !($isIndex && $indexRead)) {
                 $unchecked[] = $file;
             }
         }

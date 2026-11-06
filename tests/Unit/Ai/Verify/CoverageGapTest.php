@@ -45,6 +45,17 @@ final class CoverageGapTest extends TestCase
     }
 
     #[Test]
+    public function the_index_of_a_project_is_the_same_file_under_vendor(): void
+    {
+        $gap = $this->gap($this->plan(
+            [$this->file('vendor/semitexa/dev/resources/capability-index.json', ChangedFile::KIND_NON_PHP)],
+            [$this->target(VerificationTarget::TYPE_CAPABILITY_INDEX, ['packages/a/src/A.php'])],
+        ));
+
+        self::assertSame([], $gap->unchecked);
+    }
+
+    #[Test]
     public function a_pass_over_a_change_no_check_could_read_is_incomplete(): void
     {
         // Measured 2026-10-01: .md/.sh/.js changes planned module_structure
