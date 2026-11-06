@@ -9,13 +9,14 @@ namespace Semitexa\Dev\Application\Service\Ai\Work;
  * within days, a task is not.
  *
  * `tests` are the passed test targets of that run. None means the task had
- * nothing to test, which only a change of docs or config can say.
+ * nothing to test, which only a change of docs or config can say. `commits` are
+ * the ones that name the task with a line "Task: <id>".
  */
 final readonly class TaskProof
 {
     /**
      * @param list<string> $tests
-     * @param array<string, string> $commits repository => commit, when the commit holds what the run checked
+     * @param array<string, list<string>> $commits repository => its commits
      */
     public function __construct(
         public string $receipt,
@@ -24,7 +25,7 @@ final readonly class TaskProof
         public array $commits,
     ) {}
 
-    /** @return array{receipt: string, at: string, tests: list<string>, commits: array<string, string>} */
+    /** @return array{receipt: string, at: string, tests: list<string>, commits: array<string, list<string>>} */
     public function toArray(): array
     {
         return ['receipt' => $this->receipt, 'at' => $this->at, 'tests' => $this->tests, 'commits' => $this->commits];
@@ -37,9 +38,9 @@ final readonly class TaskProof
             return null;
         }
         $commits = [];
-        foreach (is_array($row['commits'] ?? null) ? $row['commits'] : [] as $repository => $commit) {
-            if (is_string($commit)) {
-                $commits[(string) $repository] = $commit;
+        foreach (is_array($row['commits'] ?? null) ? $row['commits'] : [] as $repository => $list) {
+            if (is_array($list)) {
+                $commits[(string) $repository] = array_values(array_filter($list, is_string(...)));
             }
         }
 

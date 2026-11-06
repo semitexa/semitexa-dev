@@ -39,9 +39,10 @@ final class VerifyReceipts
      * @param array<string, mixed>        $envelope
      * @param list<array<string, mixed>>  $processes
      * @param array<string, ?string>|null $treeBefore the fingerprint taken before the targets ran
+     * @param string|null                 $trace      the trace this run was told to report to
      * @return array<string, mixed> the envelope with `receipt`
      */
-    public function attach(array $envelope, array $processes, ?array $treeBefore = null): array
+    public function attach(array $envelope, array $processes, ?array $treeBefore = null, ?string $trace = null): array
     {
         $paths = array_map(
             static fn (mixed $f): string => is_array($f) && is_string($f['path'] ?? null) ? $f['path'] : '',
@@ -64,7 +65,7 @@ final class VerifyReceipts
             'cwd'          => (string) getcwd(),
             // Who ran it: a subagent's run carries its own session, so a parent
             // can tell its own runs from the ones it was only told about.
-            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => self::env('SEMITEXA_AI_TRACE_ID') ?? $this->claimedTask()],
+            'run_by'       => ['agent_session' => self::env('SEMITEXA_AGENT_SESSION'), 'trace' => $trace ?? self::env('SEMITEXA_AI_TRACE_ID') ?? $this->claimedTask()],
             'verdict'      => $envelope['verdict'] ?? null,
             'targets'      => array_map(static fn (mixed $r): array => is_array($r) ? [
                 'id'            => $r['id'] ?? null,
@@ -201,39 +202,45 @@ final class VerifyReceipts
     }
 
     /**
-     * The newest run made for one of these ids that checked anything: a run
-     * after the commit finds nothing to verify and says nothing either way.
+     * The runs made for these ids that checked anything, newest first: one after
+     * the commit finds nothing to verify and says nothing either way.
      *
      * @param list<string> $traces
-     * @return array<string, mixed>|null
+     * @return list<array<string, mixed>>
      */
-    public function newestFor(array $traces): ?array
+    public function forTraces(array $traces): array
     {
         $files = glob($this->projectRoot . '/' . self::DIR . '/rcpt-*.json') ?: [];
         rsort($files);
+        $runs = [];
         foreach ($files as $file) {
             $receipt = json_decode((string) @file_get_contents($file), true);
             $runBy = is_array($receipt) ? ($receipt['run_by'] ?? null) : null;
-            if (!is_array($receipt) || !is_array($runBy) || !in_array($runBy['trace'] ?? null, $traces, true)) {
-                continue;
-            }
-            if (($receipt['verdict'] ?? null) !== 'nothing_to_verify') {
+            if (is_array($receipt) && is_array($runBy) && in_array($runBy['trace'] ?? null, $traces, true)
+                && !in_array($receipt['verdict'] ?? null, ['nothing_to_verify', 'skipped'], true)) {
                 /** @var array<string, mixed> $receipt */
-                return $receipt;
+                $runs[] = $receipt;
             }
         }
 
-        return null;
+        return $runs;
     }
 
     /** With no trace exported, the task this session holds is what the run was for. */
     private function claimedTask(): ?string
     {
         try {
-            return (new AgentRegistry($this->projectRoot))->current()?->task;
+            return $this->holderIn(new AgentRegistry($this->projectRoot));
         } catch (\Throwable) {
             return null; // who ran it is a note on the receipt, never a reason to lose it
         }
+    }
+
+    private function holderIn(AgentRegistry $registry): ?string
+    {
+        $session = $registry->current();
+
+        return $session?->task !== null && $session->holds($session->task, $registry->project()) ? $session->task : null;
     }
 
     private static function env(string $name): ?string

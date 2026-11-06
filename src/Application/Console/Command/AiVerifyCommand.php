@@ -221,7 +221,7 @@ final class AiVerifyCommand extends BaseCommand
         }
 
         $unselected = UnselectedChanges::ofRun($input, $projectRoot, $plan);
-        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact, $unselected), $recorder->calls(), $treeBefore); // ai:verify:receipt checks it
+        $envelope = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->attach($this->buildEnvelope($plan, $results, $verdict, $impact, $unselected), $recorder->calls(), $treeBefore, is_string($input->getOption('trace')) ? $input->getOption('trace') : null); // ai:verify:receipt checks it
         $dirtyScan = null;
         if ((bool) $input->getOption('dirty')) {
             // The reach of the answer, beside the answer. A scan that could not

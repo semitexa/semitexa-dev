@@ -10,6 +10,7 @@ use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
 use Semitexa\Dev\Application\Service\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
@@ -196,6 +197,23 @@ final class AiWorkPhaseTest extends TestCase
         $this->update('tk-a', ['--phase' => 'work']);
 
         self::assertStringContainsString('updated task', (string) file_get_contents($this->root . '/var/ai-work/activity.ndjson'));
+    }
+
+    public function test_closing_a_task_through_the_command_keeps_its_proof(): void
+    {
+        $this->start('tk-a');
+        mkdir($this->root . '/' . VerifyReceipts::DIR, 0755, true);
+        file_put_contents($this->root . '/Code.php', 'code');
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20261106-000001-aaaaaa.json', (string) json_encode([
+            'id' => 'rcpt-20261106-000001-aaaaaa', 'generated_at' => '2026-11-06T00:00:00+00:00', 'run_by' => ['trace' => 'tk-a'], 'verdict' => 'pass',
+            'targets' => [['id' => 'phpunit:X', 'type' => 'phpunit', 'status' => 'pass']], 'tree' => ['Code.php' => hash('sha256', 'code')], 'changed_during_run' => [],
+        ]));
+
+        $this->update('tk-a', ['--status' => 'done']);
+        self::assertSame('rcpt-20261106-000001-aaaaaa', $this->tasks->get('tk-a')->proof?->receipt);
+
+        $this->update('tk-a', ['--status' => 'in_progress']);
+        self::assertNull($this->tasks->get('tk-a')->proof);
     }
 
     public function test_update_refuses_an_unknown_phase(): void
