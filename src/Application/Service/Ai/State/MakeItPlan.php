@@ -14,7 +14,9 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  * The choice lives here and not in a skill's text, so every agent, in every
  * runtime, gets the same answer:
  *
- *   empty    nothing in the backlog: interview the architect and fill it
+ *   empty    nothing to work on yet: interview the architect and fill the backlog.
+ *            Filing what they say as it comes must not end the interview, so with
+ *            questions open this stays the state until something is approved.
  *   work     an approved task is open: here it is, and how to take it through
  *   waiting  what is open is blocked or another agent's: nothing to take now
  *   ideas    nothing approved is open, ideas are: offer them, take none
@@ -39,19 +41,24 @@ final readonly class MakeItPlan
         public string $state,
         public array $tasks,
         public int $total,
+        private int $openQuestions = 0,
+        private ?string $charterError = null,
+        private bool $hasTasks = false,
     ) {}
 
     /**
      * @param list<Task> $tasks the whole backlog
      * @param callable(string): bool $heldByAnother whether another live agent holds this task
      * @param string|null $mine the task this session already holds
+     * @param int $openQuestions what the charter still needs from the architect
+     * @param string|null $charterError why the charter cannot be read, which is no complete charter
      */
-    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine): self
+    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions = 0, ?string $charterError = null): self
     {
         $inScope = array_values(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED && BacklogProgress::inScope($t, $withFramework)));
         if ($inScope === []) {
             // Not the same as nothing at all: say what the option would show.
-            return new self(self::EMPTY, [], count(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED)));
+            return new self(self::EMPTY, [], count(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED)), $openQuestions, $charterError);
         }
 
         $open = array_values(array_filter($inScope, static fn (Task $t): bool => $t->status !== TaskStatus::DONE));
@@ -64,6 +71,11 @@ final readonly class MakeItPlan
         }
         if ($approved !== []) {
             return self::listing(self::WAITING, $approved);
+        }
+        // Only before the first approval: a project that has done its work is done,
+        // whatever its charter still lacks.
+        if (($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
+            return new self(self::EMPTY, [], 0, $openQuestions, $charterError, true);
         }
 
         $ideas = array_values(array_filter($open, static fn (Task $t): bool => !BacklogProgress::counts($t)));
@@ -114,8 +126,12 @@ final readonly class MakeItPlan
     public function say(): string
     {
         return match ($this->state) {
-            self::EMPTY => 'The backlog is empty. Before any code, find out what this project is: interview the architect.'
-                . ($this->total > 0 ? sprintf(' %d framework tasks are left out: --with-framework counts them.', $this->total) : ''),
+            self::EMPTY => match (true) {
+                $this->charterError !== null => 'The project charter cannot be read, and it comes before any work.',
+                $this->hasTasks => sprintf('The charter is not finished: %d questions are open. Finish the interview before any work.', $this->openQuestions),
+                $this->openQuestions > 0 => 'The backlog is empty. Before any code, find out what this project is: interview the architect.',
+                default => 'The backlog is empty and the charter is complete: find out what must work first.',
+            } . ($this->total > 0 ? sprintf(' %d framework tasks are left out: --with-framework counts them.', $this->total) : ''),
             self::WORK => sprintf('Taking %s: %s (%d open).', $this->tasks[0]['id'], $this->tasks[0]['title'], $this->total),
             self::WAITING => sprintf('Nothing to take now: %d open, all blocked or held by another agent. Show the architect what they wait for.', $this->total),
             self::IDEAS => sprintf('Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.', $this->total),
@@ -125,17 +141,15 @@ final readonly class MakeItPlan
 
     /**
      * @param string $command how this agent runs ai:make-it again
-     * @param int $openQuestions what the charter still needs from the architect
-     * @param string|null $charterError why the charter cannot be read, which is no complete charter
      * @return list<string>
      */
-    public function steps(string $command, int $openQuestions = 0, ?string $charterError = null): array
+    public function steps(string $command): array
     {
         return match ($this->state) {
-            self::EMPTY => $charterError !== null ? ["The project charter cannot be read ({$charterError}). Show the architect and fix or remove it, then run {$command} again."] : [
-                $openQuestions > 0
-                    ? "Ask the architect the question under interview, in their language and your own words, and record the answer as it says. {$openQuestions} left; run {$command} after each answer for the next one. They can stop at any point: it resumes where it stopped."
-                    : 'The charter is complete. Ask the architect what must work first, and what a user should be able to do on day one; offer what the goal and the signs of success suggest.',
+            self::EMPTY => $this->charterError !== null ? ["The project charter cannot be read ({$this->charterError}). Show the architect and fix or remove it, then run {$command} again."] : [
+                $this->openQuestions > 0
+                    ? "Ask the architect the question under interview, in their language and your own words, and record the answer as it says. {$this->openQuestions} left; run {$command} after each answer for the next one. They can stop at any point: it resumes where it stopped."
+                    : 'The charter is complete. Ask the architect what must work first, and what a user should be able to do on day one; offer what the goal and the signs of success suggest (bin/semitexa ai:charter show has them).',
                 'As the answers come, file them: bin/semitexa ai:epic start --id=<id> --title="<what>" --goal="<why>", then bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --phase=work for each piece of work. If the architect has a spec, cut it into tasks the same way, each small enough to prove with a test.',
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',

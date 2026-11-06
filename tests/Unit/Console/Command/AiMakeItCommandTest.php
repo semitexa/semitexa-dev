@@ -104,6 +104,7 @@ final class AiMakeItCommandTest extends TestCase
         $result = $this->run_();
 
         self::assertSame('goal', $result['interview']['next']['field']);
+        self::assertStringStartsWith('bin/semitexa ai:charter answer', $result['interview']['next']['record']);
         self::assertSame(count(CharterInterview::questions()), $result['interview']['open']);
         self::assertStringContainsString('resumes where it stopped', implode("\n", $result['steps']));
     }
@@ -139,6 +140,17 @@ final class AiMakeItCommandTest extends TestCase
         self::assertStringNotContainsString('charter is complete', $steps);
     }
 
+    public function test_an_interview_goes_on_while_its_answers_are_filed(): void
+    {
+        $this->epic('ep-a', EpicStatus::NEW);
+        (new TaskStore())->save(new Task('tk-idea', 'ep-a', 't', TaskStatus::NEW, '', 'low', [], null, 'tk-idea', self::NOW, self::NOW, null, Phase::WORK));
+
+        $result = $this->run_();
+
+        self::assertSame('empty', $result['state']);
+        self::assertSame('goal', $result['interview']['next']['field']);
+    }
+
     public function test_a_backlog_with_work_asks_nothing_of_the_charter(): void
     {
         $this->file('tk-a');
@@ -153,6 +165,7 @@ final class AiMakeItCommandTest extends TestCase
         $tester->execute([], ['interactive' => true, 'decorated' => false]);
 
         self::assertStringContainsString('Ask: What is this project for?', $tester->getDisplay());
+        self::assertStringContainsString('Record: bin/semitexa ai:charter answer', $tester->getDisplay());
     }
 
     public function test_a_fresh_project_is_told_to_interview(): void

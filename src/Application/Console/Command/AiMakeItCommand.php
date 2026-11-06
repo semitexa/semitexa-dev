@@ -68,14 +68,17 @@ final class AiMakeItCommand extends BaseCommand
         $tasks = $this->liveTasks();
         $registry = new AgentRegistry(ProjectRoot::get());
         $self = $registry->current();
+        $questions = OwnerQuestions::of($this->charterStore);
         $plan = MakeItPlan::of(
             $tasks,
             $withFramework,
             static fn (string $id): bool => $registry->holderOf($id, $self?->id) !== null,
             $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
+            $questions['open'],
+            $questions['error'],
         );
-        $interview = $plan->state === MakeItPlan::EMPTY ? OwnerQuestions::of($this->charterStore) : null;
-        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''), $interview['open'] ?? 0, $interview['error'] ?? null);
+        $interview = $plan->state === MakeItPlan::EMPTY ? self::runnable($questions) : null;
+        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
         $line = BacklogProgress::of($tasks, $withFramework, $this->audits())->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
@@ -95,6 +98,21 @@ final class AiMakeItCommand extends BaseCommand
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The question with a command an agent can paste as it stands.
+     *
+     * @param array{next: array{field: string, question: string, why: string, record: string}|null, open: int, how_to_ask: ?string, error: ?string} $questions
+     * @return array<string, mixed>
+     */
+    private static function runnable(array $questions): array
+    {
+        if ($questions['next'] !== null) {
+            $questions['next']['record'] = 'bin/semitexa ' . $questions['next']['record'];
+        }
+
+        return $questions;
     }
 
     /**
@@ -141,7 +159,7 @@ final class AiMakeItCommand extends BaseCommand
         $next = $interview['next'] ?? null;
         if (is_array($next) && is_string($next['question'] ?? null) && is_string($next['record'] ?? null)) {
             $text[] = '  Ask: ' . $next['question'];
-            $text[] = '  Record: bin/semitexa ' . $next['record'];
+            $text[] = '  Record: ' . $next['record'];
         }
         foreach ($plan->tasks as $task) {
             $text[] = sprintf('  %s: %s', $task['id'], $task['title']);
