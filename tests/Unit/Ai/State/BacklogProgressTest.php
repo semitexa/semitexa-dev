@@ -102,6 +102,33 @@ final class BacklogProgressTest extends TestCase
         self::assertStringContainsString('right nothing open (audited today)', $progress->line());
     }
 
+    public function test_the_newest_audit_speaks_whatever_the_order_of_the_lines(): void
+    {
+        $progress = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, self::NOW), $this->audit(Phase::RIGHT, '2026-09-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW));
+
+        self::assertStringContainsString('right nothing open (audited today)', $progress->line());
+    }
+
+    public function test_an_audit_dated_in_the_future_is_passed_over(): void
+    {
+        self::assertStringContainsString('right not measured', BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, '2099-01-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->line());
+    }
+
+    public function test_an_audit_is_fresh_for_twenty_nine_days_and_stale_at_thirty(): void
+    {
+        $now = new \DateTimeImmutable(self::NOW);
+
+        self::assertTrue($this->audit(Phase::RIGHT, '2026-10-08T00:00:00+00:00')->isFresh($now));
+        self::assertFalse($this->audit(Phase::RIGHT, '2026-10-07T00:00:00+00:00')->isFresh($now));
+    }
+
+    public function test_the_json_names_the_audit_and_its_age(): void
+    {
+        $audits = BacklogProgress::of([], false, [$this->audit(Phase::FAST, '2026-11-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->toArray()['audits'];
+
+        self::assertSame([5, true, 'the Shop module'], [$audits['fast']['age_days'], $audits['fast']['fresh'], $audits['fast']['covered']]);
+    }
+
     public function test_an_audit_of_src_says_nothing_about_the_framework(): void
     {
         $audits = [$this->audit(Phase::RIGHT, self::NOW)];

@@ -27,7 +27,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class AiAuditCommand extends BaseCommand
 {
     private const ARTIFACT = 'semitexa.ai-audit/v1';
-    private const PHASES = [Phase::RIGHT, Phase::FAST];
 
     #[InjectAsReadonly]
     protected AuditStore $auditStore;
@@ -65,10 +64,11 @@ final class AiAuditCommand extends BaseCommand
     private function record(InputInterface $input, OutputInterface $output): int
     {
         $phase = Phase::tryFrom(self::text($input, 'phase'));
-        if (!in_array($phase, self::PHASES, true)) {
+        if (!in_array($phase, AuditRecord::PHASES, true)) {
             return $this->fail($output, '--phase must be right or fast: work is what was asked for, and its tickets say how far it is');
         }
-        $covered = self::text($input, 'covered');
+        // It comes back in a listing: no line breaks, control bytes or reversed text.
+        $covered = trim((string) preg_replace('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', ' ', self::text($input, 'covered')));
         if ($covered === '') {
             return $this->fail($output, '--covered is required: what was looked at, in a line');
         }

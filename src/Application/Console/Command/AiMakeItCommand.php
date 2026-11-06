@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
@@ -69,7 +70,7 @@ final class AiMakeItCommand extends BaseCommand
             $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
         );
         $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
-        $line = BacklogProgress::of($tasks, $withFramework, $this->auditStore->all())->line();
+        $line = BacklogProgress::of($tasks, $withFramework, $this->audits())->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
             return $this->print($output, $plan, $line, $steps);
@@ -87,6 +88,21 @@ final class AiMakeItCommand extends BaseCommand
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The line beside the answer: an audit file that cannot be read must not
+     * stop a loop that has tasks to take.
+     *
+     * @return list<AuditRecord>
+     */
+    private function audits(): array
+    {
+        try {
+            return $this->auditStore->all();
+        } catch (\RuntimeException) {
+            return [];
+        }
     }
 
     /**

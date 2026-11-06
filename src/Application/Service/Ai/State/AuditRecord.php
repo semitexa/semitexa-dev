@@ -13,6 +13,9 @@ final readonly class AuditRecord
 {
     public const FRESH_DAYS = 30;
 
+    /** Work is measured by what was asked for: it has no clean to look for. */
+    public const PHASES = [Phase::RIGHT, Phase::FAST];
+
     public function __construct(
         public Phase $phase,
         public string $at,
@@ -23,12 +26,23 @@ final readonly class AuditRecord
 
     public function ageDays(\DateTimeImmutable $now): int
     {
-        return intdiv(max(0, $now->getTimestamp() - (new \DateTimeImmutable($this->at))->getTimestamp()), 86400);
+        return intdiv(max(0, $now->getTimestamp() - $this->timestamp()), 86400);
     }
 
     public function isFresh(\DateTimeImmutable $now): bool
     {
         return $this->ageDays($now) < self::FRESH_DAYS;
+    }
+
+    /** A date to come is a clock or a hand-edit, not a look that happened. */
+    public function isInTheFuture(\DateTimeImmutable $now): bool
+    {
+        return $this->timestamp() > $now->getTimestamp();
+    }
+
+    public function timestamp(): int
+    {
+        return (new \DateTimeImmutable($this->at))->getTimestamp();
     }
 
     /** @return array{phase: string, at: string, by: string, covered: string, with_framework: bool} */
@@ -44,7 +58,7 @@ final readonly class AuditRecord
             return null;
         }
         $phase = Phase::tryFrom($row['phase']);
-        if ($phase === null || strtotime($row['at']) === false) {
+        if (!in_array($phase, self::PHASES, true) || \DateTimeImmutable::createFromFormat(DATE_ATOM, $row['at']) === false) {
             return null;
         }
 

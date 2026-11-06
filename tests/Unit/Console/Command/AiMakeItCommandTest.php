@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiMakeItCommand;
+use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
@@ -86,6 +87,13 @@ final class AiMakeItCommandTest extends TestCase
     {
         $this->epic('ep-a', EpicStatus::NEW);
         (new TaskStore())->save(new Task($id, 'ep-a', 't', $status, '', 'low', $refs, null, $id, self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+    }
+
+    public function test_the_line_beside_the_answer_knows_the_audits(): void
+    {
+        (new AuditStore())->record(new AuditRecord(Phase::RIGHT, gmdate(DATE_ATOM), 'agent', 'the Shop module', false));
+
+        self::assertStringContainsString('right nothing open', (string) $this->run_()['line']);
     }
 
     public function test_a_fresh_project_is_told_to_interview(): void

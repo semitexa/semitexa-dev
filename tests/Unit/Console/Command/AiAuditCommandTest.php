@@ -99,9 +99,50 @@ final class AiAuditCommandTest extends TestCase
         self::assertCount(1, (new AuditStore())->all());
     }
 
-    public function test_a_stored_line_with_a_bad_date_is_no_audit(): void
+    public function test_a_stored_line_with_a_bad_date_or_a_work_phase_is_no_audit(): void
     {
-        self::assertNull(AuditRecord::fromStored(['phase' => 'right', 'at' => 'yesterday-ish', 'by' => 'a', 'covered' => 'b']));
+        $line = ['phase' => 'right', 'at' => '2026-11-06T00:00:00+00:00', 'by' => 'a', 'covered' => 'b'];
+
+        self::assertNotNull(AuditRecord::fromStored($line));
+        self::assertNull(AuditRecord::fromStored(['at' => 'yesterday-ish'] + $line));
+        self::assertNull(AuditRecord::fromStored(['at' => '@-9223372036854775808'] + $line));
+        self::assertNull(AuditRecord::fromStored(['phase' => 'work'] + $line));
+    }
+
+    public function test_it_says_when_and_who_by_default(): void
+    {
+        $before = time();
+        $this->audit(['action' => 'record', '--phase' => 'fast', '--covered' => 'a']);
+
+        $audit = (new AuditStore())->all()[0];
+        self::assertSame('agent', $audit->by);
+        self::assertGreaterThanOrEqual($before, $audit->timestamp());
+        self::assertLessThanOrEqual(time(), $audit->timestamp());
+    }
+
+    public function test_a_record_after_a_line_with_no_newline_stands_on_its_own(): void
+    {
+        $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => 'a']);
+        $file = $this->root . '/' . AuditStore::PATH;
+        file_put_contents($file, rtrim((string) file_get_contents($file)));
+
+        $this->audit(['action' => 'record', '--phase' => 'fast', '--covered' => 'b']);
+
+        self::assertCount(2, (new AuditStore())->all());
+    }
+
+    public function test_the_file_is_open_to_every_user(): void
+    {
+        $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => 'a']);
+
+        self::assertSame(0666, fileperms($this->root . '/' . AuditStore::PATH) & 0777);
+    }
+
+    public function test_what_it_covered_keeps_no_control_bytes(): void
+    {
+        $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => "the\x1b[2J Shop\nmodule"]);
+
+        self::assertStringNotContainsString("\x1b", (new AuditStore())->all()[0]->covered);
     }
 
     public function test_an_unknown_action_is_an_error(): void

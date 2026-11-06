@@ -93,15 +93,18 @@ final readonly class BacklogProgress
             ];
         }
 
+        $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $newest = [];
         foreach ($audits as $audit) {
-            // An audit of ./src alone says nothing about the framework.
-            if ($audit->withFramework || !$withFramework) {
+            // An audit of ./src alone says nothing about the framework. Newest by
+            // its date, never by its line: a merge can put the lines in any order.
+            $known = $newest[$audit->phase->value] ?? null;
+            if (($audit->withFramework || !$withFramework) && !$audit->isInTheFuture($now) && ($known === null || $audit->timestamp() >= $known->timestamp())) {
                 $newest[$audit->phase->value] = $audit;
             }
         }
 
-        return new self($phases, $ideas, $noPhase, $withFramework, $newest, $now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
+        return new self($phases, $ideas, $noPhase, $withFramework, $newest, $now);
     }
 
     /** The option, from the command line or the project's .env. */

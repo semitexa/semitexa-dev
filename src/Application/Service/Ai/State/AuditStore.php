@@ -24,9 +24,13 @@ final class AuditStore
             throw new \RuntimeException('cannot create ' . dirname(self::PATH));
         }
         $line = json_encode($audit->toArray(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        if (@file_put_contents($file, $line . "\n", FILE_APPEND | LOCK_EX) === false) {
+        // A hand-edit can leave no last newline, and this line would glue onto it.
+        $tail = is_file($file) && filesize($file) > 0 ? (string) @file_get_contents($file, false, null, (int) filesize($file) - 1) : "\n";
+        if (@file_put_contents($file, ($tail === "\n" ? '' : "\n") . $line . "\n", FILE_APPEND | LOCK_EX) === false) {
             throw new \RuntimeException('cannot write ' . self::PATH);
         }
+        // Open to everyone: the container may run as root and the host as its user.
+        @chmod($file, 0666);
     }
 
     /** @return list<AuditRecord> oldest first */
@@ -36,8 +40,12 @@ final class AuditStore
         if (!is_file($file)) {
             return [];
         }
+        $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($lines === false) {
+            throw new \RuntimeException('cannot read ' . self::PATH);
+        }
         $audits = [];
-        foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $number => $line) {
+        foreach ($lines as $number => $line) {
             $audit = AuditRecord::fromStored(json_decode($line, true));
             if ($audit === null) {
                 StaticLoggerBridge::warning('dev', 'Skipping unreadable audit record', ['file' => self::PATH, 'line' => $number + 1]);
