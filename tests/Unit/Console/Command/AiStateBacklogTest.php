@@ -132,8 +132,10 @@ final class AiStateBacklogTest extends TestCase
         file_put_contents($store->pathFor('tk-b'), '{"id":"tk-b"');
         $command = new AiStateCommand();
         PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore()]));
+        $tester = new CommandTester($command);
 
-        self::assertSame(1, (new CommandTester($command))->execute([], ['interactive' => false]));
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+        self::assertStringContainsString('tk-b', $tester->getDisplay());
     }
 
     public function test_the_environment_turns_the_option_on(): void

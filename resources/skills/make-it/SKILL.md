@@ -66,7 +66,11 @@ re-arms. Each tick, in this order:
      from. Look there, file what you find (`ai:work start --phase=<phase>`, which
      counts at once), record it (`ai:audit record`), and ask again. Under `work`,
      new work waits for the operator: end the tick and say so.
-   - anything else: say what `say` says and end the tick.
+   - `empty`: the operator's turn. Ask the question under `interview`, or what
+     must work first, and record the answer as the steps say; end the tick.
+   - `ideas`: show the operator the tasks it lists, ask which to approve, take none;
+     end the tick.
+   - `done` with no phase: say what `say` says and end the tick.
 4. **Make.** Follow the task through the steps `ai:make-it` gives, held to the
    profile's definition of done; phpstan must not rise above its baseline. Those
    steps end at a local commit, closing the task and asking again: here stop at
