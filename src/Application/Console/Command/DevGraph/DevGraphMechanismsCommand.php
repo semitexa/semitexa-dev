@@ -53,6 +53,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Show one capability by id (e.g. ssr.deferred)')
             ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Filter by area prefix (e.g. ssr, ui)')
             ->addOption('state', null, InputOption::VALUE_REQUIRED, 'Filter: installed | available')
+            ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Filter by a word in the id, summary, when to use it or what it replaces')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope');
     }
 
@@ -81,6 +82,14 @@ final class DevGraphMechanismsCommand extends BaseCommand
             ));
         }
 
+        $search = $input->getOption('search');
+        if (is_string($search) && $search !== '') {
+            $capabilities = array_values(array_filter(
+                $capabilities,
+                static fn (array $c): bool => self::mentions($c, $search),
+            ));
+        }
+
         $id = $input->getOption('id');
         if (is_string($id) && $id !== '') {
             $capabilities = array_values(array_filter(
@@ -90,7 +99,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
 
             if ($capabilities === []) {
                 // --json callers got this as plain text.
-                return $this->refuse($input, $output, self::missingIdMessage($everything, $id));
+                return $this->refuse($input, $output, self::missingIdMessage($everything, $id, self::filtersIn($input)));
             }
         }
 
@@ -99,6 +108,13 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $oneAtATime = is_string($id) && $id !== '';
         if (!$oneAtATime) {
             $capabilities = array_map(self::listed(...), $capabilities);
+        }
+        // The whole catalog in full is more than an agent reads: it was cut with
+        // head -c and the entry it needed went with it. So the whole catalog is an
+        // index, and a filter brings the detail.
+        $index = !$oneAtATime && self::filtersIn($input) === [];
+        if ($index) {
+            $capabilities = array_map(self::indexed(...), $capabilities);
         }
 
         if ((bool) $input->getOption('json')) {
@@ -111,6 +127,8 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 // `ai:ask` stamps its own envelope with the CURRENT time, which
                 // makes a month-old snapshot look freshly computed.
                 'snapshot' => $this->snapshotProvenance(),
+                'index' => $index,
+                'nothing_found' => $capabilities === [] ? self::nothingFound($input) : null,
                 'how_to_use_one' => 'ai:ask mechanisms --id=<id> adds a working example and how data gets in and out, for an entry with has_usage',
                 'mechanisms' => $capabilities,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW);
@@ -119,7 +137,7 @@ final class DevGraphMechanismsCommand extends BaseCommand
         }
 
         if ($capabilities === []) {
-            $output->writeln('<comment>No framework mechanisms declared by the installed packages.</comment>');
+            $output->writeln(sprintf('<comment>%s</comment>', OutputFormatter::escape(self::nothingFound($input))));
 
             return Command::SUCCESS;
         }
@@ -128,6 +146,11 @@ final class DevGraphMechanismsCommand extends BaseCommand
         $output->writeln('====================');
         $output->writeln('');
 
+        if ($index) {
+            $output->writeln('--search=<word> or --area=<prefix> gives when to use each; --id=<id> gives all there is on one.');
+            $output->writeln('');
+        }
+
         $currentArea = null;
         foreach ($capabilities as $c) {
             $capArea = (string) strstr((string) $c['id'], '.', true);
@@ -135,6 +158,16 @@ final class DevGraphMechanismsCommand extends BaseCommand
                 $currentArea = $capArea;
                 $output->writeln(sprintf('<info>%s</info>', strtoupper($capArea)));
                 $output->writeln('');
+            }
+
+            if ($index) {
+                $output->writeln(sprintf(
+                    '  <comment>%s</comment>%s  %s',
+                    $c['id'],
+                    $c['state'] === 'installed' ? '' : '  <info>[available]</info>',
+                    $c['summary'],
+                ));
+                continue;
             }
 
             $this->renderCapability($output, $c);
@@ -160,16 +193,20 @@ final class DevGraphMechanismsCommand extends BaseCommand
      * actually has.
      *
      * @param list<array<string, mixed>> $everything the merged catalog, before filters
+     * @param list<string> $filters the filters the caller passed
      */
-    private static function missingIdMessage(array $everything, string $id): string
+    private static function missingIdMessage(array $everything, string $id, array $filters): string
     {
         foreach ($everything as $capability) {
             if ($capability['id'] === $id) {
-                return sprintf(
-                    'Capability "%s" exists but was filtered out: its state is "%s". Drop --state to see it.',
-                    $id,
-                    (string) $capability['state'],
-                );
+                return in_array('--state', $filters, true)
+                    ? sprintf(
+                        'Capability "%s" exists but was filtered out: its state is "%s". Drop %s to see it.',
+                        $id,
+                        (string) $capability['state'],
+                        implode(' and ', $filters),
+                    )
+                    : sprintf('Capability "%s" exists but was filtered out. Drop %s to see it.', $id, implode(' and ', $filters));
             }
         }
 
@@ -191,6 +228,58 @@ final class DevGraphMechanismsCommand extends BaseCommand
         unset($capability['usage']);
 
         return $capability;
+    }
+
+    /** @return list<string> the filters this call passed, as they are written */
+    private static function filtersIn(InputInterface $input): array
+    {
+        return array_values(array_filter(
+            ['--state', '--area', '--search'],
+            static function (string $option) use ($input): bool {
+                $value = $input->getOption(substr($option, 2));
+
+                return is_string($value) && $value !== '';
+            },
+        ));
+    }
+
+    /** Where to look next. A word nothing mentions anywhere and a filter that hid it are different answers. */
+    private static function nothingFound(InputInterface $input): string
+    {
+        $search = $input->getOption('search');
+        if (!is_string($search) || $search === '') {
+            return 'No framework mechanisms match. Drop the filters to see the catalog.';
+        }
+        $narrowing = array_values(array_diff(self::filtersIn($input), ['--search']));
+
+        return $narrowing === []
+            ? sprintf('No mechanism mentions "%s". ai:ask api --search=%s looks through classes and methods.', $search, escapeshellarg($search))
+            : sprintf('No mechanism matches "%s" under %s. Drop that to search the whole catalog.', $search, implode(' and ', $narrowing));
+    }
+
+    /**
+     * @param array<string, mixed> $capability
+     * @return array<string, mixed>
+     */
+    private static function indexed(array $capability): array
+    {
+        return array_intersect_key($capability, array_flip(['id', 'kind', 'state', 'summary', 'package', 'has_usage']));
+    }
+
+    /** @param array<string, mixed> $capability */
+    private static function mentions(array $capability, string $word): bool
+    {
+        $text = implode(' ', [
+            $capability['id'] ?? '',
+            $capability['summary'] ?? '',
+            $capability['use_when'] ?? '',
+            $capability['avoid_when'] ?? '',
+            $capability['declared_by'] ?? '',
+            $capability['package'] ?? '',
+            implode(' ', (array) ($capability['replaces'] ?? [])),
+        ]);
+
+        return stripos($text, $word) !== false;
     }
 
     /**

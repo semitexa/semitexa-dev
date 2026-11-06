@@ -58,6 +58,8 @@ final class CapabilityRegistry
                 optional_inputs: [
                     'id' => ['type' => 'string', 'description' => 'Single capability by id (e.g. ssr.deferred)'],
                     'area' => ['type' => 'string', 'description' => 'Filter by area prefix (ssr, ui)'],
+                    'search' => ['type' => 'string', 'description' => 'Filter by a word in the id, summary, attribute, package, advice or what it replaces'],
+                    'state' => ['type' => 'string', 'description' => 'Filter: installed or available'],
                 ],
                 outputs: ['envelope' => 'JSON mechanism catalog (semitexa.dev.mechanisms/v1), derived from #[Capability] across installed packages'],
                 supports: ['--json'],
