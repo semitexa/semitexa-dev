@@ -230,6 +230,28 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertStringContainsString('returned task to ideas', $log);
     }
 
+    public function test_revoking_a_bug_says_to_discard_it_instead(): void
+    {
+        $this->tasks->save(new Task('tk-bug', 'ep-a', 't', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-bug', self::NOW, self::NOW, new TaskApproval('rule', 'x', self::NOW)));
+
+        $result = $this->run_(['--id' => 'tk-bug', '--revoke' => true, '--words' => 'Ні']);
+
+        self::assertSame(1, $this->tester->getStatusCode());
+        self::assertStringContainsString('discard', (string) $result['error']);
+        self::assertTrue($this->tasks->get('tk-bug')->isApproved());
+    }
+
+    public function test_revoking_an_epic_leaves_its_bugs(): void
+    {
+        $this->tasks->save(new Task('tk-bug', 'ep-a', 't', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-bug', self::NOW, self::NOW, new TaskApproval('rule', 'x', self::NOW)));
+        $this->task('tk-a', approval: new TaskApproval('owner', 'Так', self::NOW));
+
+        $result = $this->run_(['--epic' => 'ep-a', '--revoke' => true, '--words' => 'Ні']);
+
+        self::assertSame(['tk-a'], $result['changed']);
+        self::assertSame(['tk-bug'], $result['unchanged']);
+    }
+
     public function test_the_trace_keeps_the_words(): void
     {
         $this->task('tk-a');

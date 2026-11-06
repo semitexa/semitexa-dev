@@ -15,6 +15,7 @@ use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskFiling;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Application\Service\Ai\Work\WorkId;
@@ -33,9 +34,11 @@ use Symfony\Component\Console\Output\OutputInterface;
  * --words keeps what the owner said. A discarded task cannot be approved: an
  * epic passes over it and --id refuses it. --revoke reaches discarded tasks too,
  * because one reopened later must not come back approved. An approval already
- * given stays as it was.
+ * given stays as it was. A bug counts by what it is, not by an approval, so
+ * --revoke cannot take it back: --id says so and an epic leaves it. A bug nobody
+ * wants is discarded.
  */
-#[AsCommand(name: 'ai:work:approve', description: 'Approve a task or a whole epic for implementation, or return it to ideas; only approved tasks count towards progress')]
+#[AsCommand(name: 'ai:work:approve', description: 'Approve a task or a whole epic for implementation, or return it to ideas; approved tasks and bugs count towards progress')]
 final class AiWorkApproveCommand extends BaseCommand
 {
     private const ARTIFACT = 'semitexa.ai-work.approval/v1';
@@ -89,8 +92,11 @@ final class AiWorkApproveCommand extends BaseCommand
             return $this->fail($output, $e->getMessage());
         }
 
-        if (!$revoke && $tasks !== [] && $tasks[0]->status === TaskStatus::DISCARDED) {
+        if ($id !== '' && !$revoke && $tasks[0]->status === TaskStatus::DISCARDED) {
             return $this->fail($output, "task '{$id}' is discarded: reopen it first if it is wanted after all");
+        }
+        if ($id !== '' && $revoke && TaskFiling::isBug($tasks[0]->recipe)) {
+            return $this->fail($output, "task '{$id}' is a bug: it counts whatever its approval says; if nobody wants it, discard it with ai:work update --status=discarded");
         }
 
         $by = $by !== '' ? $by : 'owner';
@@ -101,7 +107,7 @@ final class AiWorkApproveCommand extends BaseCommand
         $unchanged = [];
         $failed = [];
         foreach ($tasks as $task) {
-            if ($task->isApproved() === ($approval !== null)) {
+            if ($task->isApproved() === ($approval !== null) || ($revoke && TaskFiling::isBug($task->recipe))) {
                 $unchanged[] = $task->id;
                 continue;
             }
