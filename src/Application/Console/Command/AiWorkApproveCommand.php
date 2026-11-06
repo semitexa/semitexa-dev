@@ -95,8 +95,8 @@ final class AiWorkApproveCommand extends BaseCommand
         if ($id !== '' && !$revoke && $tasks[0]->status === TaskStatus::DISCARDED) {
             return $this->fail($output, "task '{$id}' is discarded: reopen it first if it is wanted after all");
         }
-        if ($id !== '' && $revoke && TaskFiling::isBug($tasks[0]->recipe)) {
-            return $this->fail($output, "task '{$id}' is a bug: it counts whatever its approval says; if nobody wants it, discard it with ai:work update --status=discarded");
+        if ($id !== '' && $revoke && $tasks[0]->status !== TaskStatus::DISCARDED && TaskFiling::isBug($tasks[0]->recipe)) {
+            return $this->fail($output, "task '{$id}' is a bug: it counts whatever its approval says; if nobody wants it: ai:work update --id={$id} --status=discarded");
         }
 
         $by = $by !== '' ? $by : 'owner';
@@ -107,7 +107,7 @@ final class AiWorkApproveCommand extends BaseCommand
         $unchanged = [];
         $failed = [];
         foreach ($tasks as $task) {
-            if ($task->isApproved() === ($approval !== null) || ($revoke && TaskFiling::isBug($task->recipe))) {
+            if ($task->isApproved() === ($approval !== null) || ($revoke && $task->status !== TaskStatus::DISCARDED && TaskFiling::isBug($task->recipe))) {
                 $unchanged[] = $task->id;
                 continue;
             }

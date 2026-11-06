@@ -241,6 +241,24 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertTrue($this->tasks->get('tk-bug')->isApproved());
     }
 
+    public function test_revoking_a_discarded_bug_still_takes_the_approval_back(): void
+    {
+        $this->tasks->save(new Task('tk-bug', 'ep-a', 't', TaskStatus::DISCARDED, 'fix_bug', 'low', [], null, 'tk-bug', self::NOW, self::NOW, new TaskApproval('rule', 'x', self::NOW)));
+
+        $this->run_(['--id' => 'tk-bug', '--revoke' => true, '--words' => 'Ні']);
+
+        self::assertSame(0, $this->tester->getStatusCode());
+        self::assertFalse($this->tasks->get('tk-bug')->isApproved());
+    }
+
+    public function test_an_epic_with_no_tasks_changes_nothing(): void
+    {
+        $result = $this->run_(['--epic' => 'ep-a', '--words' => 'Так']);
+
+        self::assertSame(0, $this->tester->getStatusCode());
+        self::assertSame([], $result['changed']);
+    }
+
     public function test_revoking_an_epic_leaves_its_bugs(): void
     {
         $this->tasks->save(new Task('tk-bug', 'ep-a', 't', TaskStatus::NEW, 'fix_bug', 'low', [], null, 'tk-bug', self::NOW, self::NOW, new TaskApproval('rule', 'x', self::NOW)));
