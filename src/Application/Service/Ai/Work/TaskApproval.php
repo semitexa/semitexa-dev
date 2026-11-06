@@ -17,7 +17,11 @@ final readonly class TaskApproval
         public string $by,
         public string $words,
         public string $at,
-    ) {}
+    ) {
+        if ($by === '' || $words === '' || $at === '') {
+            throw new \InvalidArgumentException('an approval needs who gave it, their words and when');
+        }
+    }
 
     /** @return array{by: string, words: string, at: string} */
     public function toArray(): array

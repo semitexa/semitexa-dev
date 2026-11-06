@@ -169,8 +169,7 @@ final class AiBacklogCommand extends BaseCommand
             ];
             if ($apply) {
                 $newStatus = TaskStatus::parse($assessment->suggestedStatus);
-                $updated = $task->with(status: $newStatus, updatedAt: date('c'));
-                $this->taskStore->save($updated);
+                $this->taskStore->change($task->id, static fn (Task $current): Task => $current->with(status: $newStatus, updatedAt: date('c')));
                 $action['applied'] = true;
             }
             $taskActions[] = $action;

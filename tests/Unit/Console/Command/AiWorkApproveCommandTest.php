@@ -194,6 +194,8 @@ final class AiWorkApproveCommandTest extends TestCase
         self::assertSame('partial', $result['status']);
         self::assertArrayHasKey('tk-broken', $result['failed']);
         self::assertEqualsCanonicalizing(['tk-a', 'tk-z'], $result['changed']);
+        self::assertTrue($this->tasks->get('tk-a')->isApproved());
+        self::assertTrue($this->tasks->get('tk-z')->isApproved());
     }
 
     public function test_by_names_who_decided(): void
@@ -237,6 +239,12 @@ final class AiWorkApproveCommandTest extends TestCase
         $lines = file($this->root . '/var/ai-traces/tk-a.ndjson', FILE_IGNORE_NEW_LINES) ?: [];
         $read = implode("\n", array_map(static fn (string $l): string => (string) json_encode(json_decode($l), JSON_UNESCAPED_UNICODE), $lines));
         self::assertStringContainsString('Так, робимо', $read);
+    }
+
+    public function test_an_approval_cannot_be_built_without_who_words_or_when(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new TaskApproval('owner', '', self::NOW);
     }
 
     public function test_refuses_without_the_owners_words(): void

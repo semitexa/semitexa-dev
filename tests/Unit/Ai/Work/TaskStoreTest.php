@@ -21,6 +21,31 @@ class TaskStoreTest extends TestCase
         $this->root = $this->enterFixtureProjectRoot('ai-work-task');
     }
 
+    public function test_change_works_on_the_task_as_it_is_now_not_as_it_was_read(): void
+    {
+        $now = '2026-11-06T00:00:00+00:00';
+        $store = new TaskStore();
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+        $stale = $store->get('tk-a');
+        $store->save($stale->withApproval(new \Semitexa\Dev\Application\Service\Ai\Work\TaskApproval('owner', 'Так', $now), $now));
+
+        $store->change('tk-a', static fn (Task $current): Task => $current->with(status: TaskStatus::DONE));
+
+        $task = $store->get('tk-a');
+        self::assertTrue($task->isApproved(), 'a write from a stale read would have dropped this');
+        self::assertSame(TaskStatus::DONE, $task->status);
+    }
+
+    public function test_change_of_a_task_that_is_not_there_fails(): void
+    {
+        $store = new TaskStore();
+        $now = '2026-11-06T00:00:00+00:00';
+        $store->save(new Task('tk-a', 'ep-a', 't', TaskStatus::NEW, 'r', 'low', [], null, 'tk-a', $now, $now));
+
+        $this->expectException(\RuntimeException::class);
+        $store->change('tk-none', static fn (Task $current): Task => $current);
+    }
+
     public function test_save_and_get_round_trip(): void
     {
         $store = new TaskStore();

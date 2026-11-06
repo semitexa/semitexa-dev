@@ -63,6 +63,32 @@ final class TaskStore
     }
 
     /**
+     * Read, change and write one task under a lock, so two writers cannot lose
+     * each other's change: a task file is written whole, and an approval landing
+     * between someone's read and save used to vanish. The change gets the task
+     * as it is now, never as the caller read it earlier.
+     *
+     * @param callable(Task): Task $change
+     */
+    public function change(string $taskId, callable $change): Task
+    {
+        WorkId::assertValid($taskId, 'task id');
+        $lock = @fopen($this->dir() . '/.lock', 'c');
+        if ($lock === false || !flock($lock, LOCK_EX)) {
+            throw new \RuntimeException('cannot lock ' . self::SUBDIR);
+        }
+        try {
+            $task = $change($this->get($taskId));
+            $this->save($task);
+
+            return $task;
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /**
      * Enumerate tasks with optional filters. Results sorted by created_at
      * so output is stable regardless of filesystem order.
      *
