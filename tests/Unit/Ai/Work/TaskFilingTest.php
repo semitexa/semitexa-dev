@@ -38,7 +38,7 @@ final class TaskFilingTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function bugRecipes(): iterable
     {
-        foreach (TaskFiling::BUG_RECIPES as $recipe) {
+        foreach (['fix_bug', 'bugfix', 'debug_investigate'] as $recipe) {
             yield $recipe => [$recipe];
         }
     }

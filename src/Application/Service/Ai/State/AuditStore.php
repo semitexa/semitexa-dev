@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\State;
 
 use Semitexa\Core\Attribute\AsService;
-use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Support\ProjectRoot;
 
 /**
@@ -37,8 +36,11 @@ final class AuditStore
     public function all(): array
     {
         $file = ProjectRoot::get() . '/' . self::PATH;
-        if (!is_file($file)) {
+        if (!file_exists($file) && !is_link($file)) {
             return [];
+        }
+        if (!is_file($file)) {
+            throw new \RuntimeException(self::PATH . ' is not a file');
         }
         $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if ($lines === false) {
@@ -46,10 +48,10 @@ final class AuditStore
         }
         $audits = [];
         foreach ($lines as $number => $line) {
+            // Skipped, a damaged line could leave an older audit saying nothing is open.
             $audit = AuditRecord::fromStored(json_decode($line, true));
             if ($audit === null) {
-                StaticLoggerBridge::warning('dev', 'Skipping unreadable audit record', ['file' => self::PATH, 'line' => $number + 1]);
-                continue;
+                throw new \RuntimeException(self::PATH . ' line ' . ($number + 1) . ' does not read: repair or remove it');
             }
             $audits[] = $audit;
         }

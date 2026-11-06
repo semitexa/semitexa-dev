@@ -120,6 +120,11 @@ final class MakeItPlanTest extends TestCase
         self::assertSame(MakeItPlan::WAITING, $plan->state);
     }
 
+    public function test_closed_work_is_done_whatever_the_charter_lacks(): void
+    {
+        self::assertSame(MakeItPlan::DONE, MakeItPlan::of([$this->task('tk-a', status: TaskStatus::DONE, approved: false)], false, static fn (): bool => false, null, 6)->state);
+    }
+
     public function test_a_broken_charter_comes_before_ideas(): void
     {
         $plan = MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 0, 'bad json');

@@ -209,6 +209,17 @@ final class AiMakeItCommandTest extends TestCase
         self::assertStringContainsString('Record: bin/semitexa ai:charter answer', $tester->getDisplay());
     }
 
+    public function test_an_audit_file_that_does_not_read_is_said_and_stops_nothing(): void
+    {
+        $this->file('tk-a');
+        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n");
+
+        $result = $this->run_();
+
+        self::assertSame('work', $result['state']);
+        self::assertStringContainsString('does not read', (string) $result['warning']);
+    }
+
     public function test_a_fresh_project_is_told_to_interview(): void
     {
         $result = $this->run_();

@@ -125,6 +125,17 @@ final class AiStateBacklogTest extends TestCase
         self::assertStringContainsString('bogus', $tester->getDisplay());
     }
 
+    public function test_a_truncated_task_file_is_an_error_not_a_lower_count(): void
+    {
+        $store = new TaskStore();
+        $this->file('tk-a', []);
+        file_put_contents($store->pathFor('tk-b'), '{"id":"tk-b"');
+        $command = new AiStateCommand();
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore()]));
+
+        self::assertSame(1, (new CommandTester($command))->execute([], ['interactive' => false]));
+    }
+
     public function test_the_environment_turns_the_option_on(): void
     {
         $this->file('tk-framework', ['packages/semitexa-orm/src/Y.php']);

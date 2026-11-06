@@ -91,12 +91,21 @@ final class AiAuditCommandTest extends TestCase
         self::assertSame([], (new AuditStore())->all());
     }
 
-    public function test_a_line_that_does_not_read_is_passed_over(): void
+    public function test_a_line_that_does_not_read_is_an_error_not_an_older_audit(): void
     {
         $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => 'a']);
-        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n" . '{"phase":"later","at":"x","by":"a","covered":"b"}' . "\n", FILE_APPEND);
+        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n", FILE_APPEND);
 
-        self::assertCount(1, (new AuditStore())->all());
+        $this->expectExceptionMessage('line 2 does not read');
+        (new AuditStore())->all();
+    }
+
+    public function test_a_path_that_is_no_file_is_an_error_not_no_audits(): void
+    {
+        mkdir($this->root . '/' . AuditStore::PATH, 0755, true);
+
+        $this->expectExceptionMessage('is not a file');
+        (new AuditStore())->all();
     }
 
     public function test_a_stored_line_with_a_bad_date_or_a_work_phase_is_no_audit(): void
@@ -107,6 +116,9 @@ final class AiAuditCommandTest extends TestCase
         self::assertNull(AuditRecord::fromStored(['at' => 'yesterday-ish'] + $line));
         self::assertNull(AuditRecord::fromStored(['at' => '@-9223372036854775808'] + $line));
         self::assertNull(AuditRecord::fromStored(['phase' => 'work'] + $line));
+        self::assertNull(AuditRecord::fromStored(['at' => '2026-02-30T00:00:00+00:00'] + $line), 'no such day');
+        self::assertNull(AuditRecord::fromStored(['by' => ' '] + $line));
+        self::assertNull(AuditRecord::fromStored(['covered' => ''] + $line));
     }
 
     public function test_it_says_when_and_who_by_default(): void
@@ -142,7 +154,7 @@ final class AiAuditCommandTest extends TestCase
     {
         $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => "the\x1b[2J Shop\nmodule"]);
 
-        self::assertStringNotContainsString("\x1b", (new AuditStore())->all()[0]->covered);
+        self::assertSame('the [2J Shop module', (new AuditStore())->all()[0]->covered);
     }
 
     public function test_an_unknown_action_is_an_error(): void

@@ -34,6 +34,15 @@ final readonly class AuditRecord
         return $this->ageDays($now) < self::FRESH_DAYS;
     }
 
+    /** createFromFormat rolls 30 February over to March, and only warns. */
+    private static function isDate(string $at): bool
+    {
+        $date = \DateTimeImmutable::createFromFormat(DATE_ATOM, $at);
+        $errors = \DateTimeImmutable::getLastErrors();
+
+        return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
+    }
+
     /** A date to come is a clock or a hand-edit, not a look that happened. */
     public function isInTheFuture(\DateTimeImmutable $now): bool
     {
@@ -51,14 +60,14 @@ final readonly class AuditRecord
         return ['phase' => $this->phase->value, 'at' => $this->at, 'by' => $this->by, 'covered' => $this->covered, 'with_framework' => $this->withFramework];
     }
 
-    /** A line short of any of these says nothing about a phase. */
+    /** A line short of any of these, or with a date that is no date, says nothing about a phase. */
     public static function fromStored(mixed $row): ?self
     {
         if (!is_array($row) || !is_string($row['phase'] ?? null) || !is_string($row['at'] ?? null) || !is_string($row['by'] ?? null) || !is_string($row['covered'] ?? null)) {
             return null;
         }
         $phase = Phase::tryFrom($row['phase']);
-        if (!in_array($phase, self::PHASES, true) || \DateTimeImmutable::createFromFormat(DATE_ATOM, $row['at']) === false) {
+        if (!in_array($phase, self::PHASES, true) || trim($row['by']) === '' || trim($row['covered']) === '' || !self::isDate($row['at'])) {
             return null;
         }
 

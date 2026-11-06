@@ -92,9 +92,10 @@ final class TaskStore
      * Enumerate tasks with optional filters. Results sorted by created_at
      * so output is stable regardless of filesystem order.
      *
+     * @param bool $strict an unreadable file throws: for a number that must not have a hole in it
      * @return list<Task>
      */
-    public function list(?string $epicId = null, ?TaskStatus $status = null): array
+    public function list(?string $epicId = null, ?TaskStatus $status = null, bool $strict = false): array
     {
         $dir = $this->dir();
         if (!is_dir($dir)) {
@@ -112,6 +113,9 @@ final class TaskStore
             try {
                 $task = Task::fromArray(JsonFile::read($dir . '/' . $entry));
             } catch (\RuntimeException $e) {
+                if ($strict) {
+                    throw $e;
+                }
                 // Stay resilient — one corrupt file must not break the listing —
                 // but never drop it silently: a partial write / hand-edit would
                 // otherwise vanish from `ai:work list` leaving a clean shorter

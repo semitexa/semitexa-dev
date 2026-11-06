@@ -76,7 +76,7 @@ final readonly class MakeItPlan
         }
         // Only before the first approval: a project that has done its work is done,
         // whatever its charter still lacks.
-        if (($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
+        if ($open !== [] && ($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
             return new self(self::EMPTY, [], 0, $openQuestions, $charterError, true);
         }
         if ($only !== null) {

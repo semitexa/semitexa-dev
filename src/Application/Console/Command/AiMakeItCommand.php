@@ -99,7 +99,8 @@ final class AiMakeItCommand extends BaseCommand
             $phase !== null ? '--phase=' . $phase->value : null,
             ...array_map(static fn (string $id): string => '--except=' . $id, $except),
         ])));
-        $line = BacklogProgress::of($tasks, $withFramework, $this->audits())->line();
+        [$audits, $warning] = $this->audits();
+        $line = BacklogProgress::of($tasks, $withFramework, $audits)->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
             return $this->print($output, $plan, $line, $steps, $interview);
@@ -115,6 +116,7 @@ final class AiMakeItCommand extends BaseCommand
             'total' => $plan->total,
             'interview' => $interview,
             'steps' => $steps,
+            'warning' => $warning,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
@@ -137,16 +139,16 @@ final class AiMakeItCommand extends BaseCommand
 
     /**
      * The line beside the answer: an audit file that cannot be read must not
-     * stop a loop that has tasks to take.
+     * stop a loop that has tasks to take, but it is said.
      *
-     * @return list<AuditRecord>
+     * @return array{list<AuditRecord>, ?string}
      */
     private function audits(): array
     {
         try {
-            return $this->auditStore->all();
-        } catch (\RuntimeException) {
-            return [];
+            return [$this->auditStore->all(), null];
+        } catch (\RuntimeException $e) {
+            return [[], $e->getMessage()];
         }
     }
 
