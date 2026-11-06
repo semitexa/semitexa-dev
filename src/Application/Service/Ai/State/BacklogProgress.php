@@ -16,6 +16,10 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  * Done means proven: a task closed with no proof stays done, is shown as
  * unproven and adds nothing to the percent.
  *
+ * Zero tickets means two things: nobody looked, or someone looked and found
+ * nothing. A fresh audit tells them apart, and is the one way a phase with no
+ * tickets reads as anything but not measured. See {@see AuditRecord}.
+ *
  * Nothing here is a judgement. Found a bug: it is one more ticket and the
  * percent moves by itself. A phase with no approved task is not measured, never
  * 0 and never 100. Ideas are counted apart and never enter a percent.
@@ -37,16 +41,22 @@ final readonly class BacklogProgress
 
     /**
      * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}> $phases
+     * @param array<string, AuditRecord> $audits the newest that speaks for each phase
      */
     private function __construct(
         public array $phases,
         public int $ideas,
         public int $noPhase,
         public bool $withFramework,
+        public array $audits,
+        private \DateTimeImmutable $now,
     ) {}
 
-    /** @param list<Task> $tasks */
-    public static function of(array $tasks, bool $withFramework): self
+    /**
+     * @param list<Task> $tasks
+     * @param list<AuditRecord> $audits oldest first
+     */
+    public static function of(array $tasks, bool $withFramework, array $audits = [], ?\DateTimeImmutable $now = null): self
     {
         $done = $unproven = $approved = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
         $ideas = 0;
@@ -83,7 +93,15 @@ final readonly class BacklogProgress
             ];
         }
 
-        return new self($phases, $ideas, $noPhase, $withFramework);
+        $newest = [];
+        foreach ($audits as $audit) {
+            // An audit of ./src alone says nothing about the framework.
+            if ($audit->withFramework || !$withFramework) {
+                $newest[$audit->phase->value] = $audit;
+            }
+        }
+
+        return new self($phases, $ideas, $noPhase, $withFramework, $newest, $now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
     }
 
     /** The option, from the command line or the project's .env. */
@@ -109,7 +127,7 @@ final readonly class BacklogProgress
         $parts = [];
         foreach ($this->phases as $phase => $p) {
             $parts[] = $phase . ' ' . match (true) {
-                $p['percent'] === null => 'not measured',
+                $p['percent'] === null => $this->noTickets($phase),
                 default => sprintf('%d%% (%s)', $p['percent'], implode(', ', array_filter([
                     $p['done'] . '/' . $p['approved'],
                     $p['open'] > 0 ? $p['open'] . ' open' : null,
@@ -127,7 +145,19 @@ final readonly class BacklogProgress
         return implode(' · ', $parts);
     }
 
-    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool} */
+    private function noTickets(string $phase): string
+    {
+        $audit = $this->audits[$phase] ?? null;
+        if ($audit === null) {
+            return 'not measured';
+        }
+        $age = $audit->ageDays($this->now);
+        $when = $age === 0 ? 'today' : $age . 'd ago';
+
+        return $audit->isFresh($this->now) ? "nothing open (audited {$when})" : "not measured (last audit {$when})";
+    }
+
+    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool, audits: array<string, array<string, mixed>>} */
     public function toArray(): array
     {
         return [
@@ -135,6 +165,7 @@ final readonly class BacklogProgress
             'ideas' => $this->ideas,
             'approved_with_no_phase' => $this->noPhase,
             'with_framework' => $this->withFramework,
+            'audits' => array_map(fn (AuditRecord $a): array => $a->toArray() + ['age_days' => $a->ageDays($this->now), 'fresh' => $a->isFresh($this->now)], $this->audits),
         ];
     }
 

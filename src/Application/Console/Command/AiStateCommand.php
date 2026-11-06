@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Symfony\Component\Console\Formatter\OutputFormatter;
@@ -31,6 +32,9 @@ final class AiStateCommand extends BaseCommand
     #[InjectAsReadonly]
     protected TaskStore $taskStore;
 
+    #[InjectAsReadonly]
+    protected AuditStore $auditStore;
+
     public function __construct()
     {
         parent::__construct('ai:state');
@@ -46,7 +50,7 @@ final class AiStateCommand extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {
-            $progress = BacklogProgress::of($this->taskStore->list(), BacklogProgress::withFramework((bool) $input->getOption('with-framework')));
+            $progress = BacklogProgress::of($this->taskStore->list(), BacklogProgress::withFramework((bool) $input->getOption('with-framework')), $this->auditStore->all());
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             // A task file that does not read is a finding, never a number with a hole in it.
             $output->writeln(json_encode(['artifact' => self::ARTIFACT, 'status' => 'error', 'error' => $e->getMessage()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}', OutputInterface::OUTPUT_RAW);

@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
+use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
@@ -40,6 +41,9 @@ final class AiMakeItCommand extends BaseCommand
     #[InjectAsReadonly]
     protected EpicStore $epicStore;
 
+    #[InjectAsReadonly]
+    protected AuditStore $auditStore;
+
     public function __construct()
     {
         parent::__construct('ai:make-it');
@@ -65,7 +69,7 @@ final class AiMakeItCommand extends BaseCommand
             $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
         );
         $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
-        $line = BacklogProgress::of($tasks, $withFramework)->line();
+        $line = BacklogProgress::of($tasks, $withFramework, $this->auditStore->all())->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
             return $this->print($output, $plan, $line, $steps);

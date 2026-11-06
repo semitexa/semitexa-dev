@@ -8,6 +8,8 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiStateCommand;
+use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
+use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
@@ -52,7 +54,7 @@ final class AiStateBacklogTest extends TestCase
     private function show(array $input = []): array
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore()]));
         $tester = new CommandTester($command);
         self::assertSame(0, $tester->execute($input, ['interactive' => false]));
         $result = json_decode($tester->getDisplay(), true);
@@ -92,10 +94,17 @@ final class AiStateBacklogTest extends TestCase
         self::assertStringStartsWith('work 50% (1/2, 1 open)', (string) $result['line']);
     }
 
+    public function test_a_clean_audit_reads_in_the_line(): void
+    {
+        (new AuditStore())->record(new AuditRecord(Phase::RIGHT, gmdate(DATE_ATOM), 'agent', 'the Shop module', false));
+
+        self::assertSame('work not measured · right nothing open (audited today) · fast not measured', $this->show()['line']);
+    }
+
     public function test_a_person_gets_the_line_alone(): void
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore()]));
         $tester = new CommandTester($command);
 
         $tester->execute([], ['interactive' => true, 'decorated' => false]);
@@ -109,7 +118,7 @@ final class AiStateBacklogTest extends TestCase
         $this->file('tk-a', []);
         file_put_contents($store->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore()]));
         $tester = new CommandTester($command);
 
         self::assertSame(1, $tester->execute([], ['interactive' => false]));
