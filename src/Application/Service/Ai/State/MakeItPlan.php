@@ -132,7 +132,7 @@ final readonly class MakeItPlan
         return match ($this->state) {
             self::EMPTY => [
                 'Ask the architect one question at a time: bin/semitexa ai:charter next tells you which, ai:charter answer records the reply. Repeat until it has no more.',
-                'As the answers come, file them: bin/semitexa ai:epic start --id=<id> --title="<what>" --goal="<why>", then bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --phase=work for each piece of work.',
+                'As the answers come, file them: bin/semitexa ai:epic start --id=<id> --title="<what>" --goal="<why>", then bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --phase=work for each piece of work. If the architect has a spec, cut it into tasks the same way, each small enough to prove with a test.',
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',
             ],
