@@ -41,6 +41,7 @@ final readonly class Task
         public string $updatedAt,
         public ?TaskApproval $approval = null,
         public ?Phase $phase = null,
+        public ?TaskProof $proof = null,
     ) {}
 
     /** An idea until someone approves it for implementation. */
@@ -66,6 +67,28 @@ final readonly class Task
             updatedAt:    $updatedAt,
             approval:     $approval,
             phase:        $this->phase,
+            proof:        $this->proof,
+        );
+    }
+
+    /** The same task with what proves it, or with none ({@see with()} reads null as "keep"). */
+    public function withProof(?TaskProof $proof): self
+    {
+        return new self(
+            id:           $this->id,
+            epicId:       $this->epicId,
+            title:        $this->title,
+            status:       $this->status,
+            recipe:       $this->recipe,
+            risk:         $this->risk,
+            contextRefs:  $this->contextRefs,
+            nextStep:     $this->nextStep,
+            traceId:      $this->traceId,
+            createdAt:    $this->createdAt,
+            updatedAt:    $this->updatedAt,
+            approval:     $this->approval,
+            phase:        $this->phase,
+            proof:        $proof,
         );
     }
 
@@ -105,6 +128,7 @@ final readonly class Task
             updatedAt:    $updatedAt ?? $this->updatedAt,
             approval:     $this->approval,
             phase:        $phase ?? $this->phase,
+            proof:        $this->proof,
         );
     }
 
@@ -129,6 +153,7 @@ final readonly class Task
             'updated_at'     => $this->updatedAt,
             'approval'       => $this->approval?->toArray(),
             'phase'          => $this->phase?->value,
+            'proof'          => $this->proof?->toArray(),
         ];
     }
 
@@ -162,6 +187,7 @@ final readonly class Task
             updatedAt:    (string) ($row['updated_at'] ?? ''),
             approval:     TaskApproval::fromStored($row['approval'] ?? null),
             phase:        is_string($row['phase'] ?? null) ? Phase::tryFrom($row['phase']) : null,
+            proof:        TaskProof::fromStored($row['proof'] ?? null),
         );
     }
 }

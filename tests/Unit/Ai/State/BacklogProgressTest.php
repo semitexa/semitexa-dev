@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskProof;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 
 final class BacklogProgressTest extends TestCase
@@ -22,8 +23,26 @@ final class BacklogProgressTest extends TestCase
         bool $approved = true,
         string $recipe = '',
         array $refs = [],
+        bool $proven = true,
     ): Task {
-        return new Task('tk-a', 'ep-a', 't', $status, $recipe, 'low', $refs, null, 'tk-a', self::NOW, self::NOW, $approved ? new TaskApproval('owner', 'Так', self::NOW) : null, $phase);
+        $proof = $proven && $status === TaskStatus::DONE ? new TaskProof('rcpt-1', self::NOW, ['phpunit:X'], []) : null;
+
+        return new Task('tk-a', 'ep-a', 't', $status, $recipe, 'low', $refs, null, 'tk-a', self::NOW, self::NOW, $approved ? new TaskApproval('owner', 'Так', self::NOW) : null, $phase, $proof);
+    }
+
+    public function test_done_with_no_proof_is_shown_and_adds_nothing(): void
+    {
+        $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(TaskStatus::DONE, proven: false), $this->task()], false);
+
+        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1], $progress->phases['work']);
+        self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven) · ', $progress->line());
+    }
+
+    public function test_a_hundred_needs_every_task_proven(): void
+    {
+        $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(TaskStatus::DONE, proven: false)], false);
+
+        self::assertSame(50, $progress->phases['work']['percent']);
     }
 
     public function test_an_empty_backlog_is_not_measured_never_zero_or_a_hundred(): void
@@ -38,7 +57,7 @@ final class BacklogProgressTest extends TestCase
     {
         $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(), $this->task(TaskStatus::IN_PROGRESS), $this->task(TaskStatus::BLOCKED)], false);
 
-        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3], $progress->phases['work']);
+        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 25% (1/4, 3 open) · ', $progress->line());
     }
 

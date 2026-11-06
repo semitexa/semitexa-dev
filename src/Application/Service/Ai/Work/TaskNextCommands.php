@@ -40,6 +40,14 @@ final class TaskNextCommands
             }
         }
 
+        if ($status === 'done' && $task->proof === null) {
+            $out[] = [
+                'cmd'  => 'ai:verify',
+                'args' => ['--json'],
+                'why'  => 'no test proves this task, so it counts as unproven: run it under this task, then close it again',
+            ];
+        }
+
         if ($status === 'done') {
             $out[] = [
                 'cmd'  => 'ai:orient',

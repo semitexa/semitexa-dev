@@ -12,6 +12,9 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  * How far the work has come, counted from the backlog: done over approved, per
  * phase (ep-project-progress-from-backlog).
  *
+ * Done means proven: a task closed with no proof stays done, is shown as
+ * unproven and adds nothing to the percent.
+ *
  * Nothing here is a judgement. Found a bug: it is one more ticket and the
  * percent moves by itself. A phase with no approved task is not measured, never
  * 0 and never 100. Ideas are counted apart and never enter a percent.
@@ -30,7 +33,7 @@ final readonly class BacklogProgress
     private const PROJECT_REFS = ['src/', 'Semitexa\\Modules\\'];
 
     /**
-     * @param array<string, array{percent: ?int, done: int, approved: int, open: int}> $phases
+     * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}> $phases
      */
     private function __construct(
         public array $phases,
@@ -42,7 +45,7 @@ final readonly class BacklogProgress
     /** @param list<Task> $tasks */
     public static function of(array $tasks, bool $withFramework): self
     {
-        $done = $approved = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
+        $done = $unproven = $approved = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
         $ideas = 0;
         $noPhase = 0;
         foreach ($tasks as $task) {
@@ -60,32 +63,38 @@ final readonly class BacklogProgress
                 continue;
             }
             $approved[$phase->value]++;
-            $done[$phase->value] += $task->status === TaskStatus::DONE ? 1 : 0;
+            if ($task->status === TaskStatus::DONE) {
+                $task->proof !== null ? $done[$phase->value]++ : $unproven[$phase->value]++;
+            }
         }
 
         $phases = [];
         foreach ($approved as $phase => $total) {
             $phases[$phase] = [
-                // Rounded down: 100 is said only when nothing is open.
+                // Rounded down: 100 is said only when every task is done and proven.
                 'percent' => $total === 0 ? null : intdiv($done[$phase] * 100, $total),
                 'done' => $done[$phase],
                 'approved' => $total,
-                'open' => $total - $done[$phase],
+                'open' => $total - $done[$phase] - $unproven[$phase],
+                'unproven' => $unproven[$phase],
             ];
         }
 
         return new self($phases, $ideas, $noPhase, $withFramework);
     }
 
-    /** "work 80% (8/10, 2 open) · right not measured · fast 100% (3/3) · 4 ideas" */
+    /** "work 80% (8/10, 1 open, 1 unproven) · right not measured · fast 100% (3/3) · 4 ideas" */
     public function line(): string
     {
         $parts = [];
         foreach ($this->phases as $phase => $p) {
             $parts[] = $phase . ' ' . match (true) {
                 $p['percent'] === null => 'not measured',
-                $p['open'] === 0 => sprintf('%d%% (%d/%d)', $p['percent'], $p['done'], $p['approved']),
-                default => sprintf('%d%% (%d/%d, %d open)', $p['percent'], $p['done'], $p['approved'], $p['open']),
+                default => sprintf('%d%% (%s)', $p['percent'], implode(', ', array_filter([
+                    $p['done'] . '/' . $p['approved'],
+                    $p['open'] > 0 ? $p['open'] . ' open' : null,
+                    $p['unproven'] > 0 ? $p['unproven'] . ' unproven' : null,
+                ]))),
             };
         }
         if ($this->ideas > 0) {
@@ -98,7 +107,7 @@ final readonly class BacklogProgress
         return implode(' · ', $parts);
     }
 
-    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool} */
+    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool} */
     public function toArray(): array
     {
         return [

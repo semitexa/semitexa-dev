@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\State\ScoreStore;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskProof;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
@@ -63,7 +64,7 @@ final class AiStateBacklogTest extends TestCase
     /** @param list<string> $refs */
     private function file(string $id, array $refs, TaskStatus $status = TaskStatus::NEW): void
     {
-        (new TaskStore())->save(new Task($id, 'ep-a', 't', $status, '', 'low', $refs, null, $id, self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+        (new TaskStore())->save(new Task($id, 'ep-a', 't', $status, '', 'low', $refs, null, $id, self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK, $status === TaskStatus::DONE ? new TaskProof('rcpt-1', self::NOW, ['phpunit:X'], []) : null));
     }
 
     public function test_a_fresh_project_is_not_measured_and_sees_no_rubric(): void
