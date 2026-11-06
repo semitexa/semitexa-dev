@@ -8,6 +8,8 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
+use Semitexa\Dev\Application\Service\Ai\Charter\OwnerQuestions;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
@@ -45,6 +47,9 @@ final class AiMakeItCommand extends BaseCommand
     #[InjectAsReadonly]
     protected AuditStore $auditStore;
 
+    #[InjectAsReadonly]
+    protected CharterStore $charterStore;
+
     public function __construct()
     {
         parent::__construct('ai:make-it');
@@ -69,11 +74,12 @@ final class AiMakeItCommand extends BaseCommand
             static fn (string $id): bool => $registry->holderOf($id, $self?->id) !== null,
             $self?->task !== null && $self->holds($self->task, $registry->project()) ? $self->task : null,
         );
-        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''));
+        $interview = $plan->state === MakeItPlan::EMPTY ? OwnerQuestions::of($this->charterStore) : null;
+        $steps = $plan->steps('bin/semitexa ai:make-it' . ($withFramework ? ' --with-framework' : ''), $interview['open'] ?? 0, $interview['error'] ?? null);
         $line = BacklogProgress::of($tasks, $withFramework, $this->audits())->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
-            return $this->print($output, $plan, $line, $steps);
+            return $this->print($output, $plan, $line, $steps, $interview);
         }
 
         $output->writeln(json_encode([
@@ -84,6 +90,7 @@ final class AiMakeItCommand extends BaseCommand
             'line' => $line,
             'tasks' => $plan->tasks,
             'total' => $plan->total,
+            'interview' => $interview,
             'steps' => $steps,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
@@ -126,10 +133,16 @@ final class AiMakeItCommand extends BaseCommand
      * turns on is printed here as well, never only in the JSON.
      *
      * @param list<string> $steps
+     * @param array<string, mixed>|null $interview
      */
-    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps): int
+    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview): int
     {
         $text = [$plan->say(), $line];
+        $next = $interview['next'] ?? null;
+        if (is_array($next) && is_string($next['question'] ?? null) && is_string($next['record'] ?? null)) {
+            $text[] = '  Ask: ' . $next['question'];
+            $text[] = '  Record: bin/semitexa ' . $next['record'];
+        }
         foreach ($plan->tasks as $task) {
             $text[] = sprintf('  %s: %s', $task['id'], $task['title']);
             if ($task['next_step'] !== null) {

@@ -43,7 +43,8 @@ final class MakeItPlanTest extends TestCase
 
         self::assertSame(MakeItPlan::EMPTY, $plan->state);
         self::assertFalse($plan->goOn());
-        self::assertStringContainsString('ai:charter next', $plan->steps('x')[0]);
+        self::assertStringContainsString('question under interview', $plan->steps('x', 7)[0]);
+        self::assertStringContainsString('what must work first', $plan->steps('x', 0)[0]);
     }
 
     public function test_a_backlog_of_discarded_tasks_is_empty(): void

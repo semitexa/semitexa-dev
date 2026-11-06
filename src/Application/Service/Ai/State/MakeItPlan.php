@@ -125,13 +125,17 @@ final readonly class MakeItPlan
 
     /**
      * @param string $command how this agent runs ai:make-it again
+     * @param int $openQuestions what the charter still needs from the architect
+     * @param string|null $charterError why the charter cannot be read, which is no complete charter
      * @return list<string>
      */
-    public function steps(string $command): array
+    public function steps(string $command, int $openQuestions = 0, ?string $charterError = null): array
     {
         return match ($this->state) {
-            self::EMPTY => [
-                'Ask the architect one question at a time: bin/semitexa ai:charter next tells you which, ai:charter answer records the reply. Repeat until it has no more.',
+            self::EMPTY => $charterError !== null ? ["The project charter cannot be read ({$charterError}). Show the architect and fix or remove it, then run {$command} again."] : [
+                $openQuestions > 0
+                    ? "Ask the architect the question under interview, in their language and your own words, and record the answer as it says. {$openQuestions} left; run {$command} after each answer for the next one. They can stop at any point: it resumes where it stopped."
+                    : 'The charter is complete. Ask the architect what must work first, and what a user should be able to do on day one; offer what the goal and the signs of success suggest.',
                 'As the answers come, file them: bin/semitexa ai:epic start --id=<id> --title="<what>" --goal="<why>", then bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --phase=work for each piece of work. If the architect has a spec, cut it into tasks the same way, each small enough to prove with a test.',
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',
