@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-05T10:47:54+00:00",
+    "generated_at": "2026-11-06T04:50:03+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 82,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "c62df08ab413fe9e664064570cdb26de27bb47dc7b83c3e0538aca42eb1e875b",
+    "content_hash": "3b213146ebe3b6a345bd88503025897bcf83ae310429e23b2444ee779cf915ed",
     "capabilities": [
         {
             "id": "api.external",
@@ -613,7 +613,7 @@
                 "a roles column parsed into an array and compared by string in each check",
                 "a permission matrix kept in a config file and in a database, drifting apart"
             ],
-            "usage": "",
+            "usage": "// Stored roles: require semitexa/platform-user, which this package does not install, run orm:sync, then:\nbin/semitexa role:create clerk -p orders.manage --shared\nbin/semitexa role:assign clerk --email=ada@shop.test\n\n// Or roles of your own. Without the attribute it is never asked; with it, all providers' slugs add up.\n#[SatisfiesServiceContract(of: PermissionProviderInterface::class)]\nfinal class ShopRoleProvider implements PermissionProviderInterface\n{\n    #[InjectAsReadonly]\n    protected ShopRoleStore $roles;\n    #[InjectAsReadonly]\n    protected TenantContextStoreInterface $tenants;\n\n    public function getPermissionsForUser(string $userId): array\n    {\n        // Silent: the call names no tenant. Looked up by user alone, a role from one tenant grants in all.\n        return $this->roles->slugsOf($userId, TenantContextAccess::tenantId($this->tenants->tryGet()));\n    }\n}\n\n// A handler writes nothing: a guest gets a 401, a user without the slug a 403, before it runs.\n#[RequiresPermission('orders.manage')]\n#[AsProtectedPayload(path: '/orders', methods: ['POST'], responseWith: OrdersResource::class)]\nfinal class ManageOrdersPayload {}\n// Roles here grant slugs: a #[RequiresCapability] route stays 403 until a CapabilityProviderInterface of yours grants it.",
             "see_also": "semitexa/authorization",
             "kind": "package",
             "declared_by": "Semitexa\\Rbac\\Capabilities",
@@ -928,7 +928,7 @@
                 "a tenant_id argument threaded through every method and forgotten in one",
                 "a WHERE clause remembered per query, with no guard when it is missed"
             ],
-            "usage": "",
+            "usage": "// .env. The tenant comes from the host (acme.shop.test): the shipped TenancyLayersProvider\n// decides, so TENANCY_STRATEGY is not read and an X-Tenant-ID header changes nothing.\nTENANCY_ENABLED=true\nTENANCY_BASE_DOMAIN=shop.test\nTENANTS=acme:Acme:active,globex:Globex:active\nTENANCY_REQUIRED=true\n\n// A subdomain not in TENANTS gets a 404; with TENANCY_REQUIRED a host with no tenant gets a 400.\n// On the model, its tenant column named (orm.persistence has the rest of the class):\n#[TenantScoped(strategy: 'same_storage', column: 'tenantId')]\n\n// In the OrderStore of orm.persistence. The ORM does not read the context by itself, so pass it,\n// asked for per call: a service outlives the request, and a tenant in a property reaches the next one.\n#[InjectAsReadonly]\nprotected TenantContextStoreInterface $tenants;\n\npublic function all(): array\n{\n    $tenantId = TenantContextAccess::tenantId($this->tenants->tryGet());   // null: the read throws\n    return $this->domainRepository(OrderResource::class)->forTenant($tenantId)->query()->fetchAll();\n}\n\n// Silent: on a model without #[TenantScoped], forTenant() filters nothing and every tenant reads every row.\n// #[TenantIsolated] on a payload or a handler refuses a request with no tenant, with a 403.\n// A timer has no tenant: inject TenantFanoutInterface; eachTenant(fn (string $tenantId) => ...) binds each in turn.\n// With an empty TENANTS it runs once as 'default' and binds nothing: tryGet() is then null.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Tenancy\\Capabilities",
@@ -1032,14 +1032,14 @@
         },
         {
             "id": "ui.component-state",
-            "summary": "A component property kept on the server as its state: a handler changes it, and the component is saved and drawn again, morphed in place.",
+            "summary": "A component property kept as its state, on the server given a shared store and a session: a handler changes it, and the component is saved and drawn again, morphed in place.",
             "use_when": "A component remembers something between clicks \u2014 a count, a selection, a step \u2014 or its props are too large to ride every signed context.",
             "avoid_when": "The value belongs to a record \u2014 save it through the ORM and let the page be live instead.",
             "replaces": [
                 "state carried in the page, copied into every signed context and capped at 4 KB",
                 "a handler that reads its props, computes, and returns a re-render with the new value"
             ],
-            "usage": "",
+            "usage": "#[AsComponent(name: 'shop.counter', template: '@project-layouts-Shop/counter.html.twig')]\n#[UiPart(name: 'increment', uses: ButtonPrimitive::class)]\nfinal class CounterComponent\n{\n    #[UiState]\n    public int $count = 0;\n\n    #[UiOn(part: 'increment', event: 'click')]\n    public function onIncrement(UiInteractionEvent $event): void\n    {\n        $this->count++;   // saved, then the component is drawn again and morphed in place\n    }\n}\n\n// The template reads it like a prop, and a prop of that name fills it on the first render:\n<output>{{ count|default(0) }}</output>\n{{ component('shop.counter', {count: 5}) }}\n\n// With a shared store and a session the page holds a signed reference and the value stays on the\n// server. Without them the props ride the signed context: readable in the page, so a secret never\n// goes in one.\n// Return nothing from the handler: changing the property is the whole answer.\n// The template's wrapper and manifest line: ai:ask mechanisms --id=ui.event-intent.",
             "see_also": "ui.dashboard-widget",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\UiState",
@@ -1086,7 +1086,7 @@
             "replaces": [
                 "putting handler logic with its dependencies inside the component class"
             ],
-            "usage": "",
+            "usage": "#[AsService]\n#[HandlesUiEvent(component: CartComponent::class, part: 'checkout', event: 'click')]\nfinal class CheckoutHandler implements UiEventHandlerInterface\n{\n    #[InjectAsReadonly]\n    protected OrderService $orders;\n\n    public function handle(object $payload, UiEventContext $context): UiEventResponse\n    {\n        if (!$this->orders->place()) {\n            return UiEventResponse::error(new UiEventError('out_of_stock', 'Something in the cart is gone.'));\n        }\n\n        return UiEventResponse::ok($context->correlationId);\n    }\n}\n\n// CartComponent declares the part with #[UiPart]; #[UiOn] for the same part and event is refused.\n// $context->semanticEvent is part.event: with several bindings it tells them apart, and across\n// two components $context->signedClaims['c'] names the component.\n// $payload is the generic body. Leave the attribute's payload: out for now: a binding with one is\n// refused at dispatch with typed_payload_not_supported_yet.\n// Answer with a response, never an exception.",
             "see_also": "ui.event-intent",
             "kind": "mechanism",
             "declared_by": "Semitexa\\PlatformUi\\Attribute\\HandlesUiEvent",
@@ -1351,7 +1351,7 @@
                 "a status column plus if-statements scattered across handlers",
                 "a hand-rolled transition table with no history and no guard on illegal moves"
             ],
-            "usage": "",
+            "usage": "#[AsWorkflowDefinition]\nfinal class OrderWorkflow implements WorkflowDefinitionInterface\n{\n    public static function key(): string { return 'order'; }\n    public function initialState(): string { return 'paid'; }\n    public function states(): array { return ['paid', 'shipped']; }\n    public function terminalStates(): array { return ['shipped']; }\n    public function transitions(): array { return [new TransitionDefinition('ship', ['paid'], 'shipped', guards: [StockReserved::class])]; }\n}\n\n#[AsService]   // a guard, and a side effect (sideEffects:), come from the container\nfinal class StockReserved implements WorkflowGuardInterface\n{\n    #[InjectAsReadonly]\n    protected StockStore $stock;\n\n    public function evaluate(WorkflowSubjectReferenceInterface $subject, WorkflowInstance $instance, TransitionDefinition $transition, array $context): GuardResult\n    {\n        // From your own store: $context is whatever the caller passed.\n        return $this->stock->isReserved($subject->workflowSubjectId()) ? GuardResult::pass() : GuardResult::deny('no_stock', 'Reserve it first.');\n    }\n}\n\n// After bin/semitexa orm:sync, in a handler with #[InjectAsReadonly] protected WorkflowEngineInterface $workflows:\n$subject = new WorkflowSubjectRef('order', $orderId, $tenantId);   // the resolved tenant, not the request's word\n$instance = $this->workflows->start(new StartWorkflowCommand('order', $subject));   // later: findBySubject('order', $subject)\n$result = $this->workflows->apply(new ApplyTransitionCommand('order', $instance->getId(), 'ship'));\n// Silent: a refusal is not thrown. Unless $result->isApplied(), this call moved nothing: read $result->failureCode.\n// After a conflict another call may have moved it: read the instance again before deciding.\n// get() and apply() see every tenant's instances: take the id from findBySubject(), never from a request.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Workflow\\Capabilities",
