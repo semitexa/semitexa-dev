@@ -87,6 +87,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_SCAFFOLD_DRIFT    => $this->runScaffoldDrift($target),
                 VerificationTarget::TYPE_DOCS              => $this->runDocsGate($target),
                 VerificationTarget::TYPE_E2E               => E2eSpecResultCheck::fromEnvironment($this->projectRoot)->check($target),
+                VerificationTarget::TYPE_PAGE              => PageCheckResult::fromEnvironment($this->projectRoot)->check($target),
                 default                                   => new VerificationResult(
                     target:   $target,
                     status:   VerificationResult::STATUS_INCOMPLETE,

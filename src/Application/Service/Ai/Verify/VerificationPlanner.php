@@ -123,6 +123,8 @@ final class VerificationPlanner
         private readonly ChangedFileClassifier $classifier = new ChangedFileClassifier(),
         ?ModuleStructureTargetResolver $targetResolver = null,
         ?ContractMoveResolver $contractMoveResolver = null,
+        /** @var list<array{path: string, module: string}> public parameterless GET routes, for {@see PageCheckTargets} */
+        private readonly array $pageRoutes = [],
     ) {
         $this->targetResolver = $targetResolver ?? new ModuleStructureTargetResolver($projectRoot);
         $this->contractMoveResolver = $contractMoveResolver ?? new ContractMoveResolver($projectRoot);
@@ -299,7 +301,7 @@ final class VerificationPlanner
             );
         }
 
-        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope), ...E2eSpecTargets::of($changedFiles, $effectiveScope));
+        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope), ...E2eSpecTargets::of($changedFiles, $effectiveScope), ...PageCheckTargets::of($changedFiles, $effectiveScope, $this->pageRoutes));
 
         // Not at minimal scope: `docs:reference` regenerates the whole
         // reference (class discovery across every package plus a console boot)

@@ -38,6 +38,8 @@ final readonly class VerificationTarget
     public const TYPE_DOCS             = 'docs';
     /** A changed Playwright spec, run on the host; see {@see E2eSpecTargets}. */
     public const TYPE_E2E              = 'e2e';
+    /** A page opened in light and dark by the host's browser ({@see PageCheckTargets}). */
+    public const TYPE_PAGE             = 'page';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled
