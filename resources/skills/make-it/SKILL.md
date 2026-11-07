@@ -64,8 +64,9 @@ re-arms. Each tick, in this order:
    - `waiting`: everything open is blocked or set aside. End the tick.
    - `done` under `right` or `fast`: the profile's source is where its tickets come
      from. Look there, file what you find (`ai:work start --phase=<phase>`, which
-     counts at once), record it (`ai:audit record --with-framework`, since this
-     skill reads the framework too), and ask again. Under `work`,
+     counts at once), record it (`ai:audit record --phase=<phase> --covered="<what you
+     read>" --with-framework`, since this skill reads the framework too), and ask
+     again. Under `work`,
      new work waits for the operator: end the tick and say so.
    - `empty`: the operator's turn. `interview.error` set: show it, the charter comes
      first. Otherwise ask the question under `interview`, or what must work first,
