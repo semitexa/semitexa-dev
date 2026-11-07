@@ -74,9 +74,9 @@ final readonly class MakeItPlan
         if ($approved !== []) {
             return self::listing(self::WAITING, $approved);
         }
-        // Only before the first approval: a project that has done its work is done,
+        // Only before the first approval (a closed legacy bug approved nothing): a project that has done its work is done,
         // whatever its charter still lacks.
-        if ($open !== [] && ($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
+        if ($open !== [] && ($openQuestions > 0 || $charterError !== null) && array_filter($inScope, static fn (Task $t): bool => $t->isApproved()) === []) {
             return new self(self::EMPTY, [], 0, $openQuestions, $charterError, true);
         }
         if ($only !== null) {
@@ -85,7 +85,13 @@ final readonly class MakeItPlan
 
         $ideas = array_values(array_filter($open, static fn (Task $t): bool => !BacklogProgress::counts($t)));
 
-        return $ideas === [] ? new self(self::DONE, [], 0) : self::listing(self::IDEAS, $ideas);
+        if ($ideas === []) {
+            return new self(self::DONE, [], 0);
+        }
+        $listed = self::listing(self::IDEAS, $ideas);
+
+        // Approved by someone, not only counted: a closed legacy bug counts and approved nothing.
+        return new self(self::IDEAS, $listed->tasks, $listed->total, hasTasks: array_filter($inScope, static fn (Task $t): bool => $t->isApproved()) !== []);
     }
 
     /** Bugs first, then work, right, fast; a task with no phase last. What this session already holds comes before all of them. */
@@ -140,7 +146,7 @@ final readonly class MakeItPlan
             } . ($this->total > 0 ? sprintf(' %d framework tasks are left out: --with-framework counts them.', $this->total) : ''),
             self::WORK => sprintf('Taking %s: %s (%d open).', $this->tasks[0]['id'], $this->tasks[0]['title'], $this->total),
             self::WAITING => sprintf('Nothing to take now: %d open, all blocked, set aside or held by another agent. Show the architect what they wait for.', $this->total),
-            self::IDEAS => sprintf('Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.', $this->total),
+            self::IDEAS => sprintf($this->hasTasks ? 'Everything approved is closed. %d ideas are waiting: offer them and ask which to approve.' : 'Nothing is approved yet. %d ideas are waiting: offer them and ask which to approve.', $this->total),
             default => $this->only !== null
                 ? "Nothing approved is open under {$this->only->value}."
                 : 'Everything is done. Are there any new ideas?',
@@ -163,9 +169,9 @@ final readonly class MakeItPlan
                 'Run ' . $command . ' again.',
             ],
             self::WORK => self::stepsFor($this->tasks[0]['id'], $command),
-            self::WAITING => ['Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
-            self::IDEAS => ['Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
-            default => [$this->only !== null ? 'Stop here, or find what this phase owes and file it.' : 'Stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
+            self::WAITING => ['Commit var/ai-work if it changed. Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
+            self::IDEAS => ['Commit var/ai-work if it changed. Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
+            default => [$this->only !== null ? 'Commit var/ai-work if it changed, then stop here, or find what this phase owes and file it.' : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
         };
     }
 
@@ -176,9 +182,10 @@ final readonly class MakeItPlan
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
             'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
+            'If it shows on a page, open that page in a browser and look at it, in light and dark, with a screenshot if you cannot: a passing test does not see what a person sees. If it looks broken, fix it, or block the task, before going on.',
             "Run bin/semitexa ai:verify --trace={$id}. Three failures in a row, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",
-            "Commit this task alone, with a last line: Task: {$id}. Do not push unless the project's charter says to.",
-            "Close it: bin/semitexa ai:work update --id={$id} --status=done.",
+            "Commit this task alone, with a line Task: {$id}. Do not push unless the project's charter says to.",
+            "Close it: bin/semitexa ai:work update --id={$id} --status=done, then commit var/ai-work, so the backlog travels with the code in its final state (unless the project's .gitignore keeps it out).",
             'Run ' . $command . ' again and do what it says. Stop only when it says go_on: false.',
         ];
     }
