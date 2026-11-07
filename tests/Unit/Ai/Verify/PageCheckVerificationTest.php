@@ -230,6 +230,10 @@ final class PageCheckVerificationTest extends TestCase
             self::assertMatchesRegularExpression('/\b' . $key . '\b/', $spec, "the spec writes {$key}");
         }
         self::assertStringContainsString("testMatch: ['page-check.spec.ts']", $config, 'the config runs this spec and none of the project');
+        // REGRESSION (review installer#72): the spec makes pages/ before it opens anything, so an
+        // existing directory proved nothing, and an empty list left no reason behind.
+        self::assertStringContainsString('ls "$_vdir/pages/"*.json', $bin, 'a page filed, not a directory made');
+        self::assertStringContainsString('ai:verify --list-pages named no page', $bin);
     }
 
     /** @return list<string> */
