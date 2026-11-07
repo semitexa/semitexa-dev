@@ -203,6 +203,18 @@ final class MakeItPlanTest extends TestCase
         self::assertSame('tk-idea', $plan->tasks[0]['id']);
     }
 
+    public function test_a_first_cut_is_not_called_closed(): void
+    {
+        self::assertStringStartsWith('Nothing is approved yet.', $this->plan([$this->task('tk-idea', approved: false)])->say());
+        self::assertStringStartsWith('Everything approved is closed.', $this->plan([$this->task('tk-a', status: TaskStatus::DONE), $this->task('tk-idea', approved: false)])->say());
+    }
+
+    public function test_the_backlog_is_committed_with_the_work(): void
+    {
+        self::assertStringContainsString('with var/ai-work', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));
+        self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a', status: TaskStatus::DONE)])->steps('x')));
+    }
+
     public function test_a_long_list_of_ideas_is_cut_but_counted(): void
     {
         $ideas = array_map(fn (int $i): Task => $this->task("tk-{$i}", approved: false), range(1, 25));
