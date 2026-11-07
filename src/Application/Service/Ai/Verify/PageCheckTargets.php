@@ -14,9 +14,9 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  * e2e-runner, and files what it saw where {@see PageCheckResult} reads it.
  *
  * Which pages: public GET routes with no parameter. A file of a local module
- * picks that module's pages; anything else (a package's template, the theme,
- * the project's own layouts) picks the project's pages, and a package's own
- * pages too. Capped: a browser is the dearest check there is, so not at
+ * picks that module's pages, a package's file that package's pages; only one
+ * whose package has no page of its own (the theme, a layout) and a project
+ * file outside a module pick the project's pages. Capped: a browser is the dearest check there is, so not at
  * minimal scope either.
  */
 final class PageCheckTargets
@@ -72,7 +72,11 @@ final class PageCheckTargets
             $mine = array_filter($usable, static fn (array $r): bool => $r['module'] === $m[1]);
         } else {
             $package = preg_match('#^(?:packages/semitexa-|vendor/semitexa/)([^/]+)/#', $file, $p) === 1 ? 'semitexa-' . $p[1] : null;
-            $mine = array_filter($usable, static fn (array $r): bool => !str_starts_with($r['module'], 'semitexa-') || $r['module'] === $package);
+            // Its own pages first: six other modules' pages passing said nothing about a demo template (review dev#216).
+            $mine = $package !== null ? array_filter($usable, static fn (array $r): bool => $r['module'] === $package) : [];
+            if ($mine === []) {
+                $mine = array_filter($usable, static fn (array $r): bool => !str_starts_with($r['module'], 'semitexa-'));
+            }
         }
         $paths = array_values(array_unique(array_map(static fn (array $r): string => $r['path'], $mine)));
         // The shortest paths first: a section's front page shows more of its layout than a leaf.

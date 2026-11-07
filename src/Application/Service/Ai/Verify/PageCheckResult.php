@@ -51,13 +51,15 @@ final readonly class PageCheckResult
         $seen = is_string($raw) ? json_decode($raw, true) : null;
         if (!is_array($seen) || !is_array($seen['modes'] ?? null)) {
             $host = @file_get_contents("{$dir}/pages.txt");
-            $host = is_string($host) && trim($host) !== '' ? $host : @file_get_contents("{$dir}/host.txt");
+            $log = is_file("{$dir}/pages.log") ? 'the page check filed nothing for it; its log ends: ' . SignalText::lastLine((string) file_get_contents("{$dir}/pages.log")) : null;
+            $host = is_string($host) && trim($host) !== '' ? $host : ($log ?? @file_get_contents("{$dir}/host.txt"));
             $why = is_string($host) && trim($host) !== '' ? trim($host) : 'the host filed nothing for it (the runner did not start, or the page check failed before it)';
 
             return self::notRun($target, "{$path} was NOT opened: {$why}");
         }
 
         $found = [];
+        $html = true;
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (!is_array($view)) {
@@ -67,15 +69,21 @@ final readonly class PageCheckResult
             if ($status === 0) {
                 return self::notRun($target, "{$path} could not be reached in {$mode}: " . SignalText::compress((string) ($view['error'] ?? 'no response')));
             }
-            if (($view['html'] ?? true) === false) {
-                return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, "{$path} is not an HTML page: nothing a person reads");
-            }
             if ($status >= 400) {
                 $found[] = "{$mode}: HTTP {$status}";
+            }
+            if (($view['html'] ?? true) === false) {
+                $html = false;
+                continue;
             }
             foreach (is_array($view['findings'] ?? null) ? $view['findings'] : [] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
+        }
+
+        if (!$html && $found === []) {
+            // An error is a failure whatever its body; a working non-HTML answer is nothing a person reads.
+            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, "{$path} is not an HTML page: nothing a person reads");
         }
 
         $unloaded = self::unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null);

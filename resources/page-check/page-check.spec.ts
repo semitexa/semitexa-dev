@@ -79,7 +79,10 @@ for (const path of pages) {
             page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 120)); });
             page.on('pageerror', (e) => errors.push(String(e).slice(0, 120)));
             try {
-                const response = await page.goto(path, { waitUntil: 'networkidle' });
+                // The response once the page has loaded; a page that keeps polling never goes idle,
+                // and that is no reason to call it unreachable.
+                const response = await page.goto(path, { waitUntil: 'load' });
+                await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
                 const status = response?.status() ?? 0;
                 const html = (response?.headers()['content-type'] ?? '').includes('text/html');
                 const findings: string[] = [];

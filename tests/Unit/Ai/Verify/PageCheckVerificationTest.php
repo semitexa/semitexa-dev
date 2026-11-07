@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\PageCheckResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\PageCheckTargets;
+use Semitexa\Dev\Application\Service\Ai\Verify\PageRoutes;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
@@ -56,7 +57,45 @@ final class PageCheckVerificationTest extends TestCase
     public function the_theme_opens_the_projects_pages_and_not_another_packages(): void
     {
         self::assertSame(['/', '/about', '/guestbook'], $this->paths('packages/semitexa-theme/src/Application/Static/css/layouts.css', ChangedFile::KIND_STYLESHEET));
-        self::assertSame(['/', '/demo', '/about', '/guestbook'], $this->paths('vendor/semitexa/demo/src/Application/View/templates/home.html.twig', ChangedFile::KIND_TEMPLATE));
+    }
+
+    /** REGRESSION (review dev#216): six other modules' pages passed for a demo template none of them renders. */
+    #[Test]
+    public function a_package_with_pages_of_its_own_opens_only_those(): void
+    {
+        self::assertSame(['/demo'], $this->paths('vendor/semitexa/demo/src/Application/View/templates/home.html.twig', ChangedFile::KIND_TEMPLATE));
+        self::assertSame(['/demo'], $this->paths('packages/semitexa-demo/src/Application/Static/css/demo.css', ChangedFile::KIND_STYLESHEET));
+    }
+
+    /** REGRESSION (review dev#216): JSON endpoints took the cap, and a GET that signs in timed out on every run. */
+    #[Test]
+    public function only_a_route_that_renders_a_page_and_does_nothing_is_opened(): void
+    {
+        $page = ['path' => '/shop', 'methods' => ['GET'], 'accessType' => 'public'];
+        self::assertTrue(PageRoutes::isPage($page));
+        self::assertTrue(PageRoutes::isPage($page + ['produces' => ['text/html', 'application/json']]));
+        self::assertFalse(PageRoutes::isPage(['produces' => ['application/json']] + $page), 'an API');
+        foreach (['/auth/google/start', '/logout', '/reactive-ai/submit', '/newsletter/unsubscribe'] as $action) {
+            self::assertFalse(PageRoutes::isPage(['path' => $action] + $page), "{$action} acts when opened");
+        }
+        self::assertFalse(PageRoutes::isPage(['accessType' => 'protected'] + $page));
+        self::assertFalse(PageRoutes::isPage(['methods' => ['POST']] + $page));
+    }
+
+    #[Test]
+    public function a_non_html_error_fails_rather_than_being_skipped(): void
+    {
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/broken'), json_encode(['path' => '/broken', 'modes' => ['light' => ['status' => 500, 'html' => false, 'findings' => []], 'dark' => ['status' => 500, 'html' => false, 'findings' => []]]]));
+
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/broken', 'run-1')->status);
+    }
+
+    #[Test]
+    public function a_spec_that_died_points_at_its_log(): void
+    {
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages.log', "Running 3 tests\nTest timeout of 60000ms exceeded.\n");
+
+        self::assertStringContainsString('Test timeout of 60000ms exceeded.', (string) $this->check('/gone', 'run-1')->signal);
     }
 
     #[Test]
