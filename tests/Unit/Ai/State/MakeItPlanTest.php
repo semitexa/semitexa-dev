@@ -203,6 +203,11 @@ final class MakeItPlanTest extends TestCase
         self::assertSame('tk-idea', $plan->tasks[0]['id']);
     }
 
+    public function test_a_closed_legacy_bug_is_no_approval(): void
+    {
+        self::assertStringStartsWith('Nothing is approved yet.', $this->plan([$this->task('tk-bug', status: TaskStatus::DONE, approved: false, recipe: 'fix_bug'), $this->task('tk-idea', approved: false)])->say());
+    }
+
     public function test_a_first_cut_is_not_called_closed(): void
     {
         self::assertStringStartsWith('Nothing is approved yet.', $this->plan([$this->task('tk-idea', approved: false)])->say());
@@ -216,7 +221,9 @@ final class MakeItPlanTest extends TestCase
 
     public function test_the_backlog_is_committed_with_the_work(): void
     {
-        self::assertStringContainsString('with var/ai-work', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));
+        self::assertStringContainsString('then commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));
+        self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a', status: TaskStatus::BLOCKED)])->steps('x')));
+        self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-idea', approved: false)])->steps('x')));
         self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a', status: TaskStatus::DONE)])->steps('x')));
     }
 

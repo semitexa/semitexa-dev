@@ -90,7 +90,8 @@ final readonly class MakeItPlan
         }
         $listed = self::listing(self::IDEAS, $ideas);
 
-        return new self(self::IDEAS, $listed->tasks, $listed->total, hasTasks: array_filter($inScope, BacklogProgress::counts(...)) !== []);
+        // Approved by someone, not only counted: a closed legacy bug counts and approved nothing.
+        return new self(self::IDEAS, $listed->tasks, $listed->total, hasTasks: array_filter($inScope, static fn (Task $t): bool => $t->isApproved()) !== []);
     }
 
     /** Bugs first, then work, right, fast; a task with no phase last. What this session already holds comes before all of them. */
@@ -168,9 +169,9 @@ final readonly class MakeItPlan
                 'Run ' . $command . ' again.',
             ],
             self::WORK => self::stepsFor($this->tasks[0]['id'], $command),
-            self::WAITING => ['Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
-            self::IDEAS => ['Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
-            default => [$this->only !== null ? 'Stop here, or find what this phase owes and file it.' : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
+            self::WAITING => ['Commit var/ai-work if it changed. Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
+            self::IDEAS => ['Commit var/ai-work if it changed. Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
+            default => [$this->only !== null ? 'Commit var/ai-work if it changed, then stop here, or find what this phase owes and file it.' : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
         };
     }
 
@@ -181,10 +182,10 @@ final readonly class MakeItPlan
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
             'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
-            'If it shows on a page, open that page in a browser and look at it, with a screenshot if you cannot: a passing test does not see what a person sees.',
+            'If it shows on a page, open that page in a browser and look at it, in light and dark, with a screenshot if you cannot: a passing test does not see what a person sees. If it looks broken, fix it, or block the task, before going on.',
             "Run bin/semitexa ai:verify --trace={$id}. Three failures in a row, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",
-            "Commit this task alone, with a line Task: {$id} and with var/ai-work, the backlog travels with the code. Do not push unless the project's charter says to.",
-            "Close it: bin/semitexa ai:work update --id={$id} --status=done.",
+            "Commit this task alone, with a line Task: {$id}. Do not push unless the project's charter says to.",
+            "Close it: bin/semitexa ai:work update --id={$id} --status=done, then commit var/ai-work, so the backlog travels with the code in its final state (unless the project's .gitignore keeps it out).",
             'Run ' . $command . ' again and do what it says. Stop only when it says go_on: false.',
         ];
     }
