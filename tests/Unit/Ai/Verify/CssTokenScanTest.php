@@ -70,4 +70,57 @@ final class CssTokenScanTest extends TestCase
 
         self::assertSame([], CssTokenScan::unknown($this->root));
     }
+
+    /** REGRESSION (review dev#216): a note in a comment declared the token it mentioned. */
+    public function test_a_comment_declares_nothing(): void
+    {
+        $this->write('a.css', '/* --ui-foo: removed */ a { color: var(--ui-foo, red); }');
+        $this->write('b.html.twig', '{# --ui-bar: later #}<p style="color: var(--ui-bar)"></p>');
+
+        self::assertSame(['src/modules/Shop/a.css' => ['--ui-foo'], 'src/modules/Shop/b.html.twig' => ['--ui-bar']], CssTokenScan::unknown($this->root));
+    }
+
+    /** REGRESSION (review dev#216): a declared prefix hid the full name it is part of. */
+    public function test_a_declared_prefix_does_not_hide_a_longer_or_other_case_name(): void
+    {
+        $this->write('a.css', ':root { --ui-a: 1px; } a { margin: var(--ui-a_b); padding: var(--ui-A); }');
+
+        self::assertSame(['src/modules/Shop/a.css' => ['--ui-a_b', '--ui-A']], CssTokenScan::unknown($this->root));
+    }
+
+    public function test_a_file_it_cannot_read_fails_the_scan(): void
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            self::markTestSkipped('root reads a file without read permission');
+        }
+        $this->write('a.css', 'a { color: var(--ui-surface-page); }');
+        chmod($this->root . '/src/modules/Shop/a.css', 0o000);
+
+        $this->expectExceptionMessage('cannot read src/modules/Shop/a.css');
+        try {
+            CssTokenScan::unknown($this->root);
+        } finally {
+            chmod($this->root . '/src/modules/Shop/a.css', 0o644);
+        }
+    }
+
+    public function test_a_package_declares_for_the_project_and_its_own_uses_are_read(): void
+    {
+        mkdir($this->root . '/packages/semitexa-ui/css', 0755, true);
+        file_put_contents($this->root . '/packages/semitexa-ui/css/ui.css', ':root { --ui-ring: blue; } a { outline: var(--ui-gone); }');
+        $this->write('a.css', 'a { outline-color: var(--ui-ring); }');
+
+        self::assertSame(['packages/semitexa-ui/css/ui.css' => ['--ui-gone']], CssTokenScan::unknown($this->root));
+    }
+
+    public function test_node_modules_and_a_nested_vendor_are_not_read(): void
+    {
+        foreach (['src/modules/Shop/node_modules/x', 'src/modules/Shop/vendor/y'] as $dir) {
+            mkdir($this->root . '/' . $dir, 0755, true);
+            file_put_contents($this->root . '/' . $dir . '/z.css', ':root { --ui-hidden: 1px; } a { color: var(--ui-unseen); }');
+        }
+        $this->write('a.css', 'a { margin: var(--ui-hidden); }');
+
+        self::assertSame(['src/modules/Shop/a.css' => ['--ui-hidden']], CssTokenScan::unknown($this->root));
+    }
 }

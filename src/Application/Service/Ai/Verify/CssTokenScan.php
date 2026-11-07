@@ -17,17 +17,29 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  */
 final class CssTokenScan
 {
-    private const USED = '/var\(\s*(--ui-[a-z0-9-]+)/';
-    private const DECLARED = '/(--ui-[a-z0-9-]+)\s*:/';
+    // A custom property name is case-sensitive and may hold underscores: `--ui-a`
+    // declared must not pass `var(--ui-a_b)` or `var(--ui-A)` as known.
+    private const USED = '/var\(\s*(--ui-[A-Za-z0-9_-]+)/';
+    private const DECLARED = '/(--ui-[A-Za-z0-9_-]+)\s*:/';
+    // Comments declare nothing: `/* --ui-foo: removed */` is a note, not a token.
+    private const COMMENTS = ['#/\*.*?\*/#s', '/\{#.*?#\}/s'];
     private const SOURCES = ['src', 'packages', 'vendor/semitexa'];
 
-    /** @return array<string, list<string>> file relative to the project => the tokens declared nowhere */
+    /**
+     * @return array<string, list<string>> file relative to the project => the tokens declared nowhere
+     *
+     * @throws \RuntimeException a file it found and could not read: a lint that cannot read must not pass
+     */
     public static function unknown(string $projectRoot): array
     {
         $declared = [];
         $used = [];
         foreach (self::files($projectRoot) as $file) {
-            $content = (string) @file_get_contents($file);
+            $content = @file_get_contents($file);
+            if (!is_string($content)) {
+                throw new \RuntimeException('cannot read ' . substr($file, strlen($projectRoot) + 1));
+            }
+            $content = (string) preg_replace(self::COMMENTS, '', $content);
             preg_match_all(self::DECLARED, $content, $declarations);
             $declared += array_flip($declarations[1]);
             preg_match_all(self::USED, $content, $uses);

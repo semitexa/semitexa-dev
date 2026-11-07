@@ -12,7 +12,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /** Fail on a --ui-* token that is used and declared nowhere ({@see CssTokenScan}). */
-#[AsCommand(name: 'lint:css-tokens', description: 'Fail when CSS or a template uses a --ui-* token that no skin or stylesheet declares')]
+#[AsCommand(name: 'lint:css-tokens', description: 'Fail when CSS or a template under src/ uses a --ui-* token that no stylesheet under src/, packages/ or vendor/semitexa/ declares')]
 final class LintCssTokensCommand extends BaseCommand
 {
     /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
@@ -30,7 +30,15 @@ final class LintCssTokensCommand extends BaseCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $unknown = CssTokenScan::unknown($this->getProjectRoot());
+        try {
+            $unknown = CssTokenScan::unknown($this->getProjectRoot());
+        } catch (\RuntimeException $e) {
+            $output->writeln((bool) $input->getOption('json')
+                ? (string) json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_SLASHES)
+                : 'lint:css-tokens → ' . $e->getMessage() . ': nothing was checked', OutputInterface::OUTPUT_RAW);
+
+            return self::FAILURE;
+        }
 
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode(['ok' => $unknown === [], 'unknown' => $unknown], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);

@@ -71,14 +71,14 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 87,
+            "total": 88,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
                 "semitexa-cache": 1,
                 "semitexa-cms": 1,
                 "semitexa-core": 5,
-                "semitexa-dev": 26,
+                "semitexa-dev": 27,
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
                 "semitexa-orm": 7,
@@ -1649,6 +1649,19 @@
                 }
             },
             "reason": "semitexa-orm: DatabaseQueueTransportTest::a_message_still_inside_another_transaction_does_not_hold_up_the_queue tests InnoDB row-lock behaviour of the claim; there is no equivalent on SQLite, so it skips off MySQL (tk-orm-ssr-audit)"
+        },
+        {
+            "at": "2026-11-07",
+            "metric": "tests.skip-calls",
+            "from": 87,
+            "to": 88,
+            "keys": {
+                "semitexa-dev": {
+                    "from": 26,
+                    "to": 27
+                }
+            },
+            "reason": "CssTokenScanTest skips its unreadable-file case under root: root reads a file with no read permission, so the refusal cannot be produced there (review dev#216)"
         }
     ]
 }

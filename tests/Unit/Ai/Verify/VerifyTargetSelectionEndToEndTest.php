@@ -143,6 +143,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                 [
                     'lint:access',
                     'lint:components',
+                    'lint:css-tokens',
                     'lint:deferred-slots',
                     'lint:deferred-twig',
                     'lint:di',
@@ -227,6 +228,24 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
 
         self::assertContains('lint:css-tokens', array_map(static fn ($target): string => (string) ($target->commandName ?? ''), $plan->targets));
+    }
+
+    #[Test]
+    public function a_template_selects_the_token_lint(): void
+    {
+        $classified = (new ChangedFileClassifier())->classify('src/modules/Foo/src/Application/View/templates/pages/foo.html.twig');
+        self::assertSame(ChangedFile::KIND_TEMPLATE, $classified->kind);
+
+        self::assertContains('lint:css-tokens', $this->lintCommandNames($this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD)));
+    }
+
+    /** REGRESSION (review dev#216): the stylesheet holding a declaration may be the one deleted. */
+    #[Test]
+    public function a_deleted_stylesheet_still_selects_the_token_lint(): void
+    {
+        $deleted = new ChangedFile('src/modules/Foo/src/Application/Static/css/tokens.css', ChangedFile::KIND_STYLESHEET, ChangedFile::STATUS_DELETED);
+
+        self::assertContains('lint:css-tokens', $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_STANDARD)));
     }
 
     #[Test]

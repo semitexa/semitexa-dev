@@ -96,6 +96,8 @@ final class VerificationPlanner
         'lint:deferred-slots',
         'lint:components',
         'lint:ui-contracts',
+        // A deleted stylesheet may have held the only declaration an unchanged template uses.
+        'lint:css-tokens',
     ];
 
     private const ALL_LINTS = [
@@ -112,6 +114,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
+        'lint:css-tokens',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;

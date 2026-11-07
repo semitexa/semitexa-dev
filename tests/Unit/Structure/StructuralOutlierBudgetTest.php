@@ -574,7 +574,8 @@ final class StructuralOutlierBudgetTest extends TestCase
         // checks themselves live in their own classes (E2eSpecResultCheck, PageCheckResult).
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 700],
         // 941 -> 943, 2026-11-07 (tk-sees-page-in-browser): the routes for the page targets.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 943],
+        // 943 -> 946, same day (review dev#216): lint:css-tokens joins the cross-file and broad lists.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 946],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

@@ -105,6 +105,7 @@ class VerificationPlannerTest extends TestCase
             // Every route payload's access attributes, before a request checks them.
             'lint:access',
             'lint:components',
+            'lint:css-tokens',
             'lint:deferred-slots',
             'lint:deferred-twig',
             'lint:di',
@@ -185,7 +186,7 @@ class VerificationPlannerTest extends TestCase
         // lint:inline-script all read the file's own source, and there is none;
         // lint:components reads the tree, where a deleted template that called a
         // component and one that declared it are both worth a look.
-        $this->assertSame(['lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
+        $this->assertSame(['lint:css-tokens', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
         $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
     }
 
@@ -208,7 +209,7 @@ class VerificationPlannerTest extends TestCase
         // Exactly that one, the way the deletion case above is asserted. The
         // vanished path is a template nobody can read any more, so a lint
         // that would open it is scheduled against a file that is not there.
-        $this->assertSame(['lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
+        $this->assertSame(['lint:css-tokens', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'], $this->lintCommandNames($plan));
     }
 
     public function test_deleted_files_are_kept_in_plan_but_skip_execution(): void
