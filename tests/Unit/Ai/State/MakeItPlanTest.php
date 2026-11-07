@@ -43,12 +43,94 @@ final class MakeItPlanTest extends TestCase
 
         self::assertSame(MakeItPlan::EMPTY, $plan->state);
         self::assertFalse($plan->goOn());
-        self::assertStringContainsString('ai:charter next', $plan->steps('x')[0]);
+        self::assertStringContainsString('what must work first', $plan->steps('x')[0]);
+        self::assertStringContainsString('question under interview', MakeItPlan::of([], false, static fn (): bool => false, null, 7)->steps('x')[0]);
     }
 
     public function test_a_backlog_of_discarded_tasks_is_empty(): void
     {
         self::assertSame(MakeItPlan::EMPTY, $this->plan([$this->task('tk-a', status: TaskStatus::DISCARDED)])->state);
+    }
+
+    public function test_filing_an_idea_does_not_end_the_interview(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 6);
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+        self::assertStringContainsString('6 questions are open', $plan->say());
+        self::assertStringContainsString('resumes where it stopped', $plan->steps('x')[0]);
+    }
+
+    public function test_with_the_charter_complete_ideas_are_offered(): void
+    {
+        self::assertSame(MakeItPlan::IDEAS, MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 0)->state);
+    }
+
+    public function test_approved_work_goes_on_with_the_charter_unfinished(): void
+    {
+        self::assertSame(MakeItPlan::WORK, MakeItPlan::of([$this->task('tk-a')], false, static fn (): bool => false, null, 6)->state);
+    }
+
+    public function test_finished_work_is_done_with_the_charter_unfinished(): void
+    {
+        self::assertSame(MakeItPlan::DONE, MakeItPlan::of([$this->task('tk-a', status: TaskStatus::DONE)], false, static fn (): bool => false, null, 6)->state);
+    }
+
+    public function test_a_phase_narrows_what_is_taken(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-bug', recipe: 'fix_bug'), $this->task('tk-fast', Phase::FAST)], false, static fn (): bool => false, null, only: Phase::FAST);
+
+        self::assertSame('tk-fast', $plan->tasks[0]['id']);
+    }
+
+    public function test_with_nothing_under_the_phase_it_says_so_and_no_more(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-work'), $this->task('tk-idea', Phase::RIGHT, approved: false)], false, static fn (): bool => false, null, 3, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::DONE, $plan->state);
+        self::assertSame('Nothing approved is open under right.', $plan->say());
+        self::assertFalse($plan->goOn());
+    }
+
+    public function test_a_phase_does_not_skip_an_open_interview(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-idea', Phase::RIGHT, approved: false)], false, static fn (): bool => false, null, 6, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+    }
+
+    public function test_what_this_session_holds_stays_first_under_another_phase(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-fast', Phase::FAST), $this->task('tk-mine', Phase::WORK, TaskStatus::IN_PROGRESS)], false, static fn (): bool => false, 'tk-mine', only: Phase::FAST);
+
+        self::assertSame('tk-mine', $plan->tasks[0]['id']);
+    }
+
+    public function test_the_task_named_says_where_it_lives(): void
+    {
+        $plan = $this->plan([$this->task('tk-a', refs: ['packages/semitexa-orm/src/X.php'])], withFramework: true);
+
+        self::assertSame(['packages/semitexa-orm/src/X.php'], $plan->tasks[0]['context_refs']);
+    }
+
+    public function test_a_phase_with_what_is_open_blocked_waits(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-a', Phase::RIGHT, TaskStatus::BLOCKED)], false, static fn (): bool => false, null, only: Phase::RIGHT);
+
+        self::assertSame(MakeItPlan::WAITING, $plan->state);
+    }
+
+    public function test_closed_work_is_done_whatever_the_charter_lacks(): void
+    {
+        self::assertSame(MakeItPlan::DONE, MakeItPlan::of([$this->task('tk-a', status: TaskStatus::DONE, approved: false)], false, static fn (): bool => false, null, 6)->state);
+    }
+
+    public function test_a_broken_charter_comes_before_ideas(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 0, 'bad json');
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+        self::assertStringContainsString('bad json', $plan->steps('x')[0]);
     }
 
     public function test_an_approved_task_is_taken_and_the_loop_goes_on(): void

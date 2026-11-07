@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Work;
 
-use Semitexa\Dev\Application\Service\Ai\State\FrameworkEvidence;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 
 /**
@@ -19,6 +18,13 @@ use Semitexa\Dev\Application\Service\Ai\State\Phase;
 final class TaskFiling
 {
     public const RULE = 'ai:decision project-progress-model';
+
+    /**
+     * The recipes defects are filed under; the classifier files a bug report
+     * ("fix the 500 on /login") as debug_investigate.
+     */
+    public const BUG_RECIPES = ['fix_bug', 'bugfix', 'debug_investigate'];
+
     private const BY_RULE = 'rule';
 
     /** @throws \InvalidArgumentException on a value that is not a phase */
@@ -79,6 +85,6 @@ final class TaskFiling
 
     public static function isBug(string $recipe): bool
     {
-        return in_array($recipe, FrameworkEvidence::BUG_RECIPES, true);
+        return in_array($recipe, self::BUG_RECIPES, true);
     }
 }

@@ -15,14 +15,18 @@ keeps those two in a profile:
 | `right` | [`references/right.md`](references/right.md) — structure, without changing behaviour |
 | `fast`  | [`references/fast.md`](references/fast.md) — cost, measured before and after |
 
-How far each phase has come is kept in one scorecard for all three —
-[`references/scorecard.md`](references/scorecard.md) — and every run reports it.
+How far each phase has come is what `bin/semitexa ai:state --with-framework`
+says, counted from the backlog; every run reports that line.
 
-**The phase is the argument.** In Claude Code it is typed after the name
+**The phase is an optional argument.** In Claude Code it is typed after the name
 (`/make-it right`) and arrives as `ARGUMENTS: right`; other runtimes pass it the
-same way or in the request ("make it right"). Read the profile it names before
-anything else. No phase, or one that is not `work`, `right` or `fast`: name the
-three and stop — do not guess one.
+same way or in the request ("make it right"). With one, read the profile it names
+before anything else. With none, take what comes next, whatever its phase, and
+read the profile of the task named. Anything but `work`, `right` or `fast`: name
+the three and stop.
+
+**What comes next is Semitexa's answer, the same one every agent gets.** This
+skill adds what is particular to the framework: pull requests and their review.
 
 Script paths below are relative to **this skill's own directory**. This skill is
 a copy: the canonical one is `packages/semitexa-dev/resources/skills/make-it/`,
@@ -44,30 +48,51 @@ re-arms. Each tick, in this order:
 
 1. **Look.** `scripts/wip.sh` lists the open Semitexa PRs, the repositories that
    have one, and how many review slots are free. On the first tick of a run,
-   read `var/docs/make-it/scorecard.md` (create it as the scorecard reference
-   says if it is missing).
+   read `bin/semitexa ai:state --with-framework`.
 2. **Review first.** Run the codereview skill's cycle on the open PRs: answer and
-   fix new comments, merge what passes the gate. Merging frees a slot and a
-   repository, so it always comes before starting something new.
-3. **Pick.** If a slot is free, take the next change from the profile's source
-   whose repository has no open PR (`scripts/wip.sh --can-open <repo>` exits 0).
-   Prefer a change that lives in one repository.
-4. **Make.** `ai:work start` under the phase's epic, then the change itself, held
-   to the profile's definition of done. `ai:verify` must pass; phpstan must not
-   rise above its baseline.
-5. **Ship.** The review-prep skill for that one repository: commit, checks, a PR
-   from `develop` to `master` whose title says the one change it carries.
-6. **Score.** After a merge, or any finding — in this phase or another — move
-   the criterion it belongs to in `var/docs/make-it/scorecard.md`, with the
-   evidence, and a line in its history. A bug found while making it fast lowers
-   `work`; nothing waits for the end of the run to be counted.
+   fix new comments, merge what passes the gate. Close each merged task at once
+   (`ai:work update --status=done`, with a fresh `ai:verify --trace=<task>
+   --files=<its files>` if the last one is older than the merge): an open task is
+   what Pick names next. Merging frees a slot and a repository, so it always comes
+   before starting something new.
+3. **Pick.** If a slot is free, `bin/semitexa ai:make-it --with-framework
+   [--phase=<phase>] --json`, and read `state`:
+   - `work`: it names the task. Its `context_refs` give the repositories. If one
+     has an open PR (`scripts/wip.sh --can-open <repo>` exits 1), or the task names
+     none and you cannot tell from its text, ask again with `--except=<task>`,
+     keeping the earlier ones. Hold that list for this tick only.
+   - `waiting`: everything open is blocked or set aside. End the tick.
+   - `done` under `right` or `fast`: the profile's source is where its tickets come
+     from. Look there, file what you find (`ai:work start --phase=<phase>`, which
+     counts at once), record it (`ai:audit record --phase=<phase> --covered="<what you
+     read>" --with-framework`, since this skill reads the framework too), and ask
+     again. Under `work`,
+     new work waits for the operator: end the tick and say so.
+   - `empty`: the operator's turn. `interview.error` set: show it, the charter comes
+     first. Otherwise ask the question under `interview`, or what must work first,
+     and record the answer as the steps say; end the tick.
+   - `ideas`: show the operator the tasks it lists, ask which to approve, take none;
+     `total` above the tasks listed: say how many more, and `ai:work list` has them.
+     End the tick.
+   - `done` with no phase: say what `say` says and end the tick.
+4. **Make.** Follow the task through the steps `ai:make-it` gives, held to the
+   profile's definition of done; phpstan must not rise above its baseline. Those
+   steps end at a local commit, closing the task and asking again: here stop at
+   the commit, the task stays open until its PR merges, and Ship comes next.
+5. **Ship.** The review-prep skill for that one repository: commit with a last
+   line `Task: <task>`, checks, a PR from `develop` to `master` whose title says
+   the one change it carries.
+6. **Count.** A finding — in this phase or another — is a ticket filed at once:
+   `--recipe=fix_bug`, `--phase=right` or `--phase=fast` count from then on, so a
+   bug found while making it fast lowers `work` by itself. New work under
+   `--phase=work` waits for the operator's yes.
 7. **Release, often.** After every few merges (default 5) or once a day, run the
    release-readiness skill — small releases, not one at the end. See the release
    rule below for when a release may start.
 
 Report each tick to the operator in their language, briefly, starting with the
-three scores on one line (`work 86% · right 60% · fast 47%`, with what moved since
-the last report): then merged, opened, waiting, and why.
+`ai:state --with-framework` line (`work 80% (8/10, 1 open, 1 unproven) · right not
+measured · …`, with what moved since the last report): then merged, opened, waiting, and why.
 
 ## Rules
 
@@ -93,14 +118,12 @@ the last report): then merged, opened, waiting, and why.
   therefore needs no unmerged commit at release time. Start a release only when
   no such repository has an open PR or unmerged work.
 - **Stop** when the profile's source has nothing left, or when the operator says
-  so. Give a final report: the scorecard for all three phases (each criterion,
-  its points and evidence), what moved during the run and why, what merged,
-  what was rejected and why, what was found beyond the plan, what is knowingly
-  left open, and what would raise each number most.
+  so. Give a final report: the `ai:state --with-framework` line, what moved
+  during the run and why, what merged, what was rejected and why, what was found
+  beyond the plan, and what is knowingly left open.
 
 ## Resources
 
-- `references/scorecard.md` — the rubric, its rules and the report format
 - `scripts/wip.sh` — open PRs, busy repositories, free slots; `--can-open <repo>`
 - The codereview skill — review cycle and merge gate
 - The review-prep skill — commit, checks and PR for one repository

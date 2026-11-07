@@ -8,6 +8,11 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiMakeItCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterInterview;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
+use Semitexa\Dev\Application\Service\Ai\Charter\SuccessSign;
+use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
+use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
@@ -62,7 +67,7 @@ final class AiMakeItCommandTest extends TestCase
 
     private function tester(AiMakeItCommand $command): CommandTester
     {
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), EpicStore::class => $this->epics()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), EpicStore::class => $this->epics(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
 
         return new CommandTester($command);
     }
@@ -85,6 +90,166 @@ final class AiMakeItCommandTest extends TestCase
     {
         $this->epic('ep-a', EpicStatus::NEW);
         (new TaskStore())->save(new Task($id, 'ep-a', 't', $status, '', 'low', $refs, null, $id, self::NOW, self::NOW, new TaskApproval('owner', 'Так', self::NOW), Phase::WORK));
+    }
+
+    public function test_the_line_beside_the_answer_knows_the_audits(): void
+    {
+        (new AuditStore())->record(new AuditRecord(Phase::RIGHT, gmdate(DATE_ATOM), 'agent', 'the Shop module', false));
+
+        self::assertStringContainsString('right nothing open', (string) $this->run_()['line']);
+    }
+
+    public function test_an_empty_backlog_hands_over_the_next_question(): void
+    {
+        $result = $this->run_();
+
+        self::assertSame('goal', $result['interview']['next']['field']);
+        self::assertStringStartsWith('bin/semitexa ai:charter answer', $result['interview']['next']['record']);
+        self::assertSame(count(CharterInterview::questions()), $result['interview']['open']);
+        self::assertStringContainsString('resumes where it stopped', implode("\n", $result['steps']));
+    }
+
+    public function test_the_interview_goes_on_from_the_question_left_open(): void
+    {
+        $store = new CharterStore();
+        $store->save($store->get()->with(goal: 'A shop for bikes'));
+
+        self::assertSame('audience', $this->run_()['interview']['next']['field']);
+    }
+
+    public function test_a_complete_charter_moves_on_to_the_first_work(): void
+    {
+        $store = new CharterStore();
+        $store->save($store->get()->with(goal: 'g', audience: 'a', problem: 'p', signs: [new SuccessSign('s1', 'a sign')], constraints: [], nonGoals: [], ownerDecides: ['x']));
+
+        $result = $this->run_();
+
+        self::assertNull($result['interview']['next']);
+        self::assertStringContainsString('what must work first', implode("\n", $result['steps']));
+    }
+
+    public function test_a_broken_charter_is_said_and_not_read_as_complete(): void
+    {
+        $store = new CharterStore();
+        mkdir(dirname($store->path()), 0755, true);
+        file_put_contents($store->path(), '{');
+
+        $steps = implode("\n", $this->run_()['steps']);
+
+        self::assertStringContainsString('cannot be read', $steps);
+        self::assertStringNotContainsString('charter is complete', $steps);
+    }
+
+    public function test_an_interview_goes_on_while_its_answers_are_filed(): void
+    {
+        $this->epic('ep-a', EpicStatus::NEW);
+        (new TaskStore())->save(new Task('tk-idea', 'ep-a', 't', TaskStatus::NEW, '', 'low', [], null, 'tk-idea', self::NOW, self::NOW, null, Phase::WORK));
+
+        $result = $this->run_();
+
+        self::assertSame('empty', $result['state']);
+        self::assertSame('goal', $result['interview']['next']['field']);
+    }
+
+    public function test_except_passes_a_task_over_and_stays_in_the_steps(): void
+    {
+        $this->file('tk-a');
+        $this->file('tk-b');
+
+        $result = $this->run_(['--except' => ['tk-a']]);
+
+        self::assertSame('tk-b', $result['tasks'][0]['id']);
+        self::assertStringContainsString('ai:make-it --except=tk-a again', implode("\n", $result['steps']));
+    }
+
+    public function test_excepting_all_that_is_open_waits_and_stops_the_loop(): void
+    {
+        $this->file('tk-a');
+
+        $result = $this->run_(['--except' => ['tk-a']]);
+
+        self::assertSame(['waiting', false], [$result['state'], $result['go_on']]);
+    }
+
+    public function test_the_phase_reaches_the_plan_and_stays_in_the_steps(): void
+    {
+        $this->file('tk-a');
+
+        self::assertSame('done', $this->run_(['--phase' => 'fast'])['state'], 'a work task is not taken under fast');
+
+        $result = $this->run_(['--phase' => 'work']);
+
+        self::assertSame('tk-a', $result['tasks'][0]['id']);
+        self::assertStringContainsString('ai:make-it --phase=work again', implode("\n", $result['steps']));
+    }
+
+    public function test_an_unknown_phase_is_an_error(): void
+    {
+        $command = new AiMakeItCommand();
+        $tester = $this->tester($command);
+
+        self::assertSame(1, $tester->execute(['--phase' => 'later'], ['interactive' => false]));
+        self::assertStringContainsString('invalid phase', $tester->getDisplay());
+    }
+
+    public function test_a_backlog_with_work_asks_nothing_of_the_charter(): void
+    {
+        $this->file('tk-a');
+
+        self::assertNull($this->run_()['interview']);
+    }
+
+    public function test_a_person_sees_the_question_to_ask(): void
+    {
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertStringContainsString('Ask: What is this project for?', $tester->getDisplay());
+        self::assertStringContainsString('Record: bin/semitexa ai:charter answer', $tester->getDisplay());
+    }
+
+    public function test_a_task_file_that_does_not_read_stops_the_answer(): void
+    {
+        $this->file('tk-a');
+        file_put_contents((new TaskStore())->pathFor('tk-b'), '{"id":"tk-b"');
+        $tester = $this->tester(new AiMakeItCommand());
+
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+        $result = json_decode($tester->getDisplay(), true);
+        self::assertFalse($result['go_on']);
+        self::assertStringContainsString('repair or remove', (string) $result['error']);
+    }
+
+    public function test_a_task_with_a_bad_status_stops_the_answer(): void
+    {
+        $this->file('tk-a');
+        file_put_contents((new TaskStore())->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
+        $tester = $this->tester(new AiMakeItCommand());
+
+        self::assertSame(1, $tester->execute([], ['interactive' => false]));
+    }
+
+    public function test_a_person_sees_the_warning(): void
+    {
+        $this->file('tk-a');
+        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n");
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertStringContainsString('Warning:', $tester->getDisplay());
+    }
+
+    public function test_an_audit_file_that_does_not_read_is_said_and_stops_nothing(): void
+    {
+        $this->file('tk-a');
+        file_put_contents($this->root . '/' . AuditStore::PATH, "{\n");
+
+        $result = $this->run_();
+
+        self::assertSame('work', $result['state']);
+        self::assertStringContainsString('does not read', (string) $result['warning']);
     }
 
     public function test_a_fresh_project_is_told_to_interview(): void

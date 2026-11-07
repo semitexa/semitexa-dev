@@ -6,7 +6,6 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Work;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Semitexa\Dev\Application\Service\Ai\State\FrameworkEvidence;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
@@ -39,7 +38,7 @@ final class TaskFilingTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function bugRecipes(): iterable
     {
-        foreach (FrameworkEvidence::BUG_RECIPES as $recipe) {
+        foreach (['fix_bug', 'bugfix', 'debug_investigate'] as $recipe) {
             yield $recipe => [$recipe];
         }
     }

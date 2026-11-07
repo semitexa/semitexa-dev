@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\State;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
@@ -59,6 +60,86 @@ final class BacklogProgressTest extends TestCase
 
         self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 25% (1/4, 3 open) · ', $progress->line());
+    }
+
+    private function audit(Phase $phase, string $at, bool $withFramework = false): AuditRecord
+    {
+        return new AuditRecord($phase, $at, 'agent', 'the Shop module', $withFramework);
+    }
+
+    public function test_a_fresh_audit_with_no_tickets_reads_as_nothing_open(): void
+    {
+        $line = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, '2026-11-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->line();
+
+        self::assertSame('work not measured · right nothing open (audited 5d ago) · fast not measured', $line);
+    }
+
+    public function test_an_audit_past_thirty_days_is_not_measured_and_says_so(): void
+    {
+        $line = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, '2026-10-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->line();
+
+        self::assertStringContainsString('right not measured (last audit 36d ago)', $line);
+    }
+
+    public function test_a_clean_audit_never_makes_a_number(): void
+    {
+        $progress = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, self::NOW)], new \DateTimeImmutable(self::NOW));
+
+        self::assertNull($progress->phases['right']['percent']);
+    }
+
+    public function test_tickets_speak_over_an_audit(): void
+    {
+        $progress = BacklogProgress::of([$this->task(phase: Phase::RIGHT)], false, [$this->audit(Phase::RIGHT, self::NOW)], new \DateTimeImmutable(self::NOW));
+
+        self::assertStringContainsString('right 0% (0/1, 1 open)', $progress->line());
+    }
+
+    public function test_the_newest_audit_of_a_phase_speaks(): void
+    {
+        $progress = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, '2026-10-01T00:00:00+00:00'), $this->audit(Phase::RIGHT, self::NOW)], new \DateTimeImmutable(self::NOW));
+
+        self::assertStringContainsString('right nothing open (audited today)', $progress->line());
+    }
+
+    public function test_the_newest_audit_speaks_whatever_the_order_of_the_lines(): void
+    {
+        $progress = BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, self::NOW), $this->audit(Phase::RIGHT, '2026-09-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW));
+
+        self::assertStringContainsString('right nothing open (audited today)', $progress->line());
+    }
+
+    public function test_an_audit_dated_in_the_future_is_passed_over(): void
+    {
+        self::assertStringContainsString('right not measured', BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, '2099-01-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->line());
+    }
+
+    public function test_an_audit_is_fresh_for_twenty_nine_days_and_stale_at_thirty(): void
+    {
+        $now = new \DateTimeImmutable(self::NOW);
+
+        self::assertTrue($this->audit(Phase::RIGHT, '2026-10-08T00:00:00+00:00')->isFresh($now));
+        self::assertFalse($this->audit(Phase::RIGHT, '2026-10-07T00:00:00+00:00')->isFresh($now));
+    }
+
+    public function test_the_json_names_the_audit_and_its_age(): void
+    {
+        $audits = BacklogProgress::of([], false, [$this->audit(Phase::FAST, '2026-11-01T00:00:00+00:00')], new \DateTimeImmutable(self::NOW))->toArray()['audits'];
+
+        self::assertSame([5, true, 'the Shop module'], [$audits['fast']['age_days'], $audits['fast']['fresh'], $audits['fast']['covered']]);
+    }
+
+    public function test_an_audit_of_src_says_nothing_about_the_framework(): void
+    {
+        $audits = [$this->audit(Phase::RIGHT, self::NOW)];
+
+        self::assertStringContainsString('right not measured', BacklogProgress::of([], true, $audits, new \DateTimeImmutable(self::NOW))->line());
+        self::assertStringContainsString('right nothing open', BacklogProgress::of([], true, [$this->audit(Phase::RIGHT, self::NOW, true)], new \DateTimeImmutable(self::NOW))->line());
+    }
+
+    public function test_an_audit_with_the_framework_covers_src_too(): void
+    {
+        self::assertStringContainsString('right nothing open', BacklogProgress::of([], false, [$this->audit(Phase::RIGHT, self::NOW, true)], new \DateTimeImmutable(self::NOW))->line());
     }
 
     public function test_a_found_bug_moves_the_percent(): void
@@ -139,6 +220,20 @@ final class BacklogProgressTest extends TestCase
     {
         self::assertSame(0, BacklogProgress::of([$this->task(refs: ['./packages/semitexa-orm/src/X.php'])], false)->phases['work']['approved']);
         self::assertSame(1, BacklogProgress::of([$this->task(refs: ['./packages/semitexa-orm/src/X.php', './src/modules/Shop/Y.php'])], false)->phases['work']['approved']);
+    }
+
+    public function test_an_absolute_path_reads_by_what_it_points_into(): void
+    {
+        $framework = [$this->task(refs: ['/home/me/project/packages/semitexa-orm/src/X.php']), $this->task(refs: ['/var/www/html/vendor/semitexa/core/src/Y.php'])];
+        $project = [
+            $this->task(refs: ['/home/me/project/src/modules/Shop/Z.php']),
+            $this->task(refs: ['/home/me/notes.md']),
+            $this->task(refs: ['/home/me/packages/shop/src/Foo.php']),
+            $this->task(refs: ['/home/me/src/packages/y']),
+        ];
+
+        self::assertSame(0, BacklogProgress::of($framework, false)->phases['work']['approved']);
+        self::assertSame(4, BacklogProgress::of($project, false)->phases['work']['approved']);
     }
 
     public function test_a_task_touching_src_or_pointing_at_nothing_is_the_projects(): void
