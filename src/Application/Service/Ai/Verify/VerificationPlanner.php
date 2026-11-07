@@ -73,11 +73,12 @@ final class VerificationPlanner
         // defect no consumer can fix, and it fails in the BROWSER, never on the
         // server, so nothing else in this plan can see it.
         // lint:ui-contracts refuses the #[AsUiContract] examples the runtime only drops.
-        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'],
+        ChangedFile::KIND_TEMPLATE => ['lint:css-tokens', 'lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'],
         ChangedFile::KIND_COMPONENT => ['lint:di', 'lint:components', 'lint:ui-contracts'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred. (Parsing is a syntax target, see plan().)
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
+        ChangedFile::KIND_STYLESHEET => ['lint:css-tokens'],
         // No KIND_PHP_OTHER row, and the reason is measured: it wedged the
         // suite at ~427/8500 — see ChangedFile::KIND_COMMAND, the narrower kind
         // that replaced it.

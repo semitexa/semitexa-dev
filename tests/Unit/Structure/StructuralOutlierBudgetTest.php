@@ -565,7 +565,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // broad run that promises every lint runs the KISS/HUG door guard too.
         // 937 -> 940 on 2026-10-14: lint:ui-contracts joined the template and
         // component rows and both lists, with a one-line reason. Data only.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 940],
+        // 940 -> 941 on 2026-11-07: lint:css-tokens joined the template row and took
+        // a row of its own for stylesheets. Data only.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 941],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

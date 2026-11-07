@@ -219,6 +219,17 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
     }
 
     #[Test]
+    public function a_stylesheet_selects_the_token_lint(): void
+    {
+        $classified = (new ChangedFileClassifier())->classify('src/modules/Foo/src/Application/Static/css/foo.css');
+        self::assertSame(ChangedFile::KIND_STYLESHEET, $classified->kind);
+
+        $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
+
+        self::assertContains('lint:css-tokens', array_map(static fn ($target): string => (string) ($target->commandName ?? ''), $plan->targets));
+    }
+
+    #[Test]
     public function a_client_script_selects_the_mechanism_lint(): void
     {
         // The only kind decided by extension rather than by directory, and the
@@ -324,7 +335,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         /** @var array<string, list<string>> $lintMap */
         $lintMap = $map->getValue();
 
-        $covered = [ChangedFile::KIND_CLIENT_SCRIPT];
+        $covered = [ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_STYLESHEET];
         foreach (self::selectionProvider() as [$_path, $kind, $_lints]) {
             $covered[] = $kind;
         }
