@@ -74,9 +74,9 @@ final readonly class MakeItPlan
         if ($approved !== []) {
             return self::listing(self::WAITING, $approved);
         }
-        // Only before the first approval: a project that has done its work is done,
+        // Only before the first approval (a closed legacy bug approved nothing): a project that has done its work is done,
         // whatever its charter still lacks.
-        if ($open !== [] && ($openQuestions > 0 || $charterError !== null) && array_filter($inScope, BacklogProgress::counts(...)) === []) {
+        if ($open !== [] && ($openQuestions > 0 || $charterError !== null) && array_filter($inScope, static fn (Task $t): bool => $t->isApproved()) === []) {
             return new self(self::EMPTY, [], 0, $openQuestions, $charterError, true);
         }
         if ($only !== null) {

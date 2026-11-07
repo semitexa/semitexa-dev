@@ -61,6 +61,13 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('resumes where it stopped', $plan->steps('x')[0]);
     }
 
+    public function test_a_closed_legacy_bug_does_not_end_the_interview(): void
+    {
+        $plan = MakeItPlan::of([$this->task('tk-bug', status: TaskStatus::DONE, approved: false, recipe: 'fix_bug'), $this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 6);
+
+        self::assertSame(MakeItPlan::EMPTY, $plan->state);
+    }
+
     public function test_with_the_charter_complete_ideas_are_offered(): void
     {
         self::assertSame(MakeItPlan::IDEAS, MakeItPlan::of([$this->task('tk-idea', approved: false)], false, static fn (): bool => false, null, 0)->state);
@@ -222,6 +229,9 @@ final class MakeItPlanTest extends TestCase
     public function test_the_backlog_is_committed_with_the_work(): void
     {
         self::assertStringContainsString('then commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));
+        $commit = array_values(array_filter($this->plan([$this->task('tk-a')])->steps('x'), static fn (string $s): bool => str_starts_with($s, 'Commit this task alone')));
+        self::assertCount(1, $commit);
+        self::assertStringNotContainsString('var/ai-work', $commit[0], 'the backlog is committed after the close, in its final state');
         self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a', status: TaskStatus::BLOCKED)])->steps('x')));
         self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-idea', approved: false)])->steps('x')));
         self::assertStringContainsString('Commit var/ai-work', implode("\n", $this->plan([$this->task('tk-a', status: TaskStatus::DONE)])->steps('x')));
