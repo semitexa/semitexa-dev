@@ -209,6 +209,11 @@ final class MakeItPlanTest extends TestCase
         self::assertStringStartsWith('Everything approved is closed.', $this->plan([$this->task('tk-a', status: TaskStatus::DONE), $this->task('tk-idea', approved: false)])->say());
     }
 
+    public function test_the_steps_ask_to_look_at_a_page(): void
+    {
+        self::assertStringContainsString('look at it', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));
+    }
+
     public function test_the_backlog_is_committed_with_the_work(): void
     {
         self::assertStringContainsString('with var/ai-work', implode("\n", $this->plan([$this->task('tk-a')])->steps('x')));

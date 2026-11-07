@@ -181,6 +181,7 @@ final readonly class MakeItPlan
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
             'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
+            'If it shows on a page, open that page in a browser and look at it, with a screenshot if you cannot: a passing test does not see what a person sees.',
             "Run bin/semitexa ai:verify --trace={$id}. Three failures in a row, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",
             "Commit this task alone, with a line Task: {$id} and with var/ai-work, the backlog travels with the code. Do not push unless the project's charter says to.",
             "Close it: bin/semitexa ai:work update --id={$id} --status=done.",
