@@ -87,20 +87,26 @@ for (const path of pages) {
                 const html = (response?.headers()['content-type'] ?? '').includes('text/html');
                 const findings: string[] = [];
                 if (html) {
-                    const axe = await new AxeBuilder({ page }).withRules(AXE_RULES).analyze();
-                    findings.push(...axe.violations.map((v) => `${v.id} x${v.nodes.length}`));
-                    findings.push(...await look(page));
+                    // The page was reached: a check that breaks on it is a finding, not "not reached".
+                    try {
+                        const axe = await new AxeBuilder({ page }).withRules(AXE_RULES).analyze();
+                        findings.push(...axe.violations.map((v) => `${v.id} x${v.nodes.length}`));
+                        findings.push(...await look(page));
+                    } catch (e) {
+                        findings.push('the check itself failed on this page: ' + String(e).split('\n')[0].slice(0, 160));
+                    }
                     findings.push(...errors.slice(0, 3).map((c) => 'console: ' + c));
                 }
                 // Which stylesheets apply to this screen: one the page does not load, or loads for print or
                 // disabled, cannot show the change.
                 const stylesheets = html ? await page.evaluate(() => Array.from(document.querySelectorAll('link[rel~="stylesheet"]'))
-                    .filter((l) => !(l as HTMLLinkElement).disabled && (!(l as HTMLLinkElement).media || matchMedia((l as HTMLLinkElement).media).matches))
+                    // Applied, not only linked: an alternate stylesheet has a sheet that is disabled.
+                    .filter((l) => { const link = l as HTMLLinkElement; return link.sheet !== null && !link.sheet.disabled && (!link.media || matchMedia(link.media).matches); })
                     .map((l) => (l as HTMLLinkElement).href)) : [];
                 // Where it ended: a redirect to a sign-in page shows that page, not this one.
                 const landed = new URL(page.url()).pathname;
                 const screenshot = join(out, `${file}-${mode}.png`);
-                if (html) await page.screenshot({ path: screenshot, fullPage: true });
+                if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
                 modes[mode] = { status, html, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
             } catch (e) {
                 modes[mode] = { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };

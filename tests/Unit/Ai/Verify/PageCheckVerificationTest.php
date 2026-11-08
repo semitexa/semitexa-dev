@@ -271,6 +271,7 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('ai:verify --list-pages named no page', $bin);
         // REGRESSION (review update#77): a proxy note on stdout read as one more path.
         self::assertStringContainsString('info() { printf "%s[INFO]%s  %s\\n" "$C_CYAN" "$C_RESET" "$*" >&2; }', $bin, 'a list call keeps stdout to paths');
+        self::assertStringContainsString("grep -v '^[[:space:]]*$'", $bin, 'and drops the blank lines the proxy prints');
     }
 
     /** @return list<string> */
