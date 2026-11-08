@@ -12,7 +12,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /** Fail on a --ui-* token that is used and declared nowhere ({@see CssTokenScan}). */
-#[AsCommand(name: 'lint:css-tokens', description: 'Fail when CSS or a template outside vendor/ uses a --ui-* token that no stylesheet under src/, packages/ or vendor/semitexa/ declares (node_modules and nested vendor/ are not read; in a template only <style> and style="" declare)')]
+#[AsCommand(name: 'lint:css-tokens', description: 'Fail when CSS or a template outside vendor/ uses a --ui-* token that no stylesheet under src/, packages/ or vendor/semitexa/ declares (public/, node_modules and nested vendor/ are not read; in a template only <style> and style="" count)')]
 final class LintCssTokensCommand extends BaseCommand
 {
     /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */

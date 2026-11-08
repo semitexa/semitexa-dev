@@ -103,7 +103,11 @@ final readonly class PageCheckResult
             return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, "{$path} is not an HTML page: nothing a person reads");
         }
 
-        $unloaded = self::unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null);
+        // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).
+        $unloaded = array_values(array_unique(array_merge(
+            self::unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null),
+            self::unloaded($target->triggeredBy, $seen['modes']['dark']['stylesheets'] ?? null),
+        )));
         if ($unloaded !== []) {
             // Only stylesheets changed, and this page loads none of them: whatever it shows, it is not the change.
             return self::notRun($target, "{$path} does not load " . implode(', ', $unloaded) . ': it cannot show that change' . ($found !== [] ? ' (it has findings of its own: ' . SignalText::compress(implode('; ', array_slice($found, 0, 3))) . ')' : ''));
@@ -133,16 +137,46 @@ final readonly class PageCheckResult
         if ($triggers === [] || !is_array($loaded)) {
             return [];
         }
-        $names = [];
+        $missing = [];
         foreach ($triggers as $file) {
             if (!str_ends_with($file, '.css')) {
                 return [];
             }
-            $names[] = basename($file);
+            $served = self::servedAs($file);
+            $isLoaded = false;
+            foreach ($loaded as $href) {
+                $hrefPath = (string) parse_url((string) $href, PHP_URL_PATH);
+                // The asset's own path, not its name: another module's components.css is not this one (review dev#216).
+                if (str_ends_with($hrefPath, '/' . $served['tail']) && ($served['asset'] === null || str_contains($hrefPath, '/assets/' . $served['asset'] . '/'))) {
+                    $isLoaded = true;
+                    break;
+                }
+            }
+            if (!$isLoaded) {
+                $missing[] = basename($file);
+            }
         }
-        $hrefs = array_map(static fn (mixed $href): string => basename((string) parse_url((string) $href, PHP_URL_PATH)), $loaded);
 
-        return array_values(array_diff($names, $hrefs)) === $names ? $names : [];
+        // Any changed stylesheet the page loads makes it a page that can show the change.
+        return count($missing) === count($triggers) ? $missing : [];
+    }
+
+    /**
+     * The part of a changed stylesheet's path its served URL ends with: from skins/ for a
+     * skin (served at /assets/skins/…), otherwise what follows Static/ (css/components.css),
+     * which tells two modules' same-named files apart by directory. The asset prefix is not
+     * the package's name (semitexa-theme serves layouts.css as theme-base), so it is not
+     * compared.
+     *
+     * @return array{tail: string, asset: ?string}
+     */
+    private static function servedAs(string $file): array
+    {
+        if (preg_match('#/(skins/.+)$#', $file, $m) === 1 || preg_match('#/(?:Static|static)/(.+)$#', $file, $m) === 1) {
+            return ['tail' => $m[1], 'asset' => null];
+        }
+
+        return ['tail' => basename($file), 'asset' => null];
     }
 
     private static function notRun(VerificationTarget $target, string $why): VerificationResult

@@ -137,6 +137,7 @@ final class PageCheckVerificationTest extends TestCase
     public function only_a_page_a_browser_can_open_as_it_is(): void
     {
         $all = $this->paths('src/Application/View/templates/layout.html.twig', ChangedFile::KIND_TEMPLATE);
+        self::assertSame(['/', '/about', '/guestbook'], $all, 'the project\'s pages, and only those a browser can open');
 
         self::assertNotContains('/guestbook/{id}', $all, 'a parameter it cannot fill');
         self::assertNotContains('/__observatory', $all, 'a dev surface');
@@ -236,27 +237,37 @@ final class PageCheckVerificationTest extends TestCase
         $this->seen('/theme-demo', ['light' => [200, []], 'dark' => [200, ['color-contrast x9']]], ['http://localhost/assets/theme-demo/css/theme-demo.css?v=1']);
         self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/theme-demo', 'run-1', [$css])->status, 'loaded: judged');
         self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/theme-demo', 'run-1', [$css, 'src/modules/ThemeDemo/x.html.twig'])->status, 'a template changed too: the page can show it');
+
+        // REGRESSION (review dev#216): loaded in light only is not loaded; another module's file of the same name is not this one.
+        $platform = 'packages/semitexa-platform-ui/src/Application/Static/css/components.css';
+        $this->seen('/both', ['light' => [200, []], 'dark' => [200, []]]);
+        $both = json_decode((string) file_get_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/both')), true);
+        $both['modes']['light']['stylesheets'] = ['http://localhost/assets/platform-ui/css/components.css?v=1'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/both'), json_encode($both));
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check('/both', 'run-1', [$platform])->status, 'dark did not load it');
+        $this->seen('/other', ['light' => [200, []], 'dark' => [200, []]], ['http://localhost/assets/shop/components.css']);
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check('/other', 'run-1', [$platform])->status, 'a components.css of another directory');
+        $this->seen('/skin', ['light' => [200, []], 'dark' => [200, []]], ['http://localhost/assets/skins/default/tokens.css']);
+        self::assertSame(VerificationResult::STATUS_PASS, $this->check('/skin', 'run-1', ['packages/semitexa-theme/src/Application/Static/css/skins/default/tokens.css'])->status, 'a skin served from /assets/skins/');
     }
 
     /**
-     * Three files speak one format and none of them runs the others: the spec writes
-     * what PageCheckResult reads, from what bin/semitexa hands it. A name changed on
-     * one side alone would read as "the host filed nothing" on every page.
+     * The spec writes what PageCheckResult reads; neither runs the other. A name changed on
+     * one side alone would read as "the host filed nothing" on every page. The launcher's
+     * side (bin/semitexa) is pinned in semitexa-ultimate, beside the copy it ships, so this
+     * suite needs no installer checkout (review dev#216).
      */
     #[Test]
-    public function the_spec_the_reader_and_bin_semitexa_agree(): void
+    public function the_spec_and_the_reader_agree(): void
     {
+        // verify:accept-test-change the bin/semitexa assertions moved to semitexa-ultimate PageCheckLauncherTest, beside the copy it ships
         $package = dirname(__DIR__, 4);
         $spec = (string) file_get_contents($package . '/resources/page-check/page-check.spec.ts');
         $config = (string) file_get_contents($package . '/resources/page-check/playwright.config.ts');
-        $bin = (string) file_get_contents(dirname($package) . '/semitexa-installer/scaffold/bin/semitexa');
 
         foreach (['PAGE_CHECK_PAGES', 'PAGE_CHECK_OUT'] as $env) {
             self::assertStringContainsString("process.env.{$env}", $spec);
-            self::assertStringContainsString("-e {$env}=", $bin);
         }
-        self::assertStringContainsString('PAGE_CHECK_OUT="/var/www/html/' . 'var/run/verify-e2e/$_vrun/pages"', $bin, 'where PageCheckResult looks: ' . 'var/run/verify-e2e/<run>/pages');
-        self::assertStringContainsString('vendor/semitexa/dev/resources/page-check/playwright.config.ts', $bin);
         self::assertStringContainsString("createHash('sha256').update(path).digest('hex')", $spec, 'the file name PageCheckResult::fileName() reads');
         self::assertStringContainsString('`${file}.json`', $spec);
         self::assertStringContainsString("['light', 'dark']", $spec, 'both modes, as PageCheckResult::MODES');
@@ -265,13 +276,6 @@ final class PageCheckVerificationTest extends TestCase
             self::assertMatchesRegularExpression('/\b' . $key . '\b/', $spec, "the spec writes {$key}");
         }
         self::assertStringContainsString("testMatch: ['page-check.spec.ts']", $config, 'the config runs this spec and none of the project');
-        // REGRESSION (review installer#72): the spec makes pages/ before it opens anything, so an
-        // existing directory proved nothing, and an empty list left no reason behind.
-        self::assertStringContainsString('ls "$_vdir/pages/"*.json', $bin, 'a page filed, not a directory made');
-        self::assertStringContainsString('ai:verify --list-pages named no page', $bin);
-        // REGRESSION (review update#77): a proxy note on stdout read as one more path.
-        self::assertStringContainsString('info() { printf "%s[INFO]%s  %s\\n" "$C_CYAN" "$C_RESET" "$*" >&2; }', $bin, 'a list call keeps stdout to paths');
-        self::assertStringContainsString("grep -v '^[[:space:]]*$'", $bin, 'and drops the blank lines the proxy prints');
     }
 
     /** @return list<string> */
