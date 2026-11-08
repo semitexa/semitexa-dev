@@ -139,6 +139,17 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('redirected to /shop?view=other in dark', (string) $result->signal, 'the same path with another query is another page');
     }
 
+    /** REGRESSION (independent review): an error page loads no stylesheet, and that read as "does not load". */
+    #[Test]
+    public function an_error_page_fails_even_when_only_a_stylesheet_changed(): void
+    {
+        $this->seen('/err', ['light' => [200, []], 'dark' => [500, []]], []);
+
+        $result = $this->check('/err', 'run-1', ['packages/semitexa-platform-ui/src/Application/Static/css/components.css']);
+        self::assertSame(VerificationResult::STATUS_FAIL, $result->status);
+        self::assertStringContainsString('dark: HTTP 500', (string) $result->signal);
+    }
+
     #[Test]
     public function a_status_that_is_not_a_number_is_a_malformed_result(): void
     {

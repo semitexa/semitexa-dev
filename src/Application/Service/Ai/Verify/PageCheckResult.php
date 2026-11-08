@@ -86,7 +86,7 @@ final readonly class PageCheckResult
             }
             // Sent elsewhere (a sign-in page, say): what was looked at is not this page.
             $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
-            if (rtrim(rawurldecode($landed), '/') !== rtrim($path, '/')) {
+            if (rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
                 $missing[] = "redirected to {$landed} in {$mode}";
                 continue;
             }
@@ -112,7 +112,9 @@ final readonly class PageCheckResult
             self::unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null),
             self::unloaded($target->triggeredBy, $seen['modes']['dark']['stylesheets'] ?? null),
         )));
-        if ($unloaded !== []) {
+        // An error page loads none of the page's stylesheets: the error is the result (independent review).
+        $erred = array_filter($found, static fn (string $f): bool => preg_match('/^(?:light|dark): HTTP \d+$/', $f) === 1) !== [];
+        if ($unloaded !== [] && !$erred) {
             // Only stylesheets changed, and this page loads none of them: whatever it shows, it is not the change.
             return self::notRun($target, "{$path} does not load " . implode(', ', $unloaded) . ': it cannot show that change' . ($found !== [] ? ' (it has findings of its own: ' . SignalText::compress(implode('; ', array_slice($found, 0, 3))) . ')' : ''));
         }
@@ -151,7 +153,7 @@ final readonly class PageCheckResult
             foreach ($loaded as $href) {
                 $hrefPath = (string) parse_url((string) $href, PHP_URL_PATH);
                 // The asset's own path, not its name: another module's components.css is not this one (review dev#216).
-                if (str_ends_with($hrefPath, '/' . $served['tail']) && ($served['asset'] === null || str_contains($hrefPath, '/assets/' . $served['asset'] . '/'))) {
+                if (str_ends_with($hrefPath, '/' . $served)) {
                     $isLoaded = true;
                     break;
                 }
@@ -172,15 +174,14 @@ final readonly class PageCheckResult
      * the package's name (semitexa-theme serves layouts.css as theme-base), so it is not
      * compared.
      *
-     * @return array{tail: string, asset: ?string}
      */
-    private static function servedAs(string $file): array
+    private static function servedAs(string $file): string
     {
         if (preg_match('#/(skins/.+)$#', $file, $m) === 1 || preg_match('#/(?:Static|static)/(.+)$#', $file, $m) === 1) {
-            return ['tail' => $m[1], 'asset' => null];
+            return $m[1];
         }
 
-        return ['tail' => basename($file), 'asset' => null];
+        return basename($file);
     }
 
     private static function notRun(VerificationTarget $target, string $why): VerificationResult

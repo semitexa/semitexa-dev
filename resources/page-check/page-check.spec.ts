@@ -119,7 +119,7 @@ for (const path of pages) {
         writeFileSync(join(out, `${file}.json`), JSON.stringify({ path, modes }, null, 1));
 
         // A mode never reached is no pass either: PageCheckResult reads it as incomplete, and the log says so.
-        const norm = (p: string) => decodeURIComponent(p).replace(/\/+$/, '');
+        const norm = (p: string) => { try { return decodeURIComponent(p).replace(/\/+$/, ''); } catch { return p.replace(/\/+$/, ''); } };
         const all = Object.entries(modes).flatMap(([mode, v]) => (v.status === 0 ? [`${mode}: not reached: ${v.error ?? 'no response'}`] : [])
             .concat(v.html && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
             .concat(v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : [])
