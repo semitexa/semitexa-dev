@@ -25,11 +25,11 @@ final class CssTokenScan
     // string is matched first and kept, so `content: "/*"` opens no comment; only a closed
     // comment is one (review dev#216).
     private const CSS_STRING_OR_COMMENT = '#("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')|/\*.*?\*/#s';
-    private const TWIG_COMMENT = '/\{#.*?#\}/s';
+    private const TWIG_COMMENT = '/\{#.*?#\}|<!--.*?-->/s';
     // In a template, CSS is what sits in a <style> element or a style attribute: tokens are
     // read there and nowhere else, so prose ("--ui-foo: removed", "don't") reads as nothing.
     // A double-quoted attribute may hold Twig with quotes of its own: {{ c ? "a" : "b" }}.
-    private const TEMPLATE_CSS = '#<style\b[^>]*>(.*?)</style>|\bstyle\s*=\s*(?:"((?:\{\{.*?\}\}|[^"{]|\{(?!\{))*)"|\'([^\']*)\')#is';
+    private const TEMPLATE_CSS = '#<style\b[^>]*>(.*?)</style>|(?<![\w-])style\s*=\s*(?:"((?:\{\{.*?\}\}|[^"{]|\{(?!\{))*)"|\'([^\']*)\')#is';
     private const SOURCES = ['src', 'packages', 'vendor/semitexa'];
 
     /**
@@ -70,7 +70,9 @@ final class CssTokenScan
 
     private static function withoutCssComments(string $content): string
     {
-        return (string) preg_replace_callback(self::CSS_STRING_OR_COMMENT, static fn (array $m): string => ($m[1] ?? '') !== '' ? $m[1] : ' ', $content);
+        // A string is text, not CSS: `content: "--ui-foo: removed"` declares nothing and
+        // `content: "var(--ui-x)"` uses nothing (review dev#216). Both go, comments too.
+        return (string) preg_replace(self::CSS_STRING_OR_COMMENT, ' ', $content);
     }
 
     /** The CSS a template holds: its style elements and style attributes, nothing around them. */

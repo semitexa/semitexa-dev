@@ -166,4 +166,13 @@ final class CssTokenScanTest extends TestCase
 
         self::assertSame([], CssTokenScan::unknown($this->root));
     }
+
+    /** REGRESSION (review dev#216): text in a string, an HTML comment or a data-style attribute declared or used a token. */
+    public function test_strings_html_comments_and_data_style_are_not_css(): void
+    {
+        $this->write('a.css', 'a::before { content: "--ui-foo: removed"; } b::after { content: "var(--ui-text-only)"; } c { color: var(--ui-foo); }');
+        $this->write('b.html.twig', '<!-- <style>:root { --ui-bar: 1px; }</style> --><i data-style="--ui-baz: 1"></i><b style="margin: var(--ui-bar); padding: var(--ui-baz)"></b>');
+
+        self::assertSame(['src/modules/Shop/a.css' => ['--ui-foo'], 'src/modules/Shop/b.html.twig' => ['--ui-bar', '--ui-baz']], CssTokenScan::unknown($this->root));
+    }
 }
