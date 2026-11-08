@@ -58,6 +58,8 @@ final readonly class ChangedFile
      * no PHPUnit target, no structural expansion.
      */
     public const KIND_CLIENT_SCRIPT = 'client_script';
+    /** A stylesheet: nothing fails on a token that does not exist, so a lint reads it. */
+    public const KIND_STYLESHEET = 'stylesheet';
     public const KIND_TEST         = 'test';
     /**
      * Phase 6f.5: support classes that live under a `tests/` tree but

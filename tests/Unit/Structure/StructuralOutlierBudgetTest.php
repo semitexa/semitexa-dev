@@ -366,7 +366,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // dev#187: the untyped one failed phpstan's argument.type). METHOD COUNT UNCHANGED at 19.
         // 745 -> 749, 2026-11-02 (bench-verify-bare-errors): a run that names no
         // scope verifies the working tree as --dirty instead of failing.
-        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 749],
+        // 749 -> 761, 2026-11-07 (tk-sees-page-in-browser): --list-pages, and the
+        // routes it is planned from injected; the selection lives in PageCheckTargets.
+        'semitexa-dev/src/Application/Console/Command/AiVerifyCommand.php' => [19, 761],
         // FIRST RECORDING, 2026-09-13: this crossed the 700-line threshold in
         // review of dev#84 and the ratchet said so. The addition is a refusal:
         // `--preview` with `--expect-field` resolved the target, returned
@@ -565,7 +567,15 @@ final class StructuralOutlierBudgetTest extends TestCase
         // broad run that promises every lint runs the KISS/HUG door guard too.
         // 937 -> 940 on 2026-10-14: lint:ui-contracts joined the template and
         // component rows and both lists, with a one-line reason. Data only.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 940],
+        // 940 -> 941 on 2026-11-07: lint:css-tokens joined the template row and took
+        // a row of its own for stylesheets. Data only.
+        // FIRST RECORDING, 2026-11-07 (tk-sees-page-in-browser): the page check's one
+        // dispatch line took it to 700. Each target type is one match arm here; the
+        // checks themselves live in their own classes (E2eSpecResultCheck, PageCheckResult).
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 700],
+        // 941 -> 943, 2026-11-07 (tk-sees-page-in-browser): the routes for the page targets.
+        // 943 -> 946, same day (review dev#216): lint:css-tokens joins the cross-file and broad lists.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [20, 946],
         // 720 -> 728 on 2026-09-12: the mapped status is now named on the trace,
         // so an observer can tell a refusal from a crash — a gate declines by
         // throwing, and until this the two arrived as the same event. One

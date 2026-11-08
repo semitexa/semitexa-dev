@@ -73,11 +73,12 @@ final class VerificationPlanner
         // defect no consumer can fix, and it fails in the BROWSER, never on the
         // server, so nothing else in this plan can see it.
         // lint:ui-contracts refuses the #[AsUiContract] examples the runtime only drops.
-        ChangedFile::KIND_TEMPLATE => ['lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'],
+        ChangedFile::KIND_TEMPLATE => ['lint:css-tokens', 'lint:templates', 'lint:mechanisms', 'lint:deferred-twig', 'lint:inline-script', 'lint:deferred-slots', 'lint:components', 'lint:ui-contracts'],
         ChangedFile::KIND_COMPONENT => ['lint:di', 'lint:components', 'lint:ui-contracts'],
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred. (Parsing is a syntax target, see plan().)
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
+        ChangedFile::KIND_STYLESHEET => ['lint:css-tokens'],
         // No KIND_PHP_OTHER row, and the reason is measured: it wedged the
         // suite at ~427/8500 — see ChangedFile::KIND_COMMAND, the narrower kind
         // that replaced it.
@@ -95,6 +96,8 @@ final class VerificationPlanner
         'lint:deferred-slots',
         'lint:components',
         'lint:ui-contracts',
+        // A deleted stylesheet may have held the only declaration an unchanged template uses.
+        'lint:css-tokens',
     ];
 
     private const ALL_LINTS = [
@@ -111,6 +114,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
+        'lint:css-tokens',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -122,6 +126,8 @@ final class VerificationPlanner
         private readonly ChangedFileClassifier $classifier = new ChangedFileClassifier(),
         ?ModuleStructureTargetResolver $targetResolver = null,
         ?ContractMoveResolver $contractMoveResolver = null,
+        /** @var list<array{path: string, module: string}> public parameterless GET routes, for {@see PageCheckTargets} */
+        private readonly array $pageRoutes = [],
     ) {
         $this->targetResolver = $targetResolver ?? new ModuleStructureTargetResolver($projectRoot);
         $this->contractMoveResolver = $contractMoveResolver ?? new ContractMoveResolver($projectRoot);
@@ -298,7 +304,7 @@ final class VerificationPlanner
             );
         }
 
-        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope), ...E2eSpecTargets::of($changedFiles, $effectiveScope));
+        array_push($targets, ...(new ProjectGuardTargets($this->projectRoot, $baseRef))->targets($changedFiles, $effectiveScope), ...E2eSpecTargets::of($changedFiles, $effectiveScope), ...PageCheckTargets::of($changedFiles, $effectiveScope, $this->pageRoutes));
 
         // Not at minimal scope: `docs:reference` regenerates the whole
         // reference (class discovery across every package plus a console boot)
