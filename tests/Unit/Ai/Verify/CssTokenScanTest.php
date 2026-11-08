@@ -140,4 +140,30 @@ final class CssTokenScanTest extends TestCase
 
         self::assertSame(['src/modules/Shop/a.html.twig' => ['--ui-foo']], CssTokenScan::unknown($this->root));
     }
+
+    /** REGRESSION (independent review): an apostrophe in prose opened a "string" that kept comments. */
+    public function test_an_apostrophe_in_template_prose_changes_nothing(): void
+    {
+        $this->write('a.html.twig', "<p>don't</p>{# var(--ui-gone) #}<style>/* --ui-x: 1 */ a { color: var(--ui-x); }</style><p>it's</p>");
+
+        self::assertSame(['src/modules/Shop/a.html.twig' => ['--ui-x']], CssTokenScan::unknown($this->root));
+    }
+
+    /** REGRESSION (independent review): `{#` in minified CSS, or an unclosed `/*`, swallowed the rest of the file. */
+    public function test_twig_comments_belong_to_templates_and_a_comment_must_close(): void
+    {
+        $this->write('a.css', '@media(max-width:1px){#foo{--ui-x:1}}b{--ui-y:2} i { background: url(/img/*.png); }');
+        $this->write('b.css', 'a { margin: var(--ui-x); padding: var(--ui-y); }');
+
+        self::assertSame([], CssTokenScan::unknown($this->root));
+    }
+
+    /** REGRESSION (independent review): a double-quoted style attribute was cut at a quote inside Twig. */
+    public function test_a_style_attribute_may_hold_twig_with_quotes(): void
+    {
+        $this->write('a.html.twig', '<i style="{{ c ? "a" : "b" }}; --ui-x: 1"></i>');
+        $this->write('b.css', 'a { margin: var(--ui-x); }');
+
+        self::assertSame([], CssTokenScan::unknown($this->root));
+    }
 }

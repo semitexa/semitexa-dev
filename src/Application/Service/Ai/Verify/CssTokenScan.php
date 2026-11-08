@@ -21,12 +21,15 @@ final class CssTokenScan
     // declared must not pass `var(--ui-a_b)` or `var(--ui-A)` as known.
     private const USED = '/var\(\s*(--ui-[A-Za-z0-9_-]+)/';
     private const DECLARED = '/(--ui-[A-Za-z0-9_-]+)\s*:/';
-    // Comments declare nothing: `/* --ui-foo: removed */` is a note, not a token. A quoted
-    // string is matched first and kept, so `content: "/*"` opens no comment (review dev#216).
-    private const STRING_OR_COMMENT = '#("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')|/\*.*?(?:\*/|\z)|\{\#.*?(?:\#\}|\z)#s';
-    // In a template, CSS is what sits in a <style> element or a style attribute; prose
-    // around it ("--ui-foo: removed") declares nothing (review dev#216).
-    private const TEMPLATE_CSS = '#<style\b[^>]*>(.*?)</style>|\bstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')#is';
+    // CSS comments declare nothing: `/* --ui-foo: removed */` is a note, not a token. A quoted
+    // string is matched first and kept, so `content: "/*"` opens no comment; only a closed
+    // comment is one (review dev#216).
+    private const CSS_STRING_OR_COMMENT = '#("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')|/\*.*?\*/#s';
+    private const TWIG_COMMENT = '/\{#.*?#\}/s';
+    // In a template, CSS is what sits in a <style> element or a style attribute: tokens are
+    // read there and nowhere else, so prose ("--ui-foo: removed", "don't") reads as nothing.
+    // A double-quoted attribute may hold Twig with quotes of its own: {{ c ? "a" : "b" }}.
+    private const TEMPLATE_CSS = '#<style\b[^>]*>(.*?)</style>|\bstyle\s*=\s*(?:"((?:\{\{.*?\}\}|[^"{]|\{(?!\{))*)"|\'([^\']*)\')#is';
     private const SOURCES = ['src', 'packages', 'vendor/semitexa'];
 
     /**
@@ -43,8 +46,8 @@ final class CssTokenScan
             if (!is_string($content)) {
                 throw new \RuntimeException('cannot read ' . substr($file, strlen($projectRoot) + 1));
             }
-            $content = self::withoutComments($content);
-            preg_match_all(self::DECLARED, str_ends_with($file, '.twig') ? self::templateCss($content) : $content, $declarations);
+            $content = self::withoutCssComments(str_ends_with($file, '.twig') ? self::templateCss((string) preg_replace(self::TWIG_COMMENT, ' ', $content)) : $content);
+            preg_match_all(self::DECLARED, $content, $declarations);
             $declared += array_flip($declarations[1]);
             preg_match_all(self::USED, $content, $uses);
             $relative = substr($file, strlen($projectRoot) + 1);
@@ -65,9 +68,9 @@ final class CssTokenScan
         return $unknown;
     }
 
-    private static function withoutComments(string $content): string
+    private static function withoutCssComments(string $content): string
     {
-        return (string) preg_replace_callback(self::STRING_OR_COMMENT, static fn (array $m): string => ($m[1] ?? '') !== '' ? $m[1] : ' ', $content);
+        return (string) preg_replace_callback(self::CSS_STRING_OR_COMMENT, static fn (array $m): string => ($m[1] ?? '') !== '' ? $m[1] : ' ', $content);
     }
 
     /** The CSS a template holds: its style elements and style attributes, nothing around them. */
