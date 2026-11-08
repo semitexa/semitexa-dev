@@ -175,4 +175,20 @@ final class CssTokenScanTest extends TestCase
 
         self::assertSame(['src/modules/Shop/a.css' => ['--ui-foo'], 'src/modules/Shop/b.html.twig' => ['--ui-bar', '--ui-baz']], CssTokenScan::unknown($this->root));
     }
+
+    /** REGRESSION (independent review): Twig output in a style attribute is CSS, quotes and all. */
+    public function test_a_quoted_twig_value_in_a_style_attribute_is_a_use(): void
+    {
+        $this->write('a.html.twig', "<i style=\"background:{{ live ? 'var(--ui-nope-a)' : 'var(--ui-nope-b)' }}\"></i>");
+
+        self::assertSame(['src/modules/Shop/a.html.twig' => ['--ui-nope-a', '--ui-nope-b']], CssTokenScan::unknown($this->root));
+    }
+
+    /** REGRESSION (independent review): `<!--` inside a <style> is not a comment to the browser. */
+    public function test_an_html_comment_marker_inside_a_style_element_hides_nothing(): void
+    {
+        $this->write('a.html.twig', '<style><!-- .a { color: var(--ui-nope-c) } --></style>');
+
+        self::assertSame(['src/modules/Shop/a.html.twig' => ['--ui-nope-c']], CssTokenScan::unknown($this->root));
+    }
 }
