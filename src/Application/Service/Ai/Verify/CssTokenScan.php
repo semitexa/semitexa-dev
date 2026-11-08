@@ -21,8 +21,12 @@ final class CssTokenScan
     // declared must not pass `var(--ui-a_b)` or `var(--ui-A)` as known.
     private const USED = '/var\(\s*(--ui-[A-Za-z0-9_-]+)/';
     private const DECLARED = '/(--ui-[A-Za-z0-9_-]+)\s*:/';
-    // Comments declare nothing: `/* --ui-foo: removed */` is a note, not a token.
-    private const COMMENTS = ['#/\*.*?\*/#s', '/\{#.*?#\}/s'];
+    // Comments declare nothing: `/* --ui-foo: removed */` is a note, not a token. A quoted
+    // string is matched first and kept, so `content: "/*"` opens no comment (review dev#216).
+    private const STRING_OR_COMMENT = '#("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')|/\*.*?(?:\*/|\z)|\{\#.*?(?:\#\}|\z)#s';
+    // In a template, CSS is what sits in a <style> element or a style attribute; prose
+    // around it ("--ui-foo: removed") declares nothing (review dev#216).
+    private const TEMPLATE_CSS = '#<style\b[^>]*>(.*?)</style>|\bstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')#is';
     private const SOURCES = ['src', 'packages', 'vendor/semitexa'];
 
     /**
@@ -39,8 +43,8 @@ final class CssTokenScan
             if (!is_string($content)) {
                 throw new \RuntimeException('cannot read ' . substr($file, strlen($projectRoot) + 1));
             }
-            $content = (string) preg_replace(self::COMMENTS, '', $content);
-            preg_match_all(self::DECLARED, $content, $declarations);
+            $content = self::withoutComments($content);
+            preg_match_all(self::DECLARED, str_ends_with($file, '.twig') ? self::templateCss($content) : $content, $declarations);
             $declared += array_flip($declarations[1]);
             preg_match_all(self::USED, $content, $uses);
             $relative = substr($file, strlen($projectRoot) + 1);
@@ -59,6 +63,19 @@ final class CssTokenScan
         ksort($unknown);
 
         return $unknown;
+    }
+
+    private static function withoutComments(string $content): string
+    {
+        return (string) preg_replace_callback(self::STRING_OR_COMMENT, static fn (array $m): string => ($m[1] ?? '') !== '' ? $m[1] : ' ', $content);
+    }
+
+    /** The CSS a template holds: its style elements and style attributes, nothing around them. */
+    private static function templateCss(string $content): string
+    {
+        preg_match_all(self::TEMPLATE_CSS, $content, $blocks, PREG_SET_ORDER);
+
+        return implode("\n", array_map(static fn (array $m): string => ($m[1] ?? '') . ($m[2] ?? '') . ($m[3] ?? ''), $blocks));
     }
 
     /** @return list<string> */

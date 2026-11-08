@@ -123,4 +123,21 @@ final class CssTokenScanTest extends TestCase
 
         self::assertSame(['src/modules/Shop/a.css' => ['--ui-hidden']], CssTokenScan::unknown($this->root));
     }
+
+    /** REGRESSION (review dev#216): a comment opener inside a string hid everything up to the next closer. */
+    public function test_a_comment_marker_inside_a_string_opens_no_comment(): void
+    {
+        $this->write('a.css', 'a::before { content: "/*"; } b { color: var(--ui-missing); } c::after { content: "*/"; }');
+
+        self::assertSame(['src/modules/Shop/a.css' => ['--ui-missing']], CssTokenScan::unknown($this->root));
+    }
+
+    /** REGRESSION (review dev#216): prose in a template ("--ui-foo: removed") counted as a declaration. */
+    public function test_a_template_declares_only_in_its_css(): void
+    {
+        $this->write('a.html.twig', '<p>--ui-foo: removed</p><style>:root { --ui-bar: red; }</style><i style="--ui-baz: 1px"></i><b style="color: var(--ui-foo)"></b>');
+        $this->write('b.css', 'a { color: var(--ui-bar); margin: var(--ui-baz); }');
+
+        self::assertSame(['src/modules/Shop/a.html.twig' => ['--ui-foo']], CssTokenScan::unknown($this->root));
+    }
 }
