@@ -59,26 +59,43 @@ final readonly class PageCheckResult
         }
 
         $found = [];
+        $missing = [];
         $html = true;
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
-            if (!is_array($view)) {
-                return self::notRun($target, "{$path} was NOT opened in {$mode}");
-            }
-            $status = is_int($view['status'] ?? null) ? $view['status'] : 0;
-            if ($status === 0) {
-                return self::notRun($target, "{$path} could not be reached in {$mode}: " . SignalText::compress((string) ($view['error'] ?? 'no response')));
+            $status = is_array($view) && is_int($view['status'] ?? null) ? $view['status'] : 0;
+            if (!is_array($view) || $status === 0) {
+                $missing[] = !is_array($view) ? "not opened in {$mode}" : "could not be reached in {$mode}: " . SignalText::compress((string) ($view['error'] ?? 'no response'));
+                continue;
             }
             if ($status >= 400) {
                 $found[] = "{$mode}: HTTP {$status}";
             }
-            if (($view['html'] ?? true) === false) {
+            // A result has to say what was checked: a bare status is no evidence (review dev#216).
+            if (!is_bool($view['html'] ?? null) || !is_array($view['findings'] ?? null) || !is_array($view['stylesheets'] ?? null)) {
+                $missing[] = "a malformed result in {$mode}";
+                continue;
+            }
+            if ($view['html'] === false) {
                 $html = false;
                 continue;
             }
-            foreach (is_array($view['findings'] ?? null) ? $view['findings'] : [] as $finding) {
+            // Sent elsewhere (a sign-in page, say): what was looked at is not this page.
+            $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
+            if (rtrim($landed, '/') !== rtrim($path, '/')) {
+                $missing[] = "redirected to {$landed} in {$mode}";
+                continue;
+            }
+            foreach ($view['findings'] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
+        }
+
+        if ($missing !== []) {
+            // A finding already seen is a failure, whatever the other mode could not show (review dev#216).
+            return $found !== []
+                ? new VerificationResult($target, VerificationResult::STATUS_FAIL, 1, SignalText::compress("{$path} — " . implode('; ', array_slice($found, 0, 6)) . ' (and ' . implode('; ', $missing) . ')'))
+                : self::notRun($target, "{$path} was NOT checked: " . implode('; ', $missing));
         }
 
         if (!$html && $found === []) {

@@ -20,7 +20,7 @@ const pages = (process.env.PAGE_CHECK_PAGES ?? '').split('\n').map((p) => p.trim
 const out = process.env.PAGE_CHECK_OUT ?? '';
 const AXE_RULES = ['color-contrast', 'label', 'button-name', 'link-name', 'document-title', 'html-has-lang'];
 
-type View = { status: number; html: boolean; findings: string[]; stylesheets: string[]; error?: string; screenshot?: string };
+type View = { status: number; html: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
 
 async function look(page: Page): Promise<string[]> {
     return page.evaluate(() => {
@@ -92,11 +92,16 @@ for (const path of pages) {
                     findings.push(...await look(page));
                     findings.push(...errors.slice(0, 3).map((c) => 'console: ' + c));
                 }
-                // Which stylesheets the page loaded: one that does not load the changed file cannot show the change.
-                const stylesheets = html ? await page.evaluate(() => Array.from(document.querySelectorAll('link[rel~="stylesheet"]')).map((l) => (l as HTMLLinkElement).href)) : [];
+                // Which stylesheets apply to this screen: one the page does not load, or loads for print or
+                // disabled, cannot show the change.
+                const stylesheets = html ? await page.evaluate(() => Array.from(document.querySelectorAll('link[rel~="stylesheet"]'))
+                    .filter((l) => !(l as HTMLLinkElement).disabled && (!(l as HTMLLinkElement).media || matchMedia((l as HTMLLinkElement).media).matches))
+                    .map((l) => (l as HTMLLinkElement).href)) : [];
+                // Where it ended: a redirect to a sign-in page shows that page, not this one.
+                const landed = new URL(page.url()).pathname;
                 const screenshot = join(out, `${file}-${mode}.png`);
                 if (html) await page.screenshot({ path: screenshot, fullPage: true });
-                modes[mode] = { status, html, findings, stylesheets, screenshot: html ? screenshot : undefined };
+                modes[mode] = { status, html, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
             } catch (e) {
                 modes[mode] = { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };
             } finally {
@@ -105,7 +110,10 @@ for (const path of pages) {
         }
         writeFileSync(join(out, `${file}.json`), JSON.stringify({ path, modes }, null, 1));
 
-        const all = Object.entries(modes).flatMap(([mode, v]) => (v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : []).concat(v.findings.map((f) => `${mode}: ${f}`)));
+        // A mode never reached is no pass either: PageCheckResult reads it as incomplete, and the log says so.
+        const all = Object.entries(modes).flatMap(([mode, v]) => (v.status === 0 ? [`${mode}: not reached: ${v.error ?? 'no response'}`] : [])
+            .concat(v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : [])
+            .concat(v.findings.map((f) => `${mode}: ${f}`)));
         expect(all, `${path} as a person sees it`).toEqual([]);
     });
 }

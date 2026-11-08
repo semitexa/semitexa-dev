@@ -85,9 +85,44 @@ final class PageCheckVerificationTest extends TestCase
     #[Test]
     public function a_non_html_error_fails_rather_than_being_skipped(): void
     {
-        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/broken'), json_encode(['path' => '/broken', 'modes' => ['light' => ['status' => 500, 'html' => false, 'findings' => []], 'dark' => ['status' => 500, 'html' => false, 'findings' => []]]]));
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/broken'), json_encode(['path' => '/broken', 'modes' => ['light' => ['status' => 500, 'html' => false, 'findings' => [], 'stylesheets' => []], 'dark' => ['status' => 500, 'html' => false, 'findings' => [], 'stylesheets' => []]]]));
 
         self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/broken', 'run-1')->status);
+    }
+
+    /** REGRESSION (review dev#216): a finding in light was dropped because dark could not be reached. */
+    #[Test]
+    public function a_finding_in_one_mode_fails_even_when_the_other_was_not_reached(): void
+    {
+        $this->seen('/half', ['light' => [500, ['color-contrast x2']], 'dark' => [0, []]]);
+
+        $result = $this->check('/half', 'run-1');
+        self::assertSame(VerificationResult::STATUS_FAIL, $result->status);
+        self::assertStringContainsString('light: HTTP 500', (string) $result->signal);
+        self::assertStringContainsString('could not be reached in dark', (string) $result->signal);
+    }
+
+    /** REGRESSION (review dev#216): a bare status passed with no evidence of any check. */
+    #[Test]
+    public function a_result_that_does_not_say_what_was_checked_is_no_pass(): void
+    {
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/bare'), json_encode(['path' => '/bare', 'modes' => ['light' => ['status' => 200], 'dark' => ['status' => 200]]]));
+
+        $result = $this->check('/bare', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('malformed', (string) $result->signal);
+    }
+
+    /** REGRESSION (review dev#216): a page sent to a clean sign-in page passed for a template it never showed. */
+    #[Test]
+    public function a_page_that_redirected_elsewhere_is_no_pass(): void
+    {
+        $view = ['status' => 200, 'html' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/login'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/account'), json_encode(['path' => '/account', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/account', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('redirected to /login', (string) $result->signal);
     }
 
     #[Test]
@@ -159,7 +194,7 @@ final class PageCheckVerificationTest extends TestCase
     #[Test]
     public function a_page_seen_in_one_mode_only_is_not_a_pass(): void
     {
-        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/x'), json_encode(['path' => '/x', 'modes' => ['light' => ['status' => 200, 'html' => true, 'findings' => []]]]));
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/x'), json_encode(['path' => '/x', 'modes' => ['light' => ['status' => 200, 'html' => true, 'findings' => [], 'stylesheets' => []]]]));
 
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check('/x', 'run-1')->status);
     }
@@ -178,7 +213,7 @@ final class PageCheckVerificationTest extends TestCase
     #[Test]
     public function a_response_that_is_not_html_is_skipped(): void
     {
-        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/feed'), json_encode(['path' => '/feed', 'modes' => ['light' => ['status' => 200, 'html' => false, 'findings' => []], 'dark' => ['status' => 200, 'html' => false, 'findings' => []]]]));
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/feed'), json_encode(['path' => '/feed', 'modes' => ['light' => ['status' => 200, 'html' => false, 'findings' => [], 'stylesheets' => []], 'dark' => ['status' => 200, 'html' => false, 'findings' => [], 'stylesheets' => []]]]));
 
         self::assertSame(VerificationResult::STATUS_SKIPPED, $this->check('/feed', 'run-1')->status);
     }
@@ -226,7 +261,7 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('`${file}.json`', $spec);
         self::assertStringContainsString("['light', 'dark']", $spec, 'both modes, as PageCheckResult::MODES');
         self::assertSame(['light', 'dark'], PageCheckResult::MODES);
-        foreach (['status', 'html', 'findings', 'stylesheets'] as $key) {
+        foreach (['status', 'html', 'findings', 'stylesheets', 'landed'] as $key) {
             self::assertMatchesRegularExpression('/\b' . $key . '\b/', $spec, "the spec writes {$key}");
         }
         self::assertStringContainsString("testMatch: ['page-check.spec.ts']", $config, 'the config runs this spec and none of the project');
@@ -234,6 +269,8 @@ final class PageCheckVerificationTest extends TestCase
         // existing directory proved nothing, and an empty list left no reason behind.
         self::assertStringContainsString('ls "$_vdir/pages/"*.json', $bin, 'a page filed, not a directory made');
         self::assertStringContainsString('ai:verify --list-pages named no page', $bin);
+        // REGRESSION (review update#77): a proxy note on stdout read as one more path.
+        self::assertStringContainsString('info() { printf "%s[INFO]%s  %s\\n" "$C_CYAN" "$C_RESET" "$*" >&2; }', $bin, 'a list call keeps stdout to paths');
     }
 
     /** @return list<string> */
@@ -253,7 +290,7 @@ final class PageCheckVerificationTest extends TestCase
     {
         $out = [];
         foreach ($modes as $mode => [$status, $findings]) {
-            $out[$mode] = ['status' => $status, 'html' => true, 'findings' => $findings] + ($status === 0 ? ['error' => 'net::ERR_CONNECTION_REFUSED'] : []) + ($stylesheets !== null ? ['stylesheets' => $stylesheets] : []);
+            $out[$mode] = ['status' => $status, 'html' => true, 'findings' => $findings, 'stylesheets' => $stylesheets ?? []] + ($status === 0 ? ['error' => 'net::ERR_CONNECTION_REFUSED'] : []);
         }
         file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName($path), json_encode(['path' => $path, 'modes' => $out]));
     }
