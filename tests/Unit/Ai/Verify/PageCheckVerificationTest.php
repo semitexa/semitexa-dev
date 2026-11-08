@@ -125,6 +125,29 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('redirected to /login', (string) $result->signal);
     }
 
+    /** REGRESSION (review dev#216): a finding beside a redirect in the other mode must keep both */
+    #[Test]
+    public function a_finding_and_a_redirect_are_both_reported(): void
+    {
+        $light = ['status' => 200, 'html' => true, 'findings' => ['color-contrast x3'], 'stylesheets' => [], 'landed' => '/shop'];
+        $dark = ['status' => 200, 'html' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/shop?view=other'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => $light, 'dark' => $dark]]));
+
+        $result = $this->check('/shop', 'run-1');
+        self::assertSame(VerificationResult::STATUS_FAIL, $result->status);
+        self::assertStringContainsString('light: color-contrast x3', (string) $result->signal);
+        self::assertStringContainsString('redirected to /shop?view=other in dark', (string) $result->signal, 'the same path with another query is another page');
+    }
+
+    #[Test]
+    public function a_status_that_is_not_a_number_is_a_malformed_result(): void
+    {
+        $view = ['status' => '200', 'html' => true, 'findings' => [], 'stylesheets' => []];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/s'), json_encode(['path' => '/s', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        self::assertStringContainsString('malformed', (string) $this->check('/s', 'run-1')->signal);
+    }
+
     #[Test]
     public function a_spec_that_died_points_at_its_log(): void
     {

@@ -103,8 +103,10 @@ for (const path of pages) {
                     // Applied, not only linked: an alternate stylesheet has a sheet that is disabled.
                     .filter((l) => { const link = l as HTMLLinkElement; return link.sheet !== null && !link.sheet.disabled && (!link.media || matchMedia(link.media).matches); })
                     .map((l) => (l as HTMLLinkElement).href)) : [];
-                // Where it ended: a redirect to a sign-in page shows that page, not this one.
-                const landed = new URL(page.url()).pathname;
+                // Where it ended: a redirect to a sign-in page shows that page, not this one. The query
+                // and the origin count too: /shop?view=other or another host is another page.
+                const end = new URL(page.url());
+                const landed = end.origin !== new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:9502').origin ? end.href : end.pathname + end.search;
                 const screenshot = join(out, `${file}-${mode}.png`);
                 if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
                 modes[mode] = { status, html, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
@@ -117,7 +119,9 @@ for (const path of pages) {
         writeFileSync(join(out, `${file}.json`), JSON.stringify({ path, modes }, null, 1));
 
         // A mode never reached is no pass either: PageCheckResult reads it as incomplete, and the log says so.
+        const norm = (p: string) => decodeURIComponent(p).replace(/\/+$/, '');
         const all = Object.entries(modes).flatMap(([mode, v]) => (v.status === 0 ? [`${mode}: not reached: ${v.error ?? 'no response'}`] : [])
+            .concat(v.html && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
             .concat(v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : [])
             .concat(v.findings.map((f) => `${mode}: ${f}`)));
         expect(all, `${path} as a person sees it`).toEqual([]);

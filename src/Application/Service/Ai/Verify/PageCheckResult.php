@@ -63,7 +63,11 @@ final readonly class PageCheckResult
         $html = true;
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
-            $status = is_array($view) && is_int($view['status'] ?? null) ? $view['status'] : 0;
+            if (is_array($view) && !is_int($view['status'] ?? null)) {
+                $missing[] = "a malformed result in {$mode}";
+                continue;
+            }
+            $status = is_array($view) ? (int) $view['status'] : 0;
             if (!is_array($view) || $status === 0) {
                 $missing[] = !is_array($view) ? "not opened in {$mode}" : "could not be reached in {$mode}: " . SignalText::compress((string) ($view['error'] ?? 'no response'));
                 continue;
@@ -82,7 +86,7 @@ final readonly class PageCheckResult
             }
             // Sent elsewhere (a sign-in page, say): what was looked at is not this page.
             $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
-            if (rtrim($landed, '/') !== rtrim($path, '/')) {
+            if (rtrim(rawurldecode($landed), '/') !== rtrim($path, '/')) {
                 $missing[] = "redirected to {$landed} in {$mode}";
                 continue;
             }
@@ -94,7 +98,7 @@ final readonly class PageCheckResult
         if ($missing !== []) {
             // A finding already seen is a failure, whatever the other mode could not show (review dev#216).
             return $found !== []
-                ? new VerificationResult($target, VerificationResult::STATUS_FAIL, 1, SignalText::compress("{$path} — " . implode('; ', array_slice($found, 0, 6)) . ' (and ' . implode('; ', $missing) . ')'))
+                ? new VerificationResult($target, VerificationResult::STATUS_FAIL, 1, SignalText::compress("{$path} — " . implode('; ', $missing) . '; ' . implode('; ', array_slice($found, 0, 6)) . (count($found) > 6 ? sprintf('; and %d more', count($found) - 6) : '')))
                 : self::notRun($target, "{$path} was NOT checked: " . implode('; ', $missing));
         }
 
