@@ -148,6 +148,9 @@ final class LintRunner
     /** How many located findings a failing lint reports, at most. */
     private const MAX_FINDINGS = 20;
 
+    /** How many values of one option a suggested command spells out. */
+    private const MAX_VALUES_SHOWN = 3;
+
     /**
      * Rows of a docs gate's output that start with `page.md:line`, as its
      * table of findings prints them in the "where" column.
@@ -177,13 +180,19 @@ final class LintRunner
     {
         $parts = ['bin/semitexa', $commandName];
         foreach ($input as $option => $value) {
-            foreach (is_array($value) ? $value : [$value] as $one) {
+            $values = is_array($value) ? array_values($value) : [$value];
+            // A gate fed every changed file (lint:test-integrity's --path) would
+            // otherwise print them all, once per violation.
+            foreach (array_slice($values, 0, self::MAX_VALUES_SHOWN) as $one) {
                 if ($one === true) {
                     $parts[] = (string) $option;
                 } elseif ($one !== false && $one !== null && is_scalar($one)) {
                     $one = (string) $one;
                     $parts[] = $option . '=' . (preg_match('#^[\w./:@%+-]+$#', $one) === 1 ? $one : escapeshellarg($one));
                 }
+            }
+            if (count($values) > self::MAX_VALUES_SHOWN) {
+                $parts[] = sprintf('(+%d more %s)', count($values) - self::MAX_VALUES_SHOWN, $option);
             }
         }
 

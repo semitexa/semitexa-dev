@@ -82,6 +82,24 @@ final class LintRunnerTest extends TestCase
     }
 
     #[Test]
+    public function a_suggested_command_spells_out_three_values_of_an_option_and_counts_the_rest(): void
+    {
+        $app = new Application();
+        $app->add(new class extends Command {
+            public function __construct() { parent::__construct('lint:many'); }
+            protected function configure(): void { $this->addOption('path', null, \Symfony\Component\Console\Input\InputOption::VALUE_REQUIRED | \Symfony\Component\Console\Input\InputOption::VALUE_IS_ARRAY); }
+            protected function execute(InputInterface $input, OutputInterface $output): int { $output->writeln('[ERROR] 1 weakened test.'); return 1; }
+        });
+        $paths = array_map(static fn (int $i): string => "src/F{$i}.php", range(1, 200));
+        $result = (new LintRunner($app))->run(new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:many', 'r', [], commandName: 'lint:many', commandInput: ['--path' => $paths]));
+
+        self::assertSame(
+            'Run bin/semitexa lint:many --path=src/F1.php --path=src/F2.php --path=src/F3.php (+197 more --path) for every finding, fix them, and re-run ai:verify.',
+            $result->diagnostics[0]['suggested_fix'],
+        );
+    }
+
+    #[Test]
     public function a_non_docs_lint_keeps_one_violation_whatever_its_rows_look_like(): void
     {
         // lint:mechanisms prints remarks ("not installed here, a remark, not a

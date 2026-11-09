@@ -57,7 +57,13 @@ final class InstructionTargetsTest extends TestCase
     #[Test]
     public function docs_claims_no_longer_claims_root_instructions_it_never_reads(): void
     {
-        $plan = (new VerificationPlanner(getcwd() ?: '.'))->plan([
+        // Its own root: docs:claims names only pages that exist, and the
+        // working directory differs between the workspace and the package's CI.
+        $root = sys_get_temp_dir() . '/semitexa-docs-instructions-' . bin2hex(random_bytes(4));
+        mkdir($root . '/packages/semitexa-docs/docs', 0777, true);
+        file_put_contents($root . '/AGENTS.md', "# Agents\n");
+        file_put_contents($root . '/packages/semitexa-docs/docs/AI.md', "# AI\n");
+        $plan = (new VerificationPlanner($root))->plan([
             new ChangedFile('AGENTS.md', ChangedFile::KIND_NON_PHP),
             new ChangedFile('packages/semitexa-docs/docs/AI.md', ChangedFile::KIND_NON_PHP),
         ], VerificationPlan::SCOPE_STANDARD);
