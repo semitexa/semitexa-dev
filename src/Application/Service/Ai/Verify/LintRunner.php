@@ -109,7 +109,13 @@ final class LintRunner
         // The command exactly as verify ran it: bare, docs:lint in a project
         // reads vendor/semitexa/docs and lists findings that are not the
         // agent's (Guard run 2026-11-08), so the fix pointed at the wrong pages.
-        $fix = 'Run ' . self::commandLine($commandName, $target->commandInput) . ' for every finding, fix them, and re-run ai:verify.';
+        $omitted = [];
+        $command = self::commandLine($commandName, $target->commandInput, $omitted);
+        // The count stays outside the command, so what follows "Run" can be
+        // pasted into a shell as it is.
+        $fix = 'Run ' . $command
+            . ($omitted === [] ? '' : ' (' . implode(', ', array_map(static fn (string $option, int $count): string => "{$count} more {$option} value(s) not shown", array_keys($omitted), $omitted)) . '; ai:verify checks them all)')
+            . ' for every finding, fix them, and re-run ai:verify.';
         $base = [
             'check'         => $target->type,
             'severity'      => 'error',
@@ -175,8 +181,11 @@ final class LintRunner
         return $found;
     }
 
-    /** @param array<string, mixed> $input */
-    private static function commandLine(string $commandName, array $input): string
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, int> $omitted values left out per option, filled in
+     */
+    private static function commandLine(string $commandName, array $input, array &$omitted = []): string
     {
         $parts = ['bin/semitexa', $commandName];
         foreach ($input as $option => $value) {
@@ -192,7 +201,7 @@ final class LintRunner
                 }
             }
             if (count($values) > self::MAX_VALUES_SHOWN) {
-                $parts[] = sprintf('(+%d more %s)', count($values) - self::MAX_VALUES_SHOWN, $option);
+                $omitted[(string) $option] = count($values) - self::MAX_VALUES_SHOWN;
             }
         }
 

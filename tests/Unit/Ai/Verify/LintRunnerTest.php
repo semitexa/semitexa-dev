@@ -82,7 +82,7 @@ final class LintRunnerTest extends TestCase
     }
 
     #[Test]
-    public function a_suggested_command_spells_out_three_values_of_an_option_and_counts_the_rest(): void
+    public function a_suggested_command_spells_out_three_values_of_an_option_and_counts_the_rest_outside_it(): void
     {
         $app = new Application();
         $app->add(new class extends Command {
@@ -94,7 +94,7 @@ final class LintRunnerTest extends TestCase
         $result = (new LintRunner($app))->run(new VerificationTarget(VerificationTarget::TYPE_LINT, 'lint:many', 'r', [], commandName: 'lint:many', commandInput: ['--path' => $paths]));
 
         self::assertSame(
-            'Run bin/semitexa lint:many --path=src/F1.php --path=src/F2.php --path=src/F3.php (+197 more --path) for every finding, fix them, and re-run ai:verify.',
+            'Run bin/semitexa lint:many --path=src/F1.php --path=src/F2.php --path=src/F3.php (197 more --path value(s) not shown; ai:verify checks them all) for every finding, fix them, and re-run ai:verify.',
             $result->diagnostics[0]['suggested_fix'],
         );
     }
