@@ -312,7 +312,7 @@ final class VerificationPlanner
         // minimal contract explicitly excludes — see AiVerifyCommandTest's
         // minimal-scope pin.
         if ($effectiveScope !== VerificationPlan::SCOPE_MINIMAL) {
-            foreach ($this->docsTargets($changedFiles) as $docsTarget) {
+            foreach (DocsTargets::of($changedFiles, $this->projectRoot) as $docsTarget) {
                 $targets[] = $docsTarget;
             }
         }
@@ -877,69 +877,6 @@ final class VerificationPlanner
             }
         }
         return $roots;
-    }
-    /**
-     * Documentation gates.
-     *
-     * Two different failures, so two targets. A page can claim an attribute
-     * that no longer exists — that is a markdown change, or a rename that left
-     * the page behind. And a signature can change without the generated
-     * reference being rebuilt, which no amount of reading the prose would
-     * catch; only regenerating and comparing does.
-     *
-     * Both are skipped when semitexa/docs is absent, and the claim check runs
-     * against a baseline when the project keeps one, so existing debt does not
-     * block unrelated work.
-     *
-     * @param list<ChangedFile> $changedFiles
-     *
-     * @return list<VerificationTarget>
-     */
-    private function docsTargets(array $changedFiles): array
-    {
-        // The files each gate reads, named: an empty triggeredBy made every
-        // changed .md look unchecked to the coverage report.
-        $markdown = [];
-        $php = [];
-        foreach ($changedFiles as $file) {
-            if (str_ends_with(strtolower($file->path), '.md') && !ProjectGuardTargets::isInstruction($file->path)) {
-                $markdown[] = $file->path;
-            } elseif (str_ends_with(strtolower($file->path), '.php')) {
-                $php[] = $file->path;
-            }
-        }
-
-        $targets = [];
-
-        if ($markdown !== []) {
-            $input = [];
-            $baseline = $this->projectRoot . '/var/docs/docs-lint-baseline.json';
-            if (is_file($baseline)) {
-                $input['--baseline'] = $baseline;
-            }
-
-            $targets[] = new VerificationTarget(
-                type: VerificationTarget::TYPE_DOCS,
-                id: 'docs:claims',
-                reason: 'a documented attribute, command or env key that the framework no longer has',
-                triggeredBy: $markdown,
-                commandName: 'docs:lint',
-                commandInput: $input,
-            );
-        }
-
-        if ($php !== []) {
-            $targets[] = new VerificationTarget(
-                type: VerificationTarget::TYPE_DOCS,
-                id: 'docs:reference',
-                reason: 'the generated reference is built from signatures; changing one without rebuilding leaves the page wrong',
-                triggeredBy: $php,
-                commandName: 'docs:reference:generate',
-                commandInput: ['--check' => true],
-            );
-        }
-
-        return $targets;
     }
 
 }

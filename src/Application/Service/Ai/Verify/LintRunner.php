@@ -99,30 +99,113 @@ final class LintRunner
             );
         }
 
-        $signal = SignalText::lastLine($buffer->fetch());
+        $text = $buffer->fetch();
+        $signal = SignalText::lastLine($text);
         if ($exit === 0) {
             return new VerificationResult(target: $target, status: VerificationResult::STATUS_PASS, exitCode: 0, signal: $signal);
         }
 
         $why = self::rationaleOf($command);
+        // The command exactly as verify ran it: bare, docs:lint in a project
+        // reads vendor/semitexa/docs and lists findings that are not the
+        // agent's (Guard run 2026-11-08), so the fix pointed at the wrong pages.
+        $omitted = [];
+        $command = self::commandLine($commandName, $target->commandInput, $omitted);
+        // The count stays outside the command, so what follows "Run" can be
+        // pasted into a shell as it is.
+        $fix = 'Run ' . $command
+            . ($omitted === [] ? '' : ' (' . implode(', ', array_map(static fn (string $option, int $count): string => "{$count} more {$option} value(s) not shown", array_keys($omitted), $omitted)) . '; ai:verify checks them all)')
+            . ' for every finding, fix them, and re-run ai:verify.';
+        $base = [
+            'check'         => $target->type,
+            'severity'      => 'error',
+            'rule'          => $commandName,
+            'identifier'    => $commandName,
+        ];
+        // Read for the docs gates alone, whose every `page.md:line` row is a
+        // finding. Other lints print located rows that are not errors —
+        // lint:mechanisms lists "not installed here" remarks the same way — and
+        // rows with no line at all; turning those into violations would send an
+        // agent after what nobody can fix, the very chase this stops.
+        $findings = $target->type === VerificationTarget::TYPE_DOCS ? self::findingsIn($text) : [];
+        // Each finding where it is. One violation with path '' and line 0 told
+        // an agent that it failed and not what to fix: it guessed, and removed
+        // its own code until the gate went quiet.
+        $diagnostics = $findings === []
+            ? [$base + ['path' => '', 'line' => 0, 'message' => $signal, 'rationale' => $why, 'suggested_fix' => $fix]]
+            : array_map(static fn (array $f): array => $base + [
+                'path' => $f['path'],
+                'line' => $f['line'],
+                'message' => $f['text'] !== '' ? $f['text'] : $signal,
+                'rationale' => $why,
+                'suggested_fix' => $fix,
+            ], $findings);
+        $first = $findings === [] ? '' : " First: {$findings[0]['path']}:{$findings[0]['line']}" . ($findings[0]['text'] !== '' ? " {$findings[0]['text']}" : '') . '.';
 
         return new VerificationResult(
             target:      $target,
             status:      VerificationResult::STATUS_FAIL,
             exitCode:    $exit,
-            signal:      $why === '' ? $signal : $signal . ' — ' . $why,
-            diagnostics: [[
-                'check'         => $target->type,
-                'severity'      => 'error',
-                'rule'          => $commandName,
-                'identifier'    => $commandName,
-                'path'          => '',
-                'line'          => 0,
-                'message'       => $signal,
-                'rationale'     => $why,
-                'suggested_fix' => "Run bin/semitexa {$commandName} for every finding, fix them, and re-run ai:verify.",
-            ]],
+            signal:      $signal . $first . ($why === '' ? '' : ' — ' . $why),
+            diagnostics: $diagnostics,
         );
+    }
+
+    /** How many located findings a failing lint reports, at most. */
+    private const MAX_FINDINGS = 20;
+
+    /** How many values of one option a suggested command spells out. */
+    private const MAX_VALUES_SHOWN = 3;
+
+    /**
+     * Rows of a docs gate's output that start with `page.md:line`, as its
+     * table of findings prints them in the "where" column.
+     *
+     * @return list<array{path: string, line: int, text: string}>
+     */
+    private static function findingsIn(string $text): array
+    {
+        $found = [];
+        foreach (preg_split('/\R/u', $text) ?: [] as $row) {
+            if (preg_match('#^\s*(\S+?\.md):(\d+)(?:\s+(.*))?$#u', $row, $m) !== 1) {
+                continue;
+            }
+            // An empty column prints as a lone dash (docs:lint's "did you mean").
+            $cells = trim((string) preg_replace(['/\s{2,}/u', '/(?:\s+[—-])+\s*$/u'], [' ', ''], ' ' . ($m[3] ?? '')));
+            $found[] = ['path' => $m[1], 'line' => (int) $m[2], 'text' => SignalText::compress($cells)];
+            if (count($found) === self::MAX_FINDINGS) {
+                break;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, int> $omitted values left out per option, filled in
+     */
+    private static function commandLine(string $commandName, array $input, array &$omitted = []): string
+    {
+        $parts = ['bin/semitexa', $commandName];
+        foreach ($input as $option => $value) {
+            $values = is_array($value) ? array_values($value) : [$value];
+            // A gate fed every changed file (lint:test-integrity's --path) would
+            // otherwise print them all, once per violation.
+            foreach (array_slice($values, 0, self::MAX_VALUES_SHOWN) as $one) {
+                if ($one === true) {
+                    $parts[] = (string) $option;
+                } elseif ($one !== false && $one !== null && is_scalar($one)) {
+                    $one = (string) $one;
+                    $parts[] = $option . '=' . (preg_match('#^[\w./:@%+-]+$#', $one) === 1 ? $one : escapeshellarg($one));
+                }
+            }
+            if (count($values) > self::MAX_VALUES_SHOWN) {
+                $omitted[(string) $option] = count($values) - self::MAX_VALUES_SHOWN;
+            }
+        }
+
+        return implode(' ', $parts);
     }
 
     /** The lint's own RATIONALE, read from the class behind any lazy wrapper. */
