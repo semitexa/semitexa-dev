@@ -72,9 +72,65 @@ final class PublicPageReadsIdentityDetectorTest extends TestCase
     }
 
     #[Test]
-    public function a_payload_that_cannot_be_loaded_gives_no_finding(): void
+    public function a_payload_with_no_route_attribute_is_left_alone(): void
     {
         self::assertSame([], $this->detect(null));
+    }
+
+    #[Test]
+    public function a_payload_that_cannot_be_examined_leaves_the_page_not_cleared(): void
+    {
+        // The lint must not print [OK] for a page it could not read (review, dev#218).
+        $findings = (new PublicPageReadsIdentityDetector(static function (string $class): never {
+            throw new \RuntimeException('class ' . $class . ' does not autoload');
+        }))->detect('ProfileHandler.php', self::PROFILE_HANDLER);
+
+        self::assertCount(1, $findings);
+        self::assertSame(12, $findings[0]->line);
+        self::assertStringContainsString('ProfilePayload could not be examined (class ' . self::PAYLOAD . ' does not autoload)', $findings[0]->evidence);
+        self::assertStringContainsString('not cleared', $findings[0]->evidence);
+    }
+
+    #[Test]
+    public function a_handler_naming_no_payload_class_is_not_cleared_when_it_reads_identity(): void
+    {
+        $lines = str_replace('payload: ProfilePayload::class', "payload: 'App\\Profile'", self::PROFILE_HANDLER);
+        $findings = $this->detector(new AsPublicPayload(path: '/x'))->detect('ProfileHandler.php', $lines);
+
+        self::assertCount(1, $findings);
+        self::assertStringContainsString('its payload could not be examined', $findings[0]->evidence);
+    }
+
+    #[Test]
+    public function a_positional_payload_a_grouped_import_and_an_array_argument_still_resolve(): void
+    {
+        $lines = self::PROFILE_HANDLER;
+        $lines[3] = 'use App\Modules\Guard\Application\Payload\Request\{ProfilePayload, OtherPayload as Other};';
+        $lines[6] = "#[AsPayloadHandler(ProfilePayload::class, ProfileResource::class)]";
+        self::assertCount(1, $this->detector(new AsPublicPayload(path: '/guard/profile'))->detect('H.php', $lines), 'positional, grouped import');
+
+        $lines[6] = "#[AsPayloadHandler(tags: ['a', 'b'], payload: ProfilePayload::class, resource: ProfileResource::class)]";
+        self::assertCount(1, $this->detector(new AsPublicPayload(path: '/guard/profile'))->detect('H.php', $lines), 'a ] before payload:');
+    }
+
+    #[Test]
+    public function the_default_reflection_reads_real_payload_classes(): void
+    {
+        $detector = new PublicPageReadsIdentityDetector();
+        $handlerOf = static fn (string $payload): array => str_replace(
+            ['use App\Modules\Guard\Application\Payload\Request\ProfilePayload;', 'payload: ProfilePayload::class'],
+            ['use Semitexa\Dev\Tests\Fixtures\Mechanism\\' . $payload . ';', 'payload: ' . $payload . '::class'],
+            self::PROFILE_HANDLER,
+        );
+
+        $public = $detector->detect('H.php', $handlerOf('PublicProfilePayload'));
+        self::assertCount(1, $public);
+        self::assertStringContainsString('PublicProfilePayload (/guard/profile) reads isGuest()', $public[0]->evidence);
+        self::assertSame([], $detector->detect('H.php', $handlerOf('PublicSignInPayload')), 'a stated reason');
+        self::assertSame([], $detector->detect('H.php', $handlerOf('RoutelessPayload')), 'no route attribute');
+        $missing = $detector->detect('H.php', $handlerOf('NoSuchPayload'));
+        self::assertCount(1, $missing);
+        self::assertStringContainsString('does not autoload', $missing[0]->evidence);
     }
 
     #[Test]
@@ -136,9 +192,13 @@ final class PublicPageReadsIdentityDetectorTest extends TestCase
 
     private function detector(?AbstractPayloadRoute $route): PublicPageReadsIdentityDetector
     {
-        return new PublicPageReadsIdentityDetector(
-            static fn (string $class): ?AbstractPayloadRoute => $class === self::PAYLOAD ? $route : null,
-        );
+        return new PublicPageReadsIdentityDetector(static function (string $class) use ($route): ?AbstractPayloadRoute {
+            if ($class !== self::PAYLOAD) {
+                throw new \RuntimeException('unexpected payload ' . $class);
+            }
+
+            return $route;
+        });
     }
 
     private static function protectedRoute(): AbstractPayloadRoute
