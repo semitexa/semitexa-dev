@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-10T02:23:48+00:00",
+    "generated_at": "2026-11-10T22:14:14+00:00",
     "source_version": "dev-master@f5c7104",
     "count": 83,
     "packages": [
@@ -54,7 +54,7 @@
         "semitexa-companion": "browser extension",
         "semitexa-installer": "docker project (publishes an image, not a Composer package)"
     },
-    "content_hash": "df15650f4b09855b5279ff1ab378364d656825a53a66550d6c782628313fb9ea",
+    "content_hash": "c02975308640e9f53b376f5e7154d91fe02535529dcc7837d9e95137485e2334",
     "capabilities": [
         {
             "id": "api.external",
@@ -193,7 +193,7 @@
                 "a feed handler with a field map, a query and a projection",
                 "a JSON response class carrying the #[Collection*] attributes"
             ],
-            "usage": "#[AsCollectionFeed(path: '/orders/feed', name: 'orders.feed', model: OrderResource::class,\n    defaultPerPage: 50, perPageOptions: [50, 100], defaultSort: '-total')]\nfinal class OrdersFeed extends CollectionFeed\n{\n    public function fields(): array\n    {\n        return [\n            Field::id()->sortable(),\n            Field::text('number')->searchable()->sortable(),\n            Field::choice('status', ['new' => 'New', 'paid' => 'Paid'])->sortable()->filterable(),\n            Field::integer('total')->sortable(),\n        ];\n    }\n}\n\n// In the page, with paging, sorting, search and live updates on the server (100,000 rows\n// measured: first rows 206 ms, next page 313 ms):\n{{ component('platform.grid', {endpoint: '/orders/feed', urlState: 'o'}) }}\n\n// Order goes in defaultSort, not in query(): an orderBy there outranks the visitor's own sort.\n// A primary key with another name is listed as Field::id('code'). Search and filters apply\n// on Enter or Apply, and the row markup is the grid's. For other markup or search-as-you-type, write one\n// #[AsComponent] with #[UiUrl] props and #[UiOn] handlers: ai:ask mechanisms --id=ui.url-state.",
+            "usage": "// Signed-in visitors only by default; a grid anyone may see says so:\n//   access: PayloadAccessType::Public, reason: 'the public price list'\n// and one over admin rows names who may read them: #[RequiresPermission('orders.read')].\n#[AsCollectionFeed(path: '/orders/feed', name: 'orders.feed', model: OrderResource::class,\n    defaultPerPage: 50, perPageOptions: [50, 100], defaultSort: '-total')]\nfinal class OrdersFeed extends CollectionFeed\n{\n    public function fields(): array\n    {\n        return [\n            Field::id()->sortable(),\n            Field::text('number')->searchable()->sortable(),\n            Field::choice('status', ['new' => 'New', 'paid' => 'Paid'])->sortable()->filterable(),\n            Field::integer('total')->sortable(),\n        ];\n    }\n}\n\n// In the page, with paging, sorting, search and live updates on the server (100,000 rows\n// measured: first rows 206 ms, next page 313 ms):\n{{ component('platform.grid', {endpoint: '/orders/feed', urlState: 'o'}) }}\n\n// Order goes in defaultSort, not in query(): an orderBy there outranks the visitor's own sort.\n// A primary key with another name is listed as Field::id('code'). Search and filters apply\n// on Enter or Apply, and the row markup is the grid's. For other markup or search-as-you-type, write one\n// #[AsComponent] with #[UiUrl] props and #[UiOn] handlers: ai:ask mechanisms --id=ui.url-state.",
             "see_also": "ui.field-type",
             "kind": "mechanism",
             "declared_by": "Semitexa\\Crud\\Attribute\\AsCollectionFeed",
