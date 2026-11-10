@@ -43,6 +43,15 @@ INFRA_FILES=(
     docker-compose.nats.yml
     docker-compose.ollama.yml
     docker-compose.worker.yml
+    # Every Dockerfile a compose file above builds. docker-compose.test.yml
+    # names the runner image semitexa/e2e-runner:<playwright>-axe<version>, and
+    # the rebuild below builds it from this file: with the compose file synced
+    # and this one not, the clone built a runner WITHOUT axe from its
+    # 2026-09-08 Dockerfile and tagged it with the axe tag. Image tags are the
+    # machine's, not the project's, so every release replaced the runner of
+    # every project here with one whose page checks and a11y specs cannot load
+    # (seen 05.11 and 10.11, tk-e2e-runner-image-tag-without-axe).
+    docker/e2e-runner/Dockerfile
 )
 
 changed=()
@@ -61,6 +70,7 @@ for file in "${INFRA_FILES[@]}"; do
         continue
     fi
 
+    mkdir -p "$(dirname "$target_file")"
     cp "$source_file" "$target_file"
     changed+=("$file")
 done
