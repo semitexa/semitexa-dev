@@ -158,23 +158,27 @@ final class PublicPageReadsIdentityDetector implements MechanismDetectorInterfac
      */
     private static function handledPayload(string $arguments, string $source): ?string
     {
-        $class = '\\\\?([A-Za-z_][\w\\\\]*)::class';
+        $class = '(\\\\?[A-Za-z_][\w\\\\]*)::class';
         if (preg_match('/\bpayload\s*:\s*' . $class . '/', $arguments, $m) !== 1
             && preg_match('/^\s*' . $class . '\s*(?:,|$)/', $arguments, $m) !== 1) {
             return null;
         }
         $name = $m[1];
-        $imports = self::imports($source);
 
-        if (str_contains($name, '\\')) {
-            $first = (string) strstr($name, '\\', true);
-            $class = isset($imports[$first]) ? $imports[$first] . strstr($name, '\\') : $name;
-        } else {
-            $class = $imports[$name]
-                ?? (preg_match('/^\s*namespace\s+([\w\\\\]+)\s*;/m', $source, $ns) === 1 ? $ns[1] . '\\' . $name : $name);
+        // PHP's own rules: a leading \ is fully qualified; otherwise the first
+        // segment is looked up in the imports, and failing that the name is
+        // relative to the file's namespace (Sub\P in App\X is App\X\Sub\P).
+        if (str_starts_with($name, '\\')) {
+            return ltrim($name, '\\');
+        }
+        $first = str_contains($name, '\\') ? (string) strstr($name, '\\', true) : $name;
+        $rest = str_contains($name, '\\') ? (string) strstr($name, '\\') : '';
+        $imports = self::imports($source);
+        if (isset($imports[$first])) {
+            return $imports[$first] . $rest;
         }
 
-        return ltrim($class, '\\');
+        return preg_match('/^\s*namespace\s+([\w\\\\]+)\s*;/m', $source, $ns) === 1 ? $ns[1] . '\\' . $name : $name;
     }
 
     /**

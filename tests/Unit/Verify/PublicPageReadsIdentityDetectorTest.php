@@ -101,16 +101,37 @@ final class PublicPageReadsIdentityDetectorTest extends TestCase
         self::assertStringContainsString('its payload could not be examined', $findings[0]->evidence);
     }
 
+    /** @return iterable<string, array{string, string, string}> use line, attribute line, the class reflection must be asked for */
+    public static function payloadNames(): iterable
+    {
+        $ns = 'App\\Modules\\Guard\\Application\\Handler\\PayloadHandler';
+        $req = 'App\\Modules\\Guard\\Application\\Payload\\Request';
+        yield 'imported' => ['use ' . $req . '\\ProfilePayload;', '#[AsPayloadHandler(payload: ProfilePayload::class)]', $req . '\\ProfilePayload'];
+        yield 'positional' => ['use ' . $req . '\\ProfilePayload;', '#[AsPayloadHandler(ProfilePayload::class, ProfileResource::class)]', $req . '\\ProfilePayload'];
+        yield 'grouped import' => ['use ' . $req . '\\{OtherPayload, ProfilePayload};', '#[AsPayloadHandler(payload: ProfilePayload::class)]', $req . '\\ProfilePayload'];
+        yield 'grouped alias' => ['use ' . $req . '\\{ProfilePayload as Profile};', '#[AsPayloadHandler(payload: Profile::class)]', $req . '\\ProfilePayload'];
+        yield 'a ] before payload:' => ['use ' . $req . '\\ProfilePayload;', "#[AsPayloadHandler(tags: ['a'], payload: ProfilePayload::class)]", $req . '\\ProfilePayload'];
+        yield 'relative to the namespace' => ['', '#[AsPayloadHandler(payload: Sub\\ProfilePayload::class)]', $ns . '\\Sub\\ProfilePayload'];
+        yield 'through an imported namespace' => ['use App\\Modules\\Guard\\Application\\Payload;', '#[AsPayloadHandler(payload: Payload\\Request\\ProfilePayload::class)]', $req . '\\ProfilePayload'];
+        yield 'fully qualified, despite an alias of its first segment' => ['use Elsewhere\\App;', '#[AsPayloadHandler(payload: \\App\\P::class)]', 'App\\P'];
+    }
+
+    // verify:accept-test-change the count-only resolution test is replaced by one asserting the resolved class name per case (review, dev#218: a count passed on a wrong name)
     #[Test]
-    public function a_positional_payload_a_grouped_import_and_an_array_argument_still_resolve(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('payloadNames')]
+    public function the_payload_name_resolves_as_php_resolves_it(string $use, string $attribute, string $expected): void
     {
         $lines = self::PROFILE_HANDLER;
-        $lines[3] = 'use App\Modules\Guard\Application\Payload\Request\{ProfilePayload, OtherPayload as Other};';
-        $lines[6] = "#[AsPayloadHandler(ProfilePayload::class, ProfileResource::class)]";
-        self::assertCount(1, $this->detector(new AsPublicPayload(path: '/guard/profile'))->detect('H.php', $lines), 'positional, grouped import');
+        $lines[3] = $use;
+        $lines[6] = $attribute;
+        $asked = [];
+        (new PublicPageReadsIdentityDetector(static function (string $class) use (&$asked): ?AbstractPayloadRoute {
+            $asked[] = $class;
 
-        $lines[6] = "#[AsPayloadHandler(tags: ['a', 'b'], payload: ProfilePayload::class, resource: ProfileResource::class)]";
-        self::assertCount(1, $this->detector(new AsPublicPayload(path: '/guard/profile'))->detect('H.php', $lines), 'a ] before payload:');
+            return null;
+        }))->detect('H.php', $lines);
+
+        self::assertSame([$expected], $asked);
     }
 
     #[Test]
