@@ -101,7 +101,8 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
         $lines = explode("\n", $yaml);
         $found = [];
         foreach ($lines as $i => $line) {
-            if (preg_match('/^(\s+)build:\s*(\S*)\s*$/', $line, $m) !== 1) {
+            // A trailing comment is not part of the value: "build: . # app" builds ".".
+            if (preg_match('/^(\s+)build:\s*([^\s#]*)\s*(?:#.*)?$/', $line, $m) !== 1) {
                 continue;
             }
             $context = trim($m[2], '"\'');
@@ -150,7 +151,7 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
     #[Test]
     public function a_build_resolves_its_dockerfile_against_its_context(): void
     {
-        $yaml = "services:\n  app:\n    build: .\n  worker:\n    build: ./docker/worker\n  runner:\n    build:\n      context: .\n      dockerfile: docker/e2e-runner/Dockerfile\n  tools:\n    build:\n      context: ./docker/tools\n      dockerfile: Dockerfile.dev\n  plain:\n    build:\n      context: docker/plain\n";
+        $yaml = "services:\n  app:\n    build: . # the app\n  worker:\n    build: ./docker/worker\n  runner:\n    build:\n      context: .\n      dockerfile: docker/e2e-runner/Dockerfile\n  tools:\n    build:\n      context: ./docker/tools\n      dockerfile: Dockerfile.dev\n  plain:\n    build:\n      context: docker/plain\n";
 
         self::assertSame(
             ['Dockerfile', 'docker/worker/Dockerfile', 'docker/e2e-runner/Dockerfile', 'docker/tools/Dockerfile.dev', 'docker/plain/Dockerfile'],
@@ -166,9 +167,11 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
         $script = (string) file_get_contents(self::SCRIPT);
         self::assertSame(1, preg_match('/^BUILT_DOCKERFILES=\((.*?)\)$/m', $script, $list));
         self::assertSame(1, preg_match('/^dockerfile_sha\(\) \{\n.*?^\}\n/ms', $script, $fn));
+        // Whole entries, not substrings: "Dockerfile" is inside "docker/e2e-runner/Dockerfile".
+        $marked = preg_split('/\s+/', trim($list[1])) ?: [];
         foreach ($this->syncedFiles() as $file) {
             if (basename($file) === 'Dockerfile') {
-                self::assertStringContainsString($file, $list[1], "{$file} is synced but not in the image marker");
+                self::assertContains($file, $marked, "{$file} is synced but not in the image marker");
             }
         }
 
