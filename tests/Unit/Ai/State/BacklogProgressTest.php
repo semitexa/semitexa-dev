@@ -16,6 +16,8 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 final class BacklogProgressTest extends TestCase
 {
     private const NOW = '2026-11-06T00:00:00+00:00';
+    /** Tasks are last changed after the proof rule unless a test says otherwise. */
+    private const CHANGED = '2026-11-07T00:00:00+00:00';
 
     /** @param list<string> $refs */
     private function task(
@@ -25,18 +27,52 @@ final class BacklogProgressTest extends TestCase
         string $recipe = '',
         array $refs = [],
         bool $proven = true,
+        string $updatedAt = self::CHANGED,
     ): Task {
         $proof = $proven && $status === TaskStatus::DONE ? new TaskProof('rcpt-1', self::NOW, ['phpunit:X'], []) : null;
 
-        return new Task('tk-a', 'ep-a', 't', $status, $recipe, 'low', $refs, null, 'tk-a', self::NOW, self::NOW, $approved ? new TaskApproval('owner', 'Так', self::NOW) : null, $phase, $proof);
+        return new Task('tk-a', 'ep-a', 't', $status, $recipe, 'low', $refs, null, 'tk-a', self::NOW, $updatedAt, $approved ? new TaskApproval('owner', 'Так', self::NOW) : null, $phase, $proof);
     }
 
     public function test_done_with_no_proof_is_shown_and_adds_nothing(): void
     {
         $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(TaskStatus::DONE, proven: false), $this->task()], false);
 
-        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1], $progress->phases['work']);
+        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven) · ', $progress->line());
+    }
+
+    public function test_a_task_closed_before_the_proof_rule_is_history_not_owed(): void
+    {
+        // Operator, 2026-11-10 (tk-progress-unproven-history): a receipt cannot be made after
+        // the fact, so what was closed before a test was asked for is counted apart.
+        $before = '2026-11-06T09:35:29+00:00';
+        $progress = BacklogProgress::of([
+            $this->task(TaskStatus::DONE),
+            $this->task(TaskStatus::DONE, proven: false, updatedAt: $before),
+            $this->task(TaskStatus::DONE, proven: false, updatedAt: $before),
+            $this->task(TaskStatus::DONE, proven: false),
+            $this->task(),
+        ], false);
+
+        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 2], $progress->phases['work']);
+        self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven, 2 closed before proof) · ', $progress->line());
+    }
+
+    public function test_only_a_done_unproven_task_unchanged_since_is_history(): void
+    {
+        $old = '2026-10-01T00:00:00+00:00';
+        $progress = BacklogProgress::of([
+            // Proven, or still open, it counts whatever its age.
+            $this->task(TaskStatus::DONE, updatedAt: $old),
+            $this->task(updatedAt: $old),
+            // Touched at the very moment the rule shipped: read like any other.
+            $this->task(TaskStatus::DONE, proven: false, updatedAt: BacklogProgress::PROOF_RULE_SINCE),
+            // A date nobody can read is not history.
+            $this->task(TaskStatus::DONE, proven: false, updatedAt: 'not a date'),
+        ], false);
+
+        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 1, 'unproven' => 2, 'before_proof' => 0], $progress->phases['work']);
     }
 
     public function test_a_hundred_needs_every_task_proven(): void
@@ -58,7 +94,7 @@ final class BacklogProgressTest extends TestCase
     {
         $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(), $this->task(TaskStatus::IN_PROGRESS), $this->task(TaskStatus::BLOCKED)], false);
 
-        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0], $progress->phases['work']);
+        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0, 'before_proof' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 25% (1/4, 3 open) · ', $progress->line());
     }
 
