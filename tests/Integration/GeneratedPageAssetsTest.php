@@ -30,15 +30,21 @@ final class GeneratedPageAssetsTest extends TestCase
 {
     private string $root;
     private ?string $cwd = null;
+    /** The root an earlier test resolved, put back after this one (review, dev#223). */
+    private ?string $savedRoot = null;
 
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/semitexa-page-assets-' . bin2hex(random_bytes(4));
-        mkdir($this->root, 0755, true);
+        // composer.json and src/modules are what ProjectRoot asks of a project:
+        // without src/modules it walks on to the host project (review, dev#223).
+        mkdir($this->root . '/src/modules', 0755, true);
         file_put_contents($this->root . '/composer.json', '{"name":"temp/project"}');
+        $this->savedRoot = self::cachedRoot();
         $this->cwd = getcwd() ?: null;
         chdir($this->root);
         ProjectRoot::reset();
+        self::assertSame($this->root, ProjectRoot::get(), 'the generator reads this temp project');
     }
 
     protected function tearDown(): void
@@ -47,6 +53,9 @@ final class GeneratedPageAssetsTest extends TestCase
             chdir($this->cwd);
         }
         ProjectRoot::reset();
+        if ($this->savedRoot !== null) {
+            (new \ReflectionProperty(ProjectRoot::class, 'root'))->setValue(null, $this->savedRoot);
+        }
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
@@ -112,6 +121,13 @@ final class GeneratedPageAssetsTest extends TestCase
         self::assertContains('src/modules/Website/src/Application/Static/css/pricing.css', $paths);
         self::assertContains('src/modules/Website/src/Application/Static/js/pricing.js', $paths);
         self::assertSame([], array_values(array_filter($paths, static fn (string $p): bool => str_contains($p, '/View/assets/'))));
+    }
+
+    private static function cachedRoot(): ?string
+    {
+        $value = (new \ReflectionProperty(ProjectRoot::class, 'root'))->getValue();
+
+        return is_string($value) ? $value : null;
     }
 
     private function page(): GenerationPlan
