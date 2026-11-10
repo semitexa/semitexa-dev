@@ -59,6 +59,19 @@ final class BacklogProgressTest extends TestCase
         self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven, 2 closed before proof) · ', $progress->line());
     }
 
+    public function test_a_phase_with_only_history_still_says_how_many(): void
+    {
+        $before = '2026-11-01T00:00:00+00:00';
+        $progress = BacklogProgress::of([
+            $this->task(TaskStatus::DONE, phase: Phase::FAST, proven: false, updatedAt: $before),
+            $this->task(TaskStatus::DONE, phase: Phase::FAST, proven: false, updatedAt: $before),
+        ], false);
+
+        self::assertNull($progress->phases['fast']['percent']);
+        self::assertSame(2, $progress->phases['fast']['before_proof']);
+        self::assertStringContainsString('fast not measured, 2 closed before proof', $progress->line());
+    }
+
     public function test_only_a_done_unproven_task_unchanged_since_is_history(): void
     {
         $old = '2026-10-01T00:00:00+00:00';

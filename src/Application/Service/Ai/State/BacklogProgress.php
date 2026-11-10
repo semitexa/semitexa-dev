@@ -155,7 +155,9 @@ final readonly class BacklogProgress
         $parts = [];
         foreach ($this->phases as $phase => $p) {
             $parts[] = $phase . ' ' . match (true) {
-                $p['percent'] === null => $this->noTickets($phase),
+                // A phase whose every task is history still says how many: nothing approved is
+                // not nothing there (review, dev#219).
+                $p['percent'] === null => $this->noTickets($phase) . ($p['before_proof'] > 0 ? ', ' . $p['before_proof'] . ' closed before proof' : ''),
                 default => sprintf('%d%% (%s)', $p['percent'], implode(', ', array_filter([
                     $p['done'] . '/' . $p['approved'],
                     $p['open'] > 0 ? $p['open'] . ' open' : null,
