@@ -43,6 +43,9 @@ INFRA_FILES=(
     docker-compose.nats.yml
     docker-compose.ollama.yml
     docker-compose.worker.yml
+    # Points the runner at the E2E phase's own app; bin/semitexa adds it to
+    # the file set for that run only (tk-e2e-own-database).
+    docker-compose.e2e.yml
     # Every Dockerfile a compose file above builds. docker-compose.test.yml
     # names the runner image semitexa/e2e-runner:<playwright>-axe<version>, and
     # the rebuild below builds it from this file: with the compose file synced
