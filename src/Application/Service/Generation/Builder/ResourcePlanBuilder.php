@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Generation\Builder;
 
+use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Generation\Contract\NameInflectorInterface;
 use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterface;
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
@@ -62,6 +63,10 @@ final class ResourcePlanBuilder
                 // An exported UI tree (make:page --ui-tree), indented into the
                 // page body; empty leaves the template exactly as it was.
                 'uiTree' => self::indent($params['uiTree'] ?? '', '        '),
+                // The page's own script, when it has one (--with-assets).
+                'assetRequire' => $params['withAssets']
+                    ? "\n    {{ asset_require('{$module}:js:{$kebabName}') }}"
+                    : '',
             ]);
             $twigPath = "src/modules/{$module}/src/Application/View/templates/pages/{$kebabName}.html.twig";
             $files[] = new PlannedFile($twigPath, $twigContent, FileType::TwigTemplate);
@@ -69,30 +74,34 @@ final class ResourcePlanBuilder
 
         if ($params['withAssets'] ?? false) {
             $studlyName = $this->inflector->toStudly($params['name']);
+            // Where the runtime reads a module's assets (tk-guard-make-assets-legacy-path):
+            // Application/Static with one v2 assets.json per module. The old
+            // View/assets/pages/<page>.{json,css,js} was read by nothing, so the
+            // files never reached a page, and ai:verify refused the directory.
+            $static = "src/modules/{$module}/src/Application/Static";
 
-            $assetsJson = $this->templateResolver->resolve('page-assets.json.tpl');
-            $assetsContent = $this->renderer->render($assetsJson, ['kebabName' => $kebabName]);
-            $files[] = new PlannedFile(
-                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.json",
-                $assetsContent,
-                FileType::JsonFile,
-            );
+            // The manifest is the module's, not the page's: written for the first
+            // page with assets, left alone after (its include rules already find
+            // css/*.css and js/*.js, and --force must not replace it).
+            if (!is_file(ProjectRoot::get() . "/{$static}/assets.json")) {
+                $assetsJson = $this->templateResolver->resolve('page-assets.json.tpl');
+                $files[] = new PlannedFile(
+                    "{$static}/assets.json",
+                    $this->renderer->render($assetsJson, ['module' => $module]),
+                    FileType::JsonFile,
+                );
+            }
 
+            // A stylesheet is module-scoped: the layout emits it on the module's
+            // pages, and its rules sit under .page-<page>.
             $cssTemplate = $this->templateResolver->resolve('page-css.css.tpl');
             $cssContent = $this->renderer->render($cssTemplate, ['pageName' => $studlyName, 'kebabName' => $kebabName]);
-            $files[] = new PlannedFile(
-                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.css",
-                $cssContent,
-                FileType::CssFile,
-            );
+            $files[] = new PlannedFile("{$static}/css/{$kebabName}.css", $cssContent, FileType::CssFile);
 
+            // A script is page-scoped: the page template asks for it (asset_require).
             $jsTemplate = $this->templateResolver->resolve('page-js.js.tpl');
             $jsContent = $this->renderer->render($jsTemplate, ['pageName' => $studlyName, 'kebabName' => $kebabName]);
-            $files[] = new PlannedFile(
-                "src/modules/{$module}/src/Application/View/assets/pages/{$kebabName}.js",
-                $jsContent,
-                FileType::JsFile,
-            );
+            $files[] = new PlannedFile("{$static}/js/{$kebabName}.js", $jsContent, FileType::JsFile);
         }
 
         return new GenerationPlan(

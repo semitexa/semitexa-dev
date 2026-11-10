@@ -3,7 +3,7 @@
 
 {% block title %}{{ title | default('{{pageName}}') }}{% endblock %}
 
-{% block main %}
+{% block main %}{{assetRequire}}
     <div class="page-{{kebabName}}">
         <h1>{{ title | default('{{pageName}}') }}</h1>
 {{uiTree}}    </div>
