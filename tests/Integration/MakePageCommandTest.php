@@ -216,10 +216,11 @@ class MakePageCommandTest extends TestCase
         // Payload + Handler + Resource + Template + assets.json + CSS + JS = 7
         $this->assertCount(7, $plan->files);
 
+        // Where the runtime reads a module's assets (tk-guard-make-assets-legacy-path).
         $paths = array_map(fn($f) => $f->path, $plan->files);
-        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.json', $paths);
-        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.css', $paths);
-        $this->assertContains('src/modules/Website/src/Application/View/assets/pages/pricing.js', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Static/assets.json', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Static/css/pricing.css', $paths);
+        $this->assertContains('src/modules/Website/src/Application/Static/js/pricing.js', $paths);
     }
 
     /**
@@ -253,7 +254,8 @@ class MakePageCommandTest extends TestCase
         $js = '';
         $twig = '';
         foreach ($plan->files as $file) {
-            if (str_ends_with($file->path, 'pages/pricing.js')) {
+            // The script lives in Application/Static/js now (tk-guard-make-assets-legacy-path).
+            if (str_ends_with($file->path, 'Static/js/pricing.js')) {
                 $js = $file->content;
             }
             if (str_ends_with($file->path, 'pages/pricing.html.twig')) {
