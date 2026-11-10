@@ -17,6 +17,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\HeredocPromptDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\InlineEventHandlerDetector;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismDetectorInterface;
 use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\MechanismFinding;
+use Semitexa\Dev\Application\Service\Ai\Verify\Mechanism\PublicPageReadsIdentityDetector;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -322,6 +323,7 @@ final class LintMechanismsCommand extends BaseCommand
             new HandRolledLiveTransportDetector(),
             new InlineEventHandlerDetector(),
             new HeredocPromptDetector(),
+            new PublicPageReadsIdentityDetector(),
         ];
     }
 

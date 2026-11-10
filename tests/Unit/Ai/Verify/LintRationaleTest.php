@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Tests\Unit\Ai\Verify;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Semitexa\Dev\Application\Service\Ai\Verify\DocsTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 
@@ -69,10 +70,12 @@ final class LintRationaleTest extends TestCase
         preg_match_all("/commandName:\s*'(lint:[a-z0-9-]+)'/", $source, $guards);
         array_push($names, ...$guards[1]);
 
-        // Docs gates are planned in code too, and run through the same LintRunner.
-        $planner = (string) file_get_contents((string) (new ReflectionClass(VerificationPlanner::class))->getFileName());
-        preg_match_all("/commandName:\s*'(docs:[a-z0-9:-]+)'/", $planner, $docs);
-        array_push($names, ...$docs[1]);
+        // Docs gates are planned in code too (DocsTargets since dev#217), and run through the same LintRunner.
+        foreach ([VerificationPlanner::class, DocsTargets::class] as $class) {
+            $source = (string) file_get_contents((string) (new ReflectionClass($class))->getFileName());
+            preg_match_all("/commandName:\s*'(docs:[a-z0-9:-]+)'/", $source, $docs);
+            array_push($names, ...$docs[1]);
+        }
 
         return array_values(array_unique(array_filter($names, static fn (string $n): bool => str_starts_with($n, 'lint:') || str_starts_with($n, 'docs:'))));
     }
