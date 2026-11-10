@@ -21,6 +21,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 final class DuplicateGate
 {
+    /** Findings --override-duplicate does not bypass. */
+    public const NOT_OVERRIDABLE = ['payload.route_already_bound'];
+
     public const REFUSAL_ARTIFACT = 'semitexa-dev.duplicate-refusal/v1';
 
     /**
@@ -50,11 +53,25 @@ final class DuplicateGate
             return null;
         }
 
-        if ($override) {
+        // A route already bound is not a lookalike to wave through
+        // (tk-guard-make-payload-override-orphan): two payloads on one route
+        // without an override chain leave one of them unrouted. When the new
+        // one wins, the old payload's handler has no route and the next boot
+        // fails ("Payload(s) referenced by handlers have no discovered route");
+        // when the old one wins, the new payload is never reached. The
+        // override names how to do it instead.
+        $unbypassable = array_values(array_filter(
+            $blocking,
+            static fn (SimilarityFinding $f): bool => in_array($f->rule, self::NOT_OVERRIDABLE, true),
+        ));
+        if ($override && $unbypassable === []) {
             if (!$jsonOutput && !$llmHintsOutput) {
                 $io->warning('Override active — proceeding despite ' . count($blocking) . ' blocking finding(s).');
             }
             return null;
+        }
+        if ($override) {
+            $blocking = $unbypassable;
         }
 
         $this->emitRefusal($blocking, $query, $io, $output, $jsonOutput, $llmHintsOutput);
@@ -119,7 +136,29 @@ final class DuplicateGate
             $io->writeln("    prior art: {$f->priorArtPath}");
         }
         $io->writeln('');
+        foreach ($blocking as $f) {
+            if (in_array($f->rule, self::NOT_OVERRIDABLE, true)) {
+                $io->writeln(self::routeOverrideHint($f, $query));
+                return;
+            }
+        }
         $io->writeln('Pass --override-duplicate to proceed anyway (double-check before overriding).');
+    }
+
+    /**
+     * What to do instead of a second owner. Changing the owner, or removing it
+     * with its handler, is what works today. Extending it with overrides: is
+     * the chain discovery offers, but the access resolver then counts the
+     * parent's attribute as a second one (tk-route-override-chain-access), so it
+     * is not offered until that is fixed.
+     */
+    public static function routeOverrideHint(SimilarityFinding $f, DuplicateQuery $query): string
+    {
+        $pos = strrpos($f->priorArtFqcn, '\\');
+        $owner = $pos === false ? $f->priorArtFqcn : substr($f->priorArtFqcn, $pos + 1);
+
+        return "--override-duplicate does not apply to a route already bound: {$owner} would lose it and its handler would have no route (the next boot fails), or {$query->className} would never be reached.\n"
+            . "Change {$f->priorArtPath} itself, or delete it together with its handler first, then generate {$query->className}.";
     }
 
     /**
@@ -142,6 +181,18 @@ final class DuplicateGate
             'findings'     => array_map(static fn(SimilarityFinding $f) => $f->toArray(), $blocking),
             'override_flag' => '--override-duplicate',
         ];
+        $routeFinding = null;
+        foreach ($blocking as $f) {
+            if (in_array($f->rule, self::NOT_OVERRIDABLE, true)) {
+                $routeFinding = $f;
+                break;
+            }
+        }
+        if ($routeFinding !== null) {
+            $body['override_flag'] = null;
+            $body['reason'] = 'route_already_bound';
+            $body['how_to_override'] = self::routeOverrideHint($routeFinding, $query);
+        }
         if ($asLlmHints) {
             $body['hint_type'] = 'duplicate_refusal';
             $body['constraints'] = [
