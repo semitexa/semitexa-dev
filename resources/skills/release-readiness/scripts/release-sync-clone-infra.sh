@@ -157,9 +157,23 @@ fi
 # current.
 IMAGE_MARKER="$RELEASE_ROOT/var/install/clone-image.sha256"
 
+# Every Dockerfile the images are built from, not the app's alone: with only
+# ./Dockerfile in the marker, a changed runner Dockerfile was copied in and the
+# rebuild skipped, so the runner image built without axe stayed (review,
+# semitexa-dev#220). A marker written before this list existed differs from
+# the new checksum, so the first run after it rebuilds once.
+BUILT_DOCKERFILES=(Dockerfile docker/e2e-runner/Dockerfile)
+
 dockerfile_sha() {
     [ -f "$RELEASE_ROOT/Dockerfile" ] || return 1
-    sha256sum "$RELEASE_ROOT/Dockerfile" | cut -d' ' -f1
+    local file
+    for file in "${BUILT_DOCKERFILES[@]}"; do
+        if [ -f "$RELEASE_ROOT/$file" ]; then
+            printf '%s  %s\n' "$(sha256sum "$RELEASE_ROOT/$file" | cut -d' ' -f1)" "$file"
+        else
+            printf 'absent  %s\n' "$file"
+        fi
+    done | sha256sum | cut -d' ' -f1
 }
 
 rebuild_clone_images() {
