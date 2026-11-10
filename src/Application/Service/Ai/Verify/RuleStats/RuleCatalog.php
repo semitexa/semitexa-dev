@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\RuleStats;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
 use Semitexa\Dev\Application\Service\Ai\Verify\Tenancy\LiveTenancyViolation;
+use Semitexa\Dev\Application\Service\Ai\Verify\DocsTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 
 /**
@@ -90,7 +91,8 @@ final class RuleCatalog
                 }
             }
         }
-        foreach ([VerificationPlanner::class, ProjectGuardTargets::class] as $class) {
+        // Docs gates are declared in DocsTargets (since dev#217); missing it dropped docs:claims and docs:reference from the stats.
+        foreach ([VerificationPlanner::class, ProjectGuardTargets::class, DocsTargets::class] as $class) {
             $source = $this->read((new \ReflectionClass($class))->getFileName(), $class);
             preg_match_all("/\\bid:\\s*'((?:lint|docs):[a-z0-9:-]+)'/", $source, $ids);
             array_push($gates, ...$ids[1]);
