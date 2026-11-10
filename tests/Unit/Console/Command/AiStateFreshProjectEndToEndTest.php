@@ -40,6 +40,16 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
 {
     private string $root;
     private ?string $cwd = null;
+
+    /**
+     * What these variables held before the test, restored after it (review,
+     * dev#222): a session named by the caller that this temp project's registry
+     * does not know would refuse the task updates, and a trace id would tag them.
+     */
+    private const ISOLATED_ENV = ['SEMITEXA_STATE_WITH_FRAMEWORK', 'SEMITEXA_AI_TRACE_ID', 'SEMITEXA_AGENT_SESSION', 'SEMITEXA_AGENT_IMPLICIT'];
+
+    /** @var array<string, string|false> */
+    private array $savedEnv = [];
     private TaskStore $tasks;
     private EpicStore $epics;
     private TraceStore $traces;
@@ -52,8 +62,10 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
         $this->cwd = getcwd() ?: null;
         chdir($this->root);
         ProjectRoot::reset();
-        putenv('SEMITEXA_STATE_WITH_FRAMEWORK');
-        putenv('SEMITEXA_AI_TRACE_ID');
+        foreach (self::ISOLATED_ENV as $name) {
+            $this->savedEnv[$name] = getenv($name);
+            putenv($name);
+        }
         $this->tasks = new TaskStore();
         $this->epics = new EpicStore();
         PropertyInjector::inject($this->epics, new ArrayContainer([TaskStore::class => $this->tasks]));
@@ -64,6 +76,9 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->savedEnv as $name => $value) {
+            putenv($value === false ? $name : $name . '=' . $value);
+        }
         if ($this->cwd !== null) {
             chdir($this->cwd);
         }
