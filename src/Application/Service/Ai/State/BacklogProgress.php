@@ -16,6 +16,13 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  * Done means proven: a task closed with no proof stays done, is shown as
  * unproven and adds nothing to the percent.
  *
+ * Except what was closed before a proof could be asked for: a task done, with
+ * no proof, and last changed before the proof rule shipped is history. A
+ * receipt cannot be made after the fact, and receipts older than a few days are
+ * pruned, so such a task is neither proven nor owed: it is left out of the
+ * percent and only counted, "N closed before proof" (operator, 2026-11-10,
+ * tk-progress-unproven-history). Touched since, it is read like any other.
+ *
  * Zero tickets means two things: nobody looked, or someone looked and found
  * nothing. A fresh audit tells them apart, and is the one way a phase with no
  * tickets reads as anything but not measured. See {@see AuditRecord}.
@@ -39,8 +46,11 @@ final readonly class BacklogProgress
     private const FRAMEWORK_REFS = ['packages/', 'vendor/semitexa/', 'Semitexa\\'];
     private const PROJECT_REFS = ['src/', 'Semitexa\\Modules\\'];
 
+    /** When a closed task first needed a test to count (semitexa-dev 6f621fc). */
+    public const PROOF_RULE_SINCE = '2026-11-06T09:35:30+00:00';
+
     /**
-     * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}> $phases
+     * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int, before_proof: int}> $phases
      * @param array<string, AuditRecord> $audits the newest that speaks for each phase
      */
     private function __construct(
@@ -58,7 +68,7 @@ final readonly class BacklogProgress
      */
     public static function of(array $tasks, bool $withFramework, array $audits = [], ?\DateTimeImmutable $now = null): self
     {
-        $done = $unproven = $approved = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
+        $done = $unproven = $approved = $beforeProof = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
         $ideas = 0;
         $noPhase = 0;
         foreach ($tasks as $task) {
@@ -73,6 +83,10 @@ final readonly class BacklogProgress
             $phase = TaskFiling::phaseOf($task->phase, $task->recipe);
             if ($phase === null) {
                 $noPhase++;
+                continue;
+            }
+            if ($task->status === TaskStatus::DONE && $task->proof === null && self::closedBeforeProof($task)) {
+                $beforeProof[$phase->value]++;
                 continue;
             }
             $approved[$phase->value]++;
@@ -90,6 +104,7 @@ final readonly class BacklogProgress
                 'approved' => $total,
                 'open' => $total - $done[$phase] - $unproven[$phase],
                 'unproven' => $unproven[$phase],
+                'before_proof' => $beforeProof[$phase],
             ];
         }
 
@@ -105,6 +120,16 @@ final readonly class BacklogProgress
         }
 
         return new self($phases, $ideas, $noPhase, $withFramework, $newest, $now);
+    }
+
+    /** Last changed before the proof rule: an unreadable date is not history, it is read as now. */
+    private static function closedBeforeProof(Task $task): bool
+    {
+        try {
+            return new \DateTimeImmutable($task->updatedAt) < new \DateTimeImmutable(self::PROOF_RULE_SINCE);
+        } catch (\Exception) {
+            return false;
+        }
     }
 
     /** The option, from the command line or the project's .env. */
@@ -130,11 +155,14 @@ final readonly class BacklogProgress
         $parts = [];
         foreach ($this->phases as $phase => $p) {
             $parts[] = $phase . ' ' . match (true) {
-                $p['percent'] === null => $this->noTickets($phase),
+                // A phase whose every task is history still says how many: nothing approved is
+                // not nothing there (review, dev#219).
+                $p['percent'] === null => $this->noTickets($phase) . ($p['before_proof'] > 0 ? ', ' . $p['before_proof'] . ' closed before proof' : ''),
                 default => sprintf('%d%% (%s)', $p['percent'], implode(', ', array_filter([
                     $p['done'] . '/' . $p['approved'],
                     $p['open'] > 0 ? $p['open'] . ' open' : null,
                     $p['unproven'] > 0 ? $p['unproven'] . ' unproven' : null,
+                    $p['before_proof'] > 0 ? $p['before_proof'] . ' closed before proof' : null,
                 ]))),
             };
         }
