@@ -43,6 +43,15 @@ INFRA_FILES=(
     docker-compose.nats.yml
     docker-compose.ollama.yml
     docker-compose.worker.yml
+    # Every Dockerfile a compose file above builds. docker-compose.test.yml
+    # names the runner image semitexa/e2e-runner:<playwright>-axe<version>, and
+    # the rebuild below builds it from this file: with the compose file synced
+    # and this one not, the clone built a runner WITHOUT axe from its
+    # 2026-09-08 Dockerfile and tagged it with the axe tag. Image tags are the
+    # machine's, not the project's, so every release replaced the runner of
+    # every project here with one whose page checks and a11y specs cannot load
+    # (seen 05.11 and 10.11, tk-e2e-runner-image-tag-without-axe).
+    docker/e2e-runner/Dockerfile
 )
 
 changed=()
@@ -61,6 +70,7 @@ for file in "${INFRA_FILES[@]}"; do
         continue
     fi
 
+    mkdir -p "$(dirname "$target_file")"
     cp "$source_file" "$target_file"
     changed+=("$file")
 done
@@ -147,9 +157,23 @@ fi
 # current.
 IMAGE_MARKER="$RELEASE_ROOT/var/install/clone-image.sha256"
 
+# Every Dockerfile the images are built from, not the app's alone: with only
+# ./Dockerfile in the marker, a changed runner Dockerfile was copied in and the
+# rebuild skipped, so the runner image built without axe stayed (review,
+# semitexa-dev#220). A marker written before this list existed differs from
+# the new checksum, so the first run after it rebuilds once.
+BUILT_DOCKERFILES=(Dockerfile docker/e2e-runner/Dockerfile)
+
 dockerfile_sha() {
     [ -f "$RELEASE_ROOT/Dockerfile" ] || return 1
-    sha256sum "$RELEASE_ROOT/Dockerfile" | cut -d' ' -f1
+    local file
+    for file in "${BUILT_DOCKERFILES[@]}"; do
+        if [ -f "$RELEASE_ROOT/$file" ]; then
+            printf '%s  %s\n' "$(sha256sum "$RELEASE_ROOT/$file" | cut -d' ' -f1)" "$file"
+        else
+            printf 'absent  %s\n' "$file"
+        fi
+    done | sha256sum | cut -d' ' -f1
 }
 
 rebuild_clone_images() {
