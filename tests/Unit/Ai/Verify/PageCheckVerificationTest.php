@@ -227,22 +227,36 @@ final class PageCheckVerificationTest extends TestCase
     }
 
     /**
-     * The page is a route the change declares: the running server answering 404
-     * has not loaded it (tk-page-check-stale-route). A Guard run read the bare
-     * "HTTP 404" as a failure and restarted around every verify after it.
+     * 404 in both modes for a route declared in a file changed since the server
+     * started: the server is behind, not the page broken (tk-page-check-stale-route).
+     * A Guard run read the bare "HTTP 404" as a failure and restarted around every
+     * verify after it. Without that evidence a 404 stays a failure: an existing
+     * route that answers 404 is one (review, dev#226).
      */
     #[Test]
-    public function a_404_for_a_declared_route_is_a_server_that_has_not_loaded_it(): void
+    public function a_404_is_a_server_behind_only_when_the_route_changed_since_it_started(): void
     {
-        $this->seen('/guard', ['light' => [404, []], 'dark' => [404, []]]);
-        // Another error, or 404 in one mode only, is the page's own answer.
-        $this->seen('/half', ['light' => [404, []], 'dark' => [200, []]]);
+        is_dir($this->root . '/var/run') || mkdir($this->root . '/var/run', 0777, true);
+        touch($this->root . '/var/run/semitexa.pid', time() - 60);
+        $new = $this->root . '/NewPayload.php';
+        $old = $this->root . '/OldPayload.php';
+        touch($new, time());
+        touch($old, time() - 3600);
+        foreach (['/guard', '/old', '/half', '/gone'] as $p) {
+            $modes = $p === '/half' ? ['light' => [404, []], 'dark' => [0, []]] : ['light' => [404, []], 'dark' => [404, []]];
+            $this->seen($p, $modes);
+        }
 
-        $stale = $this->check('/guard', 'run-1');
+        $stale = $this->check('/guard', 'run-1', [], $new);
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $stale->status);
         self::assertStringContainsString('the server has not loaded it', (string) $stale->signal);
         self::assertStringContainsString('bin/semitexa server:restart app', (string) $stale->signal);
-        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/half', 'run-1')->status);
+        // Declared before the server started: it answers 404 as it is.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/old', 'run-1', [], $old)->status);
+        // One mode unreached: the 404 seen is reported, not explained away.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/half', 'run-1', [], $new)->status);
+        // No file to compare: no evidence.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/gone', 'run-1')->status);
     }
 
     #[Test]
@@ -365,9 +379,9 @@ final class PageCheckVerificationTest extends TestCase
     }
 
     /** @param list<string> $triggers the changed files that chose the page */
-    private function check(string $path, ?string $run, array $triggers = []): VerificationResult
+    private function check(string $path, ?string $run, array $triggers = [], string $declaredIn = ''): VerificationResult
     {
-        $target = new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path]);
+        $target = new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path, 'declared_in' => $declaredIn]);
 
         return (new PageCheckResult($this->root, $run))->check($target);
     }
