@@ -25,7 +25,7 @@ final class PageCheckTargets
 
     /**
      * @param list<ChangedFile> $changedFiles
-     * @param list<array{path: string, module: string}> $routes public parameterless GET routes, as discovered
+     * @param list<array{path: string, module: string, file?: string}> $routes public parameterless GET routes, as discovered
      *
      * @return list<VerificationTarget>
      */
@@ -37,6 +37,10 @@ final class PageCheckTargets
 
         /** @var array<string, list<string>> $pages path => the files that put it here */
         $pages = [];
+        $declaredIn = [];
+        foreach ($routes as $route) {
+            $declaredIn[$route['path']] = $route['file'] ?? '';
+        }
         foreach ($changedFiles as $file) {
             if ($file->status === ChangedFile::STATUS_DELETED || !in_array($file->kind, [ChangedFile::KIND_TEMPLATE, ChangedFile::KIND_STYLESHEET], true)) {
                 continue;
@@ -53,7 +57,7 @@ final class PageCheckTargets
                 id: "page:{$path}",
                 reason: 'a changed template or stylesheet shows here — opened in light and dark in the e2e-runner, against the running app',
                 triggeredBy: array_values(array_unique($files)),
-                commandInput: ['path' => (string) $path],
+                commandInput: ['path' => (string) $path, 'declared_in' => $declaredIn[$path] ?? ''],
             );
         }
 
@@ -61,7 +65,7 @@ final class PageCheckTargets
     }
 
     /**
-     * @param list<array{path: string, module: string}> $routes
+     * @param list<array{path: string, module: string, file?: string}> $routes
      *
      * @return list<string>
      */

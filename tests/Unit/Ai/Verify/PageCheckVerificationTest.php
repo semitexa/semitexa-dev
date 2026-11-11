@@ -226,6 +226,51 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('could not be reached', (string) $unreachable->signal);
     }
 
+    /**
+     * 404 in both modes for a route declared in a file changed since the server
+     * started: the server is behind, not the page broken (tk-page-check-stale-route).
+     * A Guard run read the bare "HTTP 404" as a failure and restarted around every
+     * verify after it. Without that evidence a 404 stays a failure: an existing
+     * route that answers 404 is one (review, dev#226).
+     */
+    #[Test]
+    public function a_404_is_a_server_behind_only_when_the_route_changed_since_it_started(): void
+    {
+        is_dir($this->root . '/var/run') || mkdir($this->root . '/var/run', 0777, true);
+        touch($this->root . '/var/run/semitexa.pid', time() - 60);
+        $new = $this->root . '/NewPayload.php';
+        $old = $this->root . '/OldPayload.php';
+        touch($new, time());
+        touch($old, time() - 3600);
+        foreach (['/guard', '/old', '/half', '/gone'] as $p) {
+            $modes = $p === '/half' ? ['light' => [404, []], 'dark' => [0, []]] : ['light' => [404, []], 'dark' => [404, []]];
+            $this->seen($p, $modes);
+        }
+
+        $stale = $this->check('/guard', 'run-1', [], $new);
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $stale->status);
+        // New or edited: the server answers from the file as it was at its start.
+        self::assertStringContainsString('the server answers from the code before that change', (string) $stale->signal);
+        self::assertStringContainsString('bin/semitexa server:restart app', (string) $stale->signal);
+        // Declared before the server started: it answers 404 as it is.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/old', 'run-1', [], $old)->status);
+        // One mode unreached: the 404 seen is reported, not explained away.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/half', 'run-1', [], $new)->status);
+        // No file to compare: no evidence.
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/gone', 'run-1')->status);
+    }
+
+    #[Test]
+    public function the_restart_note_does_not_say_a_restart_could_change_nothing_when_pages_were_opened(): void
+    {
+        $report = new \Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer();
+
+        $withPages = $report->restartAdvice([], true)['note'];
+        self::assertStringNotContainsString('none would have changed this result', $withPages);
+        self::assertStringContainsString('the page checks: they open the running server', $withPages);
+        self::assertStringContainsString('none would have changed this result', $report->restartAdvice([])['note']);
+    }
+
     #[Test]
     public function a_page_seen_in_one_mode_only_is_not_a_pass(): void
     {
@@ -335,9 +380,9 @@ final class PageCheckVerificationTest extends TestCase
     }
 
     /** @param list<string> $triggers the changed files that chose the page */
-    private function check(string $path, ?string $run, array $triggers = []): VerificationResult
+    private function check(string $path, ?string $run, array $triggers = [], string $declaredIn = ''): VerificationResult
     {
-        $target = new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path]);
+        $target = new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path, 'declared_in' => $declaredIn]);
 
         return (new PageCheckResult($this->root, $run))->check($target);
     }

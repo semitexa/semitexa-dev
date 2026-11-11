@@ -20,7 +20,7 @@ final class PageRoutes
 {
     private const ACTIONS = '#/(?:log-?out|sign-?out|log-?in|sign-?in|start|callback|submit|delete|remove|unsubscribe|confirm|verify|reset|export|download)$#i';
 
-    /** @return list<array{path: string, module: string}> */
+    /** @return list<array{path: string, module: string, file: string}> */
     public static function of(?AttributeDiscovery $discovery, ?ModuleRegistry $modules): array
     {
         if ($discovery === null) {
@@ -30,7 +30,14 @@ final class PageRoutes
         $routes = [];
         foreach ($discovery->getRoutes() as $route) {
             if (self::isPage($route)) {
-                $routes[] = ['path' => (string) $route['path'], 'module' => $modules?->getModuleNameForClass((string) ($route['class'] ?? '')) ?? 'project'];
+                $class = (string) ($route['class'] ?? '');
+                $routes[] = [
+                    'path' => (string) $route['path'],
+                    'module' => $modules?->getModuleNameForClass($class) ?? 'project',
+                    // Where the route is declared: a page check tells a server that has
+                    // not loaded it yet from a route that answers 404 (tk-page-check-stale-route).
+                    'file' => class_exists($class) ? (string) (new \ReflectionClass($class))->getFileName() : '',
+                ];
             }
         }
 

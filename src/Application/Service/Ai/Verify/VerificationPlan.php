@@ -27,4 +27,16 @@ final readonly class VerificationPlan
         public array $targets,
         public array $expansions = [],
     ) {}
+
+    /** Whether it opens pages of the running server: the restart note depends on it (tk-page-check-stale-route). */
+    public function opensPages(): bool
+    {
+        foreach ($this->targets as $target) {
+            if ($target->type === VerificationTarget::TYPE_PAGE) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

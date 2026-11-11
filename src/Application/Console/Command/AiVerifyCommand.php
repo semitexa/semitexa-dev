@@ -574,7 +574,7 @@ final class AiVerifyCommand extends BaseCommand
             'counts'          => $report->countByStatus($results),
             'impact'          => $impact?->toSummary(),
             'next_command'    => $this->buildNextCommands($verdict, $results),
-            'restart'         => $report->restartAdvice($plan->changedFiles),
+            'restart'         => $report->restartAdvice($plan->changedFiles, $plan->opensPages()),
         ] + UnselectedChanges::annotate(CoverageGap::of($plan, $results, $this->getProjectRoot())->toArray(), $unselected);
     }
 
@@ -729,7 +729,7 @@ final class AiVerifyCommand extends BaseCommand
         // it. An unstated assumption is not fixed by being wrong somewhere the
         // reader does not look.
         $output->writeln((string) json_encode(
-            ['kind' => 'restart'] + $report->restartAdvice($plan->changedFiles),
+            ['kind' => 'restart'] + $report->restartAdvice($plan->changedFiles, $plan->opensPages()),
             JSON_UNESCAPED_SLASHES,
         ), OutputInterface::OUTPUT_RAW);
 

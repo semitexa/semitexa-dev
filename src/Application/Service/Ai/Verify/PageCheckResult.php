@@ -95,6 +95,23 @@ final readonly class PageCheckResult
             }
         }
 
+        // 404 in both modes for a route whose declaring file is newer than the
+        // running server: its workers cannot have loaded it, so the page is not
+        // broken, the server is behind (tk-page-check-stale-route; a Guard run
+        // read "HTTP 404" as its own bug). Without that evidence a 404 stays the
+        // failure it may be: an existing route that now answers 404 is one
+        // (review, dev#226).
+        $notFound = 0;
+        foreach (self::MODES as $mode) {
+            $notFound += (int) ((($seen['modes'][$mode] ?? null)['status'] ?? null) === 404);
+        }
+        if ($notFound === count(self::MODES) && $this->declaredSinceServerStart((string) ($target->commandInput['declared_in'] ?? ''))) {
+            // New or edited, the server answers from that file as it was when it
+            // started: its answer says nothing about this change (review, dev#226).
+            return self::notRun($target, "{$path} answered 404 from the running server, but the file that declares the route changed after it started: "
+                . 'the server answers from the code before that change, not this one. Restart it (bin/semitexa server:restart app) and verify again');
+        }
+
         if ($missing !== []) {
             // A finding already seen is a failure, whatever the other mode could not show (review dev#216).
             return $found !== []
@@ -129,6 +146,23 @@ final readonly class PageCheckResult
             exitCode: 1,
             signal:   SignalText::compress("{$path} — " . implode('; ', array_slice($found, 0, 6)) . (count($found) > 6 ? sprintf('; and %d more', count($found) - 6) : '')),
         );
+    }
+
+    /** Whether $file changed after the running server started (its pid file is written at start). */
+    private function declaredSinceServerStart(string $file): bool
+    {
+        $declared = $file !== '' ? @filemtime($file) : false;
+        if ($declared === false) {
+            return false;
+        }
+        foreach (['var/run/semitexa.pid', 'var/swoole.pid'] as $pid) {
+            $started = @filemtime($this->projectRoot . '/' . $pid);
+            if ($started !== false) {
+                return $declared > $started;
+            }
+        }
+
+        return false;
     }
 
     /**
