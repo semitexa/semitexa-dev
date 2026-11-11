@@ -27,10 +27,12 @@ final class QualityHtmlRenderer
         try {
             $baseline = $this->json($projectRoot . '/' . QualityLedger::BASELINE);
             $next = (new QualityAdvisor($projectRoot))->targets(5);
+            // Inside the try: a broken package record is shown as the error it is (review, dev#235).
+            $metrics = is_array($baseline['metrics'] ?? null) ? PackageQualityRecord::overlay($projectRoot, $baseline['metrics']) : [];
+            $packageAccepts = PackageQualityRecord::accepted($projectRoot);
         } catch (\RuntimeException $e) {
             return $this->page('<p class="empty">' . $this->e($e->getMessage()) . '</p>');
         }
-        $metrics = is_array($baseline['metrics'] ?? null) ? PackageQualityRecord::overlay($projectRoot, $baseline['metrics']) : [];
         if ($metrics === []) {
             return $this->page('<p class="empty">No quality ledger in this project yet. Run <code>bin/semitexa ai:quality record</code> to start one.</p>');
         }
@@ -38,7 +40,7 @@ final class QualityHtmlRenderer
         $history = $this->history($projectRoot . '/' . QualityLedger::HISTORY);
         $deliberate = is_array($baseline['deliberate'] ?? null) ? $baseline['deliberate'] : [];
         // A package-only accept keeps its reason in the package record (review, dev#235).
-        $deliberate = array_merge($deliberate, PackageQualityRecord::accepted($projectRoot));
+        $deliberate = array_merge($deliberate, $packageAccepts);
         usort($deliberate, static fn (mixed $a, mixed $b): int => strcmp(is_array($a) ? (string) ($a['at'] ?? '') : '', is_array($b) ? (string) ($b['at'] ?? '') : ''));
 
         $body = '<header><h1>Quality ledger</h1><p class="lede">Numbers that may only go down. '

@@ -144,6 +144,16 @@ final class PackageQualityRecordTest extends TestCase
         self::assertStringContainsString('the os test skips its MySQL half without MySQL', $html);
     }
 
+    #[Test]
+    public function a_broken_record_shows_in_the_report_instead_of_crashing_it(): void
+    {
+        $this->reading = ['semitexa-os' => 1];
+        $this->ledger()->record();
+        file_put_contents(PackageQualityRecord::path($this->root, 'semitexa-os'), '{not json');
+
+        self::assertStringContainsString('is not a readable package quality record', (new QualityHtmlRenderer())->render($this->root));
+    }
+
     private function ledger(): QualityLedger
     {
         $metric = new class ($this) implements QualityMetricInterface {
