@@ -53,3 +53,5 @@
 {"at":"2026-11-07T20:26:04+00:00","metric":"tests.skip-calls","total":88,"event":"accept"}
 {"at":"2026-11-11T12:55:45+00:00","metric":"tests.skip-calls","total":89,"event":"accept"}
 {"at":"2026-11-11T15:21:06+00:00","metric":"tests.skip-calls","total":90,"event":"accept"}
+{"at":"2026-11-11T22:44:06+00:00","metric":"requests.query-shapes","total":52,"event":"accept"}
+{"at":"2026-11-11T22:44:23+00:00","metric":"requests.repeated-statements","total":0,"event":"record"}

@@ -14,59 +14,42 @@
             "blind": "routes with path parameters or behind authentication beyond their refusal, POST flows, repetition that differs only in bindings (an N+1 over distinct ids), and redacted bindings that differ in value but mask the same"
         },
         "requests.query-shapes": {
-            "total": 70,
+            "total": 52,
             "breakdown": {
                 "GET /demo/api/active-version": 3,
+                "GET /demo/api/rest-api": 1,
                 "GET /demo/api/schema-discovery": 3,
-                "GET /demo/api/structured-errors": 1,
                 "GET /demo/api/sunset-version": 3,
                 "GET /demo/api/v1/products": 3,
-                "GET /demo/cli/orm-console": 1,
                 "GET /demo/data/filtering": 1,
-                "GET /demo/data/pagination": 3,
+                "GET /demo/data/pagination": 2,
                 "GET /demo/data/products": 1,
                 "GET /demo/data/query": 1,
                 "GET /demo/data/relations": 5,
-                "GET /demo/data/schema-sync": 1,
                 "GET /demo/events/arena": 1,
-                "GET /demo/events/sse": 1,
-                "GET /demo/get-started/beyond-controllers": 1,
-                "GET /demo/get-started/installation": 1,
                 "GET /demo/platform/tenancy-isolation": 2,
-                "GET /demo/project-graph/overview": 1,
-                "GET /demo/rendering/component-scripts": 1,
                 "GET /demo/rendering/reactive-ai": 2,
                 "GET /demo/rendering/reactive-analytics": 1,
                 "GET /demo/rendering/reactive-import": 1,
                 "GET /demo/rendering/reactive-report": 1,
-                "GET /demo/routing/content-negotiation": 1,
                 "GET /graphql-demo/articles": 1,
                 "GET /install-demo": 1,
-                "GET /os/login": 1,
-                "GET /os/webapps": 1,
                 "GET /playground": 2,
-                "GET /playground/graphql": 1,
-                "GET /playground/orm": 8,
+                "GET /playground/orm": 7,
                 "GET /replication-demo": 1,
                 "GET /ui-playground/admin/demo-submissions": 1,
                 "GET /ui-playground/admin/demo-submissions/feed": 1,
-                "GET /ui-playground/admin/leads": 2,
+                "GET /ui-playground/admin/leads": 1,
                 "GET /ui-playground/admin/leads/feed": 2,
                 "GET /ui-playground/admin/pings/feed": 2,
-                "GET /ui-playground/components/blocks": 1,
-                "GET /ui-playground/components/calendar": 1,
-                "GET /ui-playground/components/menus": 1,
-                "GET /ui-playground/foundation/colors": 1,
                 "GET /ui-playground/primitives/buttons": 2
             },
             "sees": "per GET route without path parameters: distinct SQL shapes (whitespace collapsed, IN lists folded) in one traced request",
             "blind": "how expensive each shape is, and how often it runs — a slow shape counts as one, and so does a shape run a hundred times"
         },
         "requests.repeated-statements": {
-            "total": 2,
-            "breakdown": {
-                "GET /demo/rendering/reactive-analytics": 2
-            },
+            "total": 0,
+            "breakdown": [],
             "sees": "per GET route without path parameters: re-executions of one SQL shape with different bindings in a single request (the N+1 pattern), read from a real traced request",
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
@@ -1688,6 +1671,95 @@
                 }
             },
             "reason": "BestEffortWritesJoinTransactionTest (semitexa-os) skips without MySQL: the transaction escape shows only on a second pooled connection; the rethrow rule runs on sqlite without a skip (tk-getadapter-writes-escape-transactions)"
+        },
+        {
+            "at": "2026-11-11",
+            "metric": "requests.query-shapes",
+            "from": 70,
+            "to": 52,
+            "keys": {
+                "GET /demo/api/rest-api": {
+                    "from": 0,
+                    "to": 1
+                },
+                "GET /demo/api/structured-errors": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/cli/orm-console": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/data/pagination": {
+                    "from": 3,
+                    "to": 2
+                },
+                "GET /demo/data/schema-sync": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/events/sse": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/get-started/beyond-controllers": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/get-started/installation": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/project-graph/overview": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/rendering/component-scripts": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /demo/routing/content-negotiation": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /os/login": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /os/webapps": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /playground/graphql": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /playground/orm": {
+                    "from": 8,
+                    "to": 7
+                },
+                "GET /ui-playground/admin/leads": {
+                    "from": 2,
+                    "to": 1
+                },
+                "GET /ui-playground/components/blocks": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /ui-playground/components/calendar": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /ui-playground/components/menus": {
+                    "from": 1,
+                    "to": 0
+                },
+                "GET /ui-playground/foundation/colors": {
+                    "from": 1,
+                    "to": 0
+                }
+            },
+            "reason": "GET /demo/api/rest-api reads the showcase product from demo_products (one shape) since semitexa-demo 8356b72 (2026-10-16) linked the REST showcase to a product the demo tenant has; the 0 was locked on 2026-10-07, before that page queried anything. 19 other routes dropped one shape each (per-worker demo caches), so the total falls 70 -> 52"
         }
     ]
 }
