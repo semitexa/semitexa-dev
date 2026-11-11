@@ -44,6 +44,10 @@ final class RatchetCountGuardTest extends TestCase
 
         self::assertContains($id, $ids(new ChangedFile("{$suite}/NewRatchetTest.php", ChangedFile::KIND_PHP_OTHER, ChangedFile::STATUS_ADDED)));
         self::assertContains($id, $ids(new ChangedFile("{$suite}/OldRatchetTest.php", ChangedFile::KIND_PHP_OTHER, ChangedFile::STATUS_DELETED)));
-        self::assertNotContains($id, $ids(new ChangedFile('packages/semitexa-dev/src/Foo.php', ChangedFile::KIND_PHP_OTHER)), 'nothing else pays for it');
+        // An ordinary change still gets its plan, the ratchet suite included,
+        // so an empty plan cannot pass this as "no catalog target" (review, dev#236).
+        $other = $ids(new ChangedFile('packages/semitexa-dev/src/Foo.php', ChangedFile::KIND_PHP_OTHER));
+        self::assertContains('phpunit:' . $suite, $other);
+        self::assertNotContains($id, $other, 'nothing else pays for it');
     }
 }
