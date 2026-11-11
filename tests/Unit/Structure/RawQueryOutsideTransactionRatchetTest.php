@@ -35,20 +35,43 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
         'packages/semitexa-dev/src/Application/Service/Trace/TraceGraphReader.php' => [1, 'sqlite_master read on the trace database, never in a transaction'],
         'packages/semitexa-os/src/Application/Service/ProcessRegistry.php' => [1, 'retention DELETE; to move'],
         'packages/semitexa-os/src/Application/Service/ConversationSummaryStore.php' => [2, 'save/clear writes; to move'],
-        'packages/semitexa-platform-settings/src/Application/Service/SettingsStore.php' => [3, 'moved to getQueryAdapter() in platform-settings#22; listed until a checkout at master has it'],
         'packages/semitexa-tasks/src/Application/Service/TaskStore.php' => [1, 'claimComplete() guarded UPDATE; to move or justify'],
         'packages/semitexa-webhooks/src/Auth/MySqlWebhookReplayStore.php' => [7, 'replay keys: whether a consumed key should survive the handler\'s rollback is to decide'],
         'src/modules/ReplicationDemo/src/Application/Service/DemoNoteStore.php' => [1, 'read in the replication demo; to check'],
+        // An adapter kept in a variable, used later (review, dev#233). None of these runs inside a request's transaction.
+        'packages/semitexa-ledger/src/Application/Service/LedgerBootstrap.php' => [1, 'ownership adapter taken at bootstrap'],
+        'packages/semitexa-os/src/Application/Service/UpdatesReport.php' => [1, 'reads the update report on the default connection; to check'],
+        'packages/semitexa-testing/src/Traits/RefreshesTables.php' => [1, 'test support: empties tables between tests'],
+        'packages/semitexa-update/src/Application/Service/UpdateRunnerFactory.php' => [2, 'the update runner owns its connection'],
+        'packages/semitexa-workflow/src/Application/Console/Command/WorkflowBackfillTenantKeyCommand.php' => [1, 'console backfill, no request transaction'],
+        'src/modules/UiPlayground/src/Application/Console/Command/SeedLeadsCommand.php' => [1, 'console seeder'],
     ];
 
-    private const PATTERN = '/getAdapter\(\)\s*->\s*(?:execute|query)\(/';
+    /**
+     * The chained call, whitespace allowed wherever PHP allows it, and an
+     * adapter kept in a variable for later (review, dev#233).
+     */
+    private const PATTERNS = [
+        '/getAdapter\s*\(\s*\)\s*->\s*(?:execute|query)\s*\(/',
+        '/\$\w+\s*=\s*[^;=]*getAdapter\s*\(\s*\)\s*;/',
+    ];
+
+    private static function sites(string $source): int
+    {
+        $sites = 0;
+        foreach (self::PATTERNS as $pattern) {
+            $sites += (int) preg_match_all($pattern, $source);
+        }
+
+        return $sites;
+    }
 
     #[Test]
     public function no_new_raw_query_runs_outside_the_callers_transaction(): void
     {
         $grown = [];
         foreach ($this->productionFiles() as $path => $source) {
-            $sites = preg_match_all(self::PATTERN, $source);
+            $sites = self::sites($source);
             if ($sites > (self::KNOWN[$path][0] ?? 0)) {
                 $grown[] = sprintf('%s: %d (known %d)', $path, $sites, self::KNOWN[$path][0] ?? 0);
             }
@@ -72,7 +95,7 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
 
         $seen = 0;
         foreach (array_keys(self::KNOWN) as $path) {
-            $seen += preg_match_all(self::PATTERN, $files[$path] ?? '');
+            $seen += self::sites($files[$path] ?? '');
         }
         self::assertGreaterThan(0, $seen, 'none of the known sites matched, so the pattern is not matching');
     }
@@ -103,7 +126,10 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
                 if (!preg_match('#(^packages/[a-z0-9-]+/src/|^src/modules/[A-Za-z0-9]+/src/)#', $path) || str_starts_with($path, 'packages/semitexa-orm/')) {
                     continue;
                 }
-                $out[$path] = (string) file_get_contents($file->getPathname());
+                // Unreadable is a failure: read as empty, it would count as clean (review, dev#233).
+                $source = file_get_contents($file->getPathname());
+                self::assertIsString($source, "cannot read {$path}");
+                $out[$path] = $source;
             }
         }
 
