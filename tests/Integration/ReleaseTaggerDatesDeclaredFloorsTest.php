@@ -210,7 +210,9 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         ]);
         $dir = $this->dir('semitexa-docs');
         mkdir($dir . '/docs/en/reference', 0777, true);
-        file_put_contents($dir . '/docs/en/reference/attributes-core.md', "---\r\ntitle: x\r\nverified_against: next\r\n---\r\nbody\r\n");
+        // An example in the body says next too: only the front matter's field is the stamp (review, semitexa-dev#231).
+        file_put_contents($dir . '/docs/en/reference/attributes-core.md', "---\r\ntitle: x\r\nverified_against: next\r\n---\r\nbody\r\n```\r\nverified_against: next\r\n```\r\n");
+        file_put_contents($dir . '/docs/en/reference/guide.md', "---\ntitle: g\nverified_against: 2026.09.01.0000\n---\n```\nverified_against: next\n```\n");
         $this->git($dir, 'add -A');
         $this->git($dir, 'commit -q -m pages');
         $this->git($dir, 'push -q origin develop');
@@ -227,6 +229,9 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         // shell_exec, not exec: exec trims each line's trailing whitespace, \r included.
         $page = (string) shell_exec('git -C ' . escapeshellarg($origin) . ' show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-core.md'));
         self::assertStringContainsString('verified_against: ' . self::VERSION . "\r\n", $page, 'dated, its CRLF kept');
+        self::assertStringContainsString("```\r\nverified_against: next\r\n```", $page, 'the example in the body is left as written');
+        $guide = (string) shell_exec('git -C ' . escapeshellarg($origin) . ' show ' . escapeshellarg(self::VERSION . ':docs/en/reference/guide.md'));
+        self::assertStringContainsString("verified_against: 2026.09.01.0000\n", $guide, 'a page whose front matter is dated is not a next page');
     }
 
     /** And develop has it too — the half the old master-only commit left behind. */

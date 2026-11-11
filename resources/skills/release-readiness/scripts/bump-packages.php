@@ -939,12 +939,41 @@ function nextStampedPagesAt(string $packageDir, string $revision): array
     $pages = [];
     foreach (explode("\n", trim($output)) as $line) {
         $path = (string) preg_replace('/^' . preg_quote($revision, '/') . ':/', '', trim($line));
-        if ($path !== '') {
+        if ($path === '') {
+            continue;
+        }
+        // The grep finds the line anywhere; only the front matter's field is
+        // the stamp, not an example in the body (review, semitexa-dev#231).
+        $shown = runShellCommand(sprintf('git -C %s show %s 2>&1', escapeshellarg($packageDir), escapeshellarg($revision . ':' . $path)));
+        if ($shown['exit_code'] !== 0) {
+            fwrite(STDERR, "Cannot read {$path} at {$revision} in {$packageDir}: " . (is_string($shown['output'] ?? null) ? $shown['output'] : '') . "\n");
+            exit(1);
+        }
+        if (dateNextFrontMatter(is_string($shown['output'] ?? null) ? $shown['output'] : '', 'x') !== null) {
             $pages[] = $path;
         }
     }
 
     return $pages;
+}
+
+/**
+ * The page with its front matter's `verified_against: next` dated, the line
+ * ending kept; null when the front matter (the block between the first two
+ * `---` lines) carries no such field. Nothing outside it is touched.
+ */
+function dateNextFrontMatter(string $page, string $releaseVersion): ?string
+{
+    if (preg_match('/\A(---\r?\n)(.*?)(\r?\n---\r?(?:\n|\z))/s', $page, $m, PREG_OFFSET_CAPTURE) !== 1) {
+        return null;
+    }
+    $front = $m[2][0];
+    $dated = preg_replace('/^verified_against: next(\r?)$/m', 'verified_against: ' . $releaseVersion . '$1', $front, 1, $count);
+    if (!is_string($dated) || $count !== 1) {
+        return null;
+    }
+
+    return $m[1][0] . $dated . substr($page, $m[3][1]);
 }
 
 /**
@@ -1040,8 +1069,8 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
                 foreach ($pages as $page) {
                     $path = $packageDir . '/' . $page;
                     $current = @file_get_contents($path);
-                    // The line ending is kept, CRLF included.
-                    $dated = is_string($current) ? preg_replace('/^verified_against: next(\r?)$/m', 'verified_against: ' . $releaseVersion . '$1', $current, 1) : null;
+                    // The front matter's field only; the line ending is kept, CRLF included.
+                    $dated = is_string($current) ? dateNextFrontMatter($current, $releaseVersion) : null;
                     if (!is_string($dated) || @file_put_contents($path, $dated) !== strlen($dated)) {
                         fwrite(STDERR, 'Cannot date the reference page ' . $page . ' in ' . $packageDir . ".\n");
                         exit(1);
