@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Dev\Application\Service\Ai\Recipe\CapabilitySearch;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
@@ -66,7 +67,7 @@ final class AiTaskCommand extends BaseCommand
                 'risk_hint'        => $result->recipe->default_risk,
                 'generator_chain'  => $result->recipe->generator_chain,
                 'next'             => $this->buildNextHint($result),
-                'next_command'     => $this->buildNextCommands($result),
+                'next_command'     => $this->buildNextCommands($result, $description),
                 'alternatives'     => $result->alternatives,
             ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
             $this->appendToTrace($input, $output, $result, $description);
@@ -90,6 +91,10 @@ final class AiTaskCommand extends BaseCommand
         }
         $io->section('Next');
         $io->writeln('  ' . $this->buildNextHint($result));
+        // The commands the hint refers to, here too (review, dev#229).
+        foreach ($result->recipe->id === 'unknown_task' ? $this->buildNextCommands($result, $description) : [] as $next) {
+            $io->writeln('  → bin/semitexa ' . $next['cmd'] . ' ' . implode(' ', $next['args']) . '   # ' . $next['why']);
+        }
         if ($result->alternatives !== []) {
             $io->section('Alternatives');
             foreach ($result->alternatives as $alt) {
@@ -174,6 +179,11 @@ final class AiTaskCommand extends BaseCommand
             'action' => 'invoke',
             'hint'   => $this->buildNextHint($result),
         ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+
+        // The default non-interactive mode: the commands the hint refers to, one record each (review, dev#229).
+        foreach ($result->recipe->id === 'unknown_task' ? $this->buildNextCommands($result, $description) : [] as $next) {
+            $output->writeln(json_encode(['kind' => 'next_command'] + $next, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+        }
     }
 
     /**
@@ -182,7 +192,7 @@ final class AiTaskCommand extends BaseCommand
      *
      * @return list<array{cmd: string, args: list<string>, why: string}>
      */
-    private function buildNextCommands($result): array
+    private function buildNextCommands($result, string $description = ''): array
     {
         $id = $result->recipe->id;
 
@@ -201,11 +211,17 @@ final class AiTaskCommand extends BaseCommand
         }
 
         if ($id === 'unknown_task') {
-            return [
-                ['cmd' => 'ai:epic', 'args' => ['start', '--id=ep-<slug>', '--title="..."', '--goal="..."'], 'why' => 'decompose unfamiliar work into an epic first'],
-                ['cmd' => 'ai:ask', 'args' => ['project', '--json'], 'why' => 'structural overview before editing'],
-                ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--json'], 'why' => 'verify after every edit'],
-            ];
+            // What the framework already has for it, before anything is built
+            // by hand: an epic for "send a mail" was the wrong first step
+            // (tk-task-misses-everyday-tasks).
+            $next = [];
+            foreach (CapabilitySearch::hits($description, CapabilitySearch::catalog($this->getProjectRoot())) as $hit) {
+                $next[] = ['cmd' => 'ai:ask', 'args' => ['mechanisms', '--id=' . $hit['id'], '--json'], 'why' => $hit['summary'] . ' (matched: ' . implode(', ', $hit['words']) . ')'];
+            }
+            $next[] = ['cmd' => 'ai:ask', 'args' => ['api', '--search=<a class or method name from the task>', '--json'], 'why' => 'how a framework class is called, instead of reading vendor/'];
+            $next[] = ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--json'], 'why' => 'verify after every edit'];
+
+            return $next;
         }
 
         if ($result->recipe->generator_chain === []) {
@@ -278,7 +294,7 @@ final class AiTaskCommand extends BaseCommand
         }
 
         if ($id === 'unknown_task') {
-            return 'no match — decompose via `ai:epic start` + `ai:work start`, explore with `ai:ask project|module|route`, edit with Edit/Write, verify with `ai:verify`. The recipe field is a placeholder and should not drive your next step.';
+            return 'no recipe matched — the mechanisms in next_command are what the framework already has for these words: read one (ai:ask mechanisms --id=<id>) before building anything by hand, then edit and verify with `ai:verify`. The recipe field is a placeholder and should not drive your next step.';
         }
 
         if ($result->recipe->generator_chain === []) {
