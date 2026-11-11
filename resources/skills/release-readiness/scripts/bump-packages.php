@@ -887,6 +887,66 @@ function changelogAt(string $packageDir, string $revision): ?string
 }
 
 /**
+ * The reference pages each candidate's origin/master stamps `verified_against:
+ * next`, keyed by candidate index (tk-reference-stamp-ahead-of-release).
+ *
+ * docs:reference:generate stamps `next` on a page it writes from a source
+ * checkout, since what it documents is newer than the last release. The
+ * release names that release, the way it dates a declared floor.
+ *
+ * @param list<array<string, mixed>> $candidates
+ * @return array<int, list<string>> repo-relative paths
+ */
+function nextStampedPagesOf(array $candidates, string $revision = 'origin/master'): array
+{
+    $pages = [];
+    foreach ($candidates as $index => $candidate) {
+        $found = is_string($candidate['package_dir'] ?? null) ? nextStampedPagesAt($candidate['package_dir'], $revision) : [];
+        if ($found !== []) {
+            $pages[$index] = $found;
+        }
+    }
+
+    return $pages;
+}
+
+/**
+ * The .md files under docs/ at a revision whose front matter says
+ * `verified_against: next`. A failed search stops the run: a gate that cannot
+ * look must not pass.
+ *
+ * @return list<string>
+ */
+function nextStampedPagesAt(string $packageDir, string $revision): array
+{
+    $result = runShellCommand(sprintf(
+        'git -C %s grep -l -E %s %s -- %s 2>&1',
+        escapeshellarg($packageDir),
+        escapeshellarg('^verified_against: next$'),
+        escapeshellarg($revision),
+        escapeshellarg('docs/*.md'),
+    ));
+    $output = is_string($result['output'] ?? null) ? $result['output'] : '';
+    // git grep exits 1 when nothing matches, which is the common answer.
+    if ($result['exit_code'] === 1 && $output === '') {
+        return [];
+    }
+    if ($result['exit_code'] !== 0) {
+        fwrite(STDERR, "Cannot search {$revision} in {$packageDir} for undated reference stamps: {$output}\n");
+        exit(1);
+    }
+    $pages = [];
+    foreach (explode("\n", trim($output)) as $line) {
+        $path = (string) preg_replace('/^' . preg_quote($revision, '/') . ':/', '', trim($line));
+        if ($path !== '') {
+            $pages[] = $path;
+        }
+    }
+
+    return $pages;
+}
+
+/**
  * Date every declared floor into the tree its tag will be cut from, before any
  * tag exists.
  *
@@ -917,12 +977,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
 {
     $undated = undatedFloorsOf($candidates);
     $unstamped = unstampedChangelogsOf($candidates);
-    if ($undated === [] && $unstamped === []) {
+    $nextPages = nextStampedPagesOf($candidates);
+    if ($undated === [] && $unstamped === [] && $nextPages === []) {
         return $candidates;
     }
 
     $releaseSet = array_values(array_map(static fn (array $c): string => $c['name'], $candidates));
-    $toCommit = array_keys($undated + $unstamped);
+    $toCommit = array_keys($undated + $unstamped + $nextPages);
     sort($toCommit);
 
     $refusals = [];
@@ -961,17 +1022,30 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         $candidate = $candidates[$index];
         $dependencies = $undated[$index] ?? [];
         $stamp = isset($unstamped[$index]);
+        $pages = $nextPages[$index] ?? [];
         $message = match (true) {
             $dependencies !== [] && $stamp => 'Date the declared internal floors and stamp the changelog at ' . $releaseVersion,
             $stamp => 'Stamp the changelog at ' . $releaseVersion,
-            default => 'Date the declared internal floors at ' . $releaseVersion,
+            $dependencies !== [] => 'Date the declared internal floors at ' . $releaseVersion,
+            default => 'Date the reference pages at ' . $releaseVersion,
         };
 
         $candidates[$index]['tag_target'] = commitReleaseManifest(
             $candidate['package_dir'],
             $candidate['name'],
-            static function () use ($candidate, $dependencies, $stamp, $releaseVersion): array {
+            static function () use ($candidate, $dependencies, $stamp, $pages, $releaseVersion): array {
                 $paths = [];
+                $packageDir = is_string($candidate['package_dir'] ?? null) ? $candidate['package_dir'] : '';
+                foreach ($pages as $page) {
+                    $path = $packageDir . '/' . $page;
+                    $current = @file_get_contents($path);
+                    $dated = is_string($current) ? preg_replace('/^verified_against: next$/m', 'verified_against: ' . $releaseVersion, $current, 1) : null;
+                    if (!is_string($dated) || @file_put_contents($path, $dated) !== strlen($dated)) {
+                        fwrite(STDERR, 'Cannot date the reference page ' . $page . ' in ' . $packageDir . ".\n");
+                        exit(1);
+                    }
+                    $paths[] = $page;
+                }
                 foreach ($dependencies as $dependency) {
                     writeResolvedFloor($candidate['composer_path'], $dependency, $releaseVersion);
                     $paths = ['composer.json'];
@@ -1009,6 +1083,9 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         if ($stamp) {
             echo "  {$candidate['name']}: CHANGELOG ## Unreleased → ## {$releaseVersion}\n";
         }
+        if ($pages !== []) {
+            echo "  {$candidate['name']}: " . count($pages) . " reference page(s) verified_against: next → {$releaseVersion}\n";
+        }
     }
 
     // A floor that is not in the tree the tag names is not in the release, and
@@ -1020,6 +1097,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
             fwrite(
                 STDERR,
                 "Refusing to tag {$candidate['name']}: the tree at {$target} still carries an undated floor declaration.\n"
+            );
+            exit(1);
+        }
+        if (nextStampedPagesAt($candidate['package_dir'], $target) !== []) {
+            fwrite(
+                STDERR,
+                "Refusing to tag {$candidate['name']}: the tree at {$target} still carries a reference page stamped verified_against: next.\n"
             );
             exit(1);
         }
@@ -1178,7 +1262,7 @@ function updateComposerRequirements(string $composerPath, array $requirements, a
  * be impossible, and a merge commit here would publish unreviewed work under a
  * message about pins or floors. Returns the commit to tag.
  *
- * @param callable(): void $writeManifest
+ * @param callable(): mixed $writeManifest returns the paths it wrote (a list), or nothing for composer.json alone
  */
 function commitReleaseManifest(
     string $packageDir,

@@ -159,6 +159,42 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertSame(self::VERSION, $tagged['extra']['semitexa']['floors']['semitexa/core']);
     }
 
+    /**
+     * A reference page written from a source checkout says verified_against:
+     * next; the release names itself there, in the tree the tag names and on
+     * develop (tk-reference-stamp-ahead-of-release).
+     */
+    #[Test]
+    public function the_tag_carries_the_reference_pages_dated_at_this_release(): void
+    {
+        $page = "---\ntitle: x\nverified_against: next\n---\nbody\n";
+        $old = "---\ntitle: y\nverified_against: 2026.09.01.0000\n---\nbody\n";
+        $this->package('semitexa-docs', ['name' => 'semitexa/docs'], ['README.md' => 'docs']);
+        $dir = $this->dir('semitexa-docs');
+        mkdir($dir . '/docs/en/reference', 0777, true);
+        file_put_contents($dir . '/docs/en/reference/attributes-core.md', $page);
+        file_put_contents($dir . '/docs/en/reference/attributes-old.md', $old);
+        $this->git($dir, 'add -A');
+        $this->git($dir, 'commit -q -m pages');
+        $this->git($dir, 'push -q origin develop');
+        $this->git($dir, 'checkout -q master');
+        $this->git($dir, 'merge -q --ff-only develop');
+        $this->git($dir, 'push -q origin master');
+        $this->git($dir, 'checkout -q develop');
+
+        $result = $this->release(['semitexa-docs'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $origin = $this->root . '/origin-semitexa-docs.git';
+        foreach ([self::VERSION, 'develop'] as $revision) {
+            $dated = $this->git($origin, 'show ' . escapeshellarg($revision . ':docs/en/reference/attributes-core.md'));
+            self::assertStringContainsString('verified_against: ' . self::VERSION, $dated, $revision);
+            self::assertStringNotContainsString('verified_against: next', $dated, $revision);
+        }
+        self::assertStringContainsString('verified_against: 2026.09.01.0000', $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-old.md')), 'a dated page keeps its date');
+        self::assertStringContainsString('reference page(s) verified_against: next', $result['output']);
+    }
+
     /** And develop has it too — the half the old master-only commit left behind. */
     #[Test]
     public function develop_carries_the_floor_as_well_as_master(): void
