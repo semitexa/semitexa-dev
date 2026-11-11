@@ -922,7 +922,8 @@ function nextStampedPagesAt(string $packageDir, string $revision): array
     $result = runShellCommand(sprintf(
         'git -C %s grep -l -E %s %s -- %s 2>&1',
         escapeshellarg($packageDir),
-        escapeshellarg('^verified_against: next$'),
+        // A CRLF page ends the line in \r: it is still undated (review, semitexa-dev#231).
+        escapeshellarg('^verified_against: next' . "\r" . '?$'),
         escapeshellarg($revision),
         escapeshellarg('docs/*.md'),
     ));
@@ -1039,7 +1040,8 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
                 foreach ($pages as $page) {
                     $path = $packageDir . '/' . $page;
                     $current = @file_get_contents($path);
-                    $dated = is_string($current) ? preg_replace('/^verified_against: next$/m', 'verified_against: ' . $releaseVersion, $current, 1) : null;
+                    // The line ending is kept, CRLF included.
+                    $dated = is_string($current) ? preg_replace('/^verified_against: next(\r?)$/m', 'verified_against: ' . $releaseVersion . '$1', $current, 1) : null;
                     if (!is_string($dated) || @file_put_contents($path, $dated) !== strlen($dated)) {
                         fwrite(STDERR, 'Cannot date the reference page ' . $page . ' in ' . $packageDir . ".\n");
                         exit(1);
@@ -1048,7 +1050,11 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
                 }
                 foreach ($dependencies as $dependency) {
                     writeResolvedFloor($candidate['composer_path'], $dependency, $releaseVersion);
-                    $paths = ['composer.json'];
+                    // Added, not assigned: the dated reference pages above are in $paths
+                    // too, and an unstaged one is lost to the reset (review, semitexa-dev#231).
+                    if (!in_array('composer.json', $paths, true)) {
+                        $paths[] = 'composer.json';
+                    }
                 }
                 if ($stamp) {
                     $path = $candidate['package_dir'] . '/' . CHANGELOG_FILE;

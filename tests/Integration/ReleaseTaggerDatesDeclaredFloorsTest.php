@@ -195,6 +195,40 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertStringContainsString('reference page(s) verified_against: next', $result['output']);
     }
 
+    /**
+     * A floor and a next-stamped page in one package are dated in one commit,
+     * and a CRLF page is found and keeps its line ending (review, semitexa-dev#231).
+     */
+    #[Test]
+    public function a_floor_and_a_crlf_reference_page_are_dated_together(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core']);
+        $this->package('semitexa-docs', [
+            'name' => 'semitexa/docs',
+            'require' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ]);
+        $dir = $this->dir('semitexa-docs');
+        mkdir($dir . '/docs/en/reference', 0777, true);
+        file_put_contents($dir . '/docs/en/reference/attributes-core.md', "---\r\ntitle: x\r\nverified_against: next\r\n---\r\nbody\r\n");
+        $this->git($dir, 'add -A');
+        $this->git($dir, 'commit -q -m pages');
+        $this->git($dir, 'push -q origin develop');
+        $this->git($dir, 'checkout -q master');
+        $this->git($dir, 'merge -q --ff-only develop');
+        $this->git($dir, 'push -q origin master');
+        $this->git($dir, 'checkout -q develop');
+
+        $result = $this->release(['semitexa-docs', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $origin = $this->root . '/origin-semitexa-docs.git';
+        self::assertSame(self::VERSION, $this->manifestAt($origin, self::VERSION)['extra']['semitexa']['floors']['semitexa/core']);
+        // shell_exec, not exec: exec trims each line's trailing whitespace, \r included.
+        $page = (string) shell_exec('git -C ' . escapeshellarg($origin) . ' show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-core.md'));
+        self::assertStringContainsString('verified_against: ' . self::VERSION . "\r\n", $page, 'dated, its CRLF kept');
+    }
+
     /** And develop has it too — the half the old master-only commit left behind. */
     #[Test]
     public function develop_carries_the_floor_as_well_as_master(): void
