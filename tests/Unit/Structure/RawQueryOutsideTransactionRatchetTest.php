@@ -93,11 +93,15 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
         $files = $this->productionFiles();
         self::assertGreaterThan(1000, count($files), 'the production scan found almost nothing');
 
-        $seen = 0;
-        foreach (array_keys(self::KNOWN) as $path) {
-            $seen += self::sites($files[$path] ?? '');
+        // Each pattern on its own: one blind pattern would hide behind the other (review, dev#233).
+        foreach (self::PATTERNS as $pattern) {
+            $seen = 0;
+            foreach (array_keys(self::KNOWN) as $path) {
+                self::assertArrayHasKey($path, $files, "a known site is no longer scanned: {$path}");
+                $seen += (int) preg_match_all($pattern, $files[$path]);
+            }
+            self::assertGreaterThan(0, $seen, "no known site matches {$pattern}, so it is not matching");
         }
-        self::assertGreaterThan(0, $seen, 'none of the known sites matched, so the pattern is not matching');
     }
 
     /** @return array<string, string> relative path => source, production code outside the ORM */
