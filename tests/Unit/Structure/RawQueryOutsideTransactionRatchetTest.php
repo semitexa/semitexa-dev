@@ -19,51 +19,56 @@ use PHPUnit\Framework\TestCase;
  * behaves the same outside one.
  *
  * A ratchet: a new site fails the build. The sites below are each to be moved
- * or justified; a site that goes away needs no edit here, so a fix in another
- * repository does not have to land together with this file.
+ * or justified. A site that goes away needs no edit here, so a fix in another
+ * repository lands on its own: making every such fix also edit this file is
+ * the cross-repository stranding that stopped the 2026-11-11 preflight. The
+ * price is that a file that lost calls keeps its old ceiling until its entry
+ * is lowered, so drop an entry once its fix is merged (review, dev#233).
  */
 final class RawQueryOutsideTransactionRatchetTest extends TestCase
 {
     /** Why this guard exists; ai:verify prints it when the guard fails (PhpunitFailureHeadline). */
     public const RATIONALE = 'Why: getAdapter() runs on a connection of its own, so inside a transaction a raw write commits alone or waits on the transaction\'s own locks. Learned 2026-11-11: the Explorer sandbox POST hung 50 s until the MySQL lock timeout.';
 
-    /** path => [sites, reason] */
+    /**
+     * path => [calls, status]. Every getAdapter() call counts, however its
+     * adapter is used next: chained, kept in a variable or a property, or
+     * returned. A narrower pattern let a stored adapter through (review, dev#233).
+     * Measured 2026-11-11.
+     */
     private const KNOWN = [
         'packages/semitexa-api/src/Application/Db/MySQL/Repository/MachineCredentialRepository.php' => [1, 'recordUsage(): called only from MachineAuthHandler, before any handler transaction; to move'],
+        'packages/semitexa-core/src/Container/ContainerFactory.php' => [1, 'container bootstrap, no transaction'],
         'packages/semitexa-crud/src/Application/Handler/PayloadHandler/CollectionFeedHandler.php' => [2, 'reads; inside a transaction they miss its uncommitted rows; to check'],
         'packages/semitexa-crud/src/Application/Service/Relation/RelationOptions.php' => [1, 'read; as above; to check'],
-        'packages/semitexa-dev/src/Application/Service/Trace/TraceGraphReader.php' => [1, 'sqlite_master read on the trace database, never in a transaction'],
-        'packages/semitexa-os/src/Application/Service/ProcessRegistry.php' => [1, 'retention DELETE; to move'],
-        'packages/semitexa-os/src/Application/Service/ConversationSummaryStore.php' => [2, 'save/clear writes; to move'],
-        'packages/semitexa-tasks/src/Application/Service/TaskStore.php' => [1, 'claimComplete() guarded UPDATE; to move or justify'],
-        'packages/semitexa-webhooks/src/Auth/MySqlWebhookReplayStore.php' => [7, 'replay keys: whether a consumed key should survive the handler\'s rollback is to decide'],
-        'src/modules/ReplicationDemo/src/Application/Service/DemoNoteStore.php' => [1, 'read in the replication demo; to check'],
-        // An adapter kept in a variable, used later (review, dev#233). None of these runs inside a request's transaction.
-        'packages/semitexa-ledger/src/Application/Service/LedgerBootstrap.php' => [1, 'ownership adapter taken at bootstrap'],
+        'packages/semitexa-dev/src/Application/Service/Trace/TraceGraphReader.php' => [2, 'reads the trace database, never in a transaction'],
+        'packages/semitexa-ledger/src/Application/Console/Command/LedgerProbeCommand.php' => [1, 'console probe, no request transaction'],
+        'packages/semitexa-ledger/src/Application/Service/LedgerBootstrap.php' => [2, 'ownership adapter taken at bootstrap'],
+        'packages/semitexa-media/src/Application/Db/MySQL/Repository/MediaVariantRepository.php' => [1, 'to check'],
         'packages/semitexa-os/src/Application/Service/UpdatesReport.php' => [1, 'reads the update report on the default connection; to check'],
+        'packages/semitexa-project-graph/src/Application/Service/Graph/EphemeralGraph.php' => [2, 'its own sqlite graph connection'],
+        'packages/semitexa-project-graph/src/Application/Service/Support/UsesProjectGraphConnection.php' => [1, 'its own graph connection'],
+        'packages/semitexa-scheduler/src/Application/Db/MySQL/Repository/ScheduledRunRepository.php' => [1, 'to check'],
+        'packages/semitexa-scheduler/src/Application/Db/MySQL/Repository/SchedulerLockRepository.php' => [1, 'a lock that must outlive the caller; to confirm'],
+        'packages/semitexa-tasks/src/Application/Service/TaskStore.php' => [1, 'claimComplete() guarded UPDATE; to move or justify'],
         'packages/semitexa-testing/src/Traits/RefreshesTables.php' => [1, 'test support: empties tables between tests'],
-        'packages/semitexa-update/src/Application/Service/UpdateRunnerFactory.php' => [2, 'the update runner owns its connection'],
+        'packages/semitexa-update/src/Application/Service/UpdateRunnerFactory.php' => [3, 'the update runner owns its connection'],
+        'packages/semitexa-webhooks/src/Application/Db/MySQL/Repository/OutboundDeliveryRepository.php' => [1, 'to check'],
+        'packages/semitexa-webhooks/src/Auth/MySqlWebhookReplayStore.php' => [7, 'replay keys: whether a consumed key should survive the handler\'s rollback is to decide'],
         'packages/semitexa-workflow/src/Application/Console/Command/WorkflowBackfillTenantKeyCommand.php' => [1, 'console backfill, no request transaction'],
+        'packages/semitexa-workflow/src/Application/Db/MySQL/Repository/WorkflowInstanceRepository.php' => [1, 'to check'],
+        'packages/semitexa-workflow/src/Application/Db/MySQL/Repository/WorkflowTransitionHistoryRepository.php' => [1, 'to check'],
+        'src/modules/ReplicationDemo/src/Application/Service/DemoNoteStore.php' => [1, 'read in the replication demo; to check'],
         'src/modules/UiPlayground/src/Application/Console/Command/SeedLeadsCommand.php' => [1, 'console seeder'],
+        'src/modules/UiPlayground/src/Application/Db/MySQL/Repository/UiPlaygroundLeadDbRepository.php' => [2, 'to check'],
     ];
 
-    /**
-     * The chained call, whitespace allowed wherever PHP allows it, and an
-     * adapter kept in a variable for later (review, dev#233).
-     */
-    private const PATTERNS = [
-        '/getAdapter\s*\(\s*\)\s*->\s*(?:execute|query)\s*\(/',
-        '/\$\w+\s*=\s*[^;=]*getAdapter\s*\(\s*\)\s*;/',
-    ];
+    /** Any call, whitespace allowed wherever PHP allows it. */
+    private const PATTERN = '/getAdapter\s*\(\s*\)/';
 
     private static function sites(string $source): int
     {
-        $sites = 0;
-        foreach (self::PATTERNS as $pattern) {
-            $sites += (int) preg_match_all($pattern, $source);
-        }
-
-        return $sites;
+        return (int) preg_match_all(self::PATTERN, $source);
     }
 
     #[Test]
@@ -93,15 +98,12 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
         $files = $this->productionFiles();
         self::assertGreaterThan(1000, count($files), 'the production scan found almost nothing');
 
-        // Each pattern on its own: one blind pattern would hide behind the other (review, dev#233).
-        foreach (self::PATTERNS as $pattern) {
-            $seen = 0;
-            foreach (array_keys(self::KNOWN) as $path) {
-                self::assertArrayHasKey($path, $files, "a known site is no longer scanned: {$path}");
-                $seen += (int) preg_match_all($pattern, $files[$path]);
-            }
-            self::assertGreaterThan(0, $seen, "no known site matches {$pattern}, so it is not matching");
+        $seen = 0;
+        foreach (array_keys(self::KNOWN) as $path) {
+            self::assertArrayHasKey($path, $files, "a known site is no longer scanned: {$path}");
+            $seen += self::sites($files[$path]);
         }
+        self::assertGreaterThan(0, $seen, 'no known site matches, so the pattern is not matching');
     }
 
     /** @return array<string, string> relative path => source, production code outside the ORM */
