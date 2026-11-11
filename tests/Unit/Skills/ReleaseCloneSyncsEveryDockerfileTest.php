@@ -33,6 +33,8 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
         self::assertContains('docker-compose.test.yml', $synced);
         self::assertContains('docker/e2e-runner/Dockerfile', $synced);
         self::assertContains('Dockerfile', $synced);
+        // The CLI the release verifies with is the one it ships (tk-release-clone-runs-old-cli).
+        self::assertContains('bin/semitexa', $synced);
 
         // In the workspace the installer sits beside this package, and the rule
         // is read from its scaffold too, so a Dockerfile added there later is held

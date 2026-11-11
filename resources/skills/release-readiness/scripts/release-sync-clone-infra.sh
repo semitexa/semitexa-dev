@@ -55,6 +55,12 @@ INFRA_FILES=(
     # every project here with one whose page checks and a11y specs cannot load
     # (seen 05.11 and 10.11, tk-e2e-runner-image-tag-without-axe).
     docker/e2e-runner/Dockerfile
+    # The CLI itself. Only the full root sync copied it, and preflight runs
+    # --code-only, so on 2026-11-11 the clone still ran the bin/semitexa of
+    # 2026-09-06: every release verified the shipped project with a CLI two
+    # months old (no isolated E2E phase), and starting it reopened the shared
+    # router on 0.0.0.0 (tk-release-clone-runs-old-cli).
+    bin/semitexa
 )
 
 changed=()
@@ -75,6 +81,8 @@ for file in "${INFRA_FILES[@]}"; do
 
     mkdir -p "$(dirname "$target_file")"
     cp "$source_file" "$target_file"
+    # The CLI runs as ./bin/semitexa, whatever mode the scaffold checkout gave it.
+    case "$file" in bin/*) chmod +x "$target_file" ;; esac
     changed+=("$file")
 done
 
