@@ -173,7 +173,9 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
         mkdir($root . '/scaffold/bin', 0777, true);
         mkdir($root . '/clone/bin', 0777, true);
         $run = function () use ($root): array {
+            // Its own release state: a failure here must not overwrite a real release's reason (review, semitexa-dev#230).
             exec('RELEASE_ROOT=' . escapeshellarg($root . '/clone') . ' SEMITEXA_SCAFFOLD_DIR=' . escapeshellarg($root . '/scaffold')
+                . ' RELEASE_STATE_DIR=' . escapeshellarg($root . '/state') . ' RELEASE_FAILURE_FILE=' . escapeshellarg($root . '/state/failure.txt')
                 . ' bash ' . escapeshellarg((string) realpath(self::SCRIPT)) . ' 2>&1', $out, $status);
 
             return [$status, implode("\n", $out)];
