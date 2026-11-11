@@ -171,8 +171,19 @@ final class PackageQualityRecordTest extends TestCase
         ))->validate(new DetectedModule(name: 'os', relativePath: 'packages/semitexa-os', kind: DetectedModule::KIND_PACKAGE));
 
         $codes = array_map(static fn ($v): string => $v->code . ' ' . $v->path, $violations);
-        self::assertSame([], array_values(array_filter($codes, static fn (string $c): bool => str_contains($c, 'quality'))), implode("\n", $codes));
+        // `resources` too: a spec that refused the directory would name it, not the file (review, dev#237).
+        self::assertSame([], array_values(array_filter($codes, static fn (string $c): bool => str_contains($c, 'quality') || str_contains($c, 'resources'))), implode("\n", $codes));
         self::assertFileExists($package . '/resources/quality.json');
+    }
+
+    #[Test]
+    public function a_record_left_at_the_package_root_is_an_error_not_ignored(): void
+    {
+        file_put_contents($this->root . '/packages/semitexa-os/quality.json', '{"metrics": {"fake.metric": {"count": 3}}}');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('move it to');
+        PackageQualityRecord::all($this->root);
     }
 
     private function putRecord(string $json): void

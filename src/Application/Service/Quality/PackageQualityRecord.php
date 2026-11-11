@@ -102,6 +102,7 @@ final class PackageQualityRecord
      */
     public static function all(string $projectRoot): array
     {
+        self::refuseWhatWouldBeMissed($projectRoot);
         $out = [];
         foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
             $key = basename(dirname($path, 2));
@@ -150,6 +151,25 @@ final class PackageQualityRecord
         }
 
         return $out;
+    }
+
+    /**
+     * A record the glob below cannot see must fail, not fall back to the
+     * central value, which may be higher (review, dev#237): one left at the
+     * package root by the first version, or one under a resources/ the
+     * process cannot enter.
+     */
+    private static function refuseWhatWouldBeMissed(string $projectRoot): void
+    {
+        foreach (glob($projectRoot . '/packages/*', GLOB_ONLYDIR) ?: [] as $package) {
+            if (is_file($package . '/quality.json')) {
+                throw new \RuntimeException("{$package}/quality.json is a quality record at the package root, where module_structure refuses it: move it to {$package}/" . self::FILE);
+            }
+            $resources = $package . '/resources';
+            if (is_dir($resources) && (!is_readable($resources) || !is_executable($resources))) {
+                throw new \RuntimeException("{$resources} cannot be read, so its quality record (if any) cannot be counted");
+            }
+        }
     }
 
     /**
