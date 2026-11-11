@@ -40,8 +40,28 @@ final class RouteMissTest extends TestCase
         $miss = RouteMiss::of('GET', '/orders', self::ROUTES);
 
         self::assertSame(['POST'], $miss->otherMethods);
+        self::assertNotSame([], $miss->nearest, 'the routes it might mean are still named');
         self::assertStringContainsString('/orders answers POST, not GET.', $miss->getMessage());
         self::assertNotContains('POST /orders', $miss->nearest, 'the exact path is the method hint, not a nearest route');
+    }
+
+    /** Each ranking rule decides on its own (review, dev#228). */
+    #[Test]
+    public function shared_leading_segments_outrank_fewer_edits_and_the_method_breaks_a_tie(): void
+    {
+        // 2 shared segments and 4 edits beat 1 shared segment and 1 edit.
+        $bySegments = RouteMiss::of('GET', '/shop/orders/list', [
+            ['path' => '/shop/order/list', 'methods' => ['GET']],
+            ['path' => '/shop/orders/all', 'methods' => ['GET']],
+        ]);
+        self::assertSame('GET /shop/orders/all', $bySegments->nearest[0]);
+
+        // Same segments, same edits: the method asked for comes first, whatever the order found.
+        $byMethod = RouteMiss::of('GET', '/x/y', [
+            ['path' => '/x/z', 'methods' => ['POST']],
+            ['path' => '/x/z', 'methods' => ['GET']],
+        ]);
+        self::assertSame(['GET /x/z', 'POST /x/z'], $byMethod->nearest);
     }
 
     #[Test]
