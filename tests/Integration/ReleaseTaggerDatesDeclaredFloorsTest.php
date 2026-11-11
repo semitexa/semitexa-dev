@@ -237,6 +237,45 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertStringContainsString("verified_against: 2026.09.01.0000\n", $guide, 'a page whose front matter is dated is not a next page');
     }
 
+    /**
+     * A master that moves after the release scanned it is refused before that
+     * package's commit: the writer would date only what the scan saw and push
+     * a commit carrying a page or floor nobody looked at (review, semitexa-dev#231).
+     */
+    #[Test]
+    public function a_master_that_moved_after_the_scan_is_refused_before_its_commit(): void
+    {
+        $this->declaring();
+        $this->package('semitexa-docs', ['name' => 'semitexa/docs']);
+        $docs = $this->dir('semitexa-docs');
+        mkdir($docs . '/docs/en', 0777, true);
+        file_put_contents($docs . '/docs/en/a.md', "---\nverified_against: next\n---\n");
+        $this->git($docs, 'add -A');
+        $this->git($docs, 'commit -q -m page');
+        $this->git($docs, 'push -q origin develop');
+        $this->git($docs, 'checkout -q master');
+        $this->git($docs, 'merge -q --ff-only develop');
+        $this->git($docs, 'push -q origin master');
+        $this->git($docs, 'checkout -q develop');
+
+        // Another checkout lands a second next page on docs' master the moment
+        // ssr (committed first) makes its release commit.
+        $other = $this->root . '/other-docs';
+        exec(sprintf('git clone -q %s %s 2>&1', escapeshellarg($this->root . '/origin-semitexa-docs.git'), escapeshellarg($other)));
+        $this->git($other, 'config user.email test@example.com');
+        $this->git($other, 'config user.name Test');
+        $hook = $this->dir('semitexa-ssr') . '/.git/hooks/post-commit';
+        file_put_contents($hook, "#!/bin/sh\nset -e\ncd " . escapeshellarg($other) . "\ngit checkout -q master\nprintf -- '---\\nverified_against: next\\n---\\n' > docs/en/b.md\ngit add -A\ngit commit -q -m late\ngit push -q origin master master:develop\n");
+        chmod($hook, 0755);
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core', 'semitexa-docs'], noPush: false);
+
+        self::assertNotSame(0, $result['exit'], $result['output']);
+        self::assertStringContainsString('master moved from', $result['output']);
+        $docsMaster = $this->git($this->root . '/origin-semitexa-docs.git', 'log -1 --format=%s master');
+        self::assertSame('late', $docsMaster, 'no release commit reached docs: the page b.md stays to be dated by a re-run');
+    }
+
     /** And develop has it too — the half the old master-only commit left behind. */
     #[Test]
     public function develop_carries_the_floor_as_well_as_master(): void

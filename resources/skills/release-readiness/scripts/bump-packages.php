@@ -1049,6 +1049,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
     if (nextStampedPagesOf($candidates) !== $nextPages) {
         $refusals[] = 'master moved while the release scanned it: the reference pages stamped verified_against: next differ; run the release again';
     }
+    // The master each package was scanned at. The writer refuses a tree that
+    // is not this one: what it dates was decided here, and a master that moved
+    // since could carry a page or a floor nobody looked at (review, semitexa-dev#231).
+    $baselines = [];
+    foreach ($toCommit as $index) {
+        $baselines[$index] = trim((string) shell_exec('git -C ' . escapeshellarg((string) $candidates[$index]['package_dir']) . ' rev-parse --verify origin/master 2>/dev/null'));
+    }
 
     if ($refusals !== []) {
         fwrite(STDERR, "Refusing to tag anything — these release commits cannot be made in this release:\n");
@@ -1065,6 +1072,7 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         $dependencies = $undated[$index] ?? [];
         $stamp = isset($unstamped[$index]);
         $pages = $nextPages[$index] ?? [];
+        $baseline = $baselines[$index] ?? '';
         // Named for everything it carries (Fable review, semitexa-dev#231).
         $parts = array_values(array_filter([
             $dependencies !== [] ? 'date the declared internal floors' : null,
@@ -1076,9 +1084,16 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         $candidates[$index]['tag_target'] = commitReleaseManifest(
             $candidate['package_dir'],
             $candidate['name'],
-            static function () use ($candidate, $dependencies, $stamp, $pages, $releaseVersion): array {
+            static function () use ($candidate, $dependencies, $stamp, $pages, $releaseVersion, $baseline): array {
                 $paths = [];
                 $packageDir = is_string($candidate['package_dir'] ?? null) ? $candidate['package_dir'] : '';
+                // Before anything is written or committed here: the tree reset to
+                // origin/master must be the one this run scanned.
+                $head = trim((string) shell_exec('git -C ' . escapeshellarg($packageDir) . ' rev-parse --verify HEAD 2>/dev/null'));
+                if ($baseline === '' || $head !== $baseline) {
+                    fwrite(STDERR, "Refusing to commit for {$packageDir}: master moved from {$baseline} to {$head} after the release scanned it; run the release again.\n");
+                    exit(1);
+                }
                 foreach ($pages as $page) {
                     $path = $packageDir . '/' . $page;
                     $current = @file_get_contents($path);
