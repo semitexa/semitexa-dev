@@ -159,6 +159,123 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         self::assertSame(self::VERSION, $tagged['extra']['semitexa']['floors']['semitexa/core']);
     }
 
+    /**
+     * A reference page written from a source checkout says verified_against:
+     * next; the release names itself there, in the tree the tag names and on
+     * develop (tk-reference-stamp-ahead-of-release).
+     */
+    #[Test]
+    public function the_tag_carries_the_reference_pages_dated_at_this_release(): void
+    {
+        $page = "---\ntitle: x\nverified_against: next\n---\nbody\n";
+        $old = "---\ntitle: y\nverified_against: 2026.09.01.0000\n---\nbody\n";
+        $this->package('semitexa-docs', ['name' => 'semitexa/docs'], ['README.md' => 'docs']);
+        $dir = $this->dir('semitexa-docs');
+        mkdir($dir . '/docs/en/reference', 0777, true);
+        file_put_contents($dir . '/docs/en/reference/attributes-core.md', $page);
+        file_put_contents($dir . '/docs/en/reference/attributes-old.md', $old);
+        // A BOM before the front matter: found, dated, never shipped as next (Fable review, semitexa-dev#231).
+        file_put_contents($dir . '/docs/en/reference/attributes-bom.md', "\xEF\xBB\xBF" . $page);
+        $this->git($dir, 'add -A');
+        $this->git($dir, 'commit -q -m pages');
+        $this->git($dir, 'push -q origin develop');
+        $this->git($dir, 'checkout -q master');
+        $this->git($dir, 'merge -q --ff-only develop');
+        $this->git($dir, 'push -q origin master');
+        $this->git($dir, 'checkout -q develop');
+
+        $result = $this->release(['semitexa-docs'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $origin = $this->root . '/origin-semitexa-docs.git';
+        foreach ([self::VERSION, 'develop'] as $revision) {
+            $dated = $this->git($origin, 'show ' . escapeshellarg($revision . ':docs/en/reference/attributes-core.md'));
+            self::assertStringContainsString('verified_against: ' . self::VERSION, $dated, $revision);
+            self::assertStringNotContainsString('verified_against: next', $dated, $revision);
+        }
+        self::assertStringContainsString('verified_against: 2026.09.01.0000', $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-old.md')), 'a dated page keeps its date');
+        self::assertStringContainsString('verified_against: ' . self::VERSION, $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-bom.md')), 'a BOM page is dated too');
+        self::assertStringContainsString('reference page(s) verified_against: next', $result['output']);
+    }
+
+    /**
+     * A floor and a next-stamped page in one package are dated in one commit,
+     * and a CRLF page is found and keeps its line ending (review, semitexa-dev#231).
+     */
+    #[Test]
+    public function a_floor_and_a_crlf_reference_page_are_dated_together(): void
+    {
+        $this->package('semitexa-core', ['name' => 'semitexa/core']);
+        $this->package('semitexa-docs', [
+            'name' => 'semitexa/docs',
+            'require' => ['semitexa/core' => '*'],
+            'extra' => ['semitexa' => ['floors' => ['semitexa/core' => 'next']]],
+        ]);
+        $dir = $this->dir('semitexa-docs');
+        mkdir($dir . '/docs/en/reference', 0777, true);
+        // An example in the body says next too: only the front matter's field is the stamp (review, semitexa-dev#231).
+        file_put_contents($dir . '/docs/en/reference/attributes-core.md', "---\r\ntitle: x\r\nverified_against: next\r\n---\r\nbody\r\n```\r\nverified_against: next\r\n```\r\n");
+        file_put_contents($dir . '/docs/en/reference/guide.md', "---\ntitle: g\nverified_against: 2026.09.01.0000\n---\n```\nverified_against: next\n```\n");
+        $this->git($dir, 'add -A');
+        $this->git($dir, 'commit -q -m pages');
+        $this->git($dir, 'push -q origin develop');
+        $this->git($dir, 'checkout -q master');
+        $this->git($dir, 'merge -q --ff-only develop');
+        $this->git($dir, 'push -q origin master');
+        $this->git($dir, 'checkout -q develop');
+
+        $result = $this->release(['semitexa-docs', 'semitexa-core'], noPush: false);
+
+        self::assertSame(0, $result['exit'], $result['output']);
+        $origin = $this->root . '/origin-semitexa-docs.git';
+        self::assertSame(self::VERSION, $this->manifestAt($origin, self::VERSION)['extra']['semitexa']['floors']['semitexa/core']);
+        // shell_exec, not exec: exec trims each line's trailing whitespace, \r included.
+        $page = (string) shell_exec('git -C ' . escapeshellarg($origin) . ' show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-core.md'));
+        self::assertStringContainsString('verified_against: ' . self::VERSION . "\r\n", $page, 'dated, its CRLF kept');
+        self::assertStringContainsString("```\r\nverified_against: next\r\n```", $page, 'the example in the body is left as written');
+        $guide = (string) shell_exec('git -C ' . escapeshellarg($origin) . ' show ' . escapeshellarg(self::VERSION . ':docs/en/reference/guide.md'));
+        self::assertStringContainsString("verified_against: 2026.09.01.0000\n", $guide, 'a page whose front matter is dated is not a next page');
+    }
+
+    /**
+     * A master that moves after the release scanned it is refused before that
+     * package's commit: the writer would date only what the scan saw and push
+     * a commit carrying a page or floor nobody looked at (review, semitexa-dev#231).
+     */
+    #[Test]
+    public function a_master_that_moved_after_the_scan_is_refused_before_its_commit(): void
+    {
+        $this->declaring();
+        $this->package('semitexa-docs', ['name' => 'semitexa/docs']);
+        $docs = $this->dir('semitexa-docs');
+        mkdir($docs . '/docs/en', 0777, true);
+        file_put_contents($docs . '/docs/en/a.md', "---\nverified_against: next\n---\n");
+        $this->git($docs, 'add -A');
+        $this->git($docs, 'commit -q -m page');
+        $this->git($docs, 'push -q origin develop');
+        $this->git($docs, 'checkout -q master');
+        $this->git($docs, 'merge -q --ff-only develop');
+        $this->git($docs, 'push -q origin master');
+        $this->git($docs, 'checkout -q develop');
+
+        // Another checkout lands a second next page on docs' master the moment
+        // ssr (committed first) makes its release commit.
+        $other = $this->root . '/other-docs';
+        exec(sprintf('git clone -q %s %s 2>&1', escapeshellarg($this->root . '/origin-semitexa-docs.git'), escapeshellarg($other)));
+        $this->git($other, 'config user.email test@example.com');
+        $this->git($other, 'config user.name Test');
+        $hook = $this->dir('semitexa-ssr') . '/.git/hooks/post-commit';
+        file_put_contents($hook, "#!/bin/sh\nset -e\ncd " . escapeshellarg($other) . "\ngit checkout -q master\nprintf -- '---\\nverified_against: next\\n---\\n' > docs/en/b.md\ngit add -A\ngit commit -q -m late\ngit push -q origin master master:develop\n");
+        chmod($hook, 0755);
+
+        $result = $this->release(['semitexa-ssr', 'semitexa-core', 'semitexa-docs'], noPush: false);
+
+        self::assertNotSame(0, $result['exit'], $result['output']);
+        self::assertStringContainsString('master moved from', $result['output']);
+        $docsMaster = $this->git($this->root . '/origin-semitexa-docs.git', 'log -1 --format=%s master');
+        self::assertSame('late', $docsMaster, 'no release commit reached docs: the page b.md stays to be dated by a re-run');
+    }
+
     /** And develop has it too — the half the old master-only commit left behind. */
     #[Test]
     public function develop_carries_the_floor_as_well_as_master(): void
