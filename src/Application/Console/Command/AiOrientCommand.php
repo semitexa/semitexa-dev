@@ -113,6 +113,7 @@ final class AiOrientCommand extends BaseCommand
             'generated_at' => gmdate('c'),
             'cwd'          => getcwd() ?: '',
             'git'          => $git,
+            'unshipped_commits' => \Semitexa\Dev\Application\Service\Ai\State\UnshippedCommits::in($this->getProjectRoot()), // never pushed: nobody ships them otherwise
             'backlog'      => [
                 'total_epics'           => count($epics),
                 'active_epic_id'        => $activeEpicId,
