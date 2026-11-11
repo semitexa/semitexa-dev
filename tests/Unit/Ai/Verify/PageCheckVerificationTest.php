@@ -226,6 +226,36 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('could not be reached', (string) $unreachable->signal);
     }
 
+    /**
+     * The page is a route the change declares: the running server answering 404
+     * has not loaded it (tk-page-check-stale-route). A Guard run read the bare
+     * "HTTP 404" as a failure and restarted around every verify after it.
+     */
+    #[Test]
+    public function a_404_for_a_declared_route_is_a_server_that_has_not_loaded_it(): void
+    {
+        $this->seen('/guard', ['light' => [404, []], 'dark' => [404, []]]);
+        // Another error, or 404 in one mode only, is the page's own answer.
+        $this->seen('/half', ['light' => [404, []], 'dark' => [200, []]]);
+
+        $stale = $this->check('/guard', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $stale->status);
+        self::assertStringContainsString('the server has not loaded it', (string) $stale->signal);
+        self::assertStringContainsString('bin/semitexa server:restart app', (string) $stale->signal);
+        self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/half', 'run-1')->status);
+    }
+
+    #[Test]
+    public function the_restart_note_does_not_say_a_restart_could_change_nothing_when_pages_were_opened(): void
+    {
+        $report = new \Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer();
+
+        $withPages = $report->restartAdvice([], true)['note'];
+        self::assertStringNotContainsString('none would have changed this result', $withPages);
+        self::assertStringContainsString('the page checks: they open the running server', $withPages);
+        self::assertStringContainsString('none would have changed this result', $report->restartAdvice([])['note']);
+    }
+
     #[Test]
     public function a_page_seen_in_one_mode_only_is_not_a_pass(): void
     {

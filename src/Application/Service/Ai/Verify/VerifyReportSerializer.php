@@ -54,15 +54,23 @@ final readonly class VerifyReportSerializer
      * only appears when the changed files are the kind the running server
      * caches.
      *
+     * Page checks are the exception: they open the RUNNING server, so for them
+     * the note does not say a restart could change nothing
+     * (tk-page-check-stale-route).
+     *
      * @param list<ChangedFile> $changedFiles
      * @return array{needed_for_verification: bool, note: string, before_browsing?: string}
      */
-    public function restartAdvice(array $changedFiles): array
+    public function restartAdvice(array $changedFiles, bool $pagesOpened = false): array
     {
         $advice = [
             'needed_for_verification' => false,
-            'note' => 'Verification reads files from disk in a fresh process; '
-                . 'no restart was needed and none would have changed this result.',
+            'note' => $pagesOpened
+                ? 'Verification reads files from disk in a fresh process, except the page checks: they open the running '
+                    . 'server, which answers with what it loaded at its last restart. A page result that does not show this change '
+                    . '(an old answer, a 404 on a new route) needs bin/semitexa server:restart and another run; the other results do not.'
+                : 'Verification reads files from disk in a fresh process; '
+                    . 'no restart was needed and none would have changed this result.',
         ];
 
         $affectsRunningServer = false;

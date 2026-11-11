@@ -95,6 +95,23 @@ final readonly class PageCheckResult
             }
         }
 
+        // A page target is a route this change's code declares (the CLI discovered
+        // it). The running server answering 404 in every mode it was opened in
+        // means its workers have not loaded that route, not that the page is
+        // broken: a Guard run read "HTTP 404" as a failure and wrapped every
+        // verify after it in a restart (tk-page-check-stale-route).
+        $statuses = [];
+        foreach (self::MODES as $mode) {
+            $view = $seen['modes'][$mode] ?? null;
+            if (is_array($view) && is_int($view['status'] ?? null) && $view['status'] !== 0) {
+                $statuses[] = $view['status'];
+            }
+        }
+        if ($statuses !== [] && array_unique($statuses) === [404]) {
+            return self::notRun($target, "{$path} answered 404 from the running server, though the code declares that route: "
+                . 'the server has not loaded it. Restart it (bin/semitexa server:restart app) and verify again');
+        }
+
         if ($missing !== []) {
             // A finding already seen is a failure, whatever the other mode could not show (review dev#216).
             return $found !== []
