@@ -71,7 +71,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 89,
+            "total": 90,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -82,7 +82,7 @@
                 "semitexa-ledger": 4,
                 "semitexa-media": 2,
                 "semitexa-orm": 7,
-                "semitexa-os": 1,
+                "semitexa-os": 2,
                 "semitexa-platform-settings": 4,
                 "semitexa-platform-ui": 4,
                 "semitexa-platform-user": 2,
@@ -1675,6 +1675,19 @@
                 }
             },
             "reason": "SettingsWriteJoinsTransactionTest skips without MySQL: the transaction escape shows only on a second pooled connection, sqlite cannot prove it (tk-getadapter-writes-escape-transactions)"
+        },
+        {
+            "at": "2026-11-11",
+            "metric": "tests.skip-calls",
+            "from": 89,
+            "to": 90,
+            "keys": {
+                "semitexa-os": {
+                    "from": 1,
+                    "to": 2
+                }
+            },
+            "reason": "BestEffortWritesJoinTransactionTest (semitexa-os) skips without MySQL: the transaction escape shows only on a second pooled connection; the rethrow rule runs on sqlite without a skip (tk-getadapter-writes-escape-transactions)"
         }
     ]
 }
