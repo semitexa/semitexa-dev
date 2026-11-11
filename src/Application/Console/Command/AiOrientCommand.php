@@ -650,7 +650,7 @@ final class AiOrientCommand extends BaseCommand
             default => null,
         };
         if ($docsWarning !== null) { $io->writeln('  ⚠ ' . $docsWarning); }
-        foreach ($envelope['unshipped_commits'] as $u) { $io->writeln(sprintf('  ⚠ %s (%s) has %d commit(s) nobody pushed, last: %s — push %2\$s and ship it by a PR', $u['repo'], $u['branch'], $u['ahead'], $u['last'])); }
+        foreach ($envelope['unshipped_commits'] as $u) { $io->writeln(sprintf('  ⚠ %s (%s) has %d commit(s) nobody pushed, last: %s — push %2$s and ship it by a PR', $u['repo'], $u['branch'], $u['ahead'], $u['last'])); }
         foreach ($wn['agents'] as $a) {
             $io->writeln(sprintf(
                 '  %s (%s%s, %d min ago): %s%s',
