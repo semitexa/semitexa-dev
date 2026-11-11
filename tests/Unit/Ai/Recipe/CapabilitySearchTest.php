@@ -30,6 +30,22 @@ final class CapabilitySearchTest extends TestCase
         self::assertSame(['send', 'mail'], $hits[0]['words']);
     }
 
+    /** A word matches where a word starts: a prefix is a match, a fragment inside another word is not (review, dev#229). */
+    #[Test]
+    public function a_word_inside_another_word_is_no_match_but_a_prefix_is(): void
+    {
+        $catalog = [
+            ['id' => 'prompt.catalog', 'summary' => 'A prompt catalog'],
+            ['id' => 'dev.observatory', 'summary' => 'Read the logs of the running app'],
+            ['id' => 'scheduler.jobs', 'summary' => 'Jobs on a schedule'],
+            ['id' => 'webhooks.inbound', 'summary' => 'Receive webhooks'],
+        ];
+
+        self::assertSame(['dev.observatory'], array_column(CapabilitySearch::hits('log errors', $catalog), 'id'));
+        self::assertSame('scheduler.jobs', CapabilitySearch::hits('schedule a job', $catalog)[0]['id']);
+        self::assertSame('webhooks.inbound', CapabilitySearch::hits('a webhook', $catalog)[0]['id']);
+    }
+
     #[Test]
     public function words_too_short_or_too_common_find_nothing(): void
     {

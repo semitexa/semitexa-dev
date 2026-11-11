@@ -91,6 +91,10 @@ final class AiTaskCommand extends BaseCommand
         }
         $io->section('Next');
         $io->writeln('  ' . $this->buildNextHint($result));
+        // The commands the hint refers to, here too (review, dev#229).
+        foreach ($result->recipe->id === 'unknown_task' ? $this->buildNextCommands($result, $description) : [] as $next) {
+            $io->writeln('  → bin/semitexa ' . $next['cmd'] . ' ' . implode(' ', $next['args']) . '   # ' . $next['why']);
+        }
         if ($result->alternatives !== []) {
             $io->section('Alternatives');
             foreach ($result->alternatives as $alt) {
@@ -175,6 +179,11 @@ final class AiTaskCommand extends BaseCommand
             'action' => 'invoke',
             'hint'   => $this->buildNextHint($result),
         ], JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+
+        // The default non-interactive mode: the commands the hint refers to, one record each (review, dev#229).
+        foreach ($result->recipe->id === 'unknown_task' ? $this->buildNextCommands($result, $description) : [] as $next) {
+            $output->writeln(json_encode(['kind' => 'next_command'] + $next, JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+        }
     }
 
     /**

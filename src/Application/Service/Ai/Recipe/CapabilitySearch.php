@@ -41,11 +41,13 @@ final class CapabilitySearch
                 (string) ($capability['package'] ?? ''),
                 implode(' ', array_map('strval', (array) ($capability['replaces'] ?? []))),
             ]));
-            $matched = array_values(array_filter($words, static fn (string $w): bool => str_contains($text, $w)));
+            // At the start of a word: "schedule" finds scheduler and "webhook"
+            // webhooks, but "log" is not inside catalog (review, dev#229).
+            $matched = array_values(array_filter($words, static fn (string $w): bool => self::startsWord($text, $w)));
             if ($matched !== []) {
                 $id = (string) ($capability['id'] ?? '');
                 // A word in the id names the capability; in its prose it only mentions it.
-                $named = count(array_filter($matched, static fn (string $w): bool => str_contains($id, $w)));
+                $named = count(array_filter($matched, static fn (string $w): bool => self::startsWord($id, $w)));
                 $scored[] = ['rank' => count($matched) + $named, 'id' => $id, 'summary' => (string) ($capability['summary'] ?? ''), 'words' => $matched];
             }
         }
@@ -63,6 +65,11 @@ final class CapabilitySearch
         $index = CapabilityIndex::read(CapabilityIndex::path($projectRoot));
 
         return is_array($index['capabilities'] ?? null) ? array_values($index['capabilities']) : [];
+    }
+
+    private static function startsWord(string $text, string $word): bool
+    {
+        return preg_match('/(?<![a-z])' . preg_quote($word, '/') . '/', $text) === 1;
     }
 
     /** @return list<string> the description's words worth looking up, singular */
