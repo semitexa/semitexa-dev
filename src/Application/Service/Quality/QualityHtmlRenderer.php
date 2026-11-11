@@ -37,6 +37,9 @@ final class QualityHtmlRenderer
 
         $history = $this->history($projectRoot . '/' . QualityLedger::HISTORY);
         $deliberate = is_array($baseline['deliberate'] ?? null) ? $baseline['deliberate'] : [];
+        // A package-only accept keeps its reason in the package record (review, dev#235).
+        $deliberate = array_merge($deliberate, PackageQualityRecord::accepted($projectRoot));
+        usort($deliberate, static fn (mixed $a, mixed $b): int => strcmp(is_array($a) ? (string) ($a['at'] ?? '') : '', is_array($b) ? (string) ($b['at'] ?? '') : ''));
 
         $body = '<header><h1>Quality ledger</h1><p class="lede">Numbers that may only go down. '
             . 'A regression fails <code>ai:verify</code>; an improvement fails too until <code>ai:quality record</code> locks it in; '

@@ -99,12 +99,44 @@ final class PackageQualityRecord
             if (!self::owns($projectRoot, $key)) {
                 continue;
             }
-            foreach (self::decode($path)['metrics'] ?? [] as $id => $metric) {
+            foreach (self::decode($path)['metrics'] as $id => $metric) {
                 $count = is_array($metric) ? ($metric['count'] ?? null) : null;
                 if (!is_int($count) || $count < 0) {
                     throw new \RuntimeException("{$path}: metric '{$id}' has no whole count");
                 }
                 $out[$key][(string) $id] = $count;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every acceptance the package records hold, in the shape of the central
+     * `deliberate` list, so a report shows a package's reasons beside the rest.
+     *
+     * @return list<array{at: string, metric: string, from: int, to: int, reason: string}>
+     */
+    public static function accepted(string $projectRoot): array
+    {
+        $out = [];
+        foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
+            $key = basename(dirname($path));
+            if (!self::owns($projectRoot, $key)) {
+                continue;
+            }
+            foreach (self::decode($path)['metrics'] as $id => $metric) {
+                foreach (is_array($metric) && is_array($metric['accepted'] ?? null) ? $metric['accepted'] : [] as $a) {
+                    if (is_array($a)) {
+                        $out[] = [
+                            'at' => (string) ($a['at'] ?? ''),
+                            'metric' => "{$id} ({$key})",
+                            'from' => (int) ($a['from'] ?? 0),
+                            'to' => (int) ($a['to'] ?? 0),
+                            'reason' => (string) ($a['reason'] ?? ''),
+                        ];
+                    }
+                }
             }
         }
 
@@ -119,7 +151,9 @@ final class PackageQualityRecord
         // Unreadable is a failure: read as empty, the package would fall back
         // to an older central value, and could be higher than what it accepted.
         $data = json_decode((string) @file_get_contents($path), true);
-        if (!is_array($data) || !is_array($data['metrics'] ?? [])) {
+        // `metrics` is required: a record without it, or with null, would
+        // fall back to the central value silently (review, dev#235).
+        if (!is_array($data) || !is_array($data['metrics'] ?? null)) {
             throw new \RuntimeException("{$path} is not a readable package quality record");
         }
 

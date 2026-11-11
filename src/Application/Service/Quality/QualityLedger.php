@@ -93,9 +93,12 @@ final class QualityLedger
             $data['metrics'][$id] = $this->entry($now, $entry['meta']);
             // A package that improved lowers its own record too, or the record
             // would keep the old ceiling and let the count climb back unseen.
+            // A metric new to the central file takes its reading from now, the
+            // record included, or the next check would refuse it (review, dev#235).
             foreach ($records as $key => $record) {
-                if (isset($record[$id]) && ($now->breakdown[$key] ?? 0) < $record[$id]) {
-                    PackageQualityRecord::write($this->projectRoot, $key, $id, $now->breakdown[$key] ?? 0, null);
+                $is = $now->breakdown[$key] ?? 0;
+                if (isset($record[$id]) && ($is < $record[$id] || ($verdict->status === Verdict::NEW && $is !== $record[$id]))) {
+                    PackageQualityRecord::write($this->projectRoot, $key, $id, $is, null);
                 }
             }
             $events[] = [$id, $now, $verdict->status === Verdict::NEW ? 'new' : 'record'];
@@ -154,6 +157,18 @@ final class QualityLedger
                 return $verdict;
             }
 
+            if ($verdict->status === Verdict::NEW) {
+                // A record already holding this metric takes the reading too,
+                // with the reason when it rose (review, dev#235).
+                foreach (PackageQualityRecord::all($this->projectRoot) as $key => $record) {
+                    $is = $now->breakdown[$key] ?? 0;
+                    if (isset($record[$id]) && $is !== $record[$id]) {
+                        PackageQualityRecord::write($this->projectRoot, $key, $id, $is, $is > $record[$id] ? [
+                            'at' => gmdate('Y-m-d'), 'from' => $record[$id], 'to' => $is, 'reason' => $reason,
+                        ] : null);
+                    }
+                }
+            }
             $entry = $this->entry($now, $this->metrics[$id]['meta']);
             if ($verdict->status !== Verdict::NEW) {
                 // Only the keys no package owns move here; a package key keeps

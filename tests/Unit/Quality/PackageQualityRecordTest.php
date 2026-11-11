@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Quality\Measurement;
 use Semitexa\Dev\Application\Service\Quality\PackageQualityRecord;
+use Semitexa\Dev\Application\Service\Quality\QualityHtmlRenderer;
 use Semitexa\Dev\Application\Service\Quality\QualityLedger;
 use Semitexa\Dev\Application\Service\Quality\QualityMetricInterface;
 use Semitexa\Dev\Application\Service\Quality\Verdict;
@@ -97,6 +98,50 @@ final class PackageQualityRecordTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('is not a readable package quality record');
         PackageQualityRecord::overlay($this->root, ['fake.metric' => ['total' => 1, 'breakdown' => ['semitexa-os' => 1]]]);
+    }
+
+    #[Test]
+    public function a_record_without_metrics_is_an_error(): void
+    {
+        foreach (['{}', '{"metrics":null}'] as $json) {
+            file_put_contents(PackageQualityRecord::path($this->root, 'semitexa-os'), $json);
+            try {
+                PackageQualityRecord::all($this->root);
+                self::fail("{$json} read as a record");
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('is not a readable package quality record', $e->getMessage());
+            }
+        }
+    }
+
+    /** A metric new to the central file takes its reading into an existing record too (review, dev#235). */
+    #[Test]
+    public function a_metric_new_to_the_central_file_reconciles_an_existing_record(): void
+    {
+        foreach (['record', 'accept'] as $how) {
+            exec('rm -rf ' . escapeshellarg($this->root . '/packages/semitexa-dev/resources'));
+            PackageQualityRecord::write($this->root, 'semitexa-os', 'fake.metric', 1, null);
+            $this->reading = ['semitexa-os' => 2];
+            self::assertSame(Verdict::NEW, $this->ledger()->check()[0]->status);
+
+            $how === 'record' ? $this->ledger()->record() : $this->ledger()->accept('fake.metric', 'first reading, with a record from before');
+
+            self::assertSame(Verdict::SAME, $this->ledger()->check()[0]->status, "{$how}: the next check passes the same reading");
+        }
+    }
+
+    #[Test]
+    public function the_report_lists_a_package_acceptance_with_its_reason(): void
+    {
+        $this->reading = ['semitexa-os' => 1];
+        $this->ledger()->record();
+        $this->reading = ['semitexa-os' => 2];
+        $this->ledger()->accept('fake.metric', 'the os test skips its MySQL half without MySQL');
+
+        $html = (new QualityHtmlRenderer())->render($this->root);
+
+        self::assertStringContainsString('fake.metric (semitexa-os)', $html);
+        self::assertStringContainsString('the os test skips its MySQL half without MySQL', $html);
     }
 
     private function ledger(): QualityLedger
