@@ -31,7 +31,9 @@ final class QualityAdvisor
     public function targets(int $limit = 5): array
     {
         $baseline = $this->json(QualityLedger::BASELINE)['metrics'] ?? [];
-        if (!is_array($baseline) || $baseline === []) {
+        // With each package's own record laid over the central numbers.
+        $baseline = is_array($baseline) ? PackageQualityRecord::overlay($this->projectRoot, $baseline) : [];
+        if ($baseline === []) {
             return [];
         }
         $lastMoved = $this->lastImprovement();

@@ -30,7 +30,7 @@ final class QualityHtmlRenderer
         } catch (\RuntimeException $e) {
             return $this->page('<p class="empty">' . $this->e($e->getMessage()) . '</p>');
         }
-        $metrics = is_array($baseline['metrics'] ?? null) ? $baseline['metrics'] : [];
+        $metrics = is_array($baseline['metrics'] ?? null) ? PackageQualityRecord::overlay($projectRoot, $baseline['metrics']) : [];
         if ($metrics === []) {
             return $this->page('<p class="empty">No quality ledger in this project yet. Run <code>bin/semitexa ai:quality record</code> to start one.</p>');
         }

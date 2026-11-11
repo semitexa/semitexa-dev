@@ -49,7 +49,7 @@ final class QualityLedger
      */
     public function check(string $tier = AsQualityMetric::TIER_VERIFY): array
     {
-        $baseline = $this->read()['metrics'];
+        $baseline = $this->baseline();
         $verdicts = [];
         foreach ($this->selected($tier) as $id => $entry) {
             $verdicts[] = Verdict::of($id, $entry['metric']->measure($this->projectRoot), $baseline[$id] ?? null);
@@ -75,12 +75,14 @@ final class QualityLedger
     private function recordLocked(string $tier): array
     {
         $data = $this->read();
+        $baseline = PackageQualityRecord::overlay($this->projectRoot, $data['metrics']);
+        $records = PackageQualityRecord::all($this->projectRoot);
         $events = [];
         $recorded = [];
         $refused = [];
         foreach ($this->selected($tier) as $id => $entry) {
             $now = $entry['metric']->measure($this->projectRoot);
-            $verdict = Verdict::of($id, $now, $data['metrics'][$id] ?? null);
+            $verdict = Verdict::of($id, $now, $baseline[$id] ?? null);
             if ($verdict->status === Verdict::WORSE) {
                 $refused[] = $verdict;
                 continue;
@@ -89,6 +91,13 @@ final class QualityLedger
                 continue;
             }
             $data['metrics'][$id] = $this->entry($now, $entry['meta']);
+            // A package that improved lowers its own record too, or the record
+            // would keep the old ceiling and let the count climb back unseen.
+            foreach ($records as $key => $record) {
+                if (isset($record[$id]) && ($now->breakdown[$key] ?? 0) < $record[$id]) {
+                    PackageQualityRecord::write($this->projectRoot, $key, $id, $now->breakdown[$key] ?? 0, null);
+                }
+            }
             $events[] = [$id, $now, $verdict->status === Verdict::NEW ? 'new' : 'record'];
             $recorded[] = $verdict;
         }
@@ -125,15 +134,45 @@ final class QualityLedger
         return $this->locked(function () use ($id, $reason): Verdict {
             $data = $this->read();
             $now = $this->metrics[$id]['metric']->measure($this->projectRoot);
-            $verdict = Verdict::of($id, $now, $data['metrics'][$id] ?? null);
+            $verdict = Verdict::of($id, $now, PackageQualityRecord::overlay($this->projectRoot, $data['metrics'])[$id] ?? null);
 
-            $data['metrics'][$id] = $this->entry($now, $this->metrics[$id]['meta']);
+            // A package's key goes to that package's own record, in the PR of
+            // the change that moved it; the central file only for the rest
+            // (tk-quality-record-lives-with-the-package).
+            $central = $verdict->status === Verdict::NEW ? $verdict->moved : [];
+            foreach ($verdict->status === Verdict::NEW ? [] : $verdict->moved as $key => $move) {
+                if (!PackageQualityRecord::owns($this->projectRoot, (string) $key)) {
+                    $central[$key] = $move;
+                    continue;
+                }
+                $rose = $move['to'] > $move['from'];
+                PackageQualityRecord::write($this->projectRoot, (string) $key, $id, $move['to'], $rose ? [
+                    'at' => gmdate('Y-m-d'), 'from' => $move['from'], 'to' => $move['to'], 'reason' => $reason,
+                ] : null);
+            }
+            if ($verdict->status !== Verdict::NEW && $central === []) {
+                return $verdict;
+            }
+
+            $entry = $this->entry($now, $this->metrics[$id]['meta']);
+            if ($verdict->status !== Verdict::NEW) {
+                // Only the keys no package owns move here; a package key keeps
+                // its central value as the fallback for a package without a record.
+                $breakdown = (array) ($data['metrics'][$id]['breakdown'] ?? []);
+                foreach ($central as $key => $move) {
+                    $breakdown[$key] = $move['to'];
+                }
+                $entry['breakdown'] = array_filter($breakdown, static fn (mixed $n): bool => $n !== 0);
+                ksort($entry['breakdown']);
+                $entry['total'] = array_sum($entry['breakdown']);
+            }
+            $data['metrics'][$id] = $entry;
             $data['deliberate'][] = [
                 'at' => gmdate('Y-m-d'),
                 'metric' => $id,
                 'from' => $verdict->from,
                 'to' => $verdict->to,
-                'keys' => $verdict->moved,
+                'keys' => $central,
                 'reason' => $reason,
             ];
             $this->write($data);
@@ -188,6 +227,17 @@ final class QualityLedger
     private function entry(Measurement $now, AsQualityMetric $meta): array
     {
         return ['total' => $now->total(), 'breakdown' => $now->breakdown, 'sees' => $meta->sees, 'blind' => $meta->blind];
+    }
+
+    /**
+     * The baseline every comparison is made against: the central file with
+     * each package's own record laid over it.
+     *
+     * @return array<string, mixed>
+     */
+    public function baseline(): array
+    {
+        return PackageQualityRecord::overlay($this->projectRoot, $this->read()['metrics']);
     }
 
     /**
