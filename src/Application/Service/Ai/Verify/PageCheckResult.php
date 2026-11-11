@@ -106,8 +106,10 @@ final readonly class PageCheckResult
             $notFound += (int) ((($seen['modes'][$mode] ?? null)['status'] ?? null) === 404);
         }
         if ($notFound === count(self::MODES) && $this->declaredSinceServerStart((string) ($target->commandInput['declared_in'] ?? ''))) {
-            return self::notRun($target, "{$path} answered 404 from the running server, and the route is declared in a file changed since it started: "
-                . 'the server has not loaded it. Restart it (bin/semitexa server:restart app) and verify again');
+            // New or edited, the server answers from that file as it was when it
+            // started: its answer says nothing about this change (review, dev#226).
+            return self::notRun($target, "{$path} answered 404 from the running server, but the file that declares the route changed after it started: "
+                . 'the server answers from the code before that change, not this one. Restart it (bin/semitexa server:restart app) and verify again');
         }
 
         if ($missing !== []) {

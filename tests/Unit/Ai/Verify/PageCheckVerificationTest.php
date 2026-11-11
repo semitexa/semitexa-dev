@@ -249,7 +249,8 @@ final class PageCheckVerificationTest extends TestCase
 
         $stale = $this->check('/guard', 'run-1', [], $new);
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $stale->status);
-        self::assertStringContainsString('the server has not loaded it', (string) $stale->signal);
+        // New or edited: the server answers from the file as it was at its start.
+        self::assertStringContainsString('the server answers from the code before that change', (string) $stale->signal);
         self::assertStringContainsString('bin/semitexa server:restart app', (string) $stale->signal);
         // Declared before the server started: it answers 404 as it is.
         self::assertSame(VerificationResult::STATUS_FAIL, $this->check('/old', 'run-1', [], $old)->status);
