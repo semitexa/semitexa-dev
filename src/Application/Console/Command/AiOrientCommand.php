@@ -113,6 +113,7 @@ final class AiOrientCommand extends BaseCommand
             'generated_at' => gmdate('c'),
             'cwd'          => getcwd() ?: '',
             'git'          => $git,
+            'unshipped_commits' => \Semitexa\Dev\Application\Service\Ai\State\UnshippedCommits::in($this->getProjectRoot()), // never pushed: nobody ships them otherwise
             'backlog'      => [
                 'total_epics'           => count($epics),
                 'active_epic_id'        => $activeEpicId,
@@ -648,9 +649,8 @@ final class AiOrientCommand extends BaseCommand
             AgentDocsFreshness::MISSING => 'AGENTS.md is missing: run bin/semitexa update',
             default => null,
         };
-        if ($docsWarning !== null) {
-            $io->writeln('  ⚠ ' . $docsWarning);
-        }
+        if ($docsWarning !== null) { $io->writeln('  ⚠ ' . $docsWarning); }
+        foreach ($envelope['unshipped_commits'] as $u) { $io->writeln(sprintf('  ⚠ %s (%s) has %d commit(s) nobody pushed, last: %s — push %2$s and ship it by a PR', $u['repo'], $u['branch'], $u['ahead'], $u['last'])); }
         foreach ($wn['agents'] as $a) {
             $io->writeln(sprintf(
                 '  %s (%s%s, %d min ago): %s%s',
