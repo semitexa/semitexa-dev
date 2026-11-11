@@ -70,12 +70,17 @@ for file in "${INFRA_FILES[@]}"; do
     target_file="$RELEASE_ROOT/$file"
 
     if [ ! -f "$source_file" ]; then
+        # The CLI is not an optional overlay: without it the clone keeps the old
+        # one and every later stage runs on it (review, semitexa-dev#230).
+        [ "$file" = bin/semitexa ] && fail "The scaffold has no bin/semitexa ($source_file): the release clone would keep its old CLI."
         # Not every overlay exists in every scaffold generation; a file we do not
         # ship is not drift.
         continue
     fi
 
     if [ -f "$target_file" ] && cmp -s "$source_file" "$target_file"; then
+        # Same bytes, but the CLI may have lost its mode: it still has to run (review, semitexa-dev#230).
+        case "$file" in bin/*) chmod +x "$target_file" ;; esac
         continue
     fi
 

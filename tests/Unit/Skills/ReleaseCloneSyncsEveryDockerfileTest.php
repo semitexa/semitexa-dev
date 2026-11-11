@@ -161,6 +161,40 @@ final class ReleaseCloneSyncsEveryDockerfileTest extends TestCase
         );
     }
 
+    /**
+     * The CLI is required and always runnable (review, semitexa-dev#230): a
+     * scaffold without it kept the clone's old CLI silently, and a CLI with the
+     * same bytes but no execute bit was skipped before its chmod.
+     */
+    #[Test]
+    public function the_cli_is_required_and_left_executable(): void
+    {
+        $root = sys_get_temp_dir() . '/semitexa-clone-cli-' . bin2hex(random_bytes(4));
+        mkdir($root . '/scaffold/bin', 0777, true);
+        mkdir($root . '/clone/bin', 0777, true);
+        $run = function () use ($root): array {
+            exec('RELEASE_ROOT=' . escapeshellarg($root . '/clone') . ' SEMITEXA_SCAFFOLD_DIR=' . escapeshellarg($root . '/scaffold')
+                . ' bash ' . escapeshellarg((string) realpath(self::SCRIPT)) . ' 2>&1', $out, $status);
+
+            return [$status, implode("\n", $out)];
+        };
+
+        [$status, $out] = $run();
+        self::assertNotSame(0, $status, 'no CLI in the scaffold fails the stage');
+        self::assertStringContainsString('the release clone would keep its old CLI', $out);
+
+        file_put_contents($root . '/scaffold/bin/semitexa', "#!/bin/sh\necho cli\n");
+        file_put_contents($root . '/clone/bin/semitexa', "#!/bin/sh\necho cli\n");
+        chmod($root . '/clone/bin/semitexa', 0644);
+        [$status, $out] = $run();
+        clearstatcache();
+        $mode = fileperms($root . '/clone/bin/semitexa') & 0111;
+        exec('rm -rf ' . escapeshellarg($root));
+
+        self::assertSame(0, $status, $out);
+        self::assertNotSame(0, $mode, 'the same bytes, made executable all the same');
+    }
+
     #[Test]
     public function the_image_marker_changes_when_the_runner_dockerfile_does(): void
     {
