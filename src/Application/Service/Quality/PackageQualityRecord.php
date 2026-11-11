@@ -14,7 +14,7 @@ use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
  * change in package X that had to raise one needed a semitexa-dev commit too.
  * With semitexa-dev's PR in review it had nowhere to go: on 2026-11-11 the
  * record for semitexa-os#32 sat uncommitted and the release preflight failed
- * on `workspace-is-pushed`. Kept in `packages/<key>/quality.json`, the record
+ * on `workspace-is-pushed`. Kept in `packages/<key>/resources/quality.json`, the record
  * ships in the same PR as the change that caused it.
  *
  * A record REPLACES the central breakdown value for its key, never adds to it,
@@ -24,7 +24,13 @@ use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
  */
 final class PackageQualityRecord
 {
-    public const FILE = 'quality.json';
+    /**
+     * Under resources/: a package root holds only the files its envelope
+     * declares, and module_structure refuses anything else there, so
+     * `quality.json` at the root failed the first package that used it
+     * (semitexa-crud#12).
+     */
+    public const FILE = 'resources/quality.json';
 
     /**
      * Whether a breakdown key is a package of this workspace, the repository a
@@ -76,6 +82,10 @@ final class PackageQualityRecord
      */
     public static function write(string $projectRoot, string $key, string $id, int $count, ?array $accepted): void
     {
+        // Never a directory for a key that names no package (review, dev#237).
+        if (!self::owns($projectRoot, $key)) {
+            throw new \InvalidArgumentException("'{$key}' is not a package of this workspace");
+        }
         $path = self::path($projectRoot, $key);
         $data = is_file($path) ? self::decode($path) : [];
         $data['metrics'][$id]['count'] = $count;
@@ -83,6 +93,9 @@ final class PackageQualityRecord
             $data['metrics'][$id]['accepted'][] = $accepted;
         }
         ksort($data['metrics']);
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o775, true);
+        }
         $data = ['_' => 'This package\'s share of the Semitexa quality ledger: lower is better. Written only by `bin/semitexa ai:quality`; do not edit by hand.'] + $data;
         JsonFile::writeAtomic($path, $data);
         @chmod($path, 0o666);
@@ -93,9 +106,10 @@ final class PackageQualityRecord
      */
     public static function all(string $projectRoot): array
     {
+        self::refuseWhatWouldBeMissed($projectRoot);
         $out = [];
         foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
-            $key = basename(dirname($path));
+            $key = basename(dirname($path, 2));
             if (!self::owns($projectRoot, $key)) {
                 continue;
             }
@@ -121,7 +135,7 @@ final class PackageQualityRecord
     {
         $out = [];
         foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
-            $key = basename(dirname($path));
+            $key = basename(dirname($path, 2));
             if (!self::owns($projectRoot, $key)) {
                 continue;
             }
@@ -141,6 +155,25 @@ final class PackageQualityRecord
         }
 
         return $out;
+    }
+
+    /**
+     * A record the glob below cannot see must fail, not fall back to the
+     * central value, which may be higher (review, dev#237): one left at the
+     * package root by the first version, or one under a resources/ the
+     * process cannot enter.
+     */
+    private static function refuseWhatWouldBeMissed(string $projectRoot): void
+    {
+        foreach (glob($projectRoot . '/packages/*', GLOB_ONLYDIR) ?: [] as $package) {
+            if (is_file($package . '/quality.json')) {
+                throw new \RuntimeException("{$package}/quality.json is a quality record at the package root, where module_structure refuses it: move it to {$package}/" . self::FILE);
+            }
+            $resources = $package . '/resources';
+            if (is_dir($resources) && (!is_readable($resources) || !is_executable($resources))) {
+                throw new \RuntimeException("{$resources} cannot be read, so its quality record (if any) cannot be counted");
+            }
+        }
     }
 
     /**
