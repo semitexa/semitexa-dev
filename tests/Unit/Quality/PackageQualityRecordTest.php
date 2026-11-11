@@ -167,7 +167,7 @@ final class PackageQualityRecordTest extends TestCase
 
         $violations = (new ModuleStructureValidator(
             $this->root,
-            (new ModuleStructureSpecLoader(dirname(__DIR__, 6)))->load(),
+            (new ModuleStructureSpecLoader(dirname(__DIR__, 5)))->load(),
         ))->validate(new DetectedModule(name: 'os', relativePath: 'packages/semitexa-os', kind: DetectedModule::KIND_PACKAGE));
 
         $codes = array_map(static fn ($v): string => $v->code . ' ' . $v->path, $violations);

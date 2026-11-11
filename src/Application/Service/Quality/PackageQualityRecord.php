@@ -82,6 +82,10 @@ final class PackageQualityRecord
      */
     public static function write(string $projectRoot, string $key, string $id, int $count, ?array $accepted): void
     {
+        // Never a directory for a key that names no package (review, dev#237).
+        if (!self::owns($projectRoot, $key)) {
+            throw new \InvalidArgumentException("'{$key}' is not a package of this workspace");
+        }
         $path = self::path($projectRoot, $key);
         $data = is_file($path) ? self::decode($path) : [];
         $data['metrics'][$id]['count'] = $count;
