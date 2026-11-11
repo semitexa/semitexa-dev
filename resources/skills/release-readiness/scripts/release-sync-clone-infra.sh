@@ -55,6 +55,12 @@ INFRA_FILES=(
     # every project here with one whose page checks and a11y specs cannot load
     # (seen 05.11 and 10.11, tk-e2e-runner-image-tag-without-axe).
     docker/e2e-runner/Dockerfile
+    # The CLI itself. Only the full root sync copied it, and preflight runs
+    # --code-only, so on 2026-11-11 the clone still ran the bin/semitexa of
+    # 2026-09-06: every release verified the shipped project with a CLI two
+    # months old (no isolated E2E phase), and starting it reopened the shared
+    # router on 0.0.0.0 (tk-release-clone-runs-old-cli).
+    bin/semitexa
 )
 
 changed=()
@@ -64,17 +70,24 @@ for file in "${INFRA_FILES[@]}"; do
     target_file="$RELEASE_ROOT/$file"
 
     if [ ! -f "$source_file" ]; then
+        # The CLI is not an optional overlay: without it the clone keeps the old
+        # one and every later stage runs on it (review, semitexa-dev#230).
+        [ "$file" = bin/semitexa ] && fail "The scaffold has no bin/semitexa ($source_file): the release clone would keep its old CLI."
         # Not every overlay exists in every scaffold generation; a file we do not
         # ship is not drift.
         continue
     fi
 
     if [ -f "$target_file" ] && cmp -s "$source_file" "$target_file"; then
+        # Same bytes, but the CLI may have lost its mode: it still has to run (review, semitexa-dev#230).
+        case "$file" in bin/*) chmod +x "$target_file" ;; esac
         continue
     fi
 
     mkdir -p "$(dirname "$target_file")"
     cp "$source_file" "$target_file"
+    # The CLI runs as ./bin/semitexa, whatever mode the scaffold checkout gave it.
+    case "$file" in bin/*) chmod +x "$target_file" ;; esac
     changed+=("$file")
 done
 
