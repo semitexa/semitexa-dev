@@ -71,7 +71,7 @@
             "blind": "which repetitions are necessary; it grows with the rows a page iterates, so it is only comparable where the data is (the demo seeds are fixed, a production database is not)"
         },
         "tests.skip-calls": {
-            "total": 88,
+            "total": 89,
             "breakdown": {
                 "modules/ExceptionMapperDemo": 1,
                 "semitexa-authorization": 3,
@@ -83,7 +83,7 @@
                 "semitexa-media": 2,
                 "semitexa-orm": 7,
                 "semitexa-os": 1,
-                "semitexa-platform-settings": 3,
+                "semitexa-platform-settings": 4,
                 "semitexa-platform-ui": 4,
                 "semitexa-platform-user": 2,
                 "semitexa-rbac": 1,
@@ -1662,6 +1662,19 @@
                 }
             },
             "reason": "CssTokenScanTest skips its unreadable-file case under root: root reads a file with no read permission, so the refusal cannot be produced there (review dev#216)"
+        },
+        {
+            "at": "2026-11-11",
+            "metric": "tests.skip-calls",
+            "from": 88,
+            "to": 89,
+            "keys": {
+                "semitexa-platform-settings": {
+                    "from": 3,
+                    "to": 4
+                }
+            },
+            "reason": "SettingsWriteJoinsTransactionTest skips without MySQL: the transaction escape shows only on a second pooled connection, sqlite cannot prove it (tk-getadapter-writes-escape-transactions)"
         }
     ]
 }
