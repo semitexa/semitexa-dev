@@ -14,7 +14,7 @@ use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
  * change in package X that had to raise one needed a semitexa-dev commit too.
  * With semitexa-dev's PR in review it had nowhere to go: on 2026-11-11 the
  * record for semitexa-os#32 sat uncommitted and the release preflight failed
- * on `workspace-is-pushed`. Kept in `packages/<key>/quality.json`, the record
+ * on `workspace-is-pushed`. Kept in `packages/<key>/resources/quality.json`, the record
  * ships in the same PR as the change that caused it.
  *
  * A record REPLACES the central breakdown value for its key, never adds to it,
@@ -24,7 +24,13 @@ use Semitexa\Dev\Application\Service\Ai\Work\JsonFile;
  */
 final class PackageQualityRecord
 {
-    public const FILE = 'quality.json';
+    /**
+     * Under resources/: a package root holds only the files its envelope
+     * declares, and module_structure refuses anything else there, so
+     * `quality.json` at the root failed the first package that used it
+     * (semitexa-crud#12).
+     */
+    public const FILE = 'resources/quality.json';
 
     /**
      * Whether a breakdown key is a package of this workspace, the repository a
@@ -83,6 +89,9 @@ final class PackageQualityRecord
             $data['metrics'][$id]['accepted'][] = $accepted;
         }
         ksort($data['metrics']);
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o775, true);
+        }
         $data = ['_' => 'This package\'s share of the Semitexa quality ledger: lower is better. Written only by `bin/semitexa ai:quality`; do not edit by hand.'] + $data;
         JsonFile::writeAtomic($path, $data);
         @chmod($path, 0o666);
@@ -95,7 +104,7 @@ final class PackageQualityRecord
     {
         $out = [];
         foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
-            $key = basename(dirname($path));
+            $key = basename(dirname($path, 2));
             if (!self::owns($projectRoot, $key)) {
                 continue;
             }
@@ -121,7 +130,7 @@ final class PackageQualityRecord
     {
         $out = [];
         foreach (glob($projectRoot . '/packages/*/' . self::FILE) ?: [] as $path) {
-            $key = basename(dirname($path));
+            $key = basename(dirname($path, 2));
             if (!self::owns($projectRoot, $key)) {
                 continue;
             }

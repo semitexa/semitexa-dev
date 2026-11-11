@@ -6,6 +6,9 @@ namespace Semitexa\Dev\Tests\Unit\Quality;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
+use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
 use Semitexa\Dev\Application\Service\Quality\Measurement;
 use Semitexa\Dev\Application\Service\Quality\PackageQualityRecord;
 use Semitexa\Dev\Application\Service\Quality\QualityHtmlRenderer;
@@ -93,7 +96,7 @@ final class PackageQualityRecordTest extends TestCase
     #[Test]
     public function an_unreadable_record_is_an_error_not_a_fallback(): void
     {
-        file_put_contents(PackageQualityRecord::path($this->root, 'semitexa-os'), '{not json');
+        $this->putRecord('{not json');
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('is not a readable package quality record');
@@ -104,7 +107,7 @@ final class PackageQualityRecordTest extends TestCase
     public function a_record_without_metrics_is_an_error(): void
     {
         foreach (['{}', '{"metrics":null}'] as $json) {
-            file_put_contents(PackageQualityRecord::path($this->root, 'semitexa-os'), $json);
+            $this->putRecord($json);
             try {
                 PackageQualityRecord::all($this->root);
                 self::fail("{$json} read as a record");
@@ -149,9 +152,36 @@ final class PackageQualityRecordTest extends TestCase
     {
         $this->reading = ['semitexa-os' => 1];
         $this->ledger()->record();
-        file_put_contents(PackageQualityRecord::path($this->root, 'semitexa-os'), '{not json');
+        $this->putRecord('{not json');
 
         self::assertStringContainsString('is not a readable package quality record', (new QualityHtmlRenderer())->render($this->root));
+    }
+
+    /** The record sits where a package may hold it: at the root, module_structure refused it (semitexa-crud#12). */
+    #[Test]
+    public function a_package_holding_its_record_still_passes_module_structure(): void
+    {
+        $package = $this->root . '/packages/semitexa-os';
+        file_put_contents($package . '/composer.json', '{"name": "semitexa/os"}');
+        PackageQualityRecord::write($this->root, 'semitexa-os', 'fake.metric', 1, null);
+
+        $violations = (new ModuleStructureValidator(
+            $this->root,
+            (new ModuleStructureSpecLoader(dirname(__DIR__, 6)))->load(),
+        ))->validate(new DetectedModule(name: 'os', relativePath: 'packages/semitexa-os', kind: DetectedModule::KIND_PACKAGE));
+
+        $codes = array_map(static fn ($v): string => $v->code . ' ' . $v->path, $violations);
+        self::assertSame([], array_values(array_filter($codes, static fn (string $c): bool => str_contains($c, 'quality'))), implode("\n", $codes));
+        self::assertFileExists($package . '/resources/quality.json');
+    }
+
+    private function putRecord(string $json): void
+    {
+        $path = PackageQualityRecord::path($this->root, 'semitexa-os');
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o755, true);
+        }
+        file_put_contents($path, $json);
     }
 
     private function ledger(): QualityLedger

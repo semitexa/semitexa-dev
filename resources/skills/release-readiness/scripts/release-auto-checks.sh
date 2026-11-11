@@ -815,8 +815,8 @@ quality_ledger_gate() {
     fail "quality ledger: $(printf '%s' "$verdict" | head -1 | tr '[:upper:]' '[:lower:]')"
     printf '%s\n' "$verdict" | tail -n +2 >&2
     fail "A regression: fix it, or bin/semitexa ai:quality accept --metric=<id> --reason=\"...\" in the workspace;"
-    fail "  a package's key is written to packages/<package>/quality.json, committed with that package's change."
-    fail "An improvement: bin/semitexa ai:quality record --all in the workspace, and commit what it wrote (the baseline, or a package's quality.json)."
+    fail "  a package's key is written to packages/<package>/resources/quality.json, committed with that package's change."
+    fail "An improvement: bin/semitexa ai:quality record --all in the workspace, and commit what it wrote (the baseline, or a package's resources/quality.json)."
     exit 1
 }
 
