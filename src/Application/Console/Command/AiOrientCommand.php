@@ -649,9 +649,8 @@ final class AiOrientCommand extends BaseCommand
             AgentDocsFreshness::MISSING => 'AGENTS.md is missing: run bin/semitexa update',
             default => null,
         };
-        if ($docsWarning !== null) {
-            $io->writeln('  ⚠ ' . $docsWarning);
-        }
+        if ($docsWarning !== null) { $io->writeln('  ⚠ ' . $docsWarning); }
+        foreach ($envelope['unshipped_commits'] as $u) { $io->writeln(sprintf('  ⚠ %s (%s) has %d commit(s) nobody pushed, last: %s — ship them by a PR from develop', $u['repo'], $u['branch'], $u['ahead'], $u['last'])); }
         foreach ($wn['agents'] as $a) {
             $io->writeln(sprintf(
                 '  %s (%s%s, %d min ago): %s%s',

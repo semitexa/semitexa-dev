@@ -17,8 +17,18 @@ final class UnshippedCommitsTest extends TestCase
 {
     private string $root;
 
+    /** Variables that would aim git at another repository; put back after (review, dev#227). */
+    private const GIT_LOCATION = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX'];
+
+    /** @var array<string, string|false> */
+    private array $savedEnv = [];
+
     protected function setUp(): void
     {
+        foreach (self::GIT_LOCATION as $name) {
+            $this->savedEnv[$name] = getenv($name);
+            putenv($name);
+        }
         $this->root = sys_get_temp_dir() . '/semitexa-unshipped-' . bin2hex(random_bytes(4));
         mkdir($this->root . '/packages', 0755, true);
     }
@@ -26,6 +36,20 @@ final class UnshippedCommitsTest extends TestCase
     protected function tearDown(): void
     {
         exec('rm -rf ' . escapeshellarg($this->root));
+        foreach ($this->savedEnv as $name => $value) {
+            putenv($value === false ? $name : $name . '=' . $value);
+        }
+    }
+
+    #[Test]
+    public function a_git_dir_from_the_caller_does_not_aim_every_query_at_one_repository(): void
+    {
+        $this->package('semitexa-core', ahead: 1);
+        $this->package('semitexa-docs', ahead: 0);
+        // A hook exports GIT_DIR; without scrubbing, every package reads as core.
+        putenv('GIT_DIR=' . $this->root . '/packages/semitexa-core/.git');
+
+        self::assertSame(['packages/semitexa-core'], array_column(UnshippedCommits::in($this->root), 'repo'));
     }
 
     #[Test]

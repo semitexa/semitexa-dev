@@ -29,7 +29,12 @@ final class UnshippedCommits
         sort($dirs);
         foreach ($dirs as $git) {
             $repo = dirname($git);
-            $git = 'git -C ' . escapeshellarg($repo) . ' ';
+            // Inherited GIT_DIR and friends would aim every query at one repository
+            // (a hook exports them); safe.directory for this one only: the app
+            // container runs as another user than the one owning the checkout
+            // (review, dev#227; as DirtyWorkspaceScanner does).
+            $git = 'env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_PREFIX git -C '
+                . escapeshellarg($repo) . ' -c safe.directory=' . escapeshellarg($repo) . ' ';
             $ahead = trim((string) shell_exec($git . 'rev-list --count @{u}..HEAD 2>/dev/null'));
             if ($ahead === '' || !ctype_digit($ahead) || (int) $ahead === 0) {
                 continue;
