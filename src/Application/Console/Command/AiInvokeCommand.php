@@ -142,7 +142,7 @@ final class AiInvokeCommand extends BaseCommand
         try {
             [$handlerClass, $payloadClass, $resourceClass] = $this->resolveTarget($handlerClass, $routePath, $method);
         } catch (\Throwable $e) {
-            return $this->emitError($output, $envelope, $e->getMessage(), 'resolve');
+            return $this->emitError($output, $envelope + \Semitexa\Dev\Application\Service\Ai\Invoke\RouteMiss::fields($e), $e->getMessage(), 'resolve');
         }
 
         $envelope['target'] = [
@@ -336,7 +336,7 @@ final class AiInvokeCommand extends BaseCommand
                 }
             }
             if ($route === null) {
-                throw new \RuntimeException("route not found: {$method} {$routePath}");
+                throw \Semitexa\Dev\Application\Service\Ai\Invoke\RouteMiss::of($method, $routePath, $this->attributeDiscovery->getEnrichedRoutes());
             }
             $handlers = $route['handlers'] ?? [];
             if ($handlers === []) {
