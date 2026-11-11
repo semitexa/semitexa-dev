@@ -174,6 +174,8 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
         mkdir($dir . '/docs/en/reference', 0777, true);
         file_put_contents($dir . '/docs/en/reference/attributes-core.md', $page);
         file_put_contents($dir . '/docs/en/reference/attributes-old.md', $old);
+        // A BOM before the front matter: found, dated, never shipped as next (Fable review, semitexa-dev#231).
+        file_put_contents($dir . '/docs/en/reference/attributes-bom.md', "\xEF\xBB\xBF" . $page);
         $this->git($dir, 'add -A');
         $this->git($dir, 'commit -q -m pages');
         $this->git($dir, 'push -q origin develop');
@@ -192,6 +194,7 @@ final class ReleaseTaggerDatesDeclaredFloorsTest extends TestCase
             self::assertStringNotContainsString('verified_against: next', $dated, $revision);
         }
         self::assertStringContainsString('verified_against: 2026.09.01.0000', $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-old.md')), 'a dated page keeps its date');
+        self::assertStringContainsString('verified_against: ' . self::VERSION, $this->git($origin, 'show ' . escapeshellarg(self::VERSION . ':docs/en/reference/attributes-bom.md')), 'a BOM page is dated too');
         self::assertStringContainsString('reference page(s) verified_against: next', $result['output']);
     }
 

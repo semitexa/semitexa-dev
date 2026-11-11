@@ -919,8 +919,10 @@ function nextStampedPagesOf(array $candidates, string $revision = 'origin/master
  */
 function nextStampedPagesAt(string $packageDir, string $revision): array
 {
+    // -z with quotePath off: a non-ASCII path comes back as written, and a git
+    // warning on stderr cannot land in the path list (Fable review, semitexa-dev#231).
     $result = runShellCommand(sprintf(
-        'git -C %s grep -l -E %s %s -- %s 2>&1',
+        'git -c core.quotePath=false -C %s grep -l -z -E %s %s -- %s 2>/dev/null',
         escapeshellarg($packageDir),
         // A CRLF page ends the line in \r: it is still undated (review, semitexa-dev#231).
         escapeshellarg('^verified_against: next' . "\r" . '?$'),
@@ -933,12 +935,12 @@ function nextStampedPagesAt(string $packageDir, string $revision): array
         return [];
     }
     if ($result['exit_code'] !== 0) {
-        fwrite(STDERR, "Cannot search {$revision} in {$packageDir} for undated reference stamps: {$output}\n");
+        fwrite(STDERR, "Cannot search {$revision} in {$packageDir} for undated reference stamps (git grep exited {$result['exit_code']}).\n");
         exit(1);
     }
     $pages = [];
-    foreach (explode("\n", trim($output)) as $line) {
-        $path = (string) preg_replace('/^' . preg_quote($revision, '/') . ':/', '', trim($line));
+    foreach (explode("\0", $output) as $line) {
+        $path = (string) preg_replace('/^' . preg_quote($revision, '/') . ':/', '', $line);
         if ($path === '') {
             continue;
         }
@@ -964,16 +966,19 @@ function nextStampedPagesAt(string $packageDir, string $revision): array
  */
 function dateNextFrontMatter(string $page, string $releaseVersion): ?string
 {
-    if (preg_match('/\A(---\r?\n)(.*?)(\r?\n---\r?(?:\n|\z))/s', $page, $m, PREG_OFFSET_CAPTURE) !== 1) {
+    // A UTF-8 BOM before the first --- and an empty front matter are still a
+    // front matter; the closing --- is the first line that is only that
+    // (Fable review, semitexa-dev#231).
+    if (preg_match('/\A(?:\xEF\xBB\xBF)?---\r?\n(.*?)^---\r?$/ms', $page, $m, PREG_OFFSET_CAPTURE) !== 1) {
         return null;
     }
-    $front = $m[2][0];
+    [$front, $at] = $m[1];
     $dated = preg_replace('/^verified_against: next(\r?)$/m', 'verified_against: ' . $releaseVersion . '$1', $front, 1, $count);
     if (!is_string($dated) || $count !== 1) {
         return null;
     }
 
-    return $m[1][0] . $dated . substr($page, $m[3][1]);
+    return substr($page, 0, $at) . $dated . substr($page, $at + strlen($front));
 }
 
 /**
@@ -1038,6 +1043,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         }
     }
 
+    // whyReleaseManifestCannotBeCommitted() fetched master: pages found before
+    // that may have moved, and a stale list would surface only after the first
+    // push (Fable review, semitexa-dev#231). Seen again, refused before any commit.
+    if (nextStampedPagesOf($candidates) !== $nextPages) {
+        $refusals[] = 'master moved while the release scanned it: the reference pages stamped verified_against: next differ; run the release again';
+    }
+
     if ($refusals !== []) {
         fwrite(STDERR, "Refusing to tag anything — these release commits cannot be made in this release:\n");
         foreach ($refusals as $refusal) {
@@ -1053,12 +1065,13 @@ function dateDeclaredFloors(array $candidates, string $releaseVersion, bool $noP
         $dependencies = $undated[$index] ?? [];
         $stamp = isset($unstamped[$index]);
         $pages = $nextPages[$index] ?? [];
-        $message = match (true) {
-            $dependencies !== [] && $stamp => 'Date the declared internal floors and stamp the changelog at ' . $releaseVersion,
-            $stamp => 'Stamp the changelog at ' . $releaseVersion,
-            $dependencies !== [] => 'Date the declared internal floors at ' . $releaseVersion,
-            default => 'Date the reference pages at ' . $releaseVersion,
-        };
+        // Named for everything it carries (Fable review, semitexa-dev#231).
+        $parts = array_values(array_filter([
+            $dependencies !== [] ? 'date the declared internal floors' : null,
+            $stamp ? 'stamp the changelog' : null,
+            $pages !== [] ? 'date the reference pages' : null,
+        ]));
+        $message = ucfirst(implode(', ', array_slice($parts, 0, -1)) . (count($parts) > 1 ? ' and ' : '') . end($parts)) . ' at ' . $releaseVersion;
 
         $candidates[$index]['tag_target'] = commitReleaseManifest(
             $candidate['package_dir'],
