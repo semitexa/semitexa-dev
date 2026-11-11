@@ -24,6 +24,9 @@ final class ProjectGuardTargets
      */
     public const RATCHET_SUITE = 'packages/semitexa-dev/tests/Unit/Structure';
 
+    /** Pins how many ratchets RATCHET_SUITE holds. */
+    public const RULE_CATALOG_TEST = 'packages/semitexa-dev/tests/Unit/Ai/Verify/RuleStats/RuleCatalogTest.php';
+
     /** @param string|null $baseRef what the change is measured against (ai:verify --git-ref); null: HEAD */
     public function __construct(
         private readonly string $projectRoot,
@@ -160,6 +163,25 @@ final class ProjectGuardTargets
                 // the shared tree must not turn this agent's run red.
                 commandInput: ['SEMITEXA_QUALITY_SCOPE' => implode(',', self::reposOf($php))],
                 filePath: self::RATCHET_SUITE,
+                testFilter: null,
+            );
+        }
+
+        // The rule catalog counts the ratchets above. A ratchet added or
+        // removed changes that count, and the test pinning it lives elsewhere,
+        // where no name matches: on 2026-11-11 dev#233 added the seventh and
+        // only the release suite saw RuleCatalogTest fail (tk-verify-misses-rule-catalog-count).
+        $ratchets = array_values(array_filter(
+            array_merge(...array_map(static fn (ChangedFile $f): array => array_filter([$f->path, $f->originalPath]), $changedFiles)),
+            static fn (string $path): bool => str_starts_with($path, self::RATCHET_SUITE . '/') && str_ends_with($path, 'Test.php'),
+        ));
+        if ($ratchets !== [] && is_file($this->projectRoot . '/' . self::RULE_CATALOG_TEST)) {
+            $targets[] = new VerificationTarget(
+                type: VerificationTarget::TYPE_PHPUNIT,
+                id: 'phpunit:' . self::RULE_CATALOG_TEST,
+                reason: 'the rule catalog counts the whole-tree ratchets, so adding or removing one changes a number pinned in another directory',
+                triggeredBy: $ratchets,
+                filePath: self::RULE_CATALOG_TEST,
                 testFilter: null,
             );
         }
