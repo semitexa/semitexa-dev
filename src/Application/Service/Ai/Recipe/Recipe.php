@@ -38,5 +38,16 @@ final readonly class Recipe
          * counts only once one of those nouns has been named.
          */
         public bool $noun_led = false,
+        /**
+         * Words that rule this recipe out, however well the rest matches: a task
+         * that names a sign-in is not for the recipe that builds an open endpoint
+         * (review, dev#240: "a private JSON endpoint that returns health status"
+         * scored 18 for the public route and 9 for the authenticated one). A word
+         * or a two-word phrase. The score it would have had still counts against
+         * the winner's lead, so a near thing is asked about rather than guessed.
+         *
+         * @var list<string>
+         */
+        public array $excluded_by = [],
     ) {}
 }

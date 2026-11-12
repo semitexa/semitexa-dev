@@ -246,6 +246,9 @@ final class AiTaskCommand extends BaseCommand
                     ['cmd' => 'orm:diff', 'args' => [], 'why' => 'schema delta if relevant (human-readable output)'],
                     ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--scope=broad', '--json'], 'why' => 'broad verification on close'],
                 ],
+                'send_mail' => [
+                    ['cmd' => 'ai:ask', 'args' => ['mechanisms', '--id=mail.outbound', '--json'], 'why' => 'how mail is sent here: transport, template, queue'],
+                ],
                 'document_or_explain' => [
                     ['cmd' => 'docs:list', 'args' => ['--json'], 'why' => 'existing canonical docs map'],
                 ],
@@ -304,6 +307,7 @@ final class AiTaskCommand extends BaseCommand
                 'audit_codebase'         => 'audit path: `ai:ask project` → `dev:graph:module` per target → `routes:list` / `contracts:list`. Report, do not generate.',
                 'migrate_or_upgrade'     => 'migration path: `ai:epic start` is required (risk=high). `orm:diff` for schema moves, targeted `ai:review-graph:impact` before each step, `ai:verify --scope=broad` at the end.',
                 'document_or_explain'    => 'docs path: update files under `packages/semitexa-docs/` or the target package `docs/`. Do not create root-level `*.md` unless explicitly asked.',
+                'send_mail'              => 'mail path: `ai:ask mechanisms --id=mail.outbound` names the mailer, its templates and the outbox; send through it, then `ai:verify`. No generator.',
                 'optimize_performance'   => 'perf path: measure first (baseline), change second, re-measure. No generator — use `ai:ask` to locate hot paths and `ai:verify` to avoid regressions.',
                 default                  => "no scaffold available for {$id}; edit existing files and run `ai:context {$id}` for prior art.",
             };
