@@ -28,6 +28,7 @@ final class OrientBriefTest extends TestCase
         $brief = OrientBrief::of($this->envelope(), 'tk-0', 'claude-me', self::NOW);
         $json = (string) json_encode($brief, JSON_UNESCAPED_SLASHES);
 
+        self::assertJson($json, 'an encoding failure is not a small answer');
         self::assertLessThan(6000, strlen($json), 'the brief grew past the size a cold start should read');
         self::assertGreaterThan(20000, strlen((string) json_encode($this->envelope(), JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)), 'the fixture is as big as the real one was');
         self::assertCount(8, $brief['backlog']['in_progress_tasks'], 'every task is still named');
@@ -43,7 +44,13 @@ final class OrientBriefTest extends TestCase
 
         self::assertTrue($tasks[0]['suggested'] ?? false);
         self::assertArrayNotHasKey('suggested', $tasks[1]);
-        foreach ($tasks as $task) {
+        $source = $this->envelope()['backlog']['in_progress_tasks'];
+        foreach ($tasks as $i => $task) {
+            self::assertSame(
+                [$source[$i]['id'], $source[$i]['title'], $source[$i]['updated_at'], null],
+                [$task['id'] ?? false, $task['title'] ?? false, $task['updated_at'] ?? false, array_key_exists('held_by', $task) ? $task['held_by'] : false],
+                'each task keeps what names it',
+            );
             self::assertArrayNotHasKey('next_step', $task, 'a next step is read from suggest_next, once');
         }
         self::assertArrayNotHasKey('stale', $tasks[0]);
