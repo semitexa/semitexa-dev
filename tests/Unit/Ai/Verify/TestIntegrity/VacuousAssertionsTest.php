@@ -161,7 +161,7 @@ final class VacuousAssertionsTest extends TestCase
         <?php
         final class LoopTest extends TestCase
         {
-            public function remedy_clears_the_loop(): void
+            public function a_shown_list_does_not_show_its_rows(): void
             {
                 self::assertNotEmpty($rows);
                 foreach ($rows as $row) {
@@ -214,11 +214,75 @@ final class VacuousAssertionsTest extends TestCase
     public function a_loop_needs_its_list_shown_and_an_upper_bound_needs_a_size(): void
     {
         self::assertSame([
+            // CodeRabbit on dev#247, over Fable's reading: assertNotEmpty($rows) passes on [[]].
+            ['a_shown_list_does_not_show_its_rows', 8, 'assertArrayNotHasKey($row)'],
             ['loop_over_a_call', 16, 'assertArrayNotHasKey($row)'],
             ['not_false_is_not_not_empty', 23, 'assertLessThan(strlen((string)$json))'],
             ['only_instances_of_nothing', 30, 'assertNotContains($items)'],
             ['a_wrapper_keeps_its_first_argument', 48, 'assertStringNotContainsString(trim($out,"\n"))'],
         ], self::summary(VacuousAssertions::in('tests/LoopTest.php', self::LOOPS_AND_BOUNDS)));
+    }
+
+    /** CodeRabbit on dev#247, third round: evidence that may be skipped, an empty literal list, another property. */
+    private const SKIPPED_OR_ELSEWHERE = <<<'PHP'
+        <?php
+        final class ElsewhereTest extends TestCase
+        {
+            public function guarded_evidence(): void
+            {
+                if ($text !== '') {
+                    self::assertNotEmpty($text);
+                }
+                self::assertStringNotContainsString('secret', $text);
+            }
+
+            public function empty_literal_list(): void
+            {
+                $rows = [];
+                foreach ($rows as $row) {
+                    self::assertSame('a', $row['name']);
+                    self::assertArrayNotHasKey('secret', $row);
+                }
+            }
+
+            public function another_property(): void
+            {
+                self::assertSame('id', $record->id);
+                self::assertStringNotContainsString('secret', $record->summary);
+            }
+
+            public function closure_evidence(): void
+            {
+                $check = function () use ($out) { self::assertNotSame('', $out); };
+                self::assertStringNotContainsString('x', $out);
+            }
+
+            public function the_same_property_a_part_and_the_whole(): void
+            {
+                self::assertStringContainsString('ok', $record->summary);
+                self::assertStringNotContainsString('secret', $record->summary);
+                self::assertTrue($tasks[0]['suggested']);
+                self::assertArrayNotHasKey('stale', $tasks[0]);
+                self::assertSame(['a' => 1], $config);
+                self::assertArrayNotHasKey('b', $config['nested']);
+                $cases = ['a', 'b'];
+                foreach ($cases as $case) {
+                    self::assertNotSame('', $case);
+                    self::assertStringNotContainsString('x', $case);
+                }
+            }
+        }
+        PHP;
+
+    #[Test]
+    public function evidence_that_may_be_skipped_or_is_about_another_part_shows_nothing(): void
+    {
+        self::assertSame([
+            ['guarded_evidence', 9, 'assertStringNotContainsString($text)'],
+            ['empty_literal_list', 17, 'assertArrayNotHasKey($row)'],
+            ['another_property', 24, 'assertStringNotContainsString($record->summary)'],
+            ['closure_evidence', 30, 'assertStringNotContainsString($out)'],
+        ], self::summary(VacuousAssertions::in('tests/ElsewhereTest.php', self::SKIPPED_OR_ELSEWHERE)));
     }
 
     #[Test]

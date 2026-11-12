@@ -23,7 +23,13 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  *
  * Inside a foreach, the loop is the first question: a check in a loop over a computed list that
  * no assertion outside the loop names as a whole runs zero times on an empty list. A loop value
- * is shown when its list is (review, dev#247).
+ * still needs evidence of its own: a non-empty list may hold empty rows (review, dev#247).
+ * Evidence under an `if`, in a `catch`, a `while` or a closure counts only for checks under it.
+ *
+ * A heuristic, not a proof. Not modelled: a ternary or `&&` around an assertion, an early
+ * return, evidence asserted in a helper method, a value whose emptiness is ruled out by its type.
+ * A finding it gets wrong is accepted with a reason on an added line, like every finding of
+ * lint:test-integrity.
  */
 final class VacuousAssertions
 {
@@ -83,7 +89,7 @@ final class VacuousAssertions
         $added = $addedLines === null ? null : array_fill_keys($addedLines, true);
         $tokens = array_values(array_filter(\PhpToken::tokenize($source), static fn (\PhpToken $t): bool => !$t->isIgnorable()));
         $findings = [];
-        foreach (self::methods($tokens) as $method => ['calls' => $calls, 'loops' => $loops, 'fixed' => $fixed]) {
+        foreach (self::methods($tokens) as $method => ['calls' => $calls, 'loops' => $loops, 'fixed' => $fixed, 'branches' => $branches]) {
             foreach ($calls as $call) {
                 $name = strtolower($call['name']);
                 if (!$call['absence'] || !isset($call['args'][1]) || self::againstEmpty($call)) {
@@ -100,7 +106,7 @@ final class VacuousAssertions
                 if ($added !== null && array_intersect_key($added, array_flip(range($call['line'], $call['end']))) === []) {
                     continue;
                 }
-                $why = self::unshownLoop($call, $calls, $loops, $fixed) ?? self::unshownSubject($call, $calls, $loops, $fixed);
+                $why = self::unshownLoop($call, $calls, $loops, $fixed, $branches) ?? self::unshownSubject($call, $calls, $branches);
                 if ($why === null) {
                     continue;
                 }
@@ -124,12 +130,13 @@ final class VacuousAssertions
      * @param array{at: int} $call
      * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
      * @param list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}> $loops
-     * @param array<string, true> $fixed variables the method assigns a literal array
+     * @param array<string, true> $fixed variables the method assigns a non-empty literal array
+     * @param list<array{0: int, 1: int}> $branches token ranges that may not run
      */
-    private static function unshownLoop(array $call, array $calls, array $loops, array $fixed): ?string
+    private static function unshownLoop(array $call, array $calls, array $loops, array $fixed, array $branches): ?string
     {
         foreach ($loops as $loop) {
-            if ($call['at'] > $loop['from'] && $call['at'] < $loop['to'] && !self::listShown($loop, $calls, $fixed)) {
+            if ($call['at'] > $loop['from'] && $call['at'] < $loop['to'] && !self::listShown($loop, $calls, $fixed, $branches)) {
                 return sprintf('the loop over %s runs zero times, and no assertion outside it shows that list holds anything', self::text($loop['list']));
             }
         }
@@ -138,35 +145,44 @@ final class VacuousAssertions
     }
 
     /**
-     * @param array{args: list<list<\PhpToken>>} $call
+     * @param array{at: int, args: list<list<\PhpToken>>} $call
      * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
-     * @param list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}> $loops
-     * @param array<string, true> $fixed
+     * @param list<array{0: int, 1: int}> $branches
      */
-    private static function unshownSubject(array $call, array $calls, array $loops, array $fixed): ?string
+    private static function unshownSubject(array $call, array $calls, array $branches): ?string
     {
         $subject = self::unwrap($call['args'][1]);
         if ($subject === [] || self::isLiteral($subject)) {
             return null;
         }
+        // A loop value needs its own evidence: assertNotEmpty($rows) passes on [[]], and so does a
+        // check on each empty $row (review, dev#247).
         $shown = [];
         foreach ($calls as $other) {
-            if (self::isEvidence($other)) {
+            if (self::isEvidence($other) && self::runsWith($other['at'], $call['at'], $branches)) {
                 array_push($shown, ...$other['args']);
             }
         }
-        if (self::isShown($subject, $shown)) {
-            return null;
-        }
-        // A loop value is shown by its list: assertNotEmpty($rows) covers every $row. Only the value
-        // itself: what a call computes from it ($classifier->classify($row)) can still be empty.
-        foreach ($loops as $loop) {
-            if ($loop['value'] !== null && ($subject[0]->text ?? '') === $loop['value'] && self::isFixed(array_slice($subject, 1)) && self::listShown($loop, $calls, $fixed)) {
-                return null;
+
+        return self::isShown($subject, $shown) ? null : 'that value is empty or missing, and no other assertion shows it holds anything';
+    }
+
+    /**
+     * Whether evidence at $evidence runs whenever the check at $target does: an assertion under an
+     * `if`, in a `catch` or in a closure that the check is not under too may be skipped on exactly
+     * the empty path (review, dev#247).
+     *
+     * @param list<array{0: int, 1: int}> $branches
+     */
+    private static function runsWith(int $evidence, int $target, array $branches): bool
+    {
+        foreach ($branches as [$from, $to]) {
+            if ($evidence > $from && $evidence < $to && !($target > $from && $target < $to)) {
+                return false;
             }
         }
 
-        return 'that value is empty or missing, and no other assertion shows it holds anything';
+        return true;
     }
 
     /**
@@ -175,15 +191,16 @@ final class VacuousAssertions
      * @param array{from: int, to: int, list: list<\PhpToken>} $loop
      * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
      * @param array<string, true> $fixed
+     * @param list<array{0: int, 1: int}> $branches
      */
-    private static function listShown(array $loop, array $calls, array $fixed): bool
+    private static function listShown(array $loop, array $calls, array $fixed, array $branches): bool
     {
         $list = self::text($loop['list']);
         if (self::isFixed($loop['list']) || isset($fixed[$list])) {
             return true;
         }
         foreach ($calls as $other) {
-            if (($other['at'] > $loop['from'] && $other['at'] < $loop['to']) || !self::isEvidence($other)) {
+            if (($other['at'] > $loop['from'] && $other['at'] < $loop['to']) || !self::isEvidence($other) || !self::runsWith($other['at'], $loop['from'], $branches)) {
                 continue;
             }
             foreach ($other['args'] as $arg) {
@@ -203,7 +220,8 @@ final class VacuousAssertions
      * @return array<string, array{
      *     calls: list<array{at: int, name: string, line: int, end: int, absence: bool, args: list<list<\PhpToken>>}>,
      *     loops: list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}>,
-     *     fixed: array<string, true>
+     *     fixed: array<string, true>,
+     *     branches: list<array{0: int, 1: int}>
      * }>
      */
     private static function methods(array $tokens): array
@@ -223,11 +241,21 @@ final class VacuousAssertions
                 continue;
             }
             $end = self::closing($tokens, $j);
-            $method = $methods[$name] ?? ['calls' => [], 'loops' => [], 'fixed' => []];
+            $method = $methods[$name] ?? ['calls' => [], 'loops' => [], 'fixed' => [], 'branches' => []];
             for ($k = $j + 1; $k < $end; $k++) {
                 $token = $tokens[$k];
-                if ($token->id === T_VARIABLE && self::is($tokens[$k + 1] ?? $token, '=') && (self::is($tokens[$k + 2] ?? $token, '[') || strtolower($tokens[$k + 2]->text ?? '') === 'array')) {
+                // `$rows = ['a']` is a list that holds something; `$rows = []` is not (review, dev#247).
+                $literal = $tokens[$k + 2] ?? $token;
+                if ($token->id === T_VARIABLE && self::is($tokens[$k + 1] ?? $token, '=')
+                    && ((self::is($literal, '[') && !self::is($tokens[$k + 3] ?? $token, ']'))
+                        || (strtolower($literal->text) === 'array' && !self::is($tokens[$k + 4] ?? $token, ')')))) {
                     $method['fixed'][$token->text] = true;
+                }
+                if (in_array($token->id, [T_IF, T_ELSEIF, T_ELSE, T_SWITCH, T_CATCH, T_WHILE, T_FOR, T_FUNCTION], true)) {
+                    $branch = self::branch($tokens, $k);
+                    if ($branch !== null) {
+                        $method['branches'][] = $branch;
+                    }
                 }
                 if ($token->id === T_FOREACH && self::is($tokens[$k + 1] ?? $token, '(')) {
                     $method['loops'][] = self::loop($tokens, $k + 1);
@@ -254,6 +282,35 @@ final class VacuousAssertions
         }
 
         return $methods;
+    }
+
+    /**
+     * The body of an `if`, `else`, `catch`, `switch`, `while`, `for` or closure: code that may not run.
+     *
+     * @param list<\PhpToken> $tokens
+     * @return array{0: int, 1: int}|null
+     */
+    private static function branch(array $tokens, int $keyword): ?array
+    {
+        $k = $keyword + 1;
+        if (self::is($tokens[$k] ?? $tokens[$keyword], '(')) {
+            $k = self::closing($tokens, $k) + 1;
+        }
+        // A closure's `use (...)` and return type come before its body.
+        while ($tokens[$keyword]->id === T_FUNCTION && $k < count($tokens) && !self::is($tokens[$k], '{') && !self::is($tokens[$k], ';')) {
+            $k++;
+        }
+        if (!self::is($tokens[$k] ?? $tokens[$keyword], '{')) {
+            if ($tokens[$keyword]->id === T_FUNCTION || ($tokens[$k]->id ?? null) === T_IF) {
+                return null; // `else if`: the `if` is its own branch
+            }
+            for ($to = $k; $to < count($tokens) && !self::is($tokens[$to], ';'); $to++) {
+            }
+
+            return [$k - 1, $to + 1];
+        }
+
+        return [$k, self::closing($tokens, $k)];
     }
 
     /**
@@ -436,34 +493,24 @@ final class VacuousAssertions
     }
 
     /**
+     * Whether an argument of an assertion that shows something is the subject, a part of it, or
+     * the whole it is part of. Evidence on another part of the same value is not evidence:
+     * `assertSame('id', $record->id)` shows nothing about `$record->summary` (review, dev#247).
+     *
      * @param list<\PhpToken>       $subject
      * @param list<list<\PhpToken>> $shown arguments of the assertions that show a value holds something
      */
     private static function isShown(array $subject, array $shown): bool
     {
-        $calls = false;
-        $variables = [];
-        foreach ($subject as $token) {
-            if ($token->id === T_VARIABLE && $token->text !== '$this') {
-                $variables[$token->text] = true;
-            }
-            if (self::is($token, '(') || $token->id === T_DOUBLE_COLON) {
-                $calls = true;
-            }
-        }
-        if ($calls || $variables === []) {
-            $text = self::text($subject);
-            foreach ($shown as $arg) {
-                if (str_contains(self::text($arg), $text)) {
+        $text = self::text($subject);
+        $part = '(?:->|\?->|\[)';
+        foreach ($shown as $arg) {
+            foreach ([self::text($arg), self::text(self::unwrap($arg))] as $evidence) {
+                // The subject, or a part of it: a true $tasks[0]['suggested'] shows $tasks[0] holds something.
+                if (preg_match('/' . preg_quote($text, '/') . '(?!\w)/', $evidence) === 1) {
                     return true;
                 }
-            }
-
-            return false;
-        }
-        foreach ($shown as $arg) {
-            foreach ($arg as $token) {
-                if (isset($variables[$token->text])) {
+                if (preg_match('/^\$\w+(?:' . $part . '[^()]*)?$/', $evidence) === 1 && preg_match('/^' . preg_quote($evidence, '/') . $part . '/', $text) === 1) {
                     return true;
                 }
             }
