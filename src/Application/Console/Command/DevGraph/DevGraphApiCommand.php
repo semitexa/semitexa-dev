@@ -67,18 +67,19 @@ final class DevGraphApiCommand extends BaseCommand
 
     private function describe(string $name, InputInterface $input, OutputInterface $output): int
     {
-        $matches = $this->catalog((bool) $input->getOption('with-demo'))->resolve($name);
+        $catalog = $this->catalog((bool) $input->getOption('with-demo'));
+        $matches = $catalog->resolve($name);
         if ($matches === []) {
             return $this->refuseUnknown($name, $input, $output);
         }
 
-        $chosen = $this->catalog((bool) $input->getOption('with-demo'))->lookup($name);
+        $chosen = $catalog->lookup($name);
         if ($chosen === null) {
             return LookupRefusal::refuse(
                 $input,
                 $output,
                 self::CLASS_ARTIFACT,
-                $this->catalog((bool) $input->getOption('with-demo'))->refusalFor($name),
+                $catalog->refusalFor($name),
                 'Classes',
                 $matches,
             );

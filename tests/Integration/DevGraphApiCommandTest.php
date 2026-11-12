@@ -105,8 +105,12 @@ final class DevGraphApiCommandTest extends TestCase
     {
         $name = 'Semitexa\\Demo\\Application\\Service\\GoogleOAuthClient';
 
-        $this->assertSame(1, $this->ask(['--name' => $name, '--json' => true])->getStatusCode());
-        $this->assertSame(0, $this->ask(['--name' => $name, '--with-demo' => true, '--json' => true])->getStatusCode());
+        $without = json_decode(trim($this->ask(['--name' => $name, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $with = json_decode(trim($this->ask(['--name' => $name, '--with-demo' => true, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame('error', $without['status']);
+        $this->assertStringContainsString('No framework class is named', $without['error']);
+        $this->assertSame(['ok', $name], [$with['status'], $with['class']['name']]);
     }
 
     public function test_ai_ask_takes_the_options_its_own_continuation_names(): void
