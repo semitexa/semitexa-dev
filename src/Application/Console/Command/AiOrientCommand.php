@@ -45,7 +45,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 #[AsCommand(
     name: 'ai:orient',
-    description: 'Session dashboard: git + active epic + in-progress tasks + recent traces + next step. Run this first on a cold start.',
+    description: 'Session dashboard: git + active epic + in-progress tasks + recent traces + next step. Run this first on a cold start. --json answers a brief; --json --full gives every field.',
 )]
 final class AiOrientCommand extends BaseCommand
 {
