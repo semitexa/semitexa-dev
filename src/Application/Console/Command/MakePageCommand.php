@@ -44,7 +44,7 @@ final class MakePageCommand extends BaseCommand
      * requires a value when the option is given; presence is checked by
      * {@see GenerationPreflight}, and NextCommandContractTest reads this list.
      */
-    public const REQUIRED_OPTIONS = ['module', 'name', 'path', 'method'];
+    public const REQUIRED_OPTIONS = ['module', 'name', 'path'];
 
     #[InjectAsReadonly]
     protected ClassDiscovery $classDiscovery;
@@ -58,7 +58,8 @@ final class MakePageCommand extends BaseCommand
             ->addOption('module', null, InputOption::VALUE_REQUIRED, 'Target module name')
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Page name')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Route path')
-            ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method')
+            // A page is read: GET unless the caller says otherwise (tk-make-page-errors-one-at-a-time).
+            ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method', 'GET')
             ->addOption('layout', null, InputOption::VALUE_REQUIRED, 'Layout template name')
             ->addOption('access', null, InputOption::VALUE_REQUIRED, 'Payload access type: public | protected | service', 'protected')
             ->addOption('with-assets', null, InputOption::VALUE_NONE, 'Generate CSS/JS/assets.json stubs')

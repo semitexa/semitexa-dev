@@ -216,7 +216,7 @@ final class RecipeRegistry
                     '--module' => 'Target module (existing module name preferred).',
                     '--name'   => 'Page name in StudlyCase (e.g. Dashboard).',
                     '--path'   => 'HTTP route path for the page.',
-                    '--method' => 'HTTP method (e.g. GET).',
+                    '--method' => 'HTTP method; GET when left out.',
                 ],
                 default_risk: 'low',
             ),
