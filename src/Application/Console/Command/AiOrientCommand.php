@@ -45,7 +45,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 #[AsCommand(
     name: 'ai:orient',
-    description: 'Session dashboard: git + active epic + in-progress tasks + recent traces + next step. Run this first on a cold start.',
+    description: 'Session dashboard: git + active epic + in-progress tasks + recent traces + next step. Run this first on a cold start. --json answers a brief; --json --full gives every field.',
 )]
 final class AiOrientCommand extends BaseCommand
 {
@@ -69,7 +69,7 @@ final class AiOrientCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit the full JSON envelope (default for non-interactive callers)')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON: a brief by default (also for non-interactive callers); add --full for every field')
             ->addOption('human', null, InputOption::VALUE_NONE, 'Force human-readable output even in non-interactive mode')
             ->addOption('traces', null, InputOption::VALUE_REQUIRED, 'How many recent traces to include', '5')
             ->addOption('full', null, InputOption::VALUE_NONE, 'Every field under --json: whole next steps, context refs, every receipt and trace (the default is a brief)');
