@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Console\Command;
 
+use Semitexa\Dev\Application\Service\Ai\Orient\OrientBrief;
 use Semitexa\Dev\Application\Service\Ai\Presence\StackEvents;
 use Semitexa\Dev\Application\Service\Ai\Presence\WorkspaceActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentSession;
@@ -70,7 +71,8 @@ final class AiOrientCommand extends BaseCommand
         $this
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit the full JSON envelope (default for non-interactive callers)')
             ->addOption('human', null, InputOption::VALUE_NONE, 'Force human-readable output even in non-interactive mode')
-            ->addOption('traces', null, InputOption::VALUE_REQUIRED, 'How many recent traces to include', '5');
+            ->addOption('traces', null, InputOption::VALUE_REQUIRED, 'How many recent traces to include', '5')
+            ->addOption('full', null, InputOption::VALUE_NONE, 'Every field under --json: whole next steps, context refs, every receipt and trace (the default is a brief)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -81,7 +83,7 @@ final class AiOrientCommand extends BaseCommand
         $epics         = $this->collectEpics();
         $inProgress    = $this->collectTasksByStatus(TaskStatus::IN_PROGRESS);
         $blocked       = $this->collectTasksByStatus(TaskStatus::BLOCKED);
-        $activeEpicId  = $this->deriveActiveEpicId($inProgress, $blocked, $epics);
+        $activeEpicId  = OrientBrief::activeEpicId($inProgress, $blocked, $epics);
         $recentTraces  = $this->collectRecentTraces($traceLimit);
         $lastVerify    = $this->findLastVerify($recentTraces);
         try {
@@ -92,10 +94,11 @@ final class AiOrientCommand extends BaseCommand
             [$qualityNext, $qualityError] = [[], $e->getMessage()];
         }
         $hints         = $this->suggestNext($git, $activeEpicId, $inProgress, $blocked, $epics);
+        $workingNow = $this->workingNow();
+        $hints['summary'] = OrientBrief::heldElsewhere($inProgress[0]->id ?? null, $inProgress !== [] ? $this->holderOf($inProgress[0]->id, $workingNow) : null, $workingNow['you']['id'] ?? null) . $hints['summary'];
         $ownerQuestions = OwnerQuestions::of($this->charterStore);
         $hints         = OwnerQuestions::lead($hints, $ownerQuestions);
 
-        $workingNow = $this->workingNow();
         if ($workingNow['you'] === null || !($workingNow['you']['joined'] ?? true)) {
             // Joining is how the others see you; it is first because an agent
             // that skips it is the one the others have to guess about. One that
@@ -150,7 +153,8 @@ final class AiOrientCommand extends BaseCommand
         if ($useHuman) {
             $this->renderHuman(new SymfonyStyle($input, $output), $envelope);
         } else {
-            $output->writeln(json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
+            $full = (bool) $input->getOption('full'); // the default is the brief (tk-orient-cold-start-too-big)
+            $output->writeln(json_encode($full ? $envelope : OrientBrief::of($envelope, $inProgress[0]->id ?? null, $workingNow['you']['id'] ?? null, time()), JSON_UNESCAPED_SLASHES | ($full ? JSON_PRETTY_PRINT : 0)) ?: '{}', OutputInterface::OUTPUT_RAW);
         }
 
         return self::SUCCESS;
@@ -240,36 +244,6 @@ final class AiOrientCommand extends BaseCommand
         }
         usort($out, static fn(Task $a, Task $b) => strcmp($b->updatedAt, $a->updatedAt));
         return $out;
-    }
-
-    /**
-     * Choose the epic the agent should focus on, in priority order:
-     *   1. epic of the most-recent in-progress task (real WIP),
-     *   2. an epic whose own status is in_progress,
-     *   3. epic of the most-recent blocked task (stalled WIP — last resort, so
-     *      the dashboard still points somewhere instead of going blank).
-     *
-     * Blocked work never outranks live in-progress work, which is what the old
-     * recency-only rule got wrong.
-     *
-     * @param list<Task> $inProgress
-     * @param list<Task> $blocked
-     * @param list<Epic> $epics
-     */
-    private function deriveActiveEpicId(array $inProgress, array $blocked, array $epics): ?string
-    {
-        if ($inProgress !== []) {
-            return $inProgress[0]->epicId;
-        }
-        foreach ($epics as $epic) {
-            if ($epic->status->value === 'in_progress') {
-                return $epic->id;
-            }
-        }
-        if ($blocked !== []) {
-            return $blocked[0]->epicId;
-        }
-        return null;
     }
 
     /**
