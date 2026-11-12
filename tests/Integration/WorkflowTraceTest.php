@@ -332,6 +332,14 @@ class WorkflowTraceTest extends TestCase
     private function runCommand(Application $app, string $name, array $input): CommandTester
     {
         $tester = new CommandTester($app->find($name));
+        // ai:verify refuses a --files path that is neither on disk nor in git
+        // (tk-verify-missing-path-is-not-modified), so what a test names exists.
+        foreach (array_filter(array_map('trim', explode(',', (string) ($input['--files'] ?? '')))) as $path) {
+            if (!file_exists($this->tmpRoot . '/' . $path)) {
+                @mkdir(dirname($this->tmpRoot . '/' . $path), 0755, true);
+                file_put_contents($this->tmpRoot . '/' . $path, "<?php\n");
+            }
+        }
         $tester->execute($input);
         return $tester;
     }

@@ -298,7 +298,7 @@ final class AiVerifyCommand extends BaseCommand
             foreach (explode(',', (string) $files) as $p) {
                 $p = trim($p);
                 if ($p !== '') {
-                    $sources[] = ['path' => $p, 'status' => ChangedFile::STATUS_MODIFIED];
+                    $sources[] = (new \Semitexa\Dev\Application\Service\Ai\Verify\ExplicitFiles($this->getProjectRoot()))->resolve($p); // on disk, a deletion git knows, or refused
                 }
             }
         }

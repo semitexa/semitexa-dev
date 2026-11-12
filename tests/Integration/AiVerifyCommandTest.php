@@ -498,7 +498,29 @@ class AiVerifyCommandTest extends TestCase
             });
         }
 
-        return new CommandTester($app->find('ai:verify'));
+        // ai:verify refuses a --files path that is neither on disk nor in git
+        // (tk-verify-missing-path-is-not-modified), so what a test names exists.
+        return new class ($app->find('ai:verify'), $this->tmpRoot) extends CommandTester {
+            public function __construct(Command $command, private readonly string $root)
+            {
+                parent::__construct($command);
+            }
+
+            public function execute(array $input, array $options = []): int
+            {
+                foreach ((array) ($input['--files'] ?? []) as $batch) {
+                    foreach (array_filter(array_map('trim', explode(',', (string) $batch))) as $path) {
+                        $file = $this->root . '/' . $path;
+                        if (!file_exists($file)) {
+                            @mkdir(dirname($file), 0755, true);
+                            file_put_contents($file, str_ends_with($path, '.php') ? "<?php\n" : '');
+                        }
+                    }
+                }
+
+                return parent::execute($input, $options);
+            }
+        };
     }
 
     /**
