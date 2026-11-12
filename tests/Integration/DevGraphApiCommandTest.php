@@ -56,6 +56,32 @@ final class DevGraphApiCommandTest extends TestCase
 
         $this->assertCount(ApiCatalog::SEARCH_LIMIT, $decoded['hits']);
         $this->assertGreaterThan(ApiCatalog::SEARCH_LIMIT, $decoded['total']);
+        // Said, with the call that shows the rest (tk-ask-api-search-truncates-silently).
+        $this->assertTrue($decoded['truncated']);
+        $this->assertContains('--limit=' . $decoded['total'], $decoded['next_command'][0]['args']);
+    }
+
+    public function test_the_rest_of_a_cut_search_is_one_limit_away_and_a_whole_one_is_not_cut(): void
+    {
+        $all = json_decode(trim($this->ask(['--search' => 'validate', '--limit' => '500', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertCount($all['total'], $all['hits']);
+        $this->assertFalse($all['truncated']);
+        $this->assertSame([], $all['next_command']);
+
+        $text = $this->ask(['--search' => 'validate'])->getDisplay();
+        $this->assertStringContainsString('more not shown: --limit=' . $all['total'] . ' shows them all', $text);
+    }
+
+    /** tk-ask-api-search-truncates-silently: the redirect a handler uses came tenth, behind a demo OAuth client's. */
+    public function test_core_ranks_first_and_the_showcases_are_left_out_unless_asked(): void
+    {
+        $decoded = json_decode(trim($this->ask(['--search' => 'redirect', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $top = array_map(static fn (array $hit): string => $hit['class'] . '::' . $hit['member'], array_slice($decoded['hits'], 0, 3));
+        $this->assertContains('Semitexa\\Core\\Http\\Response\\ResourceResponse::setRedirect', $top);
+        $this->assertSame([], array_filter($decoded['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')));
+
+        $withDemo = json_decode(trim($this->ask(['--search' => 'redirect uri', '--with-demo' => true, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertNotSame([], array_filter($withDemo['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')), 'asked for, the demo is searched');
     }
 
     public function test_an_unknown_class_refuses_under_json_and_offers_similar_names(): void

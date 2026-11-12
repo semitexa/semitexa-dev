@@ -45,6 +45,8 @@ final class DevGraphApiCommand extends BaseCommand
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Short or full class name (e.g. Column)')
             ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Words to find in class and member names and doc summaries (e.g. "max length")')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'With --search: how many hits to show', (string) ApiCatalog::SEARCH_LIMIT)
+            ->addOption('with-demo', null, InputOption::VALUE_NONE, 'Also search the demo and showcase packages')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
 
@@ -109,7 +111,17 @@ final class DevGraphApiCommand extends BaseCommand
 
     private function search(string $term, InputInterface $input, OutputInterface $output): int
     {
-        $result = $this->catalog()->search($term);
+        $limit = max(1, (int) $input->getOption('limit'));
+        $result = $this->catalog((bool) $input->getOption('with-demo'))->search($term, $limit);
+        // Cut hits are said, with the call that shows them (tk-ask-api-search-truncates-silently).
+        $more = [];
+        if ($result->total > count($result->hits)) {
+            $more[] = [
+                'cmd' => 'ai:ask',
+                'args' => ['api', '--search=' . $term, '--limit=' . $result->total, '--json'],
+                'why' => sprintf('%d more not shown; or add a word to narrow', $result->total - count($result->hits)),
+            ];
+        }
 
         if ($input->getOption('json')) {
             $this->writeJson($output, [
@@ -118,14 +130,19 @@ final class DevGraphApiCommand extends BaseCommand
                 'query' => $term,
                 'partial' => $result->partial,
                 'total' => $result->total,
+                'truncated' => $more !== [],
                 'hits' => array_map(static fn (ApiHit $hit): array => $hit->toArray(), $result->hits),
                 'unread_classes' => $result->unread,
+                'next_command' => $more,
             ]);
 
             return Command::SUCCESS;
         }
 
         $this->writeHits($output, $term, $result);
+        if ($more !== []) {
+            $this->writeLines($output, ['', sprintf('%d more not shown: --limit=%d shows them all, or add a word to narrow.', $result->total - count($result->hits), $result->total)]);
+        }
 
         return Command::SUCCESS;
     }
@@ -242,8 +259,8 @@ final class DevGraphApiCommand extends BaseCommand
         $output->writeln((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
-    private function catalog(): ApiCatalog
+    private function catalog(bool $withShowcase = false): ApiCatalog
     {
-        return $this->catalog ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get());
+        return $this->catalog ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get(), $withShowcase);
     }
 }
