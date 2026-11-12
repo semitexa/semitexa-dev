@@ -84,6 +84,32 @@ final class DevGraphApiCommandTest extends TestCase
         $this->assertNotSame([], array_filter($withDemo['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')), 'asked for, the demo is searched');
     }
 
+    /** Review, dev#242: one command instance, both settings, either order; the replay keeps --with-demo. */
+    public function test_with_and_without_the_demo_on_one_command_and_the_replay_keeps_it(): void
+    {
+        $tester = new CommandTester(new DevGraphApiCommand());
+        $demo = static fn (array $d): array => array_filter($d['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\'));
+
+        $tester->execute(['--search' => 'redirect', '--with-demo' => true, '--limit' => '1', '--json' => true]);
+        $with = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $tester->execute(['--search' => 'redirect uri', '--limit' => '500', '--json' => true]);
+        $without = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertContains('--with-demo', $with['next_command'][0]['args']);
+        $this->assertSame([], $demo($without), 'the second run is not answered from the first run\'s catalog');
+    }
+
+    public function test_ai_ask_takes_the_options_its_own_continuation_names(): void
+    {
+        $app = new \Symfony\Component\Console\Application();
+        $app->add(new \Semitexa\Dev\Application\Console\Command\AiAskCommand());
+        $app->add(new DevGraphApiCommand());
+        $tester = new CommandTester($app->find('ai:ask'));
+        $tester->execute(['subject' => 'api', '--search' => 'validate', '--limit' => '2', '--json' => true]);
+
+        $this->assertCount(2, json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR)['hits']);
+    }
+
     public function test_an_unknown_class_refuses_under_json_and_offers_similar_names(): void
     {
         $tester = $this->ask(['--name' => 'StringValidation', '--json' => true]);

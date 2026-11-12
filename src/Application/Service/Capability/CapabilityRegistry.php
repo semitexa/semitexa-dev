@@ -32,6 +32,8 @@ final class CapabilityRegistry
                     'grep' => ['type' => 'string', 'description' => 'Filter (for subject=logs)'],
                     'id' => ['type' => 'string', 'description' => 'Capability id (for subject=mechanisms)'],
                     'area' => ['type' => 'string', 'description' => 'Capability area, ssr|ui (for subject=mechanisms)'],
+                    'limit' => ['type' => 'int', 'description' => 'How many search hits to show (for subject=api)'],
+                    'with-demo' => ['type' => 'flag', 'description' => 'Also search the demo and showcase packages (for subject=api)', 'default' => false],
                     'json' => ['type' => 'flag', 'description' => 'Emit JSON envelope (target-dependent shape)', 'default' => false],
                 ],
                 outputs: [

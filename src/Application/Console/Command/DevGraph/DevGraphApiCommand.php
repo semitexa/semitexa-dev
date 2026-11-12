@@ -32,8 +32,8 @@ final class DevGraphApiCommand extends BaseCommand
     private const string CLASS_ARTIFACT = 'semitexa-dev.api/v1';
     private const string SEARCH_ARTIFACT = 'semitexa-dev.api-search/v1';
 
-    /** Built lazily; see DevGraphEventCommand. */
-    private ?ApiCatalog $catalog = null;
+    /** @var array<int, ApiCatalog> without (0) and with (1) the showcases, each built lazily; see DevGraphEventCommand */
+    private array $catalogs = [];
 
     public function __construct()
     {
@@ -112,13 +112,15 @@ final class DevGraphApiCommand extends BaseCommand
     private function search(string $term, InputInterface $input, OutputInterface $output): int
     {
         $limit = max(1, (int) $input->getOption('limit'));
-        $result = $this->catalog((bool) $input->getOption('with-demo'))->search($term, $limit);
+        $withDemo = (bool) $input->getOption('with-demo');
+        $result = $this->catalog($withDemo)->search($term, $limit);
         // Cut hits are said, with the call that shows them (tk-ask-api-search-truncates-silently).
         $more = [];
         if ($result->total > count($result->hits)) {
             $more[] = [
                 'cmd' => 'ai:ask',
-                'args' => ['api', '--search=' . $term, '--limit=' . $result->total, '--json'],
+                // The same search, all of it (review, dev#242: --with-demo was dropped).
+                'args' => ['api', '--search=' . $term, '--limit=' . $result->total, ...($withDemo ? ['--with-demo'] : []), '--json'],
                 'why' => sprintf('%d more not shown; or add a word to narrow', $result->total - count($result->hits)),
             ];
         }
@@ -259,8 +261,9 @@ final class DevGraphApiCommand extends BaseCommand
         $output->writeln((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
+    /** One per setting: a command run twice must not answer the second from the first's (review, dev#242). */
     private function catalog(bool $withShowcase = false): ApiCatalog
     {
-        return $this->catalog ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get(), $withShowcase);
+        return $this->catalogs[$withShowcase ? 1 : 0] ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get(), $withShowcase);
     }
 }

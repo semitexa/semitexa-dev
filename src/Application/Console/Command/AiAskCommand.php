@@ -94,6 +94,8 @@ final class AiAskCommand extends BaseCommand
             ->addOption('id', null, InputOption::VALUE_REQUIRED, 'Capability id (for subject=mechanisms)')
             ->addOption('area', null, InputOption::VALUE_REQUIRED, 'Capability area prefix, e.g. ssr|ui (for subject=mechanisms)')
             ->addOption('state', null, InputOption::VALUE_REQUIRED, 'installed or available (for subject=mechanisms)')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'How many search hits to show (for subject=api)')
+            ->addOption('with-demo', null, InputOption::VALUE_NONE, 'Also search the demo and showcase packages (for subject=api)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope (target-dependent shape)');
     }
 
