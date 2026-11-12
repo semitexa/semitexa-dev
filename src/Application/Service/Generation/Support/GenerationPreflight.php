@@ -44,6 +44,7 @@ final class GenerationPreflight
     ): ?int {
         // Every problem in one answer (tk-make-page-errors-one-at-a-time): make:page
         // without --name, --path and --module used to take three calls to learn them.
+        /** @var list<array{path: string, reason: string, detail: string, option?: string, allowed?: list<string>}> $errors */
         $errors = [];
         $replay = [];
         foreach ($required as $option) {
@@ -66,6 +67,17 @@ final class GenerationPreflight
             $replay[] = '--' . $option . '=<' . $option . '>';
         }
 
+        // --method has a default now; one given empty is a mistake, not the default (review, dev#241).
+        if ($input->hasOption('method') && $input->getOption('method') === '') {
+            $errors[] = [
+                'path' => '',
+                'reason' => self::REASON_INVALID_OPTION,
+                'detail' => '--method is empty (one of: ' . implode(', ', self::allowedValues('method', $projectRoot)) . '; leave it out for GET)',
+                'option' => 'method',
+                'allowed' => self::allowedValues('method', $projectRoot),
+            ];
+        }
+
         $closest = null;
         $newModule = null;
         $given = $input->hasOption('module') ? $input->getOption('module') : null;
@@ -75,7 +87,7 @@ final class GenerationPreflight
             if (!in_array($module, $existing, true)) {
                 $closest = self::closest($module, $existing);
                 $newModule = $module;
-                $errors[] = [
+                $unknown = [
                     'path' => '',
                     'reason' => self::REASON_UNKNOWN_MODULE,
                     'detail' => sprintf("Module '%s' does not exist under src/modules/.", $module)
@@ -84,6 +96,10 @@ final class GenerationPreflight
                         . ($existing !== [] ? ' Existing: ' . implode(', ', $existing) . '.' : ''),
                     'option' => 'module',
                 ];
+                if ($existing !== []) {
+                    $unknown['allowed'] = $existing;
+                }
+                $errors[] = $unknown;
             }
         }
 
@@ -106,7 +122,7 @@ final class GenerationPreflight
     }
 
     /**
-     * @param list<array<string, mixed>> $errors
+     * @param list<array{path: string, reason: string, detail: string, option?: string, allowed?: list<string>}> $errors
      * @param list<string> $replay the required options as given, a placeholder for each missing one
      */
     private static function refuse(
@@ -125,7 +141,7 @@ final class GenerationPreflight
             return Command::FAILURE;
         }
 
-        (new SymfonyStyle($input, $output))->error(array_map(static fn (array $e): string => (string) $e['detail'], $errors));
+        (new SymfonyStyle($input, $output))->error(array_map(static fn (array $e): string => $e['detail'], $errors));
 
         return Command::FAILURE;
     }

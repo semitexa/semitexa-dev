@@ -100,6 +100,19 @@ final class GenerationPreflightTest extends TestCase
             'one answer names every problem; --method is no longer one of them',
         );
         $this->assertSame(['--module=Playgound', '--name=<name>', '--path=<path>'], $result['replay_args']);
+        $this->assertSame(['Billing', 'Playground'], $result['errors'][2]['allowed'], 'a client reads the choices, not the prose');
+    }
+
+    /** Review, dev#241: the GET default is for a --method left out; one given empty is refused. */
+    public function test_an_empty_method_is_refused_and_a_left_out_one_is_get(): void
+    {
+        $tester = new CommandTester(new MakePageCommand());
+        $exit = $tester->execute(['--module' => 'Playground', '--name' => 'Report', '--path' => '/report', '--method' => '', '--json' => true]);
+
+        $this->assertSame(1, $exit);
+        $error = json_decode(trim($tester->getDisplay()), true)['result']['errors'][0];
+        $this->assertSame(['invalid_option', 'method'], [$error['reason'], $error['option']]);
+        $this->assertContains('GET', $error['allowed']);
     }
 
     public function test_a_missing_option_with_a_known_set_says_what_it_may_be(): void
