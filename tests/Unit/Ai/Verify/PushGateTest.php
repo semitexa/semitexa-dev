@@ -89,7 +89,7 @@ final class PushGateTest extends TestCase
         mkdir($this->repo . '/.git/hooks/pre-push');
 
         self::assertSame(['packages/semitexa-x' => PushHook::FAILED], (new PushHook())->install(['packages/semitexa-x' => $this->repo]));
-        self::assertNotContains(PushHook::FAILED, PushHook::GATED);
+        self::assertSame([PushHook::WRITTEN, PushHook::UPDATED], PushHook::GATED, 'review, dev#246: an empty list would refuse every install');
     }
 
     /** Review, dev#246: in a linked worktree elsewhere, the root is still found from the main one. */
