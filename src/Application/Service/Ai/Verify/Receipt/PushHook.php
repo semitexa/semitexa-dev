@@ -18,6 +18,11 @@ final class PushHook
     public const WRITTEN = 'installed';
     public const UPDATED = 'updated';
     public const FOREIGN = 'left alone: a pre-push hook that is not ours is there';
+    public const FAILED = 'failed: the hook could not be written or made executable';
+    public const NO_HOOKS_DIR = 'failed: git names no hooks directory';
+
+    /** The outcomes that leave a working gate behind; anything else is a failed install (review, dev#246). */
+    public const GATED = [self::WRITTEN, self::UPDATED];
 
     /**
      * @param array<string, string> $repositories workspace-relative prefix => absolute path
@@ -29,7 +34,7 @@ final class PushHook
         foreach ($repositories as $prefix => $path) {
             $hooks = $this->hooksDir($path);
             if ($hooks === null) {
-                $outcomes[$prefix] = 'skipped: git names no hooks directory';
+                $outcomes[$prefix] = self::NO_HOOKS_DIR;
                 continue;
             }
             $file = $hooks . '/pre-push';
@@ -41,8 +46,11 @@ final class PushHook
             if (!is_dir($hooks)) {
                 @mkdir($hooks, 0o775, true);
             }
-            file_put_contents($file, self::script($prefix));
-            chmod($file, 0o755);
+            // A gate that is not there, or cannot run, is not a gate (review, dev#246).
+            if (@file_put_contents($file, self::script($prefix)) === false || !@chmod($file, 0o755)) {
+                $outcomes[$prefix] = self::FAILED;
+                continue;
+            }
             $outcomes[$prefix] = $existing === null ? self::WRITTEN : self::UPDATED;
         }
 
@@ -52,9 +60,11 @@ final class PushHook
     public static function script(string $prefix): string
     {
         // The hook runs on the host, the installer may run in a container: the project
-        // root is found from the repository, not written as a path.
+        // root is found from the repository, not written as a path. From the main
+        // worktree (the common git dir's parent), not the current one: a linked
+        // worktree elsewhere would put the root at / (review, dev#246).
         $up = $prefix === '' ? '.' : rtrim(str_repeat('../', substr_count(trim($prefix, '/'), '/') + 1), '/');
-        $root = '"$(git rev-parse --show-toplevel)/' . $up . '"';
+        $root = '"$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/' . $up . '"';
         $repo = escapeshellarg($prefix);
         $this_marker = self::MARKER;
 
@@ -71,7 +81,9 @@ final class PushHook
                 shas="\$shas \$new"
             done
             [ -z "\$(echo \$shas)" ] && exit 0
-            cd {$root} && exec bin/semitexa ai:verify:covers --repo={$repo} \$shas
+            root={$root}
+            [ -x "\$root/bin/semitexa" ] || { echo "semitexa pre-push: no bin/semitexa at \$root, so nothing can vouch for this push" >&2; exit 1; }
+            cd "\$root" && exec bin/semitexa ai:verify:covers --repo={$repo} \$shas
             SH;
     }
 

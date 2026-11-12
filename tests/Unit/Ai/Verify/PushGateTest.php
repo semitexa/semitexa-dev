@@ -56,6 +56,63 @@ final class PushGateTest extends TestCase
         self::assertNull((new ReceiptForCommit($this->root))->find('packages/semitexa-x', $sha));
     }
 
+    /** Review, dev#246: a file that changed while the run read it was never checked with the bytes kept. */
+    #[Test]
+    public function a_run_whose_files_changed_under_it_vouches_for_nothing(): void
+    {
+        $sha = $this->commit('src/B.php', "<?php // b\n");
+        file_put_contents($this->root . '/var/run/verify-receipts/rcpt-1.json', (string) json_encode([
+            'id' => 'rcpt-1', 'verdict' => 'pass', 'tree' => ['packages/semitexa-x/src/B.php' => hash('sha256', "<?php // b\n")],
+            'changed_during_run' => ['packages/semitexa-x/src/B.php'],
+        ]));
+
+        self::assertNull((new ReceiptForCommit($this->root))->find('packages/semitexa-x', $sha));
+    }
+
+    /** Review, dev#246: a gate that cannot read a receipt fails rather than skipping it. */
+    #[Test]
+    public function an_unreadable_receipt_stops_the_gate(): void
+    {
+        $sha = $this->commit('src/B.php', "<?php // b\n");
+        file_put_contents($this->root . '/var/run/verify-receipts/rcpt-1.json', '{not json');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cannot read the receipt');
+        (new ReceiptForCommit($this->root))->find('packages/semitexa-x', $sha);
+    }
+
+    /** Review, dev#246: a hook that could not be written is not reported as installed. */
+    #[Test]
+    public function a_hook_that_cannot_be_written_is_a_failed_install(): void
+    {
+        // A directory where the hook belongs: no write gets through it, whoever runs the test.
+        mkdir($this->repo . '/.git/hooks/pre-push');
+
+        self::assertSame(['packages/semitexa-x' => PushHook::FAILED], (new PushHook())->install(['packages/semitexa-x' => $this->repo]));
+        self::assertNotContains(PushHook::FAILED, PushHook::GATED);
+    }
+
+    /** Review, dev#246: in a linked worktree elsewhere, the root is still found from the main one. */
+    #[Test]
+    public function the_hook_finds_the_project_from_a_linked_worktree(): void
+    {
+        (new PushHook())->install(['packages/semitexa-x' => $this->repo]);
+        mkdir($this->root . '/bin');
+        file_put_contents($this->root . '/bin/semitexa', "#!/bin/sh\necho \"asked: \$*\"\nexit 1\n");
+        chmod($this->root . '/bin/semitexa', 0o755);
+        $linked = sys_get_temp_dir() . '/semitexa-push-gate-linked-' . bin2hex(random_bytes(4));
+        $this->git('update-ref refs/remotes/origin/develop HEAD'); // what GitHub has: only the new commit is asked about
+        $this->git('worktree add -q ' . escapeshellarg($linked) . ' -b elsewhere');
+        try {
+            $new = $this->commitIn($linked, 'src/D.php', "<?php // d\n");
+            [$status, $out] = $this->hook("refs/heads/elsewhere {$new} refs/heads/elsewhere 0000000000000000000000000000000000000000\n", $linked);
+        } finally {
+            exec('rm -rf ' . escapeshellarg($linked));
+        }
+
+        self::assertSame([1, ["asked: ai:verify:covers --repo=packages/semitexa-x {$new}"]], [$status, $out]);
+    }
+
     #[Test]
     public function the_hook_lets_a_push_of_nothing_new_through_and_asks_about_a_new_commit(): void
     {
@@ -86,9 +143,9 @@ final class PushGateTest extends TestCase
     }
 
     /** @return array{int, list<string>} */
-    private function hook(string $stdin): array
+    private function hook(string $stdin, ?string $cwd = null): array
     {
-        $proc = proc_open(['sh', $this->repo . '/.git/hooks/pre-push', 'origin', 'git@example.invalid:x.git'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $this->repo);
+        $proc = proc_open(['sh', $this->repo . '/.git/hooks/pre-push', 'origin', 'git@example.invalid:x.git'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd ?? $this->repo);
         self::assertIsResource($proc);
         fwrite($pipes[0], $stdin);
         fclose($pipes[0]);
@@ -105,6 +162,16 @@ final class PushGateTest extends TestCase
         $this->git('add -A && %s commit -q -m change');
 
         return trim((string) shell_exec('git -C ' . escapeshellarg($this->repo) . ' rev-parse HEAD'));
+    }
+
+    private function commitIn(string $worktree, string $file, string $contents): string
+    {
+        file_put_contents($worktree . '/' . $file, $contents);
+        $git = 'git -C ' . escapeshellarg($worktree) . ' -c user.email=t@example.invalid -c user.name=t';
+        exec("{$git} add -A && {$git} commit -q -m change", $out, $code);
+        self::assertSame(0, $code);
+
+        return trim((string) shell_exec('git -C ' . escapeshellarg($worktree) . ' rev-parse HEAD'));
     }
 
     /** @param array<string, string> $tree */

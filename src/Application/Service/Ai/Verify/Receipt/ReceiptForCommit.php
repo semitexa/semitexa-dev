@@ -24,6 +24,7 @@ final readonly class ReceiptForCommit
     /**
      * @param string $repository workspace-relative repository ('' for the project root, 'packages/semitexa-dev')
      * @return string|null the id of a passing receipt that covers the commit
+     * @throws \RuntimeException when a receipt cannot be read
      */
     public function find(string $repository, string $sha): ?string
     {
@@ -55,7 +56,15 @@ final readonly class ReceiptForCommit
         foreach (array_slice($files, 0, self::SCAN) as $file) {
             $raw = @file_get_contents($file);
             $receipt = is_string($raw) ? json_decode($raw, true) : null;
-            if (!is_array($receipt) || ($receipt['verdict'] ?? null) !== 'pass' || !is_array($receipt['tree'] ?? null) || !is_string($receipt['id'] ?? null)) {
+            if (!is_array($receipt)) {
+                // A gate that cannot read a receipt fails, it does not skip it (review, dev#246).
+                throw new \RuntimeException(sprintf('ai:verify:covers cannot read the receipt %s, so it can neither vouch for a commit with it nor rule it out.', $file));
+            }
+            if (($receipt['verdict'] ?? null) !== 'pass' || !is_array($receipt['tree'] ?? null) || !is_string($receipt['id'] ?? null)) {
+                continue;
+            }
+            // A file changed while the run read it: the run never held for those bytes (review, dev#246).
+            if (($receipt['changed_during_run'] ?? []) !== []) {
                 continue;
             }
             $tree = array_filter($receipt['tree'], static fn ($hash): bool => is_string($hash));

@@ -47,7 +47,14 @@ final class AiVerifyCoversCommand extends BaseCommand
                 $output->writeln(sprintf('%-40s %s', $repo === '' ? '(project root)' : $repo, $outcome));
             }
 
-            return in_array(PushHook::FOREIGN, $result, true) ? self::FAILURE : self::SUCCESS;
+            // Every repository gated, or a failure: a skip or an empty scan leaves a push ungated (review, dev#246).
+            if ($result === []) {
+                $output->writeln('No workspace repository found: no push is gated.');
+
+                return self::FAILURE;
+            }
+
+            return array_diff($result, PushHook::GATED) === [] ? self::SUCCESS : self::FAILURE;
         }
 
         $repo = (string) $input->getOption('repo');
@@ -55,8 +62,15 @@ final class AiVerifyCoversCommand extends BaseCommand
         $commits = array_values(array_filter((array) $input->getArgument('commits'), static fn ($c): bool => is_string($c) && $c !== ''));
         $finder = new ReceiptForCommit($root);
         $found = [];
-        foreach ($commits as $sha) {
-            $found[$sha] = $finder->find($repo, $sha);
+        try {
+            foreach ($commits as $sha) {
+                $found[$sha] = $finder->find($repo, $sha);
+            }
+        } catch (\RuntimeException $e) {
+            // A receipt the gate cannot read is not one it can vouch with or rule out.
+            $output->writeln($e->getMessage());
+
+            return self::FAILURE;
         }
         $missing = array_keys(array_filter($found, static fn (?string $id): bool => $id === null));
 
