@@ -36,7 +36,8 @@ final class ExplicitFiles
     {
         $root = rtrim($this->projectRoot, '/');
         $absolute = str_starts_with($path, '/') ? $path : $root . '/' . $path;
-        if (file_exists($absolute)) {
+        // A dangling symlink is still a path the change holds (review, dev#239).
+        if (file_exists($absolute) || is_link($absolute)) {
             return ['path' => $path, 'status' => ChangedFile::STATUS_MODIFIED];
         }
         if ($this->knownToGit($path)) {
@@ -79,7 +80,8 @@ final class ExplicitFiles
     private static function git(string $repository, array $args): bool
     {
         $process = proc_open(
-            ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, ...$args],
+            // Literal: a typo with `*` or `?` must not match another file in the index (review, dev#239).
+            ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, '--literal-pathspecs', ...$args],
             [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
             $pipes,
         );

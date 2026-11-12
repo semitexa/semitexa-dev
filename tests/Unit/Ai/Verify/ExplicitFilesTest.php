@@ -48,6 +48,23 @@ final class ExplicitFilesTest extends TestCase
         self::assertSame(ChangedFile::STATUS_DELETED, $files->resolve('./packages/semitexa-x/src/Gone.php')['status'], 'written from the current directory too');
     }
 
+    /** Review, dev#239: a dangling link is present; a glob in a typo matches nothing in the index. */
+    #[Test]
+    public function a_dangling_symlink_is_modified_and_a_glob_is_read_literally(): void
+    {
+        $link = $this->root . '/packages/semitexa-x/src/Link.php';
+        symlink($this->root . '/nowhere.php', $link);
+        $files = new ExplicitFiles($this->root);
+
+        self::assertSame(ChangedFile::STATUS_MODIFIED, $files->resolve('packages/semitexa-x/src/Link.php')['status']);
+        try {
+            $files->resolve('packages/semitexa-x/src/G*.php');
+            self::fail('a glob matched the deleted src/Gone.php in the index');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('does not exist', $e->getMessage());
+        }
+    }
+
     #[Test]
     public function a_path_neither_on_disk_nor_in_git_is_refused_with_the_file_it_probably_meant(): void
     {
