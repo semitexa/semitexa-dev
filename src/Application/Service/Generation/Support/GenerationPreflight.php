@@ -42,29 +42,108 @@ final class GenerationPreflight
         array $required,
         string $projectRoot,
     ): ?int {
+        // Every problem in one answer (tk-make-page-errors-one-at-a-time): make:page
+        // without --name, --path and --module used to take three calls to learn them.
+        /** @var list<array{path: string, reason: string, detail: string, option?: string, allowed?: list<string>}> $errors */
+        $errors = [];
+        $replay = [];
         foreach ($required as $option) {
-            if (!$input->getOption($option)) {
-                return self::reject($input, $output, $command, self::REASON_MISSING_OPTION, "Missing required option: --{$option}");
+            $value = $input->getOption($option);
+            if ($value) {
+                $replay[] = '--' . $option . '=' . (is_scalar($value) ? (string) $value : '');
+                continue;
+            }
+            $allowed = self::allowedValues($option, $projectRoot);
+            $error = [
+                'path' => '',
+                'reason' => self::REASON_MISSING_OPTION,
+                'detail' => "Missing required option: --{$option}" . ($allowed !== [] ? ' (one of: ' . implode(', ', $allowed) . ')' : ''),
+                'option' => $option,
+            ];
+            if ($allowed !== []) {
+                $error['allowed'] = $allowed;
+            }
+            $errors[] = $error;
+            $replay[] = '--' . $option . '=<' . $option . '>';
+        }
+
+        // --method has a default now; one given empty is a mistake, not the default (review, dev#241).
+        if ($input->hasOption('method') && $input->getOption('method') === '') {
+            $errors[] = [
+                'path' => '',
+                'reason' => self::REASON_INVALID_OPTION,
+                'detail' => '--method is empty (one of: ' . implode(', ', self::allowedValues('method', $projectRoot)) . '; leave it out for GET)',
+                'option' => 'method',
+                'allowed' => self::allowedValues('method', $projectRoot),
+            ];
+        }
+
+        $closest = null;
+        $newModule = null;
+        $given = $input->hasOption('module') ? $input->getOption('module') : null;
+        if (is_string($given) && $given !== '') {
+            $module = (new NameInflector())->toStudly($given);
+            $existing = self::existingModules($projectRoot);
+            if (!in_array($module, $existing, true)) {
+                $closest = self::closest($module, $existing);
+                $newModule = $module;
+                $unknown = [
+                    'path' => '',
+                    'reason' => self::REASON_UNKNOWN_MODULE,
+                    'detail' => sprintf("Module '%s' does not exist under src/modules/.", $module)
+                        . ($closest !== null ? sprintf(" Did you mean '%s'?", $closest) : '')
+                        . sprintf(' To start a new module, run make:module --name=%s first.', $module)
+                        . ($existing !== [] ? ' Existing: ' . implode(', ', $existing) . '.' : ''),
+                    'option' => 'module',
+                ];
+                if ($existing !== []) {
+                    $unknown['allowed'] = $existing;
+                }
+                $errors[] = $unknown;
             }
         }
 
-        if (!$input->hasOption('module') || !is_string($input->getOption('module')) || $input->getOption('module') === '') {
-            return null;
+        return $errors === [] ? null : self::refuse($input, $output, $command, $errors, $replay, $closest, $newModule);
+    }
+
+    /**
+     * Values a required option can take, where the set is known: the modules
+     * that exist, the HTTP methods.
+     *
+     * @return list<string>
+     */
+    private static function allowedValues(string $option, string $projectRoot): array
+    {
+        return match ($option) {
+            'module' => self::existingModules($projectRoot),
+            'method' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+            default => [],
+        };
+    }
+
+    /**
+     * @param list<array{path: string, reason: string, detail: string, option?: string, allowed?: list<string>}> $errors
+     * @param list<string> $replay the required options as given, a placeholder for each missing one
+     */
+    private static function refuse(
+        InputInterface $input,
+        OutputInterface $output,
+        string $command,
+        array $errors,
+        array $replay,
+        ?string $suggestedModule,
+        ?string $newModule,
+    ): int {
+        if ($input->hasOption('json') && $input->getOption('json')) {
+            $result = new GenerationResult(command: $command, status: 'rejected', replay_args: $replay, errors: $errors);
+            $output->writeln((new JsonResultFormatter())->formatRejection($result, $suggestedModule, $newModule));
+
+            return Command::FAILURE;
         }
 
-        $module = (new NameInflector())->toStudly($input->getOption('module'));
-        $existing = self::existingModules($projectRoot);
-        if (in_array($module, $existing, true)) {
-            return null;
-        }
+        (new SymfonyStyle($input, $output))->error(array_map(static fn (array $e): string => $e['detail'], $errors));
 
-        $closest = self::closest($module, $existing);
-        $detail = sprintf("Module '%s' does not exist under src/modules/.", $module)
-            . ($closest !== null ? sprintf(" Did you mean '%s'?", $closest) : '')
-            . sprintf(' To start a new module, run make:module --name=%s first.', $module)
-            . ($existing !== [] ? ' Existing: ' . implode(', ', $existing) . '.' : '');
-
-        return self::reject($input, $output, $command, self::REASON_UNKNOWN_MODULE, $detail, $closest, $module);
+        return Command::FAILURE;
     }
 
     /**

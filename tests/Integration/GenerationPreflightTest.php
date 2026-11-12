@@ -86,6 +86,55 @@ final class GenerationPreflightTest extends TestCase
         $this->assertStringContainsString('--name', $decoded['result']['errors'][0]['detail']);
     }
 
+    /** tk-make-page-errors-one-at-a-time: make:page took one call per missing option to learn them. */
+    public function test_every_problem_comes_back_in_one_refusal_with_a_replay_to_fill_in(): void
+    {
+        $tester = new CommandTester(new MakePageCommand());
+        $exit = $tester->execute(['--module' => 'Playgound', '--json' => true]);
+
+        $this->assertSame(1, $exit);
+        $result = json_decode(trim($tester->getDisplay()), true)['result'];
+        $this->assertSame(
+            [['missing_option', 'name'], ['missing_option', 'path'], ['unknown_module', 'module']],
+            array_map(static fn (array $e): array => [$e['reason'], $e['option']], $result['errors']),
+            'one answer names every problem; --method is no longer one of them',
+        );
+        $this->assertSame(['--module=Playgound', '--name=<name>', '--path=<path>'], $result['replay_args']);
+        $this->assertSame(['Billing', 'Playground'], $result['errors'][2]['allowed'], 'a client reads the choices, not the prose');
+    }
+
+    /** Review, dev#241: the GET default is for a --method left out; one given empty is refused. */
+    public function test_an_empty_method_is_refused_and_a_left_out_one_is_get(): void
+    {
+        $tester = new CommandTester(new MakePageCommand());
+        $exit = $tester->execute(['--module' => 'Playground', '--name' => 'Report', '--path' => '/report', '--method' => '', '--json' => true]);
+
+        $this->assertSame(1, $exit);
+        $error = json_decode(trim($tester->getDisplay()), true)['result']['errors'][0];
+        $this->assertSame(['invalid_option', 'method'], [$error['reason'], $error['option']]);
+        $this->assertContains('GET', $error['allowed']);
+    }
+
+    public function test_a_missing_option_with_a_known_set_says_what_it_may_be(): void
+    {
+        $tester = new CommandTester(new MakeServiceCommand());
+        $tester->execute(['--name' => 'InvoiceTotals', '--json' => true]);
+
+        $error = json_decode(trim($tester->getDisplay()), true)['result']['errors'][0];
+        $this->assertSame('module', $error['option']);
+        $this->assertSame(['Billing', 'Playground'], $error['allowed']);
+        $this->assertStringContainsString('one of: Billing, Playground', $error['detail']);
+    }
+
+    public function test_a_page_is_get_unless_told_otherwise(): void
+    {
+        $tester = new CommandTester(new MakePageCommand());
+        $exit = $tester->execute(['--module' => 'Playground', '--name' => 'Report', '--path' => '/report', '--json' => true]);
+
+        $this->assertSame(0, $exit, $tester->getDisplay());
+        $this->assertContains('--method=GET', json_decode(trim($tester->getDisplay()), true)['result']['replay_args']);
+    }
+
     public function test_an_invalid_value_under_json_is_a_json_refusal(): void
     {
         $tester = new CommandTester(new MakeEventListenerCommand());

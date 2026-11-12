@@ -16,7 +16,7 @@ final readonly class GenerationResult
      * @param list<string> $replay_args
      * @param array{status: string, checked: int, errors: list<array{file: string, message: string}>}|null $verify
      * @param array{status: string, checks: array<string, array{status: string, summary: string}>}|null $lint
-     * @param list<array{path: string, reason: string, detail: string}>|null $errors what the writer refused or what the filesystem said, absent on a clean run
+     * @param list<array{path: string, reason: string, detail: string, option?: string, allowed?: list<string>}>|null $errors what the writer refused or what the filesystem said, absent on a clean run; a refused option names itself and, where the set is known, what it may be
      */
     public function __construct(
         public string $command,
