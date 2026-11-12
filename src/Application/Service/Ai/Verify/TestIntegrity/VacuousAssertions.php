@@ -24,7 +24,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * Inside a foreach, the loop is the first question: a check in a loop over a computed list that
  * no assertion outside the loop names as a whole runs zero times on an empty list. A loop value
  * still needs evidence of its own: a non-empty list may hold empty rows (review, dev#247).
- * Evidence under an `if`, in a `catch`, a `while` or a closure counts only for checks under it.
+ * Evidence under an `if`, in a `catch`, a loop or a closure counts only for checks under it.
  *
  * A heuristic, not a proof. Not modelled: a ternary or `&&` around an assertion, an early
  * return, evidence asserted in a helper method, a value whose emptiness is ruled out by its type.
@@ -251,7 +251,7 @@ final class VacuousAssertions
                         || (strtolower($literal->text) === 'array' && !self::is($tokens[$k + 4] ?? $token, ')')))) {
                     $method['fixed'][$token->text] = true;
                 }
-                if (in_array($token->id, [T_IF, T_ELSEIF, T_ELSE, T_SWITCH, T_CATCH, T_WHILE, T_FOR, T_FUNCTION], true)) {
+                if (in_array($token->id, [T_IF, T_ELSEIF, T_ELSE, T_SWITCH, T_CATCH, T_WHILE, T_FOR, T_FOREACH, T_FUNCTION], true)) {
                     $branch = self::branch($tokens, $k);
                     if ($branch !== null) {
                         $method['branches'][] = $branch;
@@ -285,7 +285,7 @@ final class VacuousAssertions
     }
 
     /**
-     * The body of an `if`, `else`, `catch`, `switch`, `while`, `for` or closure: code that may not run.
+     * The body of an `if`, `else`, `catch`, `switch`, a loop or a closure: code that may not run.
      *
      * @param list<\PhpToken> $tokens
      * @return array{0: int, 1: int}|null
@@ -493,24 +493,24 @@ final class VacuousAssertions
     }
 
     /**
-     * Whether an argument of an assertion that shows something is the subject, a part of it, or
-     * the whole it is part of. Evidence on another part of the same value is not evidence:
-     * `assertSame('id', $record->id)` shows nothing about `$record->summary` (review, dev#247).
+     * Whether an argument of an assertion that shows something holds the subject: the subject
+     * itself, or a part of it (a true `$tasks[0]['suggested']` shows `$tasks[0]` holds something).
+     * Matched token by token, so `'$text'` in a string is not `$text`. Evidence on another part of
+     * the value is not evidence, and neither is evidence on the whole: `assertSame('id', $record->id)`
+     * shows nothing about `$record->summary`, nor `assertSame(['nested' => []], $config)` about
+     * `$config['nested']` (review, dev#247).
      *
      * @param list<\PhpToken>       $subject
      * @param list<list<\PhpToken>> $shown arguments of the assertions that show a value holds something
      */
     private static function isShown(array $subject, array $shown): bool
     {
-        $text = self::text($subject);
-        $part = '(?:->|\?->|\[)';
+        $want = array_map(static fn (\PhpToken $t): string => $t->text, $subject);
+        $length = count($want);
         foreach ($shown as $arg) {
-            foreach ([self::text($arg), self::text(self::unwrap($arg))] as $evidence) {
-                // The subject, or a part of it: a true $tasks[0]['suggested'] shows $tasks[0] holds something.
-                if (preg_match('/' . preg_quote($text, '/') . '(?!\w)/', $evidence) === 1) {
-                    return true;
-                }
-                if (preg_match('/^\$\w+(?:' . $part . '[^()]*)?$/', $evidence) === 1 && preg_match('/^' . preg_quote($evidence, '/') . $part . '/', $text) === 1) {
+            $have = array_map(static fn (\PhpToken $t): string => $t->text, $arg);
+            for ($i = 0, $last = count($have) - $length; $i <= $last; $i++) {
+                if (array_slice($have, $i, $length) === $want) {
                     return true;
                 }
             }

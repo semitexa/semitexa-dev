@@ -257,14 +257,24 @@ final class VacuousAssertionsTest extends TestCase
                 self::assertStringNotContainsString('x', $out);
             }
 
-            public function the_same_property_a_part_and_the_whole(): void
+            public function the_whole_and_a_literal_and_a_loop(): void
+            {
+                self::assertSame(['nested' => []], $config);
+                self::assertArrayNotHasKey('secret', $config['nested']);
+                self::assertSame('$text', $other);
+                self::assertStringNotContainsString('secret', $text);
+                foreach ($rows as $row) {
+                    self::assertNotEmpty($body);
+                }
+                self::assertStringNotContainsString('secret', $body);
+            }
+
+            public function the_same_property_and_a_part(): void
             {
                 self::assertStringContainsString('ok', $record->summary);
                 self::assertStringNotContainsString('secret', $record->summary);
                 self::assertTrue($tasks[0]['suggested']);
                 self::assertArrayNotHasKey('stale', $tasks[0]);
-                self::assertSame(['a' => 1], $config);
-                self::assertArrayNotHasKey('b', $config['nested']);
                 $cases = ['a', 'b'];
                 foreach ($cases as $case) {
                     self::assertNotSame('', $case);
@@ -282,6 +292,10 @@ final class VacuousAssertionsTest extends TestCase
             ['empty_literal_list', 17, 'assertArrayNotHasKey($row)'],
             ['another_property', 24, 'assertStringNotContainsString($record->summary)'],
             ['closure_evidence', 30, 'assertStringNotContainsString($out)'],
+            // CodeRabbit on dev#247, fourth round: the whole, a variable name in a string, a loop body.
+            ['the_whole_and_a_literal_and_a_loop', 36, "assertArrayNotHasKey(\$config['nested'])"],
+            ['the_whole_and_a_literal_and_a_loop', 38, 'assertStringNotContainsString($text)'],
+            ['the_whole_and_a_literal_and_a_loop', 42, 'assertStringNotContainsString($body)'],
         ], self::summary(VacuousAssertions::in('tests/ElsewhereTest.php', self::SKIPPED_OR_ELSEWHERE)));
     }
 
