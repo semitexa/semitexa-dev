@@ -80,7 +80,7 @@ final class TestChangeScan
             // A new test file weakens nothing, but its assertions can still pass on nothing.
             $found = $before === null ? [] : self::compare($path, AssertionInventory::of($before), $after === null ? null : AssertionInventory::of($after));
             if ($after !== null) {
-                array_push($found, ...VacuousAssertions::in($path, $after, $before === null ? null : $addedTo($path)));
+                array_push($found, ...VacuousAssertions::in($path, $after, $before === null ? null : self::addedLineNumbers($before, $after)));
             }
             if ($found === []) {
                 continue;
@@ -198,6 +198,18 @@ final class TestChangeScan
      */
     public static function addedLines(?string $before, ?string $after): array
     {
+        $lines = preg_split('/\R/', (string) $after) ?: [];
+
+        return array_map(static fn (int $n): string => $lines[$n - 1], self::addedLineNumbers($before, $after));
+    }
+
+    /**
+     * The same lines, by number (1-based) in $after.
+     *
+     * @return list<int>
+     */
+    public static function addedLineNumbers(?string $before, ?string $after): array
+    {
         if ($after === null) {
             return [];
         }
@@ -206,12 +218,12 @@ final class TestChangeScan
             $remaining[$line] = ($remaining[$line] ?? 0) + 1;
         }
         $added = [];
-        foreach (preg_split('/\R/', $after) ?: [] as $line) {
+        foreach (preg_split('/\R/', $after) ?: [] as $n => $line) {
             if (($remaining[$line] ?? 0) > 0) {
                 $remaining[$line]--;
                 continue;
             }
-            $added[] = $line;
+            $added[] = $n + 1;
         }
 
         return $added;

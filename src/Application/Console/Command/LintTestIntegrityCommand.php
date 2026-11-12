@@ -31,7 +31,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class LintTestIntegrityCommand extends BaseCommand
 {
     /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
-    public const RATIONALE = 'Why: a red suite can be turned green by deleting or loosening the test instead of fixing the code, and "all tests pass" is then true and worthless; a reason on an added line puts the decision in the diff, where a reviewer reads it. Policy since 2026-10-03 (ep-verify-agent-false-greens); no incident on record. Measured that day: 23 of 955 test-file changes in two months lost checks. Since 2026-11-12 it also fails an added assertion an empty value passes (assertStringNotContainsString on an unread file, assertLessThan on strlen of a failed json_encode): CodeRabbit\'s most common finding that week, 7 of 7 of its findings caught, and 93 of 1202 test commits of two months would have been stopped.';
+    public const RATIONALE = 'Why: a red suite can be turned green by deleting or loosening the test instead of fixing the code, and "all tests pass" is then true and worthless; a reason on an added line puts the decision in the diff, where a reviewer reads it. Policy since 2026-10-03 (ep-verify-agent-false-greens); no incident on record. Measured that day: 23 of 955 test-file changes in two months lost checks. Since 2026-11-12 it also fails an added assertion an empty value passes (assertStringNotContainsString on an unread file, assertLessThan on strlen of a failed json_encode): CodeRabbit\'s most common finding that week, 7 of 7 of its findings caught, and 101 of 1203 test commits of two months would have been stopped.';
 
     public function __construct()
     {

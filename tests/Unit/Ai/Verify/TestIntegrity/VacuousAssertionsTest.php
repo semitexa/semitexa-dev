@@ -86,6 +86,7 @@ final class VacuousAssertionsTest extends TestCase
             {
                 $recipe = RecipeRegistry::find('unknown_task');
                 self::assertNotNull($recipe);
+                self::assertStringContainsString('ai:ask', $recipe->summary);
                 self::assertStringNotContainsString('ai:epic', $recipe->summary);
             }
 
@@ -117,6 +118,44 @@ final class VacuousAssertionsTest extends TestCase
         ], self::summary(VacuousAssertions::in('tests/FoundTest.php', self::FOUND)));
     }
 
+    /** Review, dev#247: assertions an empty value passes too show nothing. */
+    private const NOT_SHOWN = <<<'PHP'
+        <?php
+        final class NotShownTest extends TestCase
+        {
+            public function typed_only(): void
+            {
+                $text = (string) file_get_contents($path);
+                self::assertIsString($text);
+                self::assertNotNull($text);
+                self::assertStringNotContainsString('secret', $text);
+            }
+
+            public function pinned_empty(): void
+            {
+                self::assertCount(0, $items);
+                self::assertArrayNotHasKey(0, $items);
+                self::assertNotContains('', $items);
+            }
+
+            public function zero_is_not_more_than_zero(): void
+            {
+                self::assertLessThanOrEqual(count($expected), count($actual));
+            }
+        }
+        PHP;
+
+    #[Test]
+    public function a_type_check_an_empty_key_and_an_empty_count_show_nothing(): void
+    {
+        self::assertSame([
+            ['typed_only', 9, 'assertStringNotContainsString($text)'],
+            ['pinned_empty', 15, 'assertArrayNotHasKey($items)'],
+            ['pinned_empty', 16, 'assertNotContains($items)'],
+            ['zero_is_not_more_than_zero', 21, 'assertLessThanOrEqual(count($actual))'],
+        ], self::summary(VacuousAssertions::in('tests/NotShownTest.php', self::NOT_SHOWN)));
+    }
+
     #[Test]
     public function a_value_another_assertion_shows_and_a_comparison_of_computed_values_are_not(): void
     {
@@ -127,12 +166,28 @@ final class VacuousAssertionsTest extends TestCase
     public function only_an_assertion_the_change_wrote_is_its_finding(): void
     {
         $before = str_replace("        self::assertNotContains(PushHook::FAILED, PushHook::GATED);\n", '', self::FOUND);
-        $added = TestChangeScan::addedLines($before, self::FOUND);
+        $added = TestChangeScan::addedLineNumbers($before, self::FOUND);
 
         self::assertSame(
             [['emptied_constant', 34, 'assertNotContains(PushHook::GATED)']],
             self::summary(VacuousAssertions::in('tests/FoundTest.php', self::FOUND, $added)),
         );
+    }
+
+    /** Review, dev#247: a rewritten subject on its own line is an assertion the change wrote. */
+    #[Test]
+    public function a_multiline_assertion_whose_subject_the_change_rewrote_is_its_finding(): void
+    {
+        $call = "        self::assertStringNotContainsString(\n            'secret',\n            %s,\n        );\n";
+        $template = "<?php\nfinal class LogTest extends TestCase\n{\n    public function log(): void\n    {\n%s    }\n}\n";
+        $before = sprintf($template, sprintf($call, "'clean text'"));
+        $after = sprintf($template, sprintf($call, '(string) file_get_contents($path)'));
+
+        self::assertSame(
+            [['log', 6, 'assertStringNotContainsString((string)file_get_contents($path))']],
+            self::summary(VacuousAssertions::in('tests/LogTest.php', $after, TestChangeScan::addedLineNumbers($before, $after))),
+        );
+        self::assertSame([], VacuousAssertions::in('tests/LogTest.php', $after, TestChangeScan::addedLineNumbers($after, $after)));
     }
 
     #[Test]

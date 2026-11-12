@@ -15,10 +15,11 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * back empty, a constant list emptied.
  *
  * The value is the assertion's subject argument. A subject that is a variable (or a path into
- * one, or strlen()/count()/a cast of one) is shown when one of its variables appears in another
- * assertion that is not itself a check for absence. A subject that calls something, or reads a
- * constant, is shown only by an assertion on the same expression. A check against an empty
- * literal (`assertNotSame('', $x)`) is the showing, not the problem.
+ * one, or strlen()/count()/a cast of one) is shown when one of its variables appears in an
+ * assertion that an empty value fails: not another check for absence, not a type or existence
+ * check (assertIsString, assertNotNull), not a value pinned empty (assertCount(0, ...)). A subject
+ * that calls something, or reads a constant, is shown only by such an assertion on the same
+ * expression. `assertNotSame('', $x)` and `assertNotCount(0, $x)` are the showing, not the problem.
  */
 final class VacuousAssertions
 {
@@ -39,8 +40,24 @@ final class VacuousAssertions
      */
     private const COMPARISONS = [
         'assertnotsame', 'assertnotequals', 'assertnotequalscanonicalizing', 'assertnotequalsignoringcase',
-        'assertlessthan', 'assertlessthanorequal', 'assertjsonstringnotequalsjsonstring',
+        'assertlessthan', 'assertjsonstringnotequalsjsonstring',
     ];
+
+    /** Absence checks that, against an empty expectation, show the value holds something. */
+    private const NOT_EMPTY_AGAINST_EMPTY = ['assertnotsame', 'assertnotequals', 'assertnotcount'];
+
+    /**
+     * Assertions an empty value passes too: they show the type or that the value exists, not that
+     * it holds anything (review, dev#247).
+     */
+    private const NO_EVIDENCE = [
+        'assertisstring', 'assertisarray', 'assertisiterable', 'assertisscalar', 'assertisobject', 'assertnotnull',
+        'assertnotfalse', 'assertinstanceof', 'assertempty', 'assertnull', 'assertfalse', 'assertisbool',
+        'assertisnotarray', 'assertisnotstring',
+    ];
+
+    /** Value checks that, against an empty expectation, pin the value empty. */
+    private const PINNED = ['assertsame', 'assertequals', 'assertcount'];
 
     /** Taken off a subject before it is read: they keep an empty value empty. */
     private const WRAPPERS = ['strlen', 'mb_strlen', 'count', 'trim', 'strtolower', 'implode', 'array_keys', 'array_values'];
@@ -48,20 +65,19 @@ final class VacuousAssertions
     private const EMPTY_LITERALS = ["''", '""', '[]', 'null', 'false', '0', 'array()'];
 
     /**
-     * @param list<string>|null $addedLines lines the change wrote, null for all: only an assertion
-     *                                      written by the change is its finding
+     * @param list<int>|null $addedLines numbers of the lines the change wrote, null for all: only an
+     *                                   assertion the change wrote or rewrote is its finding
      * @return list<TestChangeFinding>
      */
     public static function in(string $path, string $source, ?array $addedLines = null): array
     {
-        $added = $addedLines === null ? null : array_fill_keys(array_map('trim', $addedLines), true);
-        $lines = preg_split('/\R/', $source) ?: [];
+        $added = $addedLines === null ? null : array_fill_keys($addedLines, true);
         $tokens = array_values(array_filter(\PhpToken::tokenize($source), static fn (\PhpToken $t): bool => !$t->isIgnorable()));
         $findings = [];
         foreach (self::methods($tokens) as $method => $calls) {
             $shown = [];
             foreach ($calls as $call) {
-                if (!$call['absence'] || self::againstEmpty($call)) {
+                if (self::isEvidence($call)) {
                     foreach ($call['args'] as $arg) {
                         $shown[] = $arg;
                     }
@@ -74,7 +90,8 @@ final class VacuousAssertions
                 if (in_array(strtolower($call['name']), self::COMPARISONS, true) && !self::isFixed($call['args'][0])) {
                     continue;
                 }
-                if ($added !== null && !isset($added[trim($lines[$call['line'] - 1] ?? '')])) {
+                // Any line of the call: a rewritten subject on its own line is the change (review, dev#247).
+                if ($added !== null && array_intersect_key($added, array_flip(range($call['line'], $call['end']))) === []) {
                     continue;
                 }
                 $subject = self::unwrap($call['args'][1]);
@@ -98,7 +115,7 @@ final class VacuousAssertions
      * Every assertion call of every method, with its arguments split at the top level.
      *
      * @param list<\PhpToken> $tokens
-     * @return array<string, list<array{name: string, line: int, absence: bool, args: list<list<\PhpToken>>}>>
+     * @return array<string, list<array{name: string, line: int, end: int, absence: bool, args: list<list<\PhpToken>>}>>
      */
     private static function methods(array $tokens): array
     {
@@ -131,11 +148,14 @@ final class VacuousAssertions
                     || !(str_starts_with($call, 'assert') || str_starts_with($call, 'expect'))) {
                     continue;
                 }
+                $args = self::arguments($tokens, $k + 1);
+                $lastArg = $args === [] ? [] : $args[count($args) - 1];
                 $methods[$name][] = [
                     'name'    => $text,
                     'line'    => $tokens[$k]->line,
+                    'end'     => $lastArg === [] ? $tokens[$k]->line : $lastArg[count($lastArg) - 1]->line,
                     'absence' => in_array($call, self::ABSENCE, true),
-                    'args'    => self::arguments($tokens, $k + 1),
+                    'args'    => $args,
                 ];
             }
             $i = $k;
@@ -198,10 +218,38 @@ final class VacuousAssertions
         return $arg;
     }
 
-    /** `assertNotSame('', $x)`: the check that a value holds something. @param array{args: list<list<\PhpToken>>} $call */
+    /**
+     * `assertNotSame('', $x)`, `assertNotCount(0, $x)`: the check that a value holds something.
+     * An empty needle or key (`assertArrayNotHasKey(0, $x)`) is not (review, dev#247).
+     *
+     * @param array{name: string, args: list<list<\PhpToken>>} $call
+     */
     private static function againstEmpty(array $call): bool
     {
-        return in_array(strtolower(self::text($call['args'][0] ?? [])), self::EMPTY_LITERALS, true);
+        return in_array(strtolower($call['name']), self::NOT_EMPTY_AGAINST_EMPTY, true) && self::isEmptyLiteral($call['args'][0] ?? []);
+    }
+
+    /**
+     * Whether an assertion shows its values hold something: not a check for absence, not a type
+     * or existence check, not a value pinned empty (`assertSame('', $x)`, `assertCount(0, $x)`).
+     *
+     * @param array{name: string, absence: bool, args: list<list<\PhpToken>>} $call
+     */
+    private static function isEvidence(array $call): bool
+    {
+        $name = strtolower($call['name']);
+        if ($call['absence']) {
+            return self::againstEmpty($call);
+        }
+
+        return !in_array($name, self::NO_EVIDENCE, true)
+            && !(in_array($name, self::PINNED, true) && self::isEmptyLiteral($call['args'][0] ?? []));
+    }
+
+    /** @param list<\PhpToken> $arg */
+    private static function isEmptyLiteral(array $arg): bool
+    {
+        return in_array(strtolower(self::text($arg)), self::EMPTY_LITERALS, true);
     }
 
     /**
