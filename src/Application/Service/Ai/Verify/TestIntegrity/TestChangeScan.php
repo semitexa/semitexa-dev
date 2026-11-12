@@ -8,7 +8,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * Compares each changed test file with its committed version and reports the
  * changes that make a suite greener without making the code more correct:
  * a test file or test removed, assertions removed, a value check weakened to
- * a shape check, a skip added.
+ * a shape check, a skip added, and an added assertion that an empty value
+ * passes ({@see VacuousAssertions}).
  *
  * Every one of those is sometimes right — a test for deleted code goes with
  * it. So a finding is not a verdict on the change, it is a demand that the
@@ -75,11 +76,12 @@ final class TestChangeScan
                 continue;
             }
             $before = ($this->committed)($old);
-            if ($before === null) {
-                continue; // a new test file weakens nothing
-            }
             $after = ($this->current)($path);
-            $found = self::compare($path, AssertionInventory::of($before), $after === null ? null : AssertionInventory::of($after));
+            // A new test file weakens nothing, but its assertions can still pass on nothing.
+            $found = $before === null ? [] : self::compare($path, AssertionInventory::of($before), $after === null ? null : AssertionInventory::of($after));
+            if ($after !== null) {
+                array_push($found, ...VacuousAssertions::in($path, $after, $before === null ? null : $addedTo($path)));
+            }
             if ($found === []) {
                 continue;
             }
