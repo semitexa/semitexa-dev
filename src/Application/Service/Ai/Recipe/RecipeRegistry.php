@@ -112,7 +112,7 @@ final class RecipeRegistry
             new Recipe(
                 id: 'unknown_task',
                 label: 'Unknown task type — no recipe matched',
-                summary: 'The classifier could not match the description to any known recipe. Proceed manually: decompose via ai:epic, use ai:ask for introspection, edit with Edit/Write, verify with ai:verify.',
+                summary: 'The classifier could not match the description to any known recipe. The next commands name what the framework already has for its words; read it with ai:ask, edit with Edit/Write, verify with ai:verify.',
                 keywords: [],
                 verbs: [],
                 generator_chain: [],
@@ -124,8 +124,9 @@ final class RecipeRegistry
                 id: 'add_authenticated_json_route',
                 label: 'Add authenticated JSON route',
                 summary: 'Create Payload + Handler + Resource for an auth-required JSON endpoint.',
-                keywords: ['json', 'api', 'endpoint', 'route', 'auth', 'authenticated', 'token', 'bearer'],
-                verbs: ['add', 'create', 'expose', 'introduce'],
+                keywords: ['json', 'api', 'endpoint', 'route', 'auth', 'authenticated', 'token', 'bearer', 'profile', 'private', 'signed', 'logged'],
+                // The sign-in words weigh as verbs: they are what sets this recipe apart from add_json_route.
+                verbs: ['add', 'create', 'expose', 'introduce', 'authenticated', 'auth', 'token'],
                 generator_chain: ['make:payload', 'make:handler', 'make:resource'],
                 context_signals: ['Payload', 'Handler', 'Resource', 'AuthHandler', 'Auth\\'],
                 arg_hints: [
@@ -138,6 +139,63 @@ final class RecipeRegistry
                     '--resource' => 'Response class base name for the handler.',
                     '--handle' => 'Render handle for the generated resource.',
                 ],
+                default_risk: 'low',
+            ),
+            // tk-task-misses-everyday-tasks: a redirect, a mail and a plain JSON route
+            // came back unknown_task, with advice to open an epic for a one-file job.
+            new Recipe(
+                id: 'add_json_route',
+                label: 'Add JSON route',
+                summary: 'Create Payload + Handler + Resource for a JSON endpoint anyone may call. '
+                    . 'Behind a sign-in or a token, add_authenticated_json_route; for a versioned public API, ai:ask mechanisms --id=api.external.',
+                keywords: ['json', 'api', 'endpoint', 'route', 'returns', 'return', 'public', 'health', 'status', 'ping', 'version'],
+                verbs: ['add', 'create', 'expose', 'introduce', 'return'],
+                generator_chain: ['make:payload', 'make:handler', 'make:resource'],
+                context_signals: ['Payload', 'Handler', 'Resource'],
+                arg_hints: [
+                    '--module' => 'Target module (existing module name preferred).',
+                    '--name'   => 'Endpoint name in StudlyCase (e.g. GetServerTime).',
+                    '--path'   => 'HTTP route path (e.g. /api/time).',
+                    '--method' => 'HTTP method (e.g. GET).',
+                    '--response' => 'Response class base name for the payload.',
+                    '--payload' => 'Payload class base name for the handler.',
+                    '--resource' => 'Response class base name for the handler.',
+                    '--handle' => 'Render handle for the generated resource.',
+                ],
+                default_risk: 'low',
+            ),
+            new Recipe(
+                id: 'add_redirect',
+                label: 'Add a redirect',
+                summary: 'Send a visitor from one path to another: a Payload on the old path whose handler calls '
+                    . '$resource->setRedirect(\'/new\', 301), no template. The target is checked (RedirectTarget): '
+                    . 'another site falls back to /, so an external target must be one the framework allows.',
+                keywords: ['redirect', 'redirects', 'moved', 'old', 'url', 'permanent', 'permanently', '301', '302', 'forward', 'alias'],
+                verbs: ['redirect', 'forward'],
+                generator_chain: ['make:payload', 'make:handler'],
+                context_signals: ['Payload', 'Handler', 'setRedirect'],
+                arg_hints: [
+                    '--module' => 'Target module (existing module name preferred).',
+                    '--name'   => 'Name in StudlyCase (e.g. OldPricingRedirect).',
+                    '--path'   => 'The OLD path, the one that redirects.',
+                    '--method' => 'HTTP method (e.g. GET).',
+                    '--response' => 'Response class base name for the payload.',
+                    '--payload' => 'Payload class base name for the handler.',
+                    '--resource' => 'Response class base name for the handler.',
+                ],
+                default_risk: 'low',
+            ),
+            new Recipe(
+                id: 'send_mail',
+                label: 'Send an email',
+                summary: 'Outbound email through semitexa/mail: SMTP transport, a Twig-rendered body, queue-safe delivery. '
+                    . 'Run: ai:ask mechanisms --id=mail.outbound. A message over several channels that honours opt-outs is '
+                    . 'a notification: ai:ask mechanisms --id=notifications.send.',
+                keywords: ['mail', 'email', 'emails', 'e-mail', 'smtp', 'welcome', 'newsletter', 'inbox', 'attachment', 'confirmation', 'receipt'],
+                verbs: ['send', 'mail', 'email'],
+                generator_chain: [],
+                context_signals: ['Mail', 'Mailer', 'Notification'],
+                arg_hints: [],
                 default_risk: 'low',
             ),
             new Recipe(

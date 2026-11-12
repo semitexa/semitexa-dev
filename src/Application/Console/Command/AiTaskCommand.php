@@ -246,6 +246,9 @@ final class AiTaskCommand extends BaseCommand
                     ['cmd' => 'orm:diff', 'args' => [], 'why' => 'schema delta if relevant (human-readable output)'],
                     ['cmd' => 'ai:verify', 'args' => ['--files=<paths>', '--scope=broad', '--json'], 'why' => 'broad verification on close'],
                 ],
+                'send_mail' => [
+                    ['cmd' => 'ai:ask', 'args' => ['mechanisms', '--id=mail.outbound', '--json'], 'why' => 'how mail is sent here: transport, template, queue'],
+                ],
                 'document_or_explain' => [
                     ['cmd' => 'docs:list', 'args' => ['--json'], 'why' => 'existing canonical docs map'],
                 ],
