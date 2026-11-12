@@ -96,7 +96,17 @@ final class DevGraphApiCommandTest extends TestCase
         $without = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertContains('--with-demo', $with['next_command'][0]['args']);
+        $this->assertNotSame([], $without['hits'], 'the second run found something, so the next line proves the catalog, not an empty answer');
         $this->assertSame([], $demo($without), 'the second run is not answered from the first run\'s catalog');
+    }
+
+    /** Review, dev#242: --name follows --with-demo too, or a class the search showed is "not a framework class". */
+    public function test_a_demo_class_is_described_with_the_demo_and_refused_without_it(): void
+    {
+        $name = 'Semitexa\\Demo\\Application\\Service\\GoogleOAuthClient';
+
+        $this->assertSame(1, $this->ask(['--name' => $name, '--json' => true])->getStatusCode());
+        $this->assertSame(0, $this->ask(['--name' => $name, '--with-demo' => true, '--json' => true])->getStatusCode());
     }
 
     public function test_ai_ask_takes_the_options_its_own_continuation_names(): void

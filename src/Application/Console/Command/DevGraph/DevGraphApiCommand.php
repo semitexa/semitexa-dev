@@ -67,18 +67,18 @@ final class DevGraphApiCommand extends BaseCommand
 
     private function describe(string $name, InputInterface $input, OutputInterface $output): int
     {
-        $matches = $this->catalog()->resolve($name);
+        $matches = $this->catalog((bool) $input->getOption('with-demo'))->resolve($name);
         if ($matches === []) {
             return $this->refuseUnknown($name, $input, $output);
         }
 
-        $chosen = $this->catalog()->lookup($name);
+        $chosen = $this->catalog((bool) $input->getOption('with-demo'))->lookup($name);
         if ($chosen === null) {
             return LookupRefusal::refuse(
                 $input,
                 $output,
                 self::CLASS_ARTIFACT,
-                $this->catalog()->refusalFor($name),
+                $this->catalog((bool) $input->getOption('with-demo'))->refusalFor($name),
                 'Classes',
                 $matches,
             );
@@ -104,7 +104,7 @@ final class DevGraphApiCommand extends BaseCommand
             self::CLASS_ARTIFACT,
             sprintf('No framework class is named "%s".', $name),
             'Closest classes',
-            $this->catalog()->similar($name),
+            $this->catalog((bool) $input->getOption('with-demo'))->similar($name),
             [['cmd' => 'ai:ask', 'args' => ['api', '--search=' . $name], 'why' => 'Find it by a member or a word from its description']],
         );
     }
