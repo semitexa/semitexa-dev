@@ -56,6 +56,72 @@ final class DevGraphApiCommandTest extends TestCase
 
         $this->assertCount(ApiCatalog::SEARCH_LIMIT, $decoded['hits']);
         $this->assertGreaterThan(ApiCatalog::SEARCH_LIMIT, $decoded['total']);
+        // Said, with the call that shows the rest (tk-ask-api-search-truncates-silently).
+        $this->assertTrue($decoded['truncated']);
+        $this->assertContains('--limit=' . $decoded['total'], $decoded['next_command'][0]['args']);
+    }
+
+    public function test_the_rest_of_a_cut_search_is_one_limit_away_and_a_whole_one_is_not_cut(): void
+    {
+        $all = json_decode(trim($this->ask(['--search' => 'validate', '--limit' => '500', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertCount($all['total'], $all['hits']);
+        $this->assertFalse($all['truncated']);
+        $this->assertSame([], $all['next_command']);
+
+        $text = $this->ask(['--search' => 'validate'])->getDisplay();
+        $this->assertStringContainsString('more not shown: --limit=' . $all['total'] . ' shows them all', $text);
+    }
+
+    /** tk-ask-api-search-truncates-silently: the redirect a handler uses came tenth, behind a demo OAuth client's. */
+    public function test_core_ranks_first_and_the_showcases_are_left_out_unless_asked(): void
+    {
+        $decoded = json_decode(trim($this->ask(['--search' => 'redirect', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $top = array_map(static fn (array $hit): string => $hit['class'] . '::' . $hit['member'], array_slice($decoded['hits'], 0, 3));
+        $this->assertContains('Semitexa\\Core\\Http\\Response\\ResourceResponse::setRedirect', $top);
+        $this->assertSame([], array_filter($decoded['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')));
+
+        $withDemo = json_decode(trim($this->ask(['--search' => 'redirect uri', '--with-demo' => true, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertNotSame([], array_filter($withDemo['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')), 'asked for, the demo is searched');
+    }
+
+    /** Review, dev#242: one command instance, both settings, either order; the replay keeps --with-demo. */
+    public function test_with_and_without_the_demo_on_one_command_and_the_replay_keeps_it(): void
+    {
+        $tester = new CommandTester(new DevGraphApiCommand());
+        $demo = static fn (array $d): array => array_filter($d['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\'));
+
+        $tester->execute(['--search' => 'redirect', '--with-demo' => true, '--limit' => '1', '--json' => true]);
+        $with = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $tester->execute(['--search' => 'redirect uri', '--limit' => '500', '--json' => true]);
+        $without = json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertContains('--with-demo', $with['next_command'][0]['args']);
+        $this->assertNotSame([], $without['hits'], 'the second run found something, so the next line proves the catalog, not an empty answer');
+        $this->assertSame([], $demo($without), 'the second run is not answered from the first run\'s catalog');
+    }
+
+    /** Review, dev#242: --name follows --with-demo too, or a class the search showed is "not a framework class". */
+    public function test_a_demo_class_is_described_with_the_demo_and_refused_without_it(): void
+    {
+        $name = 'Semitexa\\Demo\\Application\\Service\\GoogleOAuthClient';
+
+        $without = json_decode(trim($this->ask(['--name' => $name, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+        $with = json_decode(trim($this->ask(['--name' => $name, '--with-demo' => true, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame('error', $without['status']);
+        $this->assertStringContainsString('No framework class is named', $without['error']);
+        $this->assertSame(['ok', $name], [$with['status'], $with['class']['name']]);
+    }
+
+    public function test_ai_ask_takes_the_options_its_own_continuation_names(): void
+    {
+        $app = new \Symfony\Component\Console\Application();
+        $app->add(new \Semitexa\Dev\Application\Console\Command\AiAskCommand());
+        $app->add(new DevGraphApiCommand());
+        $tester = new CommandTester($app->find('ai:ask'));
+        $tester->execute(['subject' => 'api', '--search' => 'validate', '--limit' => '2', '--json' => true]);
+
+        $this->assertCount(2, json_decode(trim($tester->getDisplay()), true, 512, JSON_THROW_ON_ERROR)['hits']);
     }
 
     public function test_an_unknown_class_refuses_under_json_and_offers_similar_names(): void

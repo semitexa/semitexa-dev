@@ -17,6 +17,13 @@ final class ApiCatalog
 
     private const string FRAMEWORK_PREFIX = 'Semitexa\\';
 
+    /** Showcases, not API: a search for "redirect" ranked a demo OAuth client eleventh (tk-ask-api-search-truncates-silently). */
+    private const array SHOWCASE_PREFIXES = ['Semitexa\\Demo\\', 'Semitexa\\TicTacToe\\'];
+
+    /** Core is where a handler's answer usually is; it ranks ahead of a package with a member of the same name. */
+    private const string CORE_PREFIX = 'Semitexa\\Core\\';
+    private const int CORE_BONUS = 45;
+
     /** More than this on a parameter's line is a list to ask for, not to print. */
     private const int MAX_PARAMETER_IMPLEMENTERS = 8;
 
@@ -37,7 +44,7 @@ final class ApiCatalog
     /**
      * @param array<string, string> $classMap class name => file
      */
-    public static function forFramework(array $classMap, string $projectRoot): self
+    public static function forFramework(array $classMap, string $projectRoot, bool $withShowcase = false): self
     {
         $applicationCode = rtrim($projectRoot, '/') . '/src/';
         $classes = [];
@@ -47,12 +54,24 @@ final class ApiCatalog
                 && !str_contains($class, '\\Tests\\')
                 && !str_contains($file, '/tests/')
                 && !str_starts_with($file, $applicationCode)
+                && ($withShowcase || !self::isShowcase($class))
             ) {
                 $classes[$class] = $file;
             }
         }
 
         return new self($classes, new ApiReflector($projectRoot));
+    }
+
+    private static function isShowcase(string $class): bool
+    {
+        foreach (self::SHOWCASE_PREFIXES as $prefix) {
+            if (str_starts_with($class, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -218,19 +237,19 @@ final class ApiCatalog
      * although nothing is spelled "validator", and silence would send the reader
      * back to grep.
      */
-    public function search(string $term): ApiSearchResult
+    public function search(string $term, int $limit = self::SEARCH_LIMIT): ApiSearchResult
     {
         $tokens = $this->tokensOf($term);
         if ($tokens === []) {
             return new ApiSearchResult([], 0, []);
         }
 
-        $result = $this->matching($tokens, count($tokens));
+        $result = $this->matching($tokens, count($tokens), $limit);
         if ($result->hits !== [] || count($tokens) === 1) {
             return $result;
         }
 
-        $closest = $this->matching($tokens, intdiv(count($tokens) + 1, 2), partial: true);
+        $closest = $this->matching($tokens, intdiv(count($tokens) + 1, 2), $limit, partial: true);
 
         // The wider pass read more classes, so what it could not read still counts.
         return $closest->hits === [] ? new ApiSearchResult([], 0, $closest->unread) : $closest;
@@ -239,7 +258,7 @@ final class ApiCatalog
     /**
      * @param list<string> $tokens
      */
-    private function matching(array $tokens, int $required, bool $partial = false): ApiSearchResult
+    private function matching(array $tokens, int $required, int $limit, bool $partial = false): ApiSearchResult
     {
         $hits = [];
         $unread = [];
@@ -255,9 +274,11 @@ final class ApiCatalog
             array_push($hits, ...$this->hitsIn($described, $tokens, $required));
         }
 
-        usort($hits, static fn (ApiHit $a, ApiHit $b): int => [$b->score, $a->class, $a->member] <=> [$a->score, $b->class, $b->member]);
+        // Equal scores: the shorter name says less else besides the words asked for (isRedirect before followRedirects).
+        usort($hits, static fn (ApiHit $a, ApiHit $b): int => [$b->score, strlen($a->member ?? $a->class), $a->class, $a->member]
+            <=> [$a->score, strlen($b->member ?? $b->class), $b->class, $b->member]);
 
-        return new ApiSearchResult(array_slice($hits, 0, self::SEARCH_LIMIT), count($hits), $unread, $partial);
+        return new ApiSearchResult(array_slice($hits, 0, max(1, $limit)), count($hits), $unread, $partial);
     }
 
     /**
@@ -302,7 +323,8 @@ final class ApiCatalog
     {
         $hits = [];
         $owner = $class->name . ' ' . $class->kind;
-        $bonus = ($class->stable ? 25 : 0) + (in_array($class->kind, ['trait', 'attribute'], true) ? self::USABLE_KIND_BONUS : 0);
+        $bonus = ($class->stable ? 25 : 0) + (in_array($class->kind, ['trait', 'attribute'], true) ? self::USABLE_KIND_BONUS : 0)
+            + (str_starts_with($class->name, self::CORE_PREFIX) ? self::CORE_BONUS : 0);
         $exact = strtolower($class->shortName()) === implode('', $tokens) ? self::EXACT_CLASS_BONUS : 0;
 
         $score = $this->score($tokens, $required, $class->shortName(), $owner, $class->summary, $bonus + $exact);

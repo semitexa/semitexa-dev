@@ -32,8 +32,8 @@ final class DevGraphApiCommand extends BaseCommand
     private const string CLASS_ARTIFACT = 'semitexa-dev.api/v1';
     private const string SEARCH_ARTIFACT = 'semitexa-dev.api-search/v1';
 
-    /** Built lazily; see DevGraphEventCommand. */
-    private ?ApiCatalog $catalog = null;
+    /** @var array<int, ApiCatalog> without (0) and with (1) the showcases, each built lazily; see DevGraphEventCommand */
+    private array $catalogs = [];
 
     public function __construct()
     {
@@ -45,6 +45,8 @@ final class DevGraphApiCommand extends BaseCommand
         $this
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Short or full class name (e.g. Column)')
             ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Words to find in class and member names and doc summaries (e.g. "max length")')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'With --search: how many hits to show', (string) ApiCatalog::SEARCH_LIMIT)
+            ->addOption('with-demo', null, InputOption::VALUE_NONE, 'Also search the demo and showcase packages')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
 
@@ -65,18 +67,19 @@ final class DevGraphApiCommand extends BaseCommand
 
     private function describe(string $name, InputInterface $input, OutputInterface $output): int
     {
-        $matches = $this->catalog()->resolve($name);
+        $catalog = $this->catalog((bool) $input->getOption('with-demo'));
+        $matches = $catalog->resolve($name);
         if ($matches === []) {
             return $this->refuseUnknown($name, $input, $output);
         }
 
-        $chosen = $this->catalog()->lookup($name);
+        $chosen = $catalog->lookup($name);
         if ($chosen === null) {
             return LookupRefusal::refuse(
                 $input,
                 $output,
                 self::CLASS_ARTIFACT,
-                $this->catalog()->refusalFor($name),
+                $catalog->refusalFor($name),
                 'Classes',
                 $matches,
             );
@@ -102,14 +105,26 @@ final class DevGraphApiCommand extends BaseCommand
             self::CLASS_ARTIFACT,
             sprintf('No framework class is named "%s".', $name),
             'Closest classes',
-            $this->catalog()->similar($name),
+            $this->catalog((bool) $input->getOption('with-demo'))->similar($name),
             [['cmd' => 'ai:ask', 'args' => ['api', '--search=' . $name], 'why' => 'Find it by a member or a word from its description']],
         );
     }
 
     private function search(string $term, InputInterface $input, OutputInterface $output): int
     {
-        $result = $this->catalog()->search($term);
+        $limit = max(1, (int) $input->getOption('limit'));
+        $withDemo = (bool) $input->getOption('with-demo');
+        $result = $this->catalog($withDemo)->search($term, $limit);
+        // Cut hits are said, with the call that shows them (tk-ask-api-search-truncates-silently).
+        $more = [];
+        if ($result->total > count($result->hits)) {
+            $more[] = [
+                'cmd' => 'ai:ask',
+                // The same search, all of it (review, dev#242: --with-demo was dropped).
+                'args' => ['api', '--search=' . $term, '--limit=' . $result->total, ...($withDemo ? ['--with-demo'] : []), '--json'],
+                'why' => sprintf('%d more not shown; or add a word to narrow', $result->total - count($result->hits)),
+            ];
+        }
 
         if ($input->getOption('json')) {
             $this->writeJson($output, [
@@ -118,14 +133,19 @@ final class DevGraphApiCommand extends BaseCommand
                 'query' => $term,
                 'partial' => $result->partial,
                 'total' => $result->total,
+                'truncated' => $more !== [],
                 'hits' => array_map(static fn (ApiHit $hit): array => $hit->toArray(), $result->hits),
                 'unread_classes' => $result->unread,
+                'next_command' => $more,
             ]);
 
             return Command::SUCCESS;
         }
 
         $this->writeHits($output, $term, $result);
+        if ($more !== []) {
+            $this->writeLines($output, ['', sprintf('%d more not shown: --limit=%d shows them all, or add a word to narrow.', $result->total - count($result->hits), $result->total)]);
+        }
 
         return Command::SUCCESS;
     }
@@ -242,8 +262,9 @@ final class DevGraphApiCommand extends BaseCommand
         $output->writeln((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
-    private function catalog(): ApiCatalog
+    /** One per setting: a command run twice must not answer the second from the first's (review, dev#242). */
+    private function catalog(bool $withShowcase = false): ApiCatalog
     {
-        return $this->catalog ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get());
+        return $this->catalogs[$withShowcase ? 1 : 0] ??= ApiCatalog::forFramework((new ClassDiscovery())->getClassMap(), ProjectRoot::get(), $withShowcase);
     }
 }
