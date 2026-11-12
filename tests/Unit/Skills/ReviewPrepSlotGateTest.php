@@ -69,8 +69,8 @@ final class ReviewPrepSlotGateTest extends TestCase
             . "  ' search prs '*' --state=open --limit 1000 '*) {$answer} ;;\n"
             . "  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
         file_put_contents($this->dir . '/bin/git', "#!/bin/bash\nif [ \"\$3\" = push ]; then echo PUSHED; exit 1; fi\nexec /usr/bin/git \"\$@\"\n");
-        chmod($this->dir . '/bin/gh', 0o755);
-        chmod($this->dir . '/bin/git', 0o755);
+        // A mock that is not executable would let the real gh or git run: stop here (review, dev#245).
+        self::assertTrue(chmod($this->dir . '/bin/gh', 0o755) && chmod($this->dir . '/bin/git', 0o755), 'the gh and git stand-ins are executable');
 
         $script = dirname(__DIR__, 3) . '/resources/skills/review-prep/scripts/create-review-pr.sh';
         exec(sprintf(
