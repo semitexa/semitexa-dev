@@ -8,6 +8,7 @@ base_branch=""
 title=""
 body_source=""
 allow_private_evidence=0
+allow_over_limit=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -27,6 +28,11 @@ while [ "$#" -gt 0 ]; do
             body_source="${2:-}"
             shift 2
             ;;
+        --allow-over-limit)
+            # A review answer that needs a PR in another repository, said in the PR.
+            allow_over_limit=1
+            shift
+            ;;
         --allow-private-evidence)
             # Only when the operator said so for THIS description.
             allow_private_evidence=1
@@ -44,7 +50,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title] [--body-file /tmp/body.md] [--allow-private-evidence]\n' "$0" >&2; exit 1; }
+[ -n "$repo" ] || { printf 'Usage: %s /absolute/path/to/repo [--checks-file /tmp/file] [--base branch] [--title title] [--body-file /tmp/body.md] [--allow-private-evidence] [--allow-over-limit]\n' "$0" >&2; exit 1; }
 if [ -n "$body_source" ]; then
     [ -f "$body_source" ] || { printf 'Body file not found: %s\n' "$body_source" >&2; exit 1; }
     # An empty file is the likelier mistake than a missing one -- a heredoc that
@@ -124,6 +130,22 @@ if [ "$allow_private_evidence" -eq 0 ]; then
             printf 'Refusing to publish: the private-evidence check could not run (exit %s).\n' "$check_status" >&2
         fi
         exit 1
+    fi
+fi
+
+# The make-it limits as a gate, not a sentence (tk-prepush-refuses-red-verify): one
+# open PR per repository, at most MAKE_IT_WIP in review. On 12.11 a fourth PR was
+# opened by hand. Only a NEW PR is held back; updating the open one is a review answer.
+open_pr="$(gh pr list --repo "$repo_slug" --head "$branch" --base "$base_branch" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+if { [ -z "$open_pr" ] || [ "$open_pr" = "null" ]; } && [ "$allow_over_limit" -eq 0 ]; then
+    wip="$script_dir/../../make-it/scripts/wip.sh"
+    if [ -f "$wip" ]; then
+        wip_status=0
+        wip_answer="$(bash "$wip" --can-open "$repo_slug" 2>&1)" || wip_status=$?
+        if [ "$wip_status" -ne 0 ]; then
+            printf 'Refusing to open a PR for %s: %s\nWait for a merge, or pass --allow-over-limit for a review answer that needs this PR (and say so in it).\n' "$repo_slug" "$wip_answer" >&2
+            exit 1
+        fi
     fi
 fi
 
