@@ -57,14 +57,20 @@ final class TaskClassifier
         $leadingVerb = $this->leadingVerb($tokens);
 
         $scored = [];
+        // What a recipe the task rules out would have scored: it cannot win, but it
+        // still stands against the winner, so "a private endpoint that returns the
+        // status" is a question, not a high-confidence guard (review, dev#240).
+        $ruledOut = 0;
         foreach (RecipeRegistry::all() as $recipe) {
             if ($recipe->id === self::UNKNOWN_RECIPE_ID) {
                 continue;
             }
-            $scored[] = [
-                'recipe' => $recipe,
-                'score'  => $this->score($recipe, $tokens, $bigrams, $leadingVerb),
-            ];
+            $score = $this->score($recipe, $tokens, $bigrams, $leadingVerb);
+            if (array_intersect($recipe->excluded_by, [...$tokens, ...$bigrams]) !== []) {
+                $ruledOut = max($ruledOut, $score);
+                $score = 0;
+            }
+            $scored[] = ['recipe' => $recipe, 'score' => $score];
         }
 
         usort($scored, static fn(array $a, array $b): int => $b['score'] <=> $a['score']);
@@ -86,7 +92,7 @@ final class TaskClassifier
             }
         }
 
-        $secondScore = $scored[1]['score'] ?? 0;
+        $secondScore = max($scored[1]['score'] ?? 0, $ruledOut);
         $confidence = $this->confidence($top['score'], $secondScore);
         $reason = $this->explain($top['recipe'], $tokens, $confidence);
 
@@ -136,7 +142,6 @@ final class TaskClassifier
             && (in_array($leadingVerb, self::NOT_CREATING_VERBS, true) || array_intersect(self::NAMED_ARTEFACTS, [...$tokens, ...$bigrams]) !== [])) {
             return 0;
         }
-
         $score = 0;
         if ($recipe->noun_led
             && in_array($leadingVerb, self::CREATING_VERBS, true)

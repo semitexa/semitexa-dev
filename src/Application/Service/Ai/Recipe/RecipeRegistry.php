@@ -151,6 +151,12 @@ final class RecipeRegistry
                 keywords: ['json', 'api', 'endpoint', 'route', 'returns', 'return', 'public', 'health', 'status', 'ping', 'version'],
                 verbs: ['add', 'create', 'expose', 'introduce', 'return'],
                 generator_chain: ['make:payload', 'make:handler', 'make:resource'],
+                // It builds a route anyone may call: a task that asks for a guarded one is never this.
+                excluded_by: [
+                    'auth', 'authenticated', 'authentication', 'authorization', 'authorized', 'token', 'bearer', 'jwt',
+                    'private', 'protected', 'secured', 'restricted', 'internal', 'admin', 'member', 'signed', 'sign in',
+                    'logged', 'login', 'session',
+                ],
                 context_signals: ['Payload', 'Handler', 'Resource'],
                 arg_hints: [
                     '--module' => 'Target module (existing module name preferred).',
