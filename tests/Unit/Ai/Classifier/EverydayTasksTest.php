@@ -74,8 +74,12 @@ final class EverydayTasksTest extends TestCase
             'add a JSON endpoint that requires authentication and returns the status',
             'add an internal JSON endpoint for members only',
             'add a JSON endpoint behind a JWT that returns the version',
+            // The repeated "in" once hid "sign in" from the exclusion (review, dev#240).
+            'add a JSON endpoint in Billing behind sign-in that returns health status',
         ] as $task) {
-            self::assertNotSame('add_json_route', $classifier->classify($task)->recipe->id, $task);
+            $result = $classifier->classify($task);
+            self::assertSame('add_authenticated_json_route', $result->recipe->id, $task);
+            self::assertSame('low', $result->confidence, $task);
         }
         // Ruling the open route out does not make the guarded one a sure thing: these are asked.
         foreach ([

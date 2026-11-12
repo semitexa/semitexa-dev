@@ -61,12 +61,16 @@ final class TaskClassifier
         // still stands against the winner, so "a private endpoint that returns the
         // status" is a question, not a high-confidence guard (review, dev#240).
         $ruledOut = 0;
+        // Phrases are matched on the words as written: tokenize() drops a repeated
+        // "in", so "behind sign-in that returns" had no "sign in" bigram (review, dev#240).
+        $written = preg_split('/[^\p{L}\p{N}]+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $phrases = [...$tokens, ...$this->bigrams($written)];
         foreach (RecipeRegistry::all() as $recipe) {
             if ($recipe->id === self::UNKNOWN_RECIPE_ID) {
                 continue;
             }
             $score = $this->score($recipe, $tokens, $bigrams, $leadingVerb);
-            if (array_intersect($recipe->excluded_by, [...$tokens, ...$bigrams]) !== []) {
+            if (array_intersect($recipe->excluded_by, $phrases) !== []) {
                 $ruledOut = max($ruledOut, $score);
                 $score = 0;
             }
