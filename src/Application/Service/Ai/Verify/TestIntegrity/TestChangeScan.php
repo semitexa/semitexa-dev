@@ -204,7 +204,9 @@ final class TestChangeScan
     }
 
     /**
-     * The same lines, by number (1-based) in $after.
+     * The same lines, by number (1-based) in $after. The lines both versions start and end with
+     * are left out first, so a new line identical to a later unchanged one is the new one
+     * (review, dev#247); what lies between is matched as a multiset.
      *
      * @return list<int>
      */
@@ -213,14 +215,26 @@ final class TestChangeScan
         if ($after === null) {
             return [];
         }
+        $old = $before === null ? [] : (preg_split('/\R/', $before) ?: []);
+        $new = preg_split('/\R/', $after) ?: [];
+        $start = 0;
+        while ($start < count($old) && $start < count($new) && $old[$start] === $new[$start]) {
+            $start++;
+        }
+        $oldEnd = count($old);
+        $newEnd = count($new);
+        while ($oldEnd > $start && $newEnd > $start && $old[$oldEnd - 1] === $new[$newEnd - 1]) {
+            $oldEnd--;
+            $newEnd--;
+        }
         $remaining = [];
-        foreach (preg_split('/\R/', (string) $before) ?: [] as $line) {
+        foreach (array_slice($old, $start, $oldEnd - $start) as $line) {
             $remaining[$line] = ($remaining[$line] ?? 0) + 1;
         }
         $added = [];
-        foreach (preg_split('/\R/', $after) ?: [] as $n => $line) {
-            if (($remaining[$line] ?? 0) > 0) {
-                $remaining[$line]--;
+        for ($n = $start; $n < $newEnd; $n++) {
+            if (($remaining[$new[$n]] ?? 0) > 0) {
+                $remaining[$new[$n]]--;
                 continue;
             }
             $added[] = $n + 1;

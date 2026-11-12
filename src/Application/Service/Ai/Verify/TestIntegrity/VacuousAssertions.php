@@ -8,11 +8,11 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * Assertions an empty or missing value would satisfy (tk-verify-catches-vacuous-assertions).
  *
  * A check that something is absent (assertNotSame, assertStringNotContainsString,
- * assertArrayNotHasKey, an upper bound) passes on '' or [] just as it passes on the right value.
- * When no other assertion of the same test shows the value to hold anything, a value that broke
- * into nothing passes the test. This was the most common CodeRabbit finding on 2026-11-12:
- * an unreadable file cast to '', a json_encode() false cast to '', a loop over a list that came
- * back empty, a constant list emptied.
+ * assertArrayNotHasKey, an upper bound on a size) passes on '' or [] just as it passes on the
+ * right value. When no other assertion of the same test shows the value to hold anything, a value
+ * that broke into nothing passes the test. This was the most common CodeRabbit finding on
+ * 2026-11-12: an unreadable file cast to '', a json_encode() false cast to '', a loop over a list
+ * that came back empty, a constant list emptied.
  *
  * The value is the assertion's subject argument. A subject that is a variable (or a path into
  * one, or strlen()/count()/a cast of one) is shown when one of its variables appears in an
@@ -20,6 +20,10 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * check (assertIsString, assertNotNull), not a value pinned empty (assertCount(0, ...)). A subject
  * that calls something, or reads a constant, is shown only by such an assertion on the same
  * expression. `assertNotSame('', $x)` and `assertNotCount(0, $x)` are the showing, not the problem.
+ *
+ * Inside a foreach, the loop is the first question: a check in a loop over a computed list that
+ * no assertion outside the loop names as a whole runs zero times on an empty list. A loop value
+ * is shown when its list is (review, dev#247).
  */
 final class VacuousAssertions
 {
@@ -35,34 +39,39 @@ final class VacuousAssertions
 
     /**
      * Comparisons of two values: two empty values are equal and fail them, so they are vacuous
-     * only against a fixed expectation (`assertLessThan(6000, strlen($json))`), not against another
-     * computed value (`assertNotSame($a, $b)`).
+     * only against a fixed expectation (`assertNotSame('x', $y)`), not against another computed
+     * value (`assertNotSame($a, $b)`).
      */
-    private const COMPARISONS = [
-        'assertnotsame', 'assertnotequals', 'assertnotequalscanonicalizing', 'assertnotequalsignoringcase',
-        'assertlessthan', 'assertjsonstringnotequalsjsonstring',
-    ];
+    private const COMPARISONS = ['assertnotsame', 'assertnotequals', 'assertnotequalscanonicalizing', 'assertnotequalsignoringcase', 'assertjsonstringnotequalsjsonstring'];
+
+    /** Upper bounds: vacuous on a size (strlen, count), not on a duration or a number of attempts. */
+    private const UPPER_BOUNDS = ['assertlessthan', 'assertlessthanorequal'];
+
+    private const SIZES = ['strlen', 'mb_strlen', 'count', 'sizeof', 'filesize'];
 
     /** Absence checks that, against an empty expectation, show the value holds something. */
     private const NOT_EMPTY_AGAINST_EMPTY = ['assertnotsame', 'assertnotequals', 'assertnotcount'];
 
     /**
      * Assertions an empty value passes too: they show the type or that the value exists, not that
-     * it holds anything (review, dev#247).
+     * it holds anything (review, dev#247). `assertContainsOnly*` counts by prefix.
      */
     private const NO_EVIDENCE = [
         'assertisstring', 'assertisarray', 'assertisiterable', 'assertisscalar', 'assertisobject', 'assertnotnull',
         'assertnotfalse', 'assertinstanceof', 'assertempty', 'assertnull', 'assertfalse', 'assertisbool',
-        'assertisnotarray', 'assertisnotstring',
+        'assertisnotarray', 'assertisnotstring', 'assertislist',
     ];
 
     /** Value checks that, against an empty expectation, pin the value empty. */
-    private const PINNED = ['assertsame', 'assertequals', 'assertcount'];
+    private const PINNED = ['assertsame', 'assertequals', 'assertcount', 'assertgreaterthanorequal'];
 
-    /** Taken off a subject before it is read: they keep an empty value empty. */
-    private const WRAPPERS = ['strlen', 'mb_strlen', 'count', 'trim', 'strtolower', 'implode', 'array_keys', 'array_values'];
+    /** Taken off a subject before it is read: they keep an empty value empty. The value is their first argument. */
+    private const WRAPPERS = ['strlen', 'mb_strlen', 'count', 'sizeof', 'trim', 'strtolower', 'array_keys', 'array_values', 'implode'];
 
-    private const EMPTY_LITERALS = ["''", '""', '[]', 'null', 'false', '0', 'array()'];
+    /** Empty values; null and false only where a value is pinned, since '' is neither. */
+    private const EMPTY_LITERALS = ["''", '""', '[]', 'array()', '0'];
+
+    private const NULLISH = ['null', 'false'];
 
     /**
      * @param list<int>|null $addedLines numbers of the lines the change wrote, null for all: only an
@@ -74,36 +83,34 @@ final class VacuousAssertions
         $added = $addedLines === null ? null : array_fill_keys($addedLines, true);
         $tokens = array_values(array_filter(\PhpToken::tokenize($source), static fn (\PhpToken $t): bool => !$t->isIgnorable()));
         $findings = [];
-        foreach (self::methods($tokens) as $method => $calls) {
-            $shown = [];
+        foreach (self::methods($tokens) as $method => ['calls' => $calls, 'loops' => $loops, 'fixed' => $fixed]) {
             foreach ($calls as $call) {
-                if (self::isEvidence($call)) {
-                    foreach ($call['args'] as $arg) {
-                        $shown[] = $arg;
-                    }
-                }
-            }
-            foreach ($calls as $call) {
+                $name = strtolower($call['name']);
                 if (!$call['absence'] || !isset($call['args'][1]) || self::againstEmpty($call)) {
                     continue;
                 }
-                if (in_array(strtolower($call['name']), self::COMPARISONS, true) && !self::isFixed($call['args'][0])) {
+                // assertNotSame(null, $x) is assertNotNull: an existence check, neither evidence nor a finding.
+                if (in_array($name, self::COMPARISONS, true) && (!self::isFixed($call['args'][0]) || self::isEmptyLiteral($call['args'][0], true))) {
+                    continue;
+                }
+                if (in_array($name, self::UPPER_BOUNDS, true) && !in_array(strtolower(ltrim(self::uncast($call['args'][1])[0]->text ?? '', '\\')), self::SIZES, true)) {
                     continue;
                 }
                 // Any line of the call: a rewritten subject on its own line is the change (review, dev#247).
                 if ($added !== null && array_intersect_key($added, array_flip(range($call['line'], $call['end']))) === []) {
                     continue;
                 }
-                $subject = self::unwrap($call['args'][1]);
-                if ($subject === [] || self::isLiteral($subject) || self::isShown($subject, $shown)) {
+                $why = self::unshownLoop($call, $calls, $loops, $fixed) ?? self::unshownSubject($call, $calls, $loops, $fixed);
+                if ($why === null) {
                     continue;
                 }
                 $findings[] = new TestChangeFinding(TestChangeFinding::VACUOUS_ASSERTION, $path, $method, sprintf(
-                    '%s(), line %d: %s(%s) passes when that value is empty or missing, and no other assertion shows it holds anything — assert it first (assertNotSame(\'\', ...), assertCount, assertJson)',
+                    '%s(), line %d: %s(%s) passes when %s — assert it first (assertNotSame(\'\', ...), assertCount, assertJson)',
                     $method,
                     $call['line'],
                     $call['name'],
                     self::text($call['args'][1]),
+                    $why,
                 ));
             }
         }
@@ -112,10 +119,92 @@ final class VacuousAssertions
     }
 
     /**
-     * Every assertion call of every method, with its arguments split at the top level.
+     * The loop around the call whose list nothing outside it shows is non-empty.
+     *
+     * @param array{at: int} $call
+     * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
+     * @param list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}> $loops
+     * @param array<string, true> $fixed variables the method assigns a literal array
+     */
+    private static function unshownLoop(array $call, array $calls, array $loops, array $fixed): ?string
+    {
+        foreach ($loops as $loop) {
+            if ($call['at'] > $loop['from'] && $call['at'] < $loop['to'] && !self::listShown($loop, $calls, $fixed)) {
+                return sprintf('the loop over %s runs zero times, and no assertion outside it shows that list holds anything', self::text($loop['list']));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array{args: list<list<\PhpToken>>} $call
+     * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
+     * @param list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}> $loops
+     * @param array<string, true> $fixed
+     */
+    private static function unshownSubject(array $call, array $calls, array $loops, array $fixed): ?string
+    {
+        $subject = self::unwrap($call['args'][1]);
+        if ($subject === [] || self::isLiteral($subject)) {
+            return null;
+        }
+        $shown = [];
+        foreach ($calls as $other) {
+            if (self::isEvidence($other)) {
+                array_push($shown, ...$other['args']);
+            }
+        }
+        if (self::isShown($subject, $shown)) {
+            return null;
+        }
+        // A loop value is shown by its list: assertNotEmpty($rows) covers every $row. Only the value
+        // itself: what a call computes from it ($classifier->classify($row)) can still be empty.
+        foreach ($loops as $loop) {
+            if ($loop['value'] !== null && ($subject[0]->text ?? '') === $loop['value'] && self::isFixed(array_slice($subject, 1)) && self::listShown($loop, $calls, $fixed)) {
+                return null;
+            }
+        }
+
+        return 'that value is empty or missing, and no other assertion shows it holds anything';
+    }
+
+    /**
+     * Whether the loop's list is fixed, or named as a whole by an assertion outside the loop.
+     *
+     * @param array{from: int, to: int, list: list<\PhpToken>} $loop
+     * @param list<array{at: int, absence: bool, name: string, args: list<list<\PhpToken>>}> $calls
+     * @param array<string, true> $fixed
+     */
+    private static function listShown(array $loop, array $calls, array $fixed): bool
+    {
+        $list = self::text($loop['list']);
+        if (self::isFixed($loop['list']) || isset($fixed[$list])) {
+            return true;
+        }
+        foreach ($calls as $other) {
+            if (($other['at'] > $loop['from'] && $other['at'] < $loop['to']) || !self::isEvidence($other)) {
+                continue;
+            }
+            foreach ($other['args'] as $arg) {
+                if (self::text(self::unwrap($arg)) === $list) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Every assertion call and foreach of every method.
      *
      * @param list<\PhpToken> $tokens
-     * @return array<string, list<array{name: string, line: int, end: int, absence: bool, args: list<list<\PhpToken>>}>>
+     * @return array<string, array{
+     *     calls: list<array{at: int, name: string, line: int, end: int, absence: bool, args: list<list<\PhpToken>>}>,
+     *     loops: list<array{from: int, to: int, list: list<\PhpToken>, value: ?string}>,
+     *     fixed: array<string, true>
+     * }>
      */
     private static function methods(array $tokens): array
     {
@@ -127,92 +216,155 @@ final class VacuousAssertions
             }
             $name = $tokens[$i + 1]->text;
             $j = $i + 2;
-            while ($j < $count && $tokens[$j]->text !== '{' && $tokens[$j]->text !== ';') {
+            while ($j < $count && !self::is($tokens[$j], '{') && !self::is($tokens[$j], ';')) {
                 $j++;
             }
-            if ($j >= $count || $tokens[$j]->text === ';') {
+            if ($j >= $count || self::is($tokens[$j], ';')) {
                 continue;
             }
-            $depth = 0;
-            for ($k = $j; $k < $count; $k++) {
-                $text = $tokens[$k]->text;
-                if ($text === '{' || $tokens[$k]->id === T_CURLY_OPEN || $tokens[$k]->id === T_DOLLAR_OPEN_CURLY_BRACES) {
-                    $depth++;
-                } elseif ($text === '}' && --$depth === 0) {
-                    break;
+            $end = self::closing($tokens, $j);
+            $method = $methods[$name] ?? ['calls' => [], 'loops' => [], 'fixed' => []];
+            for ($k = $j + 1; $k < $end; $k++) {
+                $token = $tokens[$k];
+                if ($token->id === T_VARIABLE && self::is($tokens[$k + 1] ?? $token, '=') && (self::is($tokens[$k + 2] ?? $token, '[') || strtolower($tokens[$k + 2]->text ?? '') === 'array')) {
+                    $method['fixed'][$token->text] = true;
                 }
-                $previous = $tokens[$k - 1]->id ?? null;
-                $call = strtolower($text);
-                if ($tokens[$k]->id !== T_STRING || ($tokens[$k + 1]->text ?? '') !== '('
-                    || !in_array($previous, [T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_NULLSAFE_OBJECT_OPERATOR], true)
+                if ($token->id === T_FOREACH && self::is($tokens[$k + 1] ?? $token, '(')) {
+                    $method['loops'][] = self::loop($tokens, $k + 1);
+                    continue;
+                }
+                $call = strtolower($token->text);
+                if ($token->id !== T_STRING || !self::is($tokens[$k + 1] ?? $token, '(')
+                    || !in_array($tokens[$k - 1]->id, [T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_NULLSAFE_OBJECT_OPERATOR], true)
                     || !(str_starts_with($call, 'assert') || str_starts_with($call, 'expect'))) {
                     continue;
                 }
-                $args = self::arguments($tokens, $k + 1);
-                $lastArg = $args === [] ? [] : $args[count($args) - 1];
-                $methods[$name][] = [
-                    'name'    => $text,
-                    'line'    => $tokens[$k]->line,
-                    'end'     => $lastArg === [] ? $tokens[$k]->line : $lastArg[count($lastArg) - 1]->line,
+                $close = self::closing($tokens, $k + 1);
+                $method['calls'][] = [
+                    'at'      => $k,
+                    'name'    => $token->text,
+                    'line'    => $token->line,
+                    'end'     => $tokens[$close]->line ?? $token->line,
                     'absence' => in_array($call, self::ABSENCE, true),
-                    'args'    => $args,
+                    'args'    => self::arguments(array_slice($tokens, $k + 1, $close - $k)),
                 ];
             }
-            $i = $k;
+            $methods[$name] = $method;
+            $i = $end;
         }
 
         return $methods;
     }
 
     /**
+     * `foreach (<list> as [$key =>] $value) { ... }`: the list, the value, and the body's token range.
+     *
      * @param list<\PhpToken> $tokens
+     * @return array{from: int, to: int, list: list<\PhpToken>, value: ?string}
+     */
+    private static function loop(array $tokens, int $open): array
+    {
+        $close = self::closing($tokens, $open);
+        $head = array_slice($tokens, $open + 1, $close - $open - 1);
+        $as = 0;
+        while ($as < count($head) && $head[$as]->id !== T_AS) {
+            $as++;
+        }
+        $value = null;
+        foreach (array_slice($head, $as + 1) as $token) {
+            if ($token->id === T_VARIABLE) {
+                $value = $token->text;
+            }
+        }
+        // A body without braces is one statement: it ends at the next `;`.
+        $body = $close + 1;
+        if (self::is($tokens[$body] ?? $tokens[$close], '{')) {
+            $to = self::closing($tokens, $body);
+        } else {
+            for ($to = $body; $to < count($tokens) && !self::is($tokens[$to], ';'); $to++) {
+            }
+        }
+
+        return ['from' => $close, 'to' => $to, 'list' => array_slice($head, 0, $as), 'value' => $value];
+    }
+
+    /**
+     * The index of the token closing the bracket at $open, matched by token id: a `}` inside a
+     * string ("{\"id\":$id}") is string content, not a bracket (review, dev#247).
+     *
+     * @param list<\PhpToken> $tokens
+     */
+    private static function closing(array $tokens, int $open): int
+    {
+        $depth = 0;
+        for ($k = $open, $count = count($tokens); $k < $count; $k++) {
+            if (self::opens($tokens[$k])) {
+                $depth++;
+            } elseif (self::is($tokens[$k], ')') || self::is($tokens[$k], ']') || self::is($tokens[$k], '}')) {
+                if (--$depth === 0) {
+                    return $k;
+                }
+            }
+        }
+
+        return $count - 1;
+    }
+
+    /**
+     * The arguments of a call, given from its `(` to its `)`, split at the top level.
+     *
+     * @param list<\PhpToken> $call
      * @return list<list<\PhpToken>>
      */
-    private static function arguments(array $tokens, int $open): array
+    private static function arguments(array $call): array
     {
         $args = [[]];
         $depth = 0;
-        for ($k = $open, $count = count($tokens); $k < $count; $k++) {
-            $text = $tokens[$k]->text;
-            if (in_array($text, ['(', '[', '{'], true) || $tokens[$k]->id === T_CURLY_OPEN) {
-                if ($depth++ === 0) {
-                    continue;
-                }
-            } elseif (in_array($text, [')', ']', '}'], true)) {
-                if (--$depth === 0) {
-                    break;
-                }
-            } elseif ($text === ',' && $depth === 1) {
+        foreach (array_slice($call, 1, -1) as $token) {
+            if (self::opens($token)) {
+                $depth++;
+            } elseif (self::is($token, ')') || self::is($token, ']') || self::is($token, '}')) {
+                $depth--;
+            } elseif ($depth === 0 && self::is($token, ',')) {
                 $args[] = [];
                 continue;
             }
-            $args[count($args) - 1][] = $tokens[$k];
+            $args[count($args) - 1][] = $token;
         }
 
         return array_values(array_filter($args, static fn (array $arg): bool => $arg !== []));
     }
 
     /**
-     * The subject without casts and the wrappers that keep empty empty.
+     * The subject without casts and the wrappers that keep empty empty. Only a wrapper that is the
+     * whole subject: `strlen($a) + strlen($b)` stays as it is.
      *
      * @param list<\PhpToken> $arg
      * @return list<\PhpToken>
      */
     private static function unwrap(array $arg): array
     {
-        while ($arg !== []) {
-            if (in_array($arg[0]->id, [T_STRING_CAST, T_ARRAY_CAST, T_INT_CAST], true)) {
-                array_shift($arg);
-                continue;
+        while (($arg = self::uncast($arg)) !== []) {
+            $function = strtolower(ltrim($arg[0]->text, '\\'));
+            if (!in_array($function, self::WRAPPERS, true) || !self::is($arg[1] ?? $arg[0], '(') || self::closing($arg, 1) !== count($arg) - 1) {
+                break;
             }
-            $last = $arg[count($arg) - 1]->text;
-            if (count($arg) > 3 && in_array(strtolower(ltrim($arg[0]->text, '\\')), self::WRAPPERS, true) && $arg[1]->text === '(' && $last === ')') {
-                // The last argument: implode(", ", $x) keeps $x.
-                $inner = self::arguments($arg, 1);
-                $arg = $inner === [] ? [] : $inner[count($inner) - 1];
-                continue;
-            }
-            break;
+            $inner = self::arguments(array_slice($arg, 1));
+            // implode(', ', $x) keeps $x; trim($x, "\n") and mb_strlen($x, 'UTF-8') keep $x.
+            $arg = $inner === [] ? [] : ($function === 'implode' ? $inner[count($inner) - 1] : $inner[0]);
+        }
+
+        return $arg;
+    }
+
+    /**
+     * @param list<\PhpToken> $arg
+     * @return list<\PhpToken>
+     */
+    private static function uncast(array $arg): array
+    {
+        while ($arg !== [] && in_array($arg[0]->id, [T_STRING_CAST, T_ARRAY_CAST, T_INT_CAST], true)) {
+            array_shift($arg);
         }
 
         return $arg;
@@ -220,13 +372,14 @@ final class VacuousAssertions
 
     /**
      * `assertNotSame('', $x)`, `assertNotCount(0, $x)`: the check that a value holds something.
-     * An empty needle or key (`assertArrayNotHasKey(0, $x)`) is not (review, dev#247).
+     * An empty needle or key (`assertArrayNotHasKey(0, $x)`) is not, nor `assertNotSame(null, $x)`,
+     * which '' passes (review, dev#247).
      *
      * @param array{name: string, args: list<list<\PhpToken>>} $call
      */
     private static function againstEmpty(array $call): bool
     {
-        return in_array(strtolower($call['name']), self::NOT_EMPTY_AGAINST_EMPTY, true) && self::isEmptyLiteral($call['args'][0] ?? []);
+        return in_array(strtolower($call['name']), self::NOT_EMPTY_AGAINST_EMPTY, true) && self::isEmptyLiteral($call['args'][0] ?? [], false);
     }
 
     /**
@@ -242,14 +395,16 @@ final class VacuousAssertions
             return self::againstEmpty($call);
         }
 
-        return !in_array($name, self::NO_EVIDENCE, true)
-            && !(in_array($name, self::PINNED, true) && self::isEmptyLiteral($call['args'][0] ?? []));
+        return !in_array($name, self::NO_EVIDENCE, true) && !str_starts_with($name, 'assertcontainsonly')
+            && !(in_array($name, self::PINNED, true) && self::isEmptyLiteral($call['args'][0] ?? [], true));
     }
 
     /** @param list<\PhpToken> $arg */
-    private static function isEmptyLiteral(array $arg): bool
+    private static function isEmptyLiteral(array $arg, bool $orNullish): bool
     {
-        return in_array(strtolower(self::text($arg)), self::EMPTY_LITERALS, true);
+        $text = strtolower(self::text($arg));
+
+        return in_array($text, self::EMPTY_LITERALS, true) || ($orNullish && in_array($text, self::NULLISH, true));
     }
 
     /**
@@ -260,7 +415,7 @@ final class VacuousAssertions
     private static function isFixed(array $arg): bool
     {
         foreach ($arg as $token) {
-            if ($token->id === T_VARIABLE || $token->text === '(') {
+            if ($token->id === T_VARIABLE || self::is($token, '(')) {
                 return false;
             }
         }
@@ -272,7 +427,7 @@ final class VacuousAssertions
     private static function isLiteral(array $subject): bool
     {
         foreach ($subject as $token) {
-            if (!in_array($token->id, [T_CONSTANT_ENCAPSED_STRING, T_LNUMBER, T_DNUMBER], true) && !in_array($token->text, ['-', '.'], true)) {
+            if (!in_array($token->id, [T_CONSTANT_ENCAPSED_STRING, T_LNUMBER, T_DNUMBER], true) && !self::is($token, '-') && !self::is($token, '.')) {
                 return false;
             }
         }
@@ -282,7 +437,7 @@ final class VacuousAssertions
 
     /**
      * @param list<\PhpToken>       $subject
-     * @param list<list<\PhpToken>> $shown arguments of the assertions that are not checks for absence
+     * @param list<list<\PhpToken>> $shown arguments of the assertions that show a value holds something
      */
     private static function isShown(array $subject, array $shown): bool
     {
@@ -292,7 +447,7 @@ final class VacuousAssertions
             if ($token->id === T_VARIABLE && $token->text !== '$this') {
                 $variables[$token->text] = true;
             }
-            if ($token->text === '(' || $token->id === T_DOUBLE_COLON) {
+            if (self::is($token, '(') || $token->id === T_DOUBLE_COLON) {
                 $calls = true;
             }
         }
@@ -315,6 +470,19 @@ final class VacuousAssertions
         }
 
         return false;
+    }
+
+    /** A bracket that opens, by token id: `"{$x}"` opens with T_CURLY_OPEN and closes with a plain `}`. */
+    private static function opens(\PhpToken $token): bool
+    {
+        return self::is($token, '(') || self::is($token, '[') || self::is($token, '{')
+            || $token->id === T_CURLY_OPEN || $token->id === T_DOLLAR_OPEN_CURLY_BRACES;
+    }
+
+    /** A one-character token: its id is the character, so string content never matches. */
+    private static function is(\PhpToken $token, string $char): bool
+    {
+        return $token->id === ord($char);
     }
 
     /** @param list<\PhpToken> $tokens */

@@ -156,6 +156,81 @@ final class VacuousAssertionsTest extends TestCase
         ], self::summary(VacuousAssertions::in('tests/NotShownTest.php', self::NOT_SHOWN)));
     }
 
+    /** Fable's review of dev#247: loops, null and false, sizes, strings that hold brackets. */
+    private const LOOPS_AND_BOUNDS = <<<'PHP'
+        <?php
+        final class LoopTest extends TestCase
+        {
+            public function remedy_clears_the_loop(): void
+            {
+                self::assertNotEmpty($rows);
+                foreach ($rows as $row) {
+                    self::assertArrayNotHasKey('secret', $row);
+                }
+            }
+
+            public function loop_over_a_call(): void
+            {
+                foreach ($this->rows() as $row) {
+                    self::assertSame('a', $row['name']);
+                    self::assertArrayNotHasKey('secret', $row);
+                }
+            }
+
+            public function not_false_is_not_not_empty(): void
+            {
+                self::assertNotSame(false, $json);
+                self::assertLessThan(6000, strlen((string) $json));
+            }
+
+            public function only_instances_of_nothing(): void
+            {
+                self::assertContainsOnlyInstancesOf(Foo::class, $items);
+                self::assertGreaterThanOrEqual(0, count($items));
+                self::assertNotContains('x', $items);
+            }
+
+            public function a_duration_may_be_zero(): void
+            {
+                self::assertLessThan(0.5, microtime(true) - $start);
+                self::assertLessThanOrEqual(3, $attempts);
+            }
+
+            public function brackets_in_strings(): void
+            {
+                $body = "{\"id\":$id}";
+                self::assertStringNotContainsString("$a)", $out);
+                self::assertSame('x', $out);
+            }
+
+            public function a_wrapper_keeps_its_first_argument(): void
+            {
+                self::assertStringNotContainsString('x', trim($out, "\n"));
+            }
+        }
+        PHP;
+
+    #[Test]
+    public function a_loop_needs_its_list_shown_and_an_upper_bound_needs_a_size(): void
+    {
+        self::assertSame([
+            ['loop_over_a_call', 16, 'assertArrayNotHasKey($row)'],
+            ['not_false_is_not_not_empty', 23, 'assertLessThan(strlen((string)$json))'],
+            ['only_instances_of_nothing', 30, 'assertNotContains($items)'],
+            ['a_wrapper_keeps_its_first_argument', 48, 'assertStringNotContainsString(trim($out,"\n"))'],
+        ], self::summary(VacuousAssertions::in('tests/LoopTest.php', self::LOOPS_AND_BOUNDS)));
+    }
+
+    #[Test]
+    public function a_new_line_like_a_later_unchanged_one_is_the_added_one(): void
+    {
+        $before = "a\nb\nx\nc\n";
+        $after = "a\nx\nb\nx\nc\n";
+
+        self::assertSame([2], TestChangeScan::addedLineNumbers($before, $after));
+        self::assertSame([1, 2], TestChangeScan::addedLineNumbers(null, "a\nb"));
+    }
+
     #[Test]
     public function a_value_another_assertion_shows_and_a_comparison_of_computed_values_are_not(): void
     {
