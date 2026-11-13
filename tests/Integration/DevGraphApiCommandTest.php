@@ -76,8 +76,12 @@ final class DevGraphApiCommandTest extends TestCase
     public function test_core_ranks_first_and_the_showcases_are_left_out_unless_asked(): void
     {
         $decoded = json_decode(trim($this->ask(['--search' => 'redirect', '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
-        $top = array_map(static fn (array $hit): string => $hit['class'] . '::' . $hit['member'], array_slice($decoded['hits'], 0, 3));
+        $top = array_map(static fn (array $hit): string => $hit['class'] . '::' . $hit['member'], array_slice($decoded['hits'], 0, 5));
+        // Core first: since HttpStatus is @api (core#235) its redirect cases share the top with the
+        // response methods, so the setter is asked for among the first five, and all five are core's.
+        $this->assertCount(5, $top, 'five hits, or the next line checks fewer');
         $this->assertContains('Semitexa\\Core\\Http\\Response\\ResourceResponse::setRedirect', $top);
+        $this->assertSame([], array_filter($top, static fn (string $hit): bool => !str_starts_with($hit, 'Semitexa\\Core\\')), 'the first five are core');
         $this->assertSame([], array_filter($decoded['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')));
 
         $withDemo = json_decode(trim($this->ask(['--search' => 'redirect uri', '--with-demo' => true, '--json' => true])->getDisplay()), true, 512, JSON_THROW_ON_ERROR);
