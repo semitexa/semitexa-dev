@@ -17,7 +17,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Fail when a change makes the tests check less than they did at HEAD and does
  * not say why: a test file or test removed, assertions removed, a value check
- * loosened to a shape check, a skip added. ai:verify runs it whenever a
+ * loosened to a shape check, a skip added, an added assertion an empty value
+ * passes. ai:verify runs it whenever a
  * changed path is a test ({@see TestChangeScan}).
  *
  * Considered and NOT shipped: flagging a new assertion whose expected literal
@@ -26,11 +27,11 @@ use Symfony\Component\Console\Output\OutputInterface;
  * nearly every one was a value a specification defines — a header name, a
  * status code, a rule identifier — that the code and the test rightly share.
  */
-#[AsCommand(name: 'lint:test-integrity', description: 'Fail when a change removes or weakens test checks without saying why')]
+#[AsCommand(name: 'lint:test-integrity', description: 'Fail when a change removes or weakens test checks, or adds one an empty value passes, without saying why')]
 final class LintTestIntegrityCommand extends BaseCommand
 {
     /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
-    public const RATIONALE = 'Why: a red suite can be turned green by deleting or loosening the test instead of fixing the code, and "all tests pass" is then true and worthless; a reason on an added line puts the decision in the diff, where a reviewer reads it. Policy since 2026-10-03 (ep-verify-agent-false-greens); no incident on record. Measured that day: 23 of 955 test-file changes in two months lost checks.';
+    public const RATIONALE = 'Why: a red suite can be turned green by deleting or loosening the test instead of fixing the code, and "all tests pass" is then true and worthless; a reason on an added line puts the decision in the diff, where a reviewer reads it. Policy since 2026-10-03 (ep-verify-agent-false-greens); no incident on record. Measured that day: 23 of 955 test-file changes in two months lost checks. Since 2026-11-12 it also fails an added assertion an empty value passes (assertStringNotContainsString on an unread file, assertLessThan on strlen of a failed json_encode): CodeRabbit\'s most common finding that week, 7 of 7 of its findings caught, and 110 of 1215 test commits of two months would have been stopped.';
 
     public function __construct()
     {
@@ -108,9 +109,16 @@ final class LintTestIntegrityCommand extends BaseCommand
         if ($findings !== []) {
             // What to do comes first: the signal is cut at 240 characters, and
             // the finding itself is printed in full above.
+            // A lost check first: it is the one a reviewer must not miss.
+            usort($findings, static fn (TestChangeFinding $a, TestChangeFinding $b): int => ($a->code === TestChangeFinding::VACUOUS_ASSERTION) <=> ($b->code === TestChangeFinding::VACUOUS_ASSERTION));
+            $vacuous = $findings[0]->code === TestChangeFinding::VACUOUS_ASSERTION;
+            // The count is of the findings the sentence describes (review, dev#247).
+            $described = count(array_filter($findings, static fn (TestChangeFinding $f): bool => ($f->code === TestChangeFinding::VACUOUS_ASSERTION) === $vacuous));
             $output->writeln(sprintf(
-                'lint:test-integrity → %d test change(s) check less than %s: restore the checks, or say why on an added line // %s <reason>; first %s: %s',
-                count($findings),
+                $vacuous
+                    ? 'lint:test-integrity → %1$d assertion(s) the change wrote pass on an empty value: show the value holds something first, or say why on an added line // %3$s <reason>; first %4$s: %5$s'
+                    : 'lint:test-integrity → %d test change(s) check less than %s: restore the checks, or say why on an added line // %s <reason>; first %s: %s',
+                $described,
                 $base,
                 TestChangeScan::MARKER,
                 $findings[0]->path,

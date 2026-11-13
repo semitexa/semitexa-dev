@@ -12,6 +12,7 @@ final readonly class TestChangeFinding
     public const ASSERTIONS_REMOVED = 'assertions_removed';
     public const ASSERTION_WEAKENED = 'assertion_weakened';
     public const SKIP_ADDED         = 'skip_added';
+    public const VACUOUS_ASSERTION  = 'vacuous_assertion';
 
     public function __construct(
         public string $code,

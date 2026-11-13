@@ -8,7 +8,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\TestIntegrity;
  * Compares each changed test file with its committed version and reports the
  * changes that make a suite greener without making the code more correct:
  * a test file or test removed, assertions removed, a value check weakened to
- * a shape check, a skip added.
+ * a shape check, a skip added, and an added assertion that an empty value
+ * passes ({@see VacuousAssertions}).
  *
  * Every one of those is sometimes right — a test for deleted code goes with
  * it. So a finding is not a verdict on the change, it is a demand that the
@@ -75,11 +76,12 @@ final class TestChangeScan
                 continue;
             }
             $before = ($this->committed)($old);
-            if ($before === null) {
-                continue; // a new test file weakens nothing
-            }
             $after = ($this->current)($path);
-            $found = self::compare($path, AssertionInventory::of($before), $after === null ? null : AssertionInventory::of($after));
+            // A new test file weakens nothing, but its assertions can still pass on nothing.
+            $found = $before === null ? [] : self::compare($path, AssertionInventory::of($before), $after === null ? null : AssertionInventory::of($after));
+            if ($after !== null) {
+                array_push($found, ...VacuousAssertions::in($path, $after, $before === null ? null : self::addedLineNumbers($before, $after)));
+            }
             if ($found === []) {
                 continue;
             }
@@ -196,20 +198,46 @@ final class TestChangeScan
      */
     public static function addedLines(?string $before, ?string $after): array
     {
+        $lines = preg_split('/\R/', (string) $after) ?: [];
+
+        return array_map(static fn (int $n): string => $lines[$n - 1], self::addedLineNumbers($before, $after));
+    }
+
+    /**
+     * The same lines, by number (1-based) in $after. The lines both versions start and end with
+     * are left out first, so a new line identical to a later unchanged one is the new one
+     * (review, dev#247); what lies between is matched as a multiset.
+     *
+     * @return list<int>
+     */
+    public static function addedLineNumbers(?string $before, ?string $after): array
+    {
         if ($after === null) {
             return [];
         }
+        $old = $before === null ? [] : (preg_split('/\R/', $before) ?: []);
+        $new = preg_split('/\R/', $after) ?: [];
+        $start = 0;
+        while ($start < count($old) && $start < count($new) && $old[$start] === $new[$start]) {
+            $start++;
+        }
+        $oldEnd = count($old);
+        $newEnd = count($new);
+        while ($oldEnd > $start && $newEnd > $start && $old[$oldEnd - 1] === $new[$newEnd - 1]) {
+            $oldEnd--;
+            $newEnd--;
+        }
         $remaining = [];
-        foreach (preg_split('/\R/', (string) $before) ?: [] as $line) {
+        foreach (array_slice($old, $start, $oldEnd - $start) as $line) {
             $remaining[$line] = ($remaining[$line] ?? 0) + 1;
         }
         $added = [];
-        foreach (preg_split('/\R/', $after) ?: [] as $line) {
-            if (($remaining[$line] ?? 0) > 0) {
-                $remaining[$line]--;
+        for ($n = $start; $n < $newEnd; $n++) {
+            if (($remaining[$new[$n]] ?? 0) > 0) {
+                $remaining[$new[$n]]--;
                 continue;
             }
-            $added[] = $line;
+            $added[] = $n + 1;
         }
 
         return $added;
