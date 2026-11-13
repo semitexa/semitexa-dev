@@ -69,7 +69,8 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
     #[Test]
     public function the_scan_reads_every_way_an_attribute_names_a_command(): void
     {
-        self::assertSame(['lint:a', 'lint:b', 'lint:c', 'lint:d'], self::lintCommandNames(<<<'PHP'
+        self::assertSame(['lint:a', 'lint:b', 'lint:c', 'lint:d', 'lint:f'], self::lintCommandNames(<<<'PHP'
+            <?php
             #[AsCommand(name: 'lint:a', description: 'x')]
             #[AsCommand(description: "y", name: "lint:b")]
             #[AsCommand('lint:c')]
@@ -77,6 +78,7 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                 name: 'lint:d',
             )]
             #[AsCommand(name: 'docs:e')]
+            #[AsCommand(description: ")]", name: "lint:f")]
             PHP));
     }
 
@@ -110,17 +112,56 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
 
     /**
      * The lint:* names a file's #[AsCommand] attributes declare: named or first positional
-     * argument, either quote (review, dev#254).
+     * argument, either quote, qualified or not. Read with PHP's tokenizer, because a string
+     * argument can hold anything, `)]` included (review, dev#254).
      *
      * @return list<string>
      */
     private static function lintCommandNames(string $source): array
     {
+        $tokens = array_values(array_filter(
+            token_get_all($source),
+            static fn (array|string $t): bool => !is_array($t) || !in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true),
+        ));
         $names = [];
-        preg_match_all('/#\[\s*[\w\\\\]*AsCommand\s*\((.*?)\)\s*\]/s', $source, $attributes);
-        foreach ($attributes[1] as $arguments) {
-            if (preg_match('/(?:\bname\s*:\s*|^\s*)([\'"])(lint:[^\'"]+)\1/', $arguments, $m) === 1) {
-                $names[] = $m[2];
+        foreach ($tokens as $i => $token) {
+            $isAsCommand = is_array($token)
+                && in_array($token[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)
+                && preg_match('/(?:^|\\\\)AsCommand$/', $token[1]) === 1
+                && ($tokens[$i + 1] ?? null) === '(';
+            if (!$isAsCommand) {
+                continue;
+            }
+            // The argument list, to its own closing parenthesis: strings are single tokens.
+            $depth = 0;
+            $first = true;
+            for ($k = $i + 1; isset($tokens[$k]); $k++) {
+                $t = $tokens[$k];
+                if ($t === '(' || $t === '[') {
+                    $depth++;
+                    continue;
+                }
+                if ($t === ')' || $t === ']') {
+                    if (--$depth === 0) {
+                        break;
+                    }
+                    continue;
+                }
+                if ($depth !== 1) {
+                    continue;
+                }
+                $named = is_array($t) && $t[0] === T_STRING && $t[1] === 'name' && ($tokens[$k + 1] ?? null) === ':';
+                $value = $named ? ($tokens[$k + 2] ?? null) : ($first ? $t : null);
+                if (is_array($value) && $value[0] === T_CONSTANT_ENCAPSED_STRING) {
+                    $name = substr($value[1], 1, -1);
+                    if (str_starts_with($name, 'lint:')) {
+                        $names[] = $name;
+                    }
+                }
+                $first = false;
+                if ($named) {
+                    $k += 2;
+                }
             }
         }
 
