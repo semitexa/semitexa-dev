@@ -96,7 +96,10 @@ final class ScaffoldSyncCommand extends BaseCommand
                 $io->error("Installer scaffold is missing {$label} — fix the SSoT before syncing.");
                 return Command::FAILURE;
             }
-            if (is_file($dst) && hash_file('sha256', $src) === hash_file('sha256', $dst)) {
+            // A match only between two hashes read: two unreadable files are not the same file,
+            // and a gate that could not read one must count it (review, dev#249).
+            $srcHash = hash_file('sha256', $src);
+            if (is_string($srcHash) && is_file($dst) && $srcHash === hash_file('sha256', $dst)) {
                 continue;
             }
             $drift++;
