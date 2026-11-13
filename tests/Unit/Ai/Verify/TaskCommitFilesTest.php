@@ -51,4 +51,23 @@ final class TaskCommitFilesTest extends TestCase
         ], (new TaskCommitFiles($this->root))->entries('tk-a'));
         self::assertSame([], (new TaskCommitFiles($this->root))->entries('tk-none'), 'a task with no commit has no files');
     }
+
+    /** Review, dev#252: a name git would quote, a merge carrying the line, a history that cannot be read. */
+    #[Test]
+    public function quoted_names_merges_and_an_unreadable_history(): void
+    {
+        $package = $this->root . '/packages/semitexa-x';
+        $git = 'git -C ' . escapeshellarg($package) . ' -c user.email=t@example.invalid -c user.name=t';
+        file_put_contents($package . '/src/é.php', "<?php\n");
+        exec("{$git} add -A && {$git} commit -q -m 'accented' -m 'Task: tk-c'");
+        exec("{$git} checkout -q -b side && " . 'echo "<?php" > ' . escapeshellarg($package . '/src/Side.php') . " && {$git} add -A && {$git} commit -q -m side && {$git} checkout -q - && {$git} merge -q --no-ff side -m 'merge side' -m 'Task: tk-m'");
+
+        $files = new TaskCommitFiles($this->root);
+        self::assertSame([['path' => 'packages/semitexa-x/src/é.php', 'status' => ChangedFile::STATUS_MODIFIED]], $files->entries('tk-c'));
+        self::assertSame([['path' => 'packages/semitexa-x/src/Side.php', 'status' => ChangedFile::STATUS_MODIFIED]], $files->entries('tk-m'));
+
+        file_put_contents($package . '/.git/HEAD', 'not a ref');
+        $this->expectException(\RuntimeException::class);
+        $files->entries('tk-a');
+    }
 }

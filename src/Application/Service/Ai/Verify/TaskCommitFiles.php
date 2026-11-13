@@ -38,23 +38,46 @@ final readonly class TaskCommitFiles
         return array_values($out);
     }
 
-    /** @return list<string> repository-relative paths the commits naming the task touched */
+    /**
+     * Repository-relative paths the commits naming the task touched: NUL-framed, so a name git would
+     * quote (`src/é.php`) is read as it is, and a merge carrying the line counts against its first
+     * parent (review, dev#252).
+     *
+     * @return list<string>
+     * @throws \RuntimeException when the history of a repository that has one cannot be read
+     */
     private static function touched(string $repository, string $taskId): array
     {
+        // An empty history answers with nothing; one that cannot be read, with an error.
+        [$code, $any] = self::git($repository, ['rev-list', '--all', '-n', '1']);
+        if ($code === 0 && trim($any) === '') {
+            return []; // no commit yet: no task commit either
+        }
+        [$code, $out] = self::git($repository, ['log', '--format=', '--name-only', '-z', '--diff-merges=first-parent', '-E', '--grep=^Task: ' . preg_quote($taskId, '/') . '$']);
+        if ($code !== 0) {
+            throw new \RuntimeException("ai:verify --trace={$taskId}: the history of {$repository} could not be read (git log exited {$code})");
+        }
+
+        return array_values(array_unique(array_filter(explode("\0", $out), static fn (string $p): bool => $p !== '' && $p !== "\n")));
+    }
+
+    /**
+     * @param list<string> $args
+     * @return array{0: int, 1: string}
+     */
+    private static function git(string $repository, array $args): array
+    {
         $process = proc_open(
-            ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, 'log', '--format=', '--name-only', '-E', '--grep=^Task: ' . preg_quote($taskId, '/') . '$'],
+            ['git', '-C', $repository, '-c', 'safe.directory=' . $repository, ...$args],
             [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
             $pipes,
         );
         if (!is_resource($process)) {
-            return [];
+            return [-1, ''];
         }
         $out = (string) stream_get_contents($pipes[1]);
         fclose($pipes[1]);
-        if (proc_close($process) !== 0) {
-            return [];
-        }
 
-        return array_values(array_unique(array_filter(array_map('trim', explode("\n", $out)), static fn (string $p): bool => $p !== '')));
+        return [proc_close($process), $out];
     }
 }

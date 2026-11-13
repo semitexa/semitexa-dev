@@ -103,17 +103,16 @@ final class AiVerifyCommand extends BaseCommand
         }
         try {
             $paths = $this->collectPaths($input);
+            if ($paths === [] && (bool) $input->getOption('dirty') && ($trace = $this->traceAppender->resolveTraceId($input)) !== null) {
+                $paths = (new TaskCommitFiles($this->getProjectRoot()))->entries($trace);
+            }
         } catch (\RuntimeException $e) {
             $this->emitError($output, $e->getMessage(), $jsonMode);
             return self::FAILURE;
         }
 
-        if ($paths === [] && (bool) $input->getOption('dirty') && is_string($trace = $input->getOption('trace')) && $trace !== '') {
-            $paths = (new TaskCommitFiles($this->getProjectRoot()))->entries($trace);
-        }
         if ($paths === [] && !(bool) $input->getOption('list-e2e') && !(bool) $input->getOption('list-pages')) {
-            // `--dirty` finding nothing is an ANSWER (the tree is clean), not a failure and not a pass:
-            // a verdict of its own, with the scan's reach. A named task checks its commits (TaskCommitFiles).
+            // `--dirty` finding nothing is an ANSWER (the tree is clean): a verdict of its own. A named task checks its commits.
             if ((bool) $input->getOption('dirty')) {
                 $scan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
 
