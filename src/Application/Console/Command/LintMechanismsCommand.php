@@ -112,10 +112,6 @@ final class LintMechanismsCommand extends BaseCommand
             }
             $sources[$file] = $contents;
         }
-        // A detector that reads a second file: a changed payload can make its unchanged handler a
-        // finding (public now, reading identity), so the handlers of a changed payload are read too
-        // (review, dev#251).
-        $sources += self::handlersOf($sources);
         foreach ($only === [] ? [] : self::detectors() as $detector) {
             foreach ($sources as $file => $contents) {
                 if (in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true)) {
@@ -368,35 +364,6 @@ final class LintMechanismsCommand extends BaseCommand
             new HeredocPromptDetector(),
             new PublicPageReadsIdentityDetector(),
         ];
-    }
-
-    /**
-     * The payload handlers of the module of every payload among $sources that are not there yet:
-     * the PHP files under that module's src naming `<Payload>::class` beside #[AsPayloadHandler].
-     *
-     * @param array<string, string> $sources file => contents
-     * @return array<string, string>
-     */
-    private static function handlersOf(array $sources): array
-    {
-        $handlers = [];
-        foreach (array_keys($sources) as $file) {
-            if (!str_ends_with($file, '.php') || !str_contains($file, '/Payload/') || preg_match('#^(.*/src/modules/[^/]+)/#', $file, $module) !== 1) {
-                continue;
-            }
-            $short = basename($file, '.php');
-            foreach (self::filesWithExtensions($module[1], ['php']) as $candidate) {
-                if (isset($sources[$candidate]) || isset($handlers[$candidate])) {
-                    continue;
-                }
-                $contents = @file_get_contents($candidate);
-                if (is_string($contents) && str_contains($contents, 'AsPayloadHandler') && preg_match('/\b' . preg_quote($short, '/') . '::class\b/', $contents) === 1) {
-                    $handlers[$candidate] = $contents;
-                }
-            }
-        }
-
-        return $handlers;
     }
 
     /**

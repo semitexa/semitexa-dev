@@ -207,7 +207,7 @@ final class VerificationPlanner
                 reason: $meta['reason'],
                 triggeredBy: array_values(array_unique($meta['triggeredBy'])),
                 commandName: $commandName,
-                commandInput: $commandName === 'lint:mechanisms' && $meta['triggeredBy'] !== [] && $effectiveScope !== VerificationPlan::SCOPE_BROAD ? ['--file' => array_values(array_unique(array_map(static fn (ChangedFile $f): string => $f->path, $changedFiles)))] : [],
+                commandInput: $commandName === 'lint:mechanisms' && $meta['triggeredBy'] !== [] && $effectiveScope !== VerificationPlan::SCOPE_BROAD ? ['--file' => array_values(array_unique($meta['triggeredBy']))] : [],
             );
         }
         foreach ($phpunitTargets as $target) {
