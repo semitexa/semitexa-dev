@@ -75,5 +75,28 @@ final class MechanismLintChangedFilesTest extends TestCase
         self::assertStringContainsString('gone.html.twig is not there; nothing to scan', $tester->getDisplay());
 
         self::assertSame(1, $tester->execute(['--file' => [$this->dir . '/clean.html.twig'], '--path' => $this->dir]));
+
+        // Review, dev#251: the notice is in the envelope, so --json stays JSON.
+        $tester->execute(['--file' => [$this->dir . '/gone.html.twig'], '--json' => true]);
+        $decoded = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame([$this->dir . '/gone.html.twig'], $decoded['not_there']);
+    }
+
+    /** Review, dev#251: a changed payload brings its unchanged handler, which a detector reads it with. */
+    #[Test]
+    public function a_changed_payload_brings_its_handlers(): void
+    {
+        $module = $this->dir . '/src/modules/Foo/src/Application';
+        mkdir($module . '/Payload/Request', 0o755, true);
+        mkdir($module . '/Handler/PayloadHandler', 0o755, true);
+        file_put_contents($module . '/Payload/Request/GreetPayload.php', "<?php\nnamespace Probe\\Foo;\n#[AsPublicPayload(path: '/greet')]\nfinal class GreetPayload {}\n");
+        file_put_contents($module . '/Handler/PayloadHandler/GreetHandler.php', "<?php\nnamespace Probe\\Foo;\n#[AsPayloadHandler(payload: GreetPayload::class)]\nfinal class GreetHandler { public function h(\$auth) { return \$auth->isGuest(); } }\n");
+        file_put_contents($module . '/Handler/PayloadHandler/OtherHandler.php', "<?php\n#[AsPayloadHandler(payload: OtherPayload::class)]\nfinal class OtherHandler { public function h(\$auth) { return \$auth->isGuest(); } }\n");
+        $tester = new CommandTester(new LintMechanismsCommand());
+
+        $tester->execute(['--file' => [$module . '/Payload/Request/GreetPayload.php'], '--json' => true]);
+        $files = array_column(json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR)['findings'], 'file');
+        self::assertNotSame([], $files, 'the handler of the changed payload is read');
+        self::assertSame([], array_filter($files, static fn (string $f): bool => !str_ends_with($f, 'GreetHandler.php')), 'and only that one: ' . implode(', ', $files));
     }
 }

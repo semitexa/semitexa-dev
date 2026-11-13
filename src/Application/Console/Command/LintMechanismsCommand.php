@@ -95,11 +95,12 @@ final class LintMechanismsCommand extends BaseCommand
             return Command::FAILURE;
         }
         $sources = [];
+        $notThere = [];
         foreach ($only as $relative) {
             $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
             if (!file_exists($file) && !is_link($file)) {
                 // Gone (a deletion ai:verify was handed as a plain path): no source, nothing hand-rolled.
-                $output->writeln("lint:mechanisms → --file {$relative} is not there; nothing to scan");
+                $notThere[] = $relative;
                 continue;
             }
             $contents = is_file($file) ? @file_get_contents($file) : false;
@@ -111,6 +112,10 @@ final class LintMechanismsCommand extends BaseCommand
             }
             $sources[$file] = $contents;
         }
+        // A detector that reads a second file: a changed payload can make its unchanged handler a
+        // finding (public now, reading identity), so the handlers of a changed payload are read too
+        // (review, dev#251).
+        $sources += self::handlersOf($sources);
         foreach ($only === [] ? [] : self::detectors() as $detector) {
             foreach ($sources as $file => $contents) {
                 if (in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true)) {
@@ -151,6 +156,7 @@ final class LintMechanismsCommand extends BaseCommand
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa.dev.mechanism-lint/v1',
+                'not_there' => $notThere,
                 'count' => count($findings),
                 'actionable' => $counts['actionable'],
                 'notes' => $counts['notes'],
@@ -165,6 +171,9 @@ final class LintMechanismsCommand extends BaseCommand
             return $counts['actionable'] === 0 ? Command::SUCCESS : Command::FAILURE;
         }
 
+        foreach ($notThere as $relative) {
+            $output->writeln("lint:mechanisms → --file {$relative} is not there; nothing to scan");
+        }
         if ($findings === []) {
             $output->writeln('<info>[OK]</info> No hand-rolled framework mechanisms found.');
 
@@ -359,6 +368,35 @@ final class LintMechanismsCommand extends BaseCommand
             new HeredocPromptDetector(),
             new PublicPageReadsIdentityDetector(),
         ];
+    }
+
+    /**
+     * The payload handlers of the module of every payload among $sources that are not there yet:
+     * the PHP files under that module's src naming `<Payload>::class` beside #[AsPayloadHandler].
+     *
+     * @param array<string, string> $sources file => contents
+     * @return array<string, string>
+     */
+    private static function handlersOf(array $sources): array
+    {
+        $handlers = [];
+        foreach (array_keys($sources) as $file) {
+            if (!str_ends_with($file, '.php') || !str_contains($file, '/Payload/') || preg_match('#^(.*/src/modules/[^/]+)/#', $file, $module) !== 1) {
+                continue;
+            }
+            $short = basename($file, '.php');
+            foreach (self::filesWithExtensions($module[1], ['php']) as $candidate) {
+                if (isset($sources[$candidate]) || isset($handlers[$candidate])) {
+                    continue;
+                }
+                $contents = @file_get_contents($candidate);
+                if (is_string($contents) && str_contains($contents, 'AsPayloadHandler') && preg_match('/\b' . preg_quote($short, '/') . '::class\b/', $contents) === 1) {
+                    $handlers[$candidate] = $contents;
+                }
+            }
+        }
+
+        return $handlers;
     }
 
     /**
