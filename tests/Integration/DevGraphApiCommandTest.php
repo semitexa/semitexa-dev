@@ -79,6 +79,7 @@ final class DevGraphApiCommandTest extends TestCase
         $top = array_map(static fn (array $hit): string => $hit['class'] . '::' . $hit['member'], array_slice($decoded['hits'], 0, 5));
         // Core first: since HttpStatus is @api (core#235) its redirect cases share the top with the
         // response methods, so the setter is asked for among the first five, and all five are core's.
+        $this->assertCount(5, $top, 'five hits, or the next line checks fewer');
         $this->assertContains('Semitexa\\Core\\Http\\Response\\ResourceResponse::setRedirect', $top);
         $this->assertSame([], array_filter($top, static fn (string $hit): bool => !str_starts_with($hit, 'Semitexa\\Core\\')), 'the first five are core');
         $this->assertSame([], array_filter($decoded['hits'], static fn (array $hit): bool => str_starts_with($hit['class'], 'Semitexa\\Demo\\')));
