@@ -20,7 +20,11 @@ declare(strict_types=1);
  *
  * ## Usage
  *
- *   php release-bc-gate.php [--version=<release version>]
+ *   php release-bc-gate.php [--version=<release version>] [--package=<dir name>]...
+ *
+ * --package limits the check to those packages; SEMITEXA_BC_TO is what each
+ * is compared with instead of HEAD: ai:verify passes `git stash create`, a
+ * commit of the working tree that moves no ref (tk-stab-bc-check-gate).
  *
  * RELEASE_ROOT selects the tree; SEMITEXA_AUTOLOAD the autoloader with
  * nikic/php-parser (default RELEASE_ROOT/vendor/autoload.php); SEMITEXA_BC_CHECK
@@ -52,7 +56,12 @@ use PhpParser\ParserFactory;
 
 const WINDOW_DAYS = 90;
 
-$options = getopt('', ['version:']);
+$options = getopt('', ['version:', 'package:']);
+$onlyPackages = array_values(array_filter((array) ($options['package'] ?? []), 'is_string'));
+$to = getenv('SEMITEXA_BC_TO') ?: 'HEAD';
+if (str_starts_with($to, '-')) {
+    fail("SEMITEXA_BC_TO {$to} is not a git revision.");
+}
 $version = is_string($options['version'] ?? null) ? $options['version'] : (getenv('RELEASE_VERSION') ?: gmdate('Y.m.d.Hi'));
 $releaseRoot = rtrim(getenv('RELEASE_ROOT') ?: '/home/taras/Documents/Projects/semitexa.rls', DIRECTORY_SEPARATOR);
 $autoload = getenv('SEMITEXA_AUTOLOAD') ?: $releaseRoot . '/vendor/autoload.php';
@@ -76,6 +85,12 @@ $packageDirs = is_dir($packagesDir) ? glob($packagesDir . '/*') : false;
 if ($packageDirs === false) {
     fail("Cannot list the packages in {$packagesDir}.");
 }
+// A package asked for that is not there is a check not made, not a pass (review, dev#250).
+$present = array_map('basename', array_filter($packageDirs, static fn (string $d): bool => is_dir($d . '/.git')));
+$missing = array_diff($onlyPackages, $present);
+if ($missing !== []) {
+    fail('--package ' . implode(', ', $missing) . ": no such package repository in {$packagesDir}.");
+}
 
 $refused = [];
 $allowed = [];
@@ -85,7 +100,7 @@ $exempted = [];
 $used = [];
 foreach ($packageDirs as $packageDir) {
     // No src at HEAD is no reason to skip: an @api package that deleted it broke everything it promised.
-    if (!is_dir($packageDir . '/.git')) {
+    if (!is_dir($packageDir . '/.git') || ($onlyPackages !== [] && !in_array(basename($packageDir), $onlyPackages, true))) {
         continue;
     }
     $tag = previousTag($packageDir, $version, $problems);
@@ -96,7 +111,7 @@ foreach ($packageDirs as $packageDir) {
     if ($surface === []) {
         continue; // nothing promised at that tag
     }
-    if (sourceUnchanged($packageDir, $tag, $problems)) {
+    if (sourceUnchanged($packageDir, $tag, $to, $problems)) {
         // Nothing to compare, so nothing can have broken: roave is not run,
         // and a tag it cannot read (core 2026.10.31.0849 declares ThemeValue
         // in ThemeLayer.php) does not fail a cut that did not touch the code.
@@ -104,7 +119,7 @@ foreach ($packageDirs as $packageDir) {
         continue;
     }
     $unchecked = null;
-    $descriptions = breaks($packageDir, $tag, $check, $problems, $unchecked);
+    $descriptions = breaks($packageDir, $tag, $check, $problems, $unchecked, $to);
     if ($descriptions === null) {
         $exemption = $exemptions[basename($packageDir)][$tag] ?? null;
         // Compared without whitespace: the console wraps roave's message at
@@ -122,7 +137,7 @@ foreach ($packageDirs as $packageDir) {
         // By reference: what shippedIn() cannot read must reach the exit code.
         $verdict = judge($description, $surface, $today, static function (string $key) use ($packageDir, $tag, &$problems): array {
             return shippedIn($packageDir, $key, $tag, $problems);
-        });
+        }, symbolsAt($packageDir, $tag, $problems)['parents']);
         if ($verdict === null) {
             continue; // not on the @api surface
         }
@@ -200,9 +215,9 @@ function git(string $dir, array $arguments, ?int &$status = null): string
  *
  * @param list<string> $problems
  */
-function sourceUnchanged(string $packageDir, string $tag, array &$problems): bool
+function sourceUnchanged(string $packageDir, string $tag, string $to, array &$problems): bool
 {
-    git($packageDir, ['diff', '--quiet', $tag, 'HEAD', '--', 'src'], $status);
+    git($packageDir, ['diff', '--quiet', $tag, $to, '--', 'src'], $status);
     if ($status === 1) {
         return false;
     }
@@ -212,7 +227,7 @@ function sourceUnchanged(string $packageDir, string $tag, array &$problems): boo
         return false;
     }
     $before = json_decode(git($packageDir, ['show', $tag . ':composer.json'], $shown), true);
-    $now = json_decode(git($packageDir, ['show', 'HEAD:composer.json'], $current), true);
+    $now = json_decode(git($packageDir, ['show', $to . ':composer.json'], $current), true);
     if ($shown !== 0 || $current !== 0 || !is_array($before) || !is_array($now)) {
         return false;
     }
@@ -278,16 +293,16 @@ function surfaceAt(string $packageDir, string $tag, array &$problems): array
  * written. Read once per tag.
  *
  * @param list<string> $problems
- * @return array{api: list<string>, deprecated: array<string, string>}
+ * @return array{api: list<string>, deprecated: array<string, string>, parents: array<string, string>}
  */
 function symbolsAt(string $packageDir, string $tag, array &$problems): array
 {
-    /** @var array<string, array{api: list<string>, deprecated: array<string, string>}> $cache */
+    /** @var array<string, array{api: list<string>, deprecated: array<string, string>, parents: array<string, string>}> $cache */
     static $cache = [];
     if (isset($cache[$packageDir . '@' . $tag])) {
         return $cache[$packageDir . '@' . $tag];
     }
-    $symbols = ['api' => [], 'deprecated' => []];
+    $symbols = ['api' => [], 'deprecated' => [], 'parents' => []];
     $files = git($packageDir, ['ls-tree', '-r', '--name-only', $tag, '--', 'src'], $status);
     if ($status !== 0) {
         $problems[] = basename($packageDir) . ": its sources at {$tag} could not be listed";
@@ -312,6 +327,9 @@ function symbolsAt(string $packageDir, string $tag, array &$problems): array
                 continue;
             }
             $name = $class->namespacedName->toString();
+            if ($class instanceof Stmt\Class_ && $class->extends !== null) {
+                $symbols['parents'][$name] = $class->extends->toString();
+            }
             $classIsApi = hasTag($class->getDocComment(), 'api');
             $classWritten = deprecatedSince($class->getDocComment());
             if ($classIsApi) {
@@ -481,7 +499,7 @@ function exemptions(string $file): array
  * @param list<string> $problems
  * @return list<string>|null
  */
-function breaks(string $packageDir, string $tag, string $check, array &$problems, ?string &$unchecked = null): ?array
+function breaks(string $packageDir, string $tag, string $check, array &$problems, ?string &$unchecked = null, string $to = 'HEAD'): ?array
 {
     $unchecked = null;
     // stderr kept apart, so its last line can say why roave stopped.
@@ -491,7 +509,7 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
 
         return [];
     }
-    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=HEAD --format=json 2>' . escapeshellarg($errors);
+    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=' . escapeshellarg($to) . ' --format=json 2>' . escapeshellarg($errors);
     $output = [];
     exec($command, $output, $status);
     $said = whatRoaveSaid(file($errors) ?: []);
@@ -560,10 +578,38 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
  *
  * @param array<string, string|null> $surface
  * @param callable(string): array{string, \DateTimeImmutable} $shippedIn
+ * @param array<string, string> $parents class => the class it extends, at the tag
  * @return array{bool, string}|null
  */
-function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn): ?array
+function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn, array $parents = []): ?array
 {
+    // "An enum expression E::Case is not supported in class C" (or "in method C::m()", review
+    // dev#250): roave could not read C, and E is
+    // only what it tripped on (13.11: AcceptHeaderResolver over the @api RenderProfile::Json). The
+    // subject is C: nothing when C is not promised, a refusal when it is, since it went unchecked.
+    // An @api class extending C inherits what went unread (review, dev#250), so it counts as C.
+    // Known limit: the "in function" and "in namespace" forms fall through to the enum, which errs
+    // towards a refusal.
+    if (preg_match('/ is not supported in (?:class|method) ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
+        // Class names compare as PHP compares them, case-insensitively (review, dev#250).
+        $class = strtolower(ltrim($unread[1], '\\'));
+        $up = [];
+        foreach ($parents as $child => $parent) {
+            $up[strtolower($child)] = strtolower(ltrim($parent, '\\'));
+        }
+        $owners = [$class => true];
+        foreach (array_keys($up) as $child) {
+            for ($at = $up[$child], $seen = 0; $at !== null && $seen < 64; $at = $up[$at] ?? null, $seen++) {
+                if ($at === $class) {
+                    $owners[$child] = true;
+                    break;
+                }
+            }
+        }
+        $promised = array_filter(array_keys($surface), static fn (string $k): bool => isset($owners[strtolower(explode('::', $k, 2)[0])]));
+
+        return $promised === [] ? null : [false, 'roave could not read this @api class, so its promise went unchecked'];
+    }
     $classes = [];
     foreach (array_keys($surface) as $key) {
         $classes[explode('::', $key, 2)[0]] = true;

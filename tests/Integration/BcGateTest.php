@@ -52,6 +52,85 @@ final class BcGateTest extends TestCase
         ], $out, 'Inner is not @api: its break is not the contract\'s');
     }
 
+    /** 13.11: roave not reading a class is about that class, not the @api enum it tripped on. */
+    #[Test]
+    public function a_class_roave_could_not_read_is_judged_by_that_class(): void
+    {
+        $this->released();
+        $unread = static fn (string $class): string => "An enum expression Semitexa\\Core\\Clock::Json is not supported in class {$class} in file /src/X.php (line 35)";
+
+        self::assertSame([0, 'No break on the @api surface.'], $this->first($this->gate([$unread('Semitexa\\Core\\Inner')])));
+        [$status, $out] = $this->gate([$unread('Semitexa\\Core\\Port')]);
+        self::assertSame(1, $status);
+        self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+        // Review, dev#250: the method form names the class too.
+        [$status, $out] = $this->gate(['An enum expression Semitexa\\Core\\Inner::Json is not supported in method Semitexa\\Core\\Clock::now() in file /src/Clock.php (line 5)']);
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+    }
+
+    /** Review, dev#250: an @api class inheriting the unread method from one that is not promised is refused. */
+    #[Test]
+    public function an_unread_parent_of_an_api_class_is_refused(): void
+    {
+        $this->released(extra: [
+            'Base.php' => "<?php\nnamespace Semitexa\\Core;\nclass Base { public function read(): void {} }\n",
+            // Review, dev#250: the only promised child names its parent in lower case; PHP reads
+            // \Semitexa\Core\base as Base, and so does the gate.
+            'Child.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Child extends Base {}\n",
+            'Other.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Other extends \\Semitexa\\Core\\base {}\n",
+        ]);
+        [$status, $out] = $this->gate(['An enum expression Semitexa\\Core\\Mode::A is not supported in method Semitexa\\Core\\Base::read() in file /src/Base.php (line 3)']);
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+
+    }
+
+    /** ai:verify (tk-stab-bc-check-gate): the working tree is checked through SEMITEXA_BC_TO, one package through --package. */
+    #[Test]
+    public function the_working_tree_is_checked_through_a_stash_commit_and_one_package_alone(): void
+    {
+        $this->released(changedSince: false);
+        $dir = $this->root . '/packages/semitexa-core';
+        [$status, $out] = $this->gate([self::BREAKS[0]]);
+        self::assertSame(0, $status, 'HEAD is the tag: nothing to check');
+
+        file_put_contents($dir . '/src/Later.php', "<?php\nnamespace Semitexa\\Core;\nfinal class Later {}\n");
+        exec('git -C ' . escapeshellarg($dir) . ' add -A && git -C ' . escapeshellarg($dir) . ' stash create', $sha);
+        self::assertNotSame('', $sha[0] ?? '', 'the working tree has a change to commit');
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ');
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertSame('[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated', $out[0]);
+        // Review, dev#250: roave itself is asked about the stash commit, not HEAD.
+        self::assertStringContainsString('--to=' . $sha[0], (string) file_get_contents($this->root . '/roave.args'));
+
+        mkdir($this->root . '/packages/semitexa-other/src', 0777, true);
+        $this->git($this->root . '/packages/semitexa-other', ['init -q']);
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ', args: ' --package=semitexa-other');
+        self::assertSame(0, $status, 'only the package asked for is checked: ' . implode("\n", $out));
+
+        // Fable's review of dev#250: --package repeats, and a revision that reads as an option is refused.
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ', args: ' --package=semitexa-other --package=semitexa-core');
+        self::assertSame(1, $status, 'both packages are checked: ' . implode("\n", $out));
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=--upload-pack=x ');
+        self::assertSame(1, $status);
+        self::assertStringContainsString('is not a git revision', implode("\n", $out));
+
+        // Review, dev#250: a package asked for that is not there fails, not passes.
+        [$status, $out] = $this->gate([self::BREAKS[0]], args: ' --package=semitexa-croe');
+        self::assertSame(1, $status);
+        self::assertStringContainsString('--package semitexa-croe: no such package repository', implode("\n", $out));
+    }
+
+    /**
+     * @param array{0: int, 1: list<string>} $result
+     * @return array{0: int, 1: string}
+     */
+    private function first(array $result): array
+    {
+        return [$result[0], (string) end($result[1])];
+    }
+
     #[Test]
     public function a_part_deprecated_in_a_release_ninety_days_before_may_go(): void
     {
@@ -453,24 +532,27 @@ final class BcGateTest extends TestCase
      * @param array<string, array<string, mixed>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
      * @return array{int, list<string>}
      */
-    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = ''): array
+    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = '', string $env = '', string $args = ''): array
     {
         $exemptionsFile = $this->root . '/exemptions.json';
         file_put_contents($exemptionsFile, is_string($exemptions) ? $exemptions : ($exemptions === [] ? '{}' : (string) json_encode($exemptions)));
         $fake = $this->root . '/roave';
         $json = json_encode($report ?? ['errors' => array_map(static fn (string $d): array => ['description' => $d], $breaks ?? [])]);
-        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nprintf '%s' " . escapeshellarg($stderr) . " >&2\nexit {$exit}\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
+        $record = 'printf \'%s\\n\' "$*" >> ' . escapeshellarg($this->root . '/roave.args') . "\n";
+        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\n{$record}printf '%s' " . escapeshellarg($stderr) . " >&2\nexit {$exit}\n" : "#!/bin/sh\n{$record}printf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
         chmod($fake, 0o755);
         $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
         self::assertIsString($loader);
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-bc-gate.php';
         exec(sprintf(
-            'RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s SEMITEXA_BC_CHECK=%s SEMITEXA_BC_EXEMPTIONS=%s php %s --version=2026.10.31.0900 2>&1',
+            '%sRELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s SEMITEXA_BC_CHECK=%s SEMITEXA_BC_EXEMPTIONS=%s php %s --version=2026.10.31.0900%s 2>&1',
+            $env,
             escapeshellarg($this->root),
             escapeshellarg(dirname($loader, 2) . '/autoload.php'),
             escapeshellarg($fake),
             escapeshellarg($exemptionsFile),
             escapeshellarg($script),
+            $args,
         ), $out, $status);
 
         return [$status, $out];
