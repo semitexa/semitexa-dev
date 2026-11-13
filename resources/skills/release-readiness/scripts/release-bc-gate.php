@@ -85,6 +85,12 @@ $packageDirs = is_dir($packagesDir) ? glob($packagesDir . '/*') : false;
 if ($packageDirs === false) {
     fail("Cannot list the packages in {$packagesDir}.");
 }
+// A package asked for that is not there is a check not made, not a pass (review, dev#250).
+$present = array_map('basename', array_filter($packageDirs, static fn (string $d): bool => is_dir($d . '/.git')));
+$missing = array_diff($onlyPackages, $present);
+if ($missing !== []) {
+    fail('--package ' . implode(', ', $missing) . ": no such package repository in {$packagesDir}.");
+}
 
 $refused = [];
 $allowed = [];
@@ -573,10 +579,11 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
  */
 function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn): ?array
 {
-    // "An enum expression E::Case is not supported in class C": roave could not read C, and E is
+    // "An enum expression E::Case is not supported in class C" (or "in method C::m()", review
+    // dev#250): roave could not read C, and E is
     // only what it tripped on (13.11: AcceptHeaderResolver over the @api RenderProfile::Json). The
     // subject is C: nothing when C is not promised, a refusal when it is, since it went unchecked.
-    if (preg_match('/ is not supported in class ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
+    if (preg_match('/ is not supported in (?:class|method) ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
         $class = ltrim($unread[1], '\\');
         $promised = array_filter(array_keys($surface), static fn (string $k): bool => $k === $class || str_starts_with($k, $class . '::'));
 

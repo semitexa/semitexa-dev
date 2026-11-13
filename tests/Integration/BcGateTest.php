@@ -63,6 +63,10 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate([$unread('Semitexa\\Core\\Port')]);
         self::assertSame(1, $status);
         self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+        // Review, dev#250: the method form names the class too.
+        [$status, $out] = $this->gate(['An enum expression Semitexa\\Core\\Inner::Json is not supported in method Semitexa\\Core\\Clock::now() in file /src/Clock.php (line 5)']);
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
     }
 
     /** ai:verify (tk-stab-bc-check-gate): the working tree is checked through SEMITEXA_BC_TO, one package through --package. */
@@ -80,9 +84,18 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ');
         self::assertSame(1, $status, implode("\n", $out));
         self::assertSame('[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated', $out[0]);
+        // Review, dev#250: roave itself is asked about the stash commit, not HEAD.
+        self::assertStringContainsString('--to=' . $sha[0], (string) file_get_contents($this->root . '/roave.args'));
 
+        mkdir($this->root . '/packages/semitexa-other/src', 0777, true);
+        $this->git($this->root . '/packages/semitexa-other', ['init -q']);
         [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ', args: ' --package=semitexa-other');
         self::assertSame(0, $status, 'only the package asked for is checked: ' . implode("\n", $out));
+
+        // Review, dev#250: a package asked for that is not there fails, not passes.
+        [$status, $out] = $this->gate([self::BREAKS[0]], args: ' --package=semitexa-croe');
+        self::assertSame(1, $status);
+        self::assertStringContainsString('--package semitexa-croe: no such package repository', implode("\n", $out));
     }
 
     /**
@@ -501,7 +514,8 @@ final class BcGateTest extends TestCase
         file_put_contents($exemptionsFile, is_string($exemptions) ? $exemptions : ($exemptions === [] ? '{}' : (string) json_encode($exemptions)));
         $fake = $this->root . '/roave';
         $json = json_encode($report ?? ['errors' => array_map(static fn (string $d): array => ['description' => $d], $breaks ?? [])]);
-        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\nprintf '%s' " . escapeshellarg($stderr) . " >&2\nexit {$exit}\n" : "#!/bin/sh\nprintf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
+        $record = 'printf \'%s\\n\' "$*" >> ' . escapeshellarg($this->root . '/roave.args') . "\n";
+        file_put_contents($fake, $breaks === null && $report === null ? "#!/bin/sh\n{$record}printf '%s' " . escapeshellarg($stderr) . " >&2\nexit {$exit}\n" : "#!/bin/sh\n{$record}printf '%s' " . escapeshellarg($before . (string) $json) . "\nexit 3\n");
         chmod($fake, 0o755);
         $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
         self::assertIsString($loader);
