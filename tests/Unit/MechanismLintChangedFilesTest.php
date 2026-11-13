@@ -50,4 +50,14 @@ final class MechanismLintChangedFilesTest extends TestCase
         $tester->execute(['--file' => [$this->dir . '/old.html.twig', $this->dir . '/clean.html.twig'], '--json' => true]);
         self::assertSame(1, json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR)['count'], 'a changed file with a finding is still found');
     }
+
+    /** Review, dev#251: a file it was asked about and could not read fails the lint. */
+    #[Test]
+    public function a_named_file_that_cannot_be_read_fails(): void
+    {
+        $tester = new CommandTester(new LintMechanismsCommand());
+
+        self::assertSame(1, $tester->execute(['--file' => [$this->dir . '/missing.html.twig']]));
+        self::assertStringContainsString('missing.html.twig could not be read', $tester->getDisplay());
+    }
 }

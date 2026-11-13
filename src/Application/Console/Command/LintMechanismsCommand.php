@@ -89,12 +89,22 @@ final class LintMechanismsCommand extends BaseCommand
         // the change's, and failing every task on it left a whole project unproven after an update
         // (13.11: 13 findings, none in the changed files; tk-verify-red-on-preexisting-mechanisms).
         $only = array_values(array_filter((array) $input->getOption('file'), 'is_string'));
+        $sources = [];
+        foreach ($only as $relative) {
+            $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
+            $contents = is_file($file) ? file_get_contents($file) : false;
+            if ($contents === false) {
+                // A file the gate was asked about and could not read is not a file it cleared (review, dev#251).
+                $output->writeln("lint:mechanisms → --file {$relative} could not be read");
+
+                return Command::FAILURE;
+            }
+            $sources[$file] = $contents;
+        }
         foreach ($only === [] ? [] : self::detectors() as $detector) {
-            foreach ($only as $relative) {
-                $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
-                $contents = in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true) && is_file($file) ? file_get_contents($file) : false;
-                foreach ($contents === false ? [] : $detector->detect(self::relativise($file, $root), explode("\n", $contents)) as $finding) {
-                    $findings[] = $finding;
+            foreach ($sources as $file => $contents) {
+                if (in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true)) {
+                    array_push($findings, ...$detector->detect(self::relativise($file, $root), explode("\n", $contents)));
                 }
             }
         }
