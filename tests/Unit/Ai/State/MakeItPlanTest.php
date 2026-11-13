@@ -277,5 +277,9 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('Task: tk-a', $steps);
         self::assertStringContainsString('--status=blocked', $steps);
         self::assertStringContainsString('Run run-me again', $steps);
+        // A consumer agent ended its turn while ai:verify ran in the background, and closed a task
+        // on a fail (tk-make-it-stops-after-one-task).
+        self::assertStringContainsString('wait for its verdict in this turn', $steps);
+        self::assertStringContainsString('never close a task on a fail', $steps);
     }
 }
