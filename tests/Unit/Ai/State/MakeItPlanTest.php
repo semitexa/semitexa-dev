@@ -277,5 +277,14 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('Task: tk-a', $steps);
         self::assertStringContainsString('--status=blocked', $steps);
         self::assertStringContainsString('Run run-me again', $steps);
+        // A consumer agent ended its turn while ai:verify ran in the background, and closed a task
+        // on a fail (tk-make-it-stops-after-one-task).
+        self::assertStringContainsString('wait for its verdict in this turn', $steps);
+        self::assertStringContainsString('never close a task on a fail', $steps);
+        self::assertStringContainsString('neither (incomplete, skipped, nothing_to_verify): name the task\'s files with --files=', $steps, 'review, dev#253');
+        self::assertStringContainsString('Three verdicts in a row that are not a pass', $steps, 'a retry that never passes is bounded too');
+        // An agent cannot judge its own failure unrelated and close on it (independent review, dev#253).
+        self::assertStringContainsString('is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id=tk-a --status=blocked', $steps);
+        self::assertStringNotContainsString('and go on', $steps);
     }
 }
