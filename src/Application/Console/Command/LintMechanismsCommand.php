@@ -71,6 +71,7 @@ final class LintMechanismsCommand extends BaseCommand
     {
         $this
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Scan this directory instead of the application modules')
+            ->addOption('file', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Scan only these files (ai:verify passes the changed ones)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope');
     }
 
@@ -84,7 +85,20 @@ final class LintMechanismsCommand extends BaseCommand
             : self::APPLICATION_ROOTS;
 
         $findings = [];
-        foreach ($roots as $relative) {
+        // ai:verify asks about the files a change touched: a finding already in the project is not
+        // the change's, and failing every task on it left a whole project unproven after an update
+        // (13.11: 13 findings, none in the changed files; tk-verify-red-on-preexisting-mechanisms).
+        $only = array_values(array_filter((array) $input->getOption('file'), 'is_string'));
+        foreach ($only === [] ? [] : self::detectors() as $detector) {
+            foreach ($only as $relative) {
+                $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
+                $contents = in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true) && is_file($file) ? file_get_contents($file) : false;
+                foreach ($contents === false ? [] : $detector->detect(self::relativise($file, $root), explode("\n", $contents)) as $finding) {
+                    $findings[] = $finding;
+                }
+            }
+        }
+        foreach ($only === [] ? $roots : [] as $relative) {
             $dir = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
             foreach (self::detectors() as $detector) {
                 foreach (self::filesWithExtensions($dir, $detector->extensions()) as $file) {

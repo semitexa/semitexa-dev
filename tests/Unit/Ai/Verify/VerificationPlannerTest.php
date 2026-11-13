@@ -44,6 +44,9 @@ class VerificationPlannerTest extends TestCase
         $this->assertSame(['lint:di', 'lint:handlers', 'lint:inline-script', 'lint:mechanisms'], $commands);
         $this->assertCount(1, $this->targetsOfType($plan, VerificationTarget::TYPE_SYNTAX));
         $this->assertSame([], $plan->expansions);
+        // tk-verify-red-on-preexisting-mechanisms: the lint is asked about this file, not the project.
+        $mechanisms = array_values(array_filter($this->targetsOfType($plan, VerificationTarget::TYPE_LINT), static fn (VerificationTarget $t): bool => $t->commandName === 'lint:mechanisms'));
+        $this->assertSame(['--file' => ['src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php']], $mechanisms[0]->commandInput);
     }
 
     public function test_payload_change_adds_responses_lint(): void
