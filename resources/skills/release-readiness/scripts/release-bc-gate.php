@@ -583,6 +583,9 @@ function judge(string $description, array $surface, \DateTimeImmutable $today, c
     // dev#250): roave could not read C, and E is
     // only what it tripped on (13.11: AcceptHeaderResolver over the @api RenderProfile::Json). The
     // subject is C: nothing when C is not promised, a refusal when it is, since it went unchecked.
+    // Known limits (Fable, dev#250): an @api class inheriting the unread method from a class that
+    // is not promised is not caught here; the "in function" and "in namespace" forms fall through
+    // to the enum, which errs towards a refusal.
     if (preg_match('/ is not supported in (?:class|method) ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
         $class = ltrim($unread[1], '\\');
         $promised = array_filter(array_keys($surface), static fn (string $k): bool => $k === $class || str_starts_with($k, $class . '::'));

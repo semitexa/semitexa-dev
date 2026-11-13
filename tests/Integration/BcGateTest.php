@@ -92,6 +92,13 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ', args: ' --package=semitexa-other');
         self::assertSame(0, $status, 'only the package asked for is checked: ' . implode("\n", $out));
 
+        // Fable's review of dev#250: --package repeats, and a revision that reads as an option is refused.
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=' . escapeshellarg($sha[0]) . ' ', args: ' --package=semitexa-other --package=semitexa-core');
+        self::assertSame(1, $status, 'both packages are checked: ' . implode("\n", $out));
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'SEMITEXA_BC_TO=--upload-pack=x ');
+        self::assertSame(1, $status);
+        self::assertStringContainsString('is not a git revision', implode("\n", $out));
+
         // Review, dev#250: a package asked for that is not there fails, not passes.
         [$status, $out] = $this->gate([self::BREAKS[0]], args: ' --package=semitexa-croe');
         self::assertSame(1, $status);
