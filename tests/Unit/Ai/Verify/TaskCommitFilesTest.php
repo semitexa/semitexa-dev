@@ -70,4 +70,28 @@ final class TaskCommitFilesTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $files->entries('tk-a');
     }
+
+    /** Review, dev#252: a rename keeps its old path in scope; a broken branch fails, with git's words. */
+    #[Test]
+    public function a_rename_names_both_paths_and_a_broken_ref_is_an_error(): void
+    {
+        $package = $this->root . '/packages/semitexa-x';
+        $git = 'git -C ' . escapeshellarg($package) . ' -c user.email=t@example.invalid -c user.name=t';
+        exec("{$git} mv src/Other.php src/Renamed.php && {$git} commit -q -m 'rename' -m 'Task: tk-r'");
+
+        $files = new TaskCommitFiles($this->root);
+        self::assertSame([
+            ['path' => 'packages/semitexa-x/src/Other.php', 'status' => ChangedFile::STATUS_DELETED],
+            ['path' => 'packages/semitexa-x/src/Renamed.php', 'status' => ChangedFile::STATUS_MODIFIED],
+        ], $files->entries('tk-r'));
+
+        file_put_contents($package . '/.git/refs/heads/broken', str_repeat('1', 40) . "\n");
+        try {
+            $files->entries('tk-r');
+            self::fail('a branch pointing at a missing object is not an empty history');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('git rev-list exited', $e->getMessage());
+            self::assertMatchesRegularExpression('/(bad object|fatal|error)/i', $e->getMessage(), "git's own words are in the message");
+        }
+    }
 }
