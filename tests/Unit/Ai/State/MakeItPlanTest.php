@@ -281,5 +281,6 @@ final class MakeItPlanTest extends TestCase
         // on a fail (tk-make-it-stops-after-one-task).
         self::assertStringContainsString('wait for its verdict in this turn', $steps);
         self::assertStringContainsString('never close a task on a fail', $steps);
+        self::assertStringContainsString('Neither a pass nor a fail (nothing_to_verify, incomplete): name the task\'s files with --files=', $steps, 'review, dev#253');
     }
 }
