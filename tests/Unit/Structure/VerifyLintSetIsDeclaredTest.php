@@ -67,6 +67,20 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
     }
 
     #[Test]
+    public function the_scan_reads_every_way_an_attribute_names_a_command(): void
+    {
+        self::assertSame(['lint:a', 'lint:b', 'lint:c', 'lint:d'], self::lintCommandNames(<<<'PHP'
+            #[AsCommand(name: 'lint:a', description: 'x')]
+            #[AsCommand(description: "y", name: "lint:b")]
+            #[AsCommand('lint:c')]
+            #[\Symfony\Component\Console\Attribute\AsCommand(
+                name: 'lint:d',
+            )]
+            #[AsCommand(name: 'docs:e')]
+            PHP));
+    }
+
+    #[Test]
     public function every_shipped_lint_command_is_run_by_the_plan_or_says_why_not(): void
     {
         $packages = dirname(__DIR__, 4);
@@ -77,10 +91,11 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                 if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
                     continue;
                 }
-                if (preg_match_all("/#\\[AsCommand\\(\\s*name:\\s*'(lint:[a-z:-]+)'/", (string) file_get_contents($file->getPathname()), $m) > 0) {
-                    foreach ($m[1] as $name) {
-                        $found[$name] = true;
-                    }
+                $source = file_get_contents($file->getPathname());
+                // A gate that cannot read a file fails, rather than counting it as declaring nothing.
+                self::assertIsString($source, 'cannot read ' . $file->getPathname());
+                foreach (self::lintCommandNames($source) as $name) {
+                    $found[$name] = true;
                 }
             }
         }
@@ -91,6 +106,25 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         $declared = [...self::PLANNED, ...self::GUARDS, ...array_keys(self::NOT_IN_VERIFY)];
         sort($declared);
         self::assertSame($declared, $found, 'A lint command was added or removed. A new rule is a detector inside an existing lint (tk-verify-one-door); a lint the plan does not run goes in NOT_IN_VERIFY with the reason.');
+    }
+
+    /**
+     * The lint:* names a file's #[AsCommand] attributes declare: named or first positional
+     * argument, either quote (review, dev#254).
+     *
+     * @return list<string>
+     */
+    private static function lintCommandNames(string $source): array
+    {
+        $names = [];
+        preg_match_all('/#\[\s*[\w\\\\]*AsCommand\s*\((.*?)\)\s*\]/s', $source, $attributes);
+        foreach ($attributes[1] as $arguments) {
+            if (preg_match('/(?:\bname\s*:\s*|^\s*)([\'"])(lint:[^\'"]+)\1/', $arguments, $m) === 1) {
+                $names[] = $m[2];
+            }
+        }
+
+        return $names;
     }
 
     /**
