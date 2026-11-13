@@ -20,6 +20,7 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
+use Semitexa\Dev\Application\Service\Ai\Verify\TaskCommitFiles;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactProbe;
 use Semitexa\Dev\Application\Service\Ai\Verify\Impact\ImpactReport;
 use Semitexa\Orm\Application\Service\Connection\ConnectionRegistry;
@@ -102,18 +103,16 @@ final class AiVerifyCommand extends BaseCommand
         }
         try {
             $paths = $this->collectPaths($input);
+            if ($paths === [] && (bool) $input->getOption('dirty') && ($trace = $this->traceAppender->resolveTraceId($input)) !== null) {
+                $paths = (new TaskCommitFiles($this->getProjectRoot()))->entries($trace);
+            }
         } catch (\RuntimeException $e) {
             $this->emitError($output, $e->getMessage(), $jsonMode);
             return self::FAILURE;
         }
 
         if ($paths === [] && !(bool) $input->getOption('list-e2e') && !(bool) $input->getOption('list-pages')) {
-            // `--dirty` finding nothing is an ANSWER, not a misuse: the tree is
-            // clean. Telling that caller to "pass --dirty" is advice they just
-            // took, and failing the run would make `ai:verify --dirty` red on
-            // every clean checkout. It is not a pass either — nothing was
-            // verified — so it gets a verdict of its own, with the scan's reach
-            // attached so the reader can see what was asked.
+            // `--dirty` finding nothing is an ANSWER (the tree is clean): a verdict of its own. A named task checks its commits.
             if ((bool) $input->getOption('dirty')) {
                 $scan = (new DirtyWorkspaceScanner($this->getProjectRoot()))->report();
 
