@@ -69,6 +69,19 @@ final class BcGateTest extends TestCase
         self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
     }
 
+    /** Review, dev#250: an @api class inheriting the unread method from one that is not promised is refused. */
+    #[Test]
+    public function an_unread_parent_of_an_api_class_is_refused(): void
+    {
+        $this->released(extra: [
+            'Base.php' => "<?php\nnamespace Semitexa\\Core;\nclass Base { public function read(): void {} }\n",
+            'Child.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Child extends Base {}\n",
+        ]);
+        [$status, $out] = $this->gate(['An enum expression Semitexa\\Core\\Mode::A is not supported in method Semitexa\\Core\\Base::read() in file /src/Base.php (line 3)']);
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+    }
+
     /** ai:verify (tk-stab-bc-check-gate): the working tree is checked through SEMITEXA_BC_TO, one package through --package. */
     #[Test]
     public function the_working_tree_is_checked_through_a_stash_commit_and_one_package_alone(): void

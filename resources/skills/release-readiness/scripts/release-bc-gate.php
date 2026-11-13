@@ -137,7 +137,7 @@ foreach ($packageDirs as $packageDir) {
         // By reference: what shippedIn() cannot read must reach the exit code.
         $verdict = judge($description, $surface, $today, static function (string $key) use ($packageDir, $tag, &$problems): array {
             return shippedIn($packageDir, $key, $tag, $problems);
-        });
+        }, symbolsAt($packageDir, $tag, $problems)['parents']);
         if ($verdict === null) {
             continue; // not on the @api surface
         }
@@ -293,16 +293,16 @@ function surfaceAt(string $packageDir, string $tag, array &$problems): array
  * written. Read once per tag.
  *
  * @param list<string> $problems
- * @return array{api: list<string>, deprecated: array<string, string>}
+ * @return array{api: list<string>, deprecated: array<string, string>, parents: array<string, string>}
  */
 function symbolsAt(string $packageDir, string $tag, array &$problems): array
 {
-    /** @var array<string, array{api: list<string>, deprecated: array<string, string>}> $cache */
+    /** @var array<string, array{api: list<string>, deprecated: array<string, string>, parents: array<string, string>}> $cache */
     static $cache = [];
     if (isset($cache[$packageDir . '@' . $tag])) {
         return $cache[$packageDir . '@' . $tag];
     }
-    $symbols = ['api' => [], 'deprecated' => []];
+    $symbols = ['api' => [], 'deprecated' => [], 'parents' => []];
     $files = git($packageDir, ['ls-tree', '-r', '--name-only', $tag, '--', 'src'], $status);
     if ($status !== 0) {
         $problems[] = basename($packageDir) . ": its sources at {$tag} could not be listed";
@@ -327,6 +327,9 @@ function symbolsAt(string $packageDir, string $tag, array &$problems): array
                 continue;
             }
             $name = $class->namespacedName->toString();
+            if ($class instanceof Stmt\Class_ && $class->extends !== null) {
+                $symbols['parents'][$name] = $class->extends->toString();
+            }
             $classIsApi = hasTag($class->getDocComment(), 'api');
             $classWritten = deprecatedSince($class->getDocComment());
             if ($classIsApi) {
@@ -575,20 +578,30 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
  *
  * @param array<string, string|null> $surface
  * @param callable(string): array{string, \DateTimeImmutable} $shippedIn
+ * @param array<string, string> $parents class => the class it extends, at the tag
  * @return array{bool, string}|null
  */
-function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn): ?array
+function judge(string $description, array $surface, \DateTimeImmutable $today, callable $shippedIn, array $parents = []): ?array
 {
     // "An enum expression E::Case is not supported in class C" (or "in method C::m()", review
     // dev#250): roave could not read C, and E is
     // only what it tripped on (13.11: AcceptHeaderResolver over the @api RenderProfile::Json). The
     // subject is C: nothing when C is not promised, a refusal when it is, since it went unchecked.
-    // Known limits (Fable, dev#250): an @api class inheriting the unread method from a class that
-    // is not promised is not caught here; the "in function" and "in namespace" forms fall through
-    // to the enum, which errs towards a refusal.
+    // An @api class extending C inherits what went unread (review, dev#250), so it counts as C.
+    // Known limit: the "in function" and "in namespace" forms fall through to the enum, which errs
+    // towards a refusal.
     if (preg_match('/ is not supported in (?:class|method) ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
         $class = ltrim($unread[1], '\\');
-        $promised = array_filter(array_keys($surface), static fn (string $k): bool => $k === $class || str_starts_with($k, $class . '::'));
+        $owners = [$class => true];
+        foreach (array_keys($parents) as $child) {
+            for ($up = $parents[$child], $seen = 0; $up !== null && $seen < 64; $up = $parents[$up] ?? null, $seen++) {
+                if ($up === $class) {
+                    $owners[$child] = true;
+                    break;
+                }
+            }
+        }
+        $promised = array_filter(array_keys($surface), static fn (string $k): bool => isset($owners[explode('::', $k, 2)[0]]));
 
         return $promised === [] ? null : [false, 'roave could not read this @api class, so its promise went unchecked'];
     }
