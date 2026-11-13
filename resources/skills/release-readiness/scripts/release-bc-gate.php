@@ -591,17 +591,22 @@ function judge(string $description, array $surface, \DateTimeImmutable $today, c
     // Known limit: the "in function" and "in namespace" forms fall through to the enum, which errs
     // towards a refusal.
     if (preg_match('/ is not supported in (?:class|method) ([A-Za-z_\\\\][\w\\\\]*)/', $description, $unread) === 1) {
-        $class = ltrim($unread[1], '\\');
+        // Class names compare as PHP compares them, case-insensitively (review, dev#250).
+        $class = strtolower(ltrim($unread[1], '\\'));
+        $up = [];
+        foreach ($parents as $child => $parent) {
+            $up[strtolower($child)] = strtolower(ltrim($parent, '\\'));
+        }
         $owners = [$class => true];
-        foreach (array_keys($parents) as $child) {
-            for ($up = $parents[$child], $seen = 0; $up !== null && $seen < 64; $up = $parents[$up] ?? null, $seen++) {
-                if ($up === $class) {
+        foreach (array_keys($up) as $child) {
+            for ($at = $up[$child], $seen = 0; $at !== null && $seen < 64; $at = $up[$at] ?? null, $seen++) {
+                if ($at === $class) {
                     $owners[$child] = true;
                     break;
                 }
             }
         }
-        $promised = array_filter(array_keys($surface), static fn (string $k): bool => isset($owners[explode('::', $k, 2)[0]]));
+        $promised = array_filter(array_keys($surface), static fn (string $k): bool => isset($owners[strtolower(explode('::', $k, 2)[0])]));
 
         return $promised === [] ? null : [false, 'roave could not read this @api class, so its promise went unchecked'];
     }

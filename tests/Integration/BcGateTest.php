@@ -75,11 +75,15 @@ final class BcGateTest extends TestCase
     {
         $this->released(extra: [
             'Base.php' => "<?php\nnamespace Semitexa\\Core;\nclass Base { public function read(): void {} }\n",
-            'Child.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Child extends Base {}\n",
+            // Review, dev#250: the only promised child names its parent in lower case; PHP reads
+            // \Semitexa\Core\base as Base, and so does the gate.
+            'Child.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Child extends Base {}\n",
+            'Other.php' => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Other extends \\Semitexa\\Core\\base {}\n",
         ]);
         [$status, $out] = $this->gate(['An enum expression Semitexa\\Core\\Mode::A is not supported in method Semitexa\\Core\\Base::read() in file /src/Base.php (line 3)']);
         self::assertSame(1, $status, implode("\n", $out));
         self::assertStringContainsString('roave could not read this @api class', implode("\n", $out));
+
     }
 
     /** ai:verify (tk-stab-bc-check-gate): the working tree is checked through SEMITEXA_BC_TO, one package through --package. */
