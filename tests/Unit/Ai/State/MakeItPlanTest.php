@@ -283,6 +283,8 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('never close a task on a fail', $steps);
         self::assertStringContainsString('neither (incomplete, skipped, nothing_to_verify): name the task\'s files with --files=', $steps, 'review, dev#253');
         self::assertStringContainsString('Three verdicts in a row that are not a pass', $steps, 'a retry that never passes is bounded too');
-        self::assertStringContainsString('say both in the report, and go on', $steps, 'as the consumer skill says');
+        // An agent cannot judge its own failure unrelated and close on it (independent review, dev#253).
+        self::assertStringContainsString('is still not a pass: file it as a task of its own and block this one on it', $steps);
+        self::assertStringNotContainsString('and go on', $steps);
     }
 }
