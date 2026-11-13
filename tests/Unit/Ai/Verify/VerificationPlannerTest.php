@@ -47,6 +47,10 @@ class VerificationPlannerTest extends TestCase
         // tk-verify-red-on-preexisting-mechanisms: the lint is asked about this file, not the project.
         $mechanisms = array_values(array_filter($this->targetsOfType($plan, VerificationTarget::TYPE_LINT), static fn (VerificationTarget $t): bool => $t->commandName === 'lint:mechanisms'));
         $this->assertSame(['--file' => ['src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php']], $mechanisms[0]->commandInput);
+        // Fable's review of dev#251: broad scope asks every lint about the whole project.
+        $broad = $planner->plan([new ChangedFile('src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php', ChangedFile::KIND_HANDLER)], VerificationPlan::SCOPE_BROAD);
+        $whole = array_values(array_filter($this->targetsOfType($broad, VerificationTarget::TYPE_LINT), static fn (VerificationTarget $t): bool => $t->commandName === 'lint:mechanisms'));
+        $this->assertSame([], $whole[0]->commandInput);
     }
 
     public function test_payload_change_adds_responses_lint(): void

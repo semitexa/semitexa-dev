@@ -89,12 +89,22 @@ final class LintMechanismsCommand extends BaseCommand
         // the change's, and failing every task on it left a whole project unproven after an update
         // (13.11: 13 findings, none in the changed files; tk-verify-red-on-preexisting-mechanisms).
         $only = array_values(array_filter((array) $input->getOption('file'), 'is_string'));
+        if ($only !== [] && is_string($override) && $override !== '') {
+            $output->writeln('lint:mechanisms → --file and --path ask different questions: give one');
+
+            return Command::FAILURE;
+        }
         $sources = [];
         foreach ($only as $relative) {
             $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
-            $contents = is_file($file) ? file_get_contents($file) : false;
+            if (!file_exists($file) && !is_link($file)) {
+                // Gone (a deletion ai:verify was handed as a plain path): no source, nothing hand-rolled.
+                $output->writeln("lint:mechanisms → --file {$relative} is not there; nothing to scan");
+                continue;
+            }
+            $contents = is_file($file) ? @file_get_contents($file) : false;
             if ($contents === false) {
-                // A file the gate was asked about and could not read is not a file it cleared (review, dev#251).
+                // There and unreadable: a file the gate could not read is not a file it cleared (review, dev#251).
                 $output->writeln("lint:mechanisms → --file {$relative} could not be read");
 
                 return Command::FAILURE;
