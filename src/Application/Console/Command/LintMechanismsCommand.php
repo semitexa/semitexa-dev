@@ -71,6 +71,7 @@ final class LintMechanismsCommand extends BaseCommand
     {
         $this
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Scan this directory instead of the application modules')
+            ->addOption('file', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Scan only these files (ai:verify passes the changed ones)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit JSON envelope');
     }
 
@@ -84,7 +85,41 @@ final class LintMechanismsCommand extends BaseCommand
             : self::APPLICATION_ROOTS;
 
         $findings = [];
-        foreach ($roots as $relative) {
+        // ai:verify asks about the files a change touched: a finding already in the project is not
+        // the change's, and failing every task on it left a whole project unproven after an update
+        // (13.11: 13 findings, none in the changed files; tk-verify-red-on-preexisting-mechanisms).
+        $only = array_values(array_filter((array) $input->getOption('file'), 'is_string'));
+        if ($only !== [] && is_string($override) && $override !== '') {
+            $output->writeln('lint:mechanisms → --file and --path ask different questions: give one');
+
+            return Command::FAILURE;
+        }
+        $sources = [];
+        $notThere = [];
+        foreach ($only as $relative) {
+            $file = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
+            if (!file_exists($file) && !is_link($file)) {
+                // Gone (a deletion ai:verify was handed as a plain path): no source, nothing hand-rolled.
+                $notThere[] = $relative;
+                continue;
+            }
+            $contents = is_file($file) ? @file_get_contents($file) : false;
+            if ($contents === false) {
+                // There and unreadable: a file the gate could not read is not a file it cleared (review, dev#251).
+                $output->writeln("lint:mechanisms → --file {$relative} could not be read");
+
+                return Command::FAILURE;
+            }
+            $sources[$file] = $contents;
+        }
+        foreach ($only === [] ? [] : self::detectors() as $detector) {
+            foreach ($sources as $file => $contents) {
+                if (in_array(pathinfo($file, PATHINFO_EXTENSION), $detector->extensions(), true)) {
+                    array_push($findings, ...$detector->detect(self::relativise($file, $root), explode("\n", $contents)));
+                }
+            }
+        }
+        foreach ($only === [] ? $roots : [] as $relative) {
             $dir = str_starts_with($relative, '/') ? $relative : $root . '/' . $relative;
             foreach (self::detectors() as $detector) {
                 foreach (self::filesWithExtensions($dir, $detector->extensions()) as $file) {
@@ -117,6 +152,7 @@ final class LintMechanismsCommand extends BaseCommand
         if ((bool) $input->getOption('json')) {
             $output->writeln((string) json_encode([
                 'artifact' => 'semitexa.dev.mechanism-lint/v1',
+                'not_there' => $notThere,
                 'count' => count($findings),
                 'actionable' => $counts['actionable'],
                 'notes' => $counts['notes'],
@@ -131,6 +167,9 @@ final class LintMechanismsCommand extends BaseCommand
             return $counts['actionable'] === 0 ? Command::SUCCESS : Command::FAILURE;
         }
 
+        foreach ($notThere as $relative) {
+            $output->writeln("lint:mechanisms → --file {$relative} is not there; nothing to scan");
+        }
         if ($findings === []) {
             $output->writeln('<info>[OK]</info> No hand-rolled framework mechanisms found.');
 

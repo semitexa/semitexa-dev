@@ -33,10 +33,9 @@ final class VerificationPlanner
      * only when scope is effectively `broad`.
      */
     private const KIND_LINT_MAP = [
-        // lint:mechanisms sits on the handler row as well as the service row: a
-        // handler can inline a heredoc straight into an LLM call, and a diff
-        // holding only a handler would otherwise pass standard verification
-        // until some unrelated service change happened to schedule the lint.
+        // lint:mechanisms sits on the handler row as well as the service row: a handler can
+        // inline a heredoc straight into an LLM call, and a diff holding only a handler would
+        // otherwise pass until some unrelated service change happened to schedule the lint.
         ChangedFile::KIND_HANDLER  => ['lint:handlers', 'lint:di', 'lint:mechanisms', 'lint:inline-script'],
         // A domain listener can call an LLM with an inline heredoc exactly as a
         // handler or a service can, so lint:mechanisms rides this row too — the
@@ -208,6 +207,7 @@ final class VerificationPlanner
                 reason: $meta['reason'],
                 triggeredBy: array_values(array_unique($meta['triggeredBy'])),
                 commandName: $commandName,
+                commandInput: $commandName === 'lint:mechanisms' && $meta['triggeredBy'] !== [] && $effectiveScope !== VerificationPlan::SCOPE_BROAD ? ['--file' => array_values(array_unique($meta['triggeredBy']))] : [],
             );
         }
         foreach ($phpunitTargets as $target) {
