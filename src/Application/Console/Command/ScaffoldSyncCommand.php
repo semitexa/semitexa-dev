@@ -23,9 +23,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *
  * Copies and their policies:
  *   1. installer scaffold → packages/semitexa-ultimate  (infra files, exact)
- *   2. installer scaffold → project root bin/semitexa   (exact; the root
- *      Dockerfile intentionally diverges — dev-workspace extras — and is
- *      only reported, never overwritten)
+ *   2. installer scaffold → project root bin/semitexa and Dockerfile (exact).
+ *      The root Dockerfile used to be report-only ("dev-workspace extras"), and
+ *      by 2026-11-13 the workspace ran without the intl/bcmath, imagick pin and
+ *      uid-1000 user the shipped image has, while its one extra, PCOV, had
+ *      long been in the shipped image too (tk-dev-image-drifted-from-shipped).
  *   3. root *.md guidance → ultimate                     (via scaffold:sync-docs)
  *   4. installer scaffold → semitexa-update resources/scaffold + manifest
  *      (via update:scaffold:rebuild)
@@ -50,10 +52,7 @@ final class ScaffoldSyncCommand extends BaseCommand
     ];
 
     /** Scaffold-relative files mirrored to the project root as exact copies. */
-    private const ROOT_EXACT_FILES = ['bin/semitexa'];
-
-    /** Root files that legitimately diverge from the scaffold — report only. */
-    private const ROOT_ADVISORY_FILES = ['Dockerfile'];
+    private const ROOT_EXACT_FILES = ['bin/semitexa', 'Dockerfile'];
 
     protected function configure(): void
     {
@@ -121,15 +120,6 @@ final class ScaffoldSyncCommand extends BaseCommand
                 return Command::FAILURE;
             }
             $io->writeln("  <info>synced</info> {$label}");
-        }
-
-        // 2. Root advisory diffs — divergent by design, never overwritten.
-        foreach (self::ROOT_ADVISORY_FILES as $src) {
-            $rootCopy = $root . '/' . $src;
-            if (is_file($rootCopy) && is_file($scaffold . '/' . $src)
-                && hash_file('sha256', $scaffold . '/' . $src) !== hash_file('sha256', $rootCopy)) {
-                $io->writeln("  <comment>note</comment>  root/{$src} differs from the scaffold (expected: dev-workspace extras) — reconcile intentional changes by hand");
-            }
         }
 
         // 3 + 4. Delegate docs mirror and update-package mirror + manifest.
