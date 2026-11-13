@@ -284,7 +284,7 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('neither (incomplete, skipped, nothing_to_verify): name the task\'s files with --files=', $steps, 'review, dev#253');
         self::assertStringContainsString('Three verdicts in a row that are not a pass', $steps, 'a retry that never passes is bounded too');
         // An agent cannot judge its own failure unrelated and close on it (independent review, dev#253).
-        self::assertStringContainsString('is still not a pass: file it as a task of its own and block this one on it', $steps);
+        self::assertStringContainsString('is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id=tk-a --status=blocked', $steps);
         self::assertStringNotContainsString('and go on', $steps);
     }
 }
