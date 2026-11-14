@@ -299,6 +299,56 @@ final class PageCheckVerificationTest extends TestCase
     }
 
     /**
+     * Review, dev#256: a fragment only on positive evidence. <html> and the doctype are optional in
+     * HTML, so a page without them is still a page and still checked. The spec's own patterns,
+     * read out of it and run here (PCRE reads them as JS does).
+     */
+    #[Test]
+    public function only_a_response_that_opens_with_an_element_and_holds_no_document_is_a_fragment(): void
+    {
+        $spec = (string) file_get_contents(dirname(__DIR__, 4) . '/resources/page-check/page-check.spec.ts');
+        if (preg_match('~function isFragment\(body: string\): boolean \{\n\s+const start = body\.replace\(/(.+?)/, \'\'\);\n\s+return /(.+?)/i\.test\(start\)\n\s+&& !/(.+?)/i\.test\(body\);~', $spec, $m) !== 1) {
+            self::fail('isFragment as written');
+        }
+        $isFragment = static function (string $body) use ($m): bool {
+            $start = (string) preg_replace('~' . $m[1] . '~', '', $body);
+
+            return preg_match('~' . $m[2] . '~i', $start) === 1 && preg_match('~' . $m[3] . '~i', $body) !== 1;
+        };
+
+        foreach (['<div class="cards"><a href="/x">Flat</a></div>', "<!-- cards -->\n<li>Flat</li>", '<template id="t"><p>x</p></template>'] as $partial) {
+            self::assertTrue($isFragment($partial), $partial);
+        }
+        foreach (['<!doctype html><html lang="uk"><title>x</title>', '<title>Shop</title><input name="q">', '<html><p>x', 'Shop', '', '<body><p>x</p></body>', '<head><title>x</title></head><div>'] as $page) {
+            self::assertFalse($isFragment($page), "a page, checked as one: {$page}");
+        }
+    }
+
+    /** tk-page-check-split-host-and-fragments: /gallery/cards, rendered into a chat, failed for having no title or lang. */
+    #[Test]
+    public function an_html_fragment_is_skipped_and_said_to_be_one(): void
+    {
+        $view = ['status' => 200, 'html' => false, 'fragment' => true, 'findings' => [], 'stylesheets' => []];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/gallery/cards'), json_encode(['path' => '/gallery/cards', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/gallery/cards', 'run-1');
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
+        self::assertStringContainsString('an HTML fragment, not a page', (string) $result->signal);
+    }
+
+    /** Review, dev#256: /shop redirected to a fragment is not /shop checked. */
+    #[Test]
+    public function a_fragment_reached_by_a_redirect_is_not_the_page_asked_for(): void
+    {
+        $view = ['status' => 200, 'html' => false, 'fragment' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/gallery/cards'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/shop', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('redirected to /gallery/cards', (string) $result->signal);
+    }
+
+    /**
      * REGRESSION (first live run, 2026-11-07). The 07.11 bug put back into
      * theme-demo.css passed on /theme-demo: that page never loads theme-demo.css,
      * so its clean view said nothing about the change.
@@ -355,6 +405,13 @@ final class PageCheckVerificationTest extends TestCase
             self::assertMatchesRegularExpression('/\b' . $key . '\b/', $spec, "the spec writes {$key}");
         }
         self::assertStringContainsString("testMatch: ['page-check.spec.ts']", $config, 'the config runs this spec and none of the project');
+        // tk-page-check-split-host-and-fragments: the public site when the project declares one, and fragments are no pages.
+        self::assertStringContainsString("process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_URL", $spec);
+        self::assertStringContainsString('page.goto(new URL(path, base).href', $spec);
+        self::assertStringContainsString('modes[mode] = { status, html, fragment, findings, stylesheets, landed', $spec, 'the spec writes fragment into the result PageCheckResult reads (review, dev#256)');
+        self::assertStringContainsString("findings.push('an empty HTML response')", $spec, 'an empty page is a finding, not a skip');
+        self::assertStringNotContainsString('response!.text().catch', $spec, 'an unreadable body is an error, not a non-HTML answer');
+        self::assertStringContainsString('(v.html || v.fragment === true) && v.landed', $spec, 'a redirect is reported for a fragment too');
     }
 
     /** @return list<string> */

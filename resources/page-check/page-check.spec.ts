@@ -17,10 +17,14 @@ import { join } from 'node:path';
  */
 
 const pages = (process.env.PAGE_CHECK_PAGES ?? '').split('\n').map((p) => p.trim()).filter((p) => p.startsWith('/'));
+// Public pages open on the public site when the project declares one apart from the E2E base URL
+// (a cabinet on account.example and the site on example): on the base URL '/' was the sign-in page
+// and every public page a redirect (tk-page-check-split-host-and-fragments).
+const base = process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:9502';
 const out = process.env.PAGE_CHECK_OUT ?? '';
 const AXE_RULES = ['color-contrast', 'label', 'button-name', 'link-name', 'document-title', 'html-has-lang'];
 
-type View = { status: number; html: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
+type View = { status: number; html: boolean; fragment?: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
 
 async function look(page: Page): Promise<string[]> {
     return page.evaluate(() => {
@@ -60,6 +64,13 @@ async function look(page: Page): Promise<string[]> {
     });
 }
 
+/** A partial: opens with an element (after comments) and carries no doctype, html, head, body or title. */
+function isFragment(body: string): boolean {
+    const start = body.replace(/^\s*(?:<!--[\s\S]*?-->\s*)*/, '');
+    return /^<(?!html\b|head\b|body\b|!doctype\b)[a-z][\w-]*[\s>/]/i.test(start)
+        && !/<!doctype\b|<(?:html|head|body|title)[\s>]/i.test(body);
+}
+
 // Each page on its own: one page failing must not keep the others from being opened.
 if (out !== '') mkdirSync(out, { recursive: true });
 
@@ -81,11 +92,20 @@ for (const path of pages) {
             try {
                 // The response once the page has loaded; a page that keeps polling never goes idle,
                 // and that is no reason to call it unreachable.
-                const response = await page.goto(path, { waitUntil: 'load' });
+                const response = await page.goto(new URL(path, base).href, { waitUntil: 'load' });
                 await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
                 const status = response?.status() ?? 0;
-                const html = (response?.headers()['content-type'] ?? '').includes('text/html');
+                // An HTML fragment (a partial a page loads into itself, /gallery/cards) is no page: it has
+                // no title or lang of its own, and is seen where it is shown. Only on positive evidence: it
+                // opens with an element and holds no part of a document; <html> and the doctype are optional
+                // in HTML, so their absence alone is none (review, dev#256). An unreadable body goes to the
+                // error path below, an empty one is a finding.
+                const isHtml = (response?.headers()['content-type'] ?? '').includes('text/html');
+                const body = isHtml && response !== null ? await response.text() : '';
+                const fragment = isHtml && isFragment(body);
+                const html = isHtml && !fragment;
                 const findings: string[] = [];
+                if (html && body.trim() === '') findings.push('an empty HTML response');
                 if (html) {
                     // The page was reached: a check that breaks on it is a finding, not "not reached".
                     try {
@@ -106,10 +126,10 @@ for (const path of pages) {
                 // Where it ended: a redirect to a sign-in page shows that page, not this one. The query
                 // and the origin count too: /shop?view=other or another host is another page.
                 const end = new URL(page.url());
-                const landed = end.origin !== new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:9502').origin ? end.href : end.pathname + end.search;
+                const landed = end.origin !== new URL(base).origin ? end.href : end.pathname + end.search;
                 const screenshot = join(out, `${file}-${mode}.png`);
                 if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
-                modes[mode] = { status, html, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
+                modes[mode] = { status, html, fragment, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
             } catch (e) {
                 modes[mode] = { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };
             } finally {
@@ -121,7 +141,8 @@ for (const path of pages) {
         // A mode never reached is no pass either: PageCheckResult reads it as incomplete, and the log says so.
         const norm = (p: string) => { try { return decodeURIComponent(p).replace(/\/+$/, ''); } catch { return p.replace(/\/+$/, ''); } };
         const all = Object.entries(modes).flatMap(([mode, v]) => (v.status === 0 ? [`${mode}: not reached: ${v.error ?? 'no response'}`] : [])
-            .concat(v.html && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
+            // A fragment reached by a redirect is another route's answer, not this one's (review, dev#256).
+            .concat((v.html || v.fragment === true) && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
             .concat(v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : [])
             .concat(v.findings.map((f) => `${mode}: ${f}`)));
         expect(all, `${path} as a person sees it`).toEqual([]);
