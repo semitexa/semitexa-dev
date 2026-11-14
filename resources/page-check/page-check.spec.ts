@@ -17,10 +17,14 @@ import { join } from 'node:path';
  */
 
 const pages = (process.env.PAGE_CHECK_PAGES ?? '').split('\n').map((p) => p.trim()).filter((p) => p.startsWith('/'));
+// Public pages open on the public site when the project declares one apart from the E2E base URL
+// (a cabinet on account.example and the site on example): on the base URL '/' was the sign-in page
+// and every public page a redirect (tk-page-check-split-host-and-fragments).
+const base = process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:9502';
 const out = process.env.PAGE_CHECK_OUT ?? '';
 const AXE_RULES = ['color-contrast', 'label', 'button-name', 'link-name', 'document-title', 'html-has-lang'];
 
-type View = { status: number; html: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
+type View = { status: number; html: boolean; fragment?: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
 
 async function look(page: Page): Promise<string[]> {
     return page.evaluate(() => {
@@ -81,10 +85,14 @@ for (const path of pages) {
             try {
                 // The response once the page has loaded; a page that keeps polling never goes idle,
                 // and that is no reason to call it unreachable.
-                const response = await page.goto(path, { waitUntil: 'load' });
+                const response = await page.goto(new URL(path, base).href, { waitUntil: 'load' });
                 await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
                 const status = response?.status() ?? 0;
-                const html = (response?.headers()['content-type'] ?? '').includes('text/html');
+                // An HTML fragment (a partial a page loads into itself) is no page: it has no title or
+                // lang of its own, and is seen where it is shown (tk-page-check-split-host-and-fragments).
+                const body = (response?.headers()['content-type'] ?? '').includes('text/html') ? await response!.text().catch(() => '') : '';
+                const fragment = body !== '' && !/^\s*(?:<!--[\s\S]*?-->\s*)*(?:<!doctype html|<html[\s>])/i.test(body);
+                const html = body !== '' && !fragment;
                 const findings: string[] = [];
                 if (html) {
                     // The page was reached: a check that breaks on it is a finding, not "not reached".
@@ -106,10 +114,10 @@ for (const path of pages) {
                 // Where it ended: a redirect to a sign-in page shows that page, not this one. The query
                 // and the origin count too: /shop?view=other or another host is another page.
                 const end = new URL(page.url());
-                const landed = end.origin !== new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:9502').origin ? end.href : end.pathname + end.search;
+                const landed = end.origin !== new URL(base).origin ? end.href : end.pathname + end.search;
                 const screenshot = join(out, `${file}-${mode}.png`);
                 if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
-                modes[mode] = { status, html, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
+                modes[mode] = { status, html, fragment, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
             } catch (e) {
                 modes[mode] = { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };
             } finally {

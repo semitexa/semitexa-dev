@@ -61,6 +61,7 @@ final readonly class PageCheckResult
         $found = [];
         $missing = [];
         $html = true;
+        $fragment = true;
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (is_array($view) && !is_int($view['status'] ?? null)) {
@@ -82,8 +83,10 @@ final readonly class PageCheckResult
             }
             if ($view['html'] === false) {
                 $html = false;
+                $fragment = $fragment && ($view['fragment'] ?? false) === true;
                 continue;
             }
+            $fragment = false;
             // Sent elsewhere (a sign-in page, say): what was looked at is not this page.
             $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
             if (rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
@@ -121,7 +124,9 @@ final readonly class PageCheckResult
 
         if (!$html && $found === []) {
             // An error is a failure whatever its body; a working non-HTML answer is nothing a person reads.
-            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, "{$path} is not an HTML page: nothing a person reads");
+            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $fragment
+                ? "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it"
+                : "{$path} is not an HTML page: nothing a person reads");
         }
 
         // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).

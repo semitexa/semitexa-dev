@@ -298,6 +298,18 @@ final class PageCheckVerificationTest extends TestCase
         self::assertSame(VerificationResult::STATUS_SKIPPED, $this->check('/feed', 'run-1')->status);
     }
 
+    /** tk-page-check-split-host-and-fragments: /gallery/cards, rendered into a chat, failed for having no title or lang. */
+    #[Test]
+    public function an_html_fragment_is_skipped_and_said_to_be_one(): void
+    {
+        $view = ['status' => 200, 'html' => false, 'fragment' => true, 'findings' => [], 'stylesheets' => []];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/gallery/cards'), json_encode(['path' => '/gallery/cards', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/gallery/cards', 'run-1');
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
+        self::assertStringContainsString('an HTML fragment, not a page', (string) $result->signal);
+    }
+
     /**
      * REGRESSION (first live run, 2026-11-07). The 07.11 bug put back into
      * theme-demo.css passed on /theme-demo: that page never loads theme-demo.css,
@@ -355,6 +367,10 @@ final class PageCheckVerificationTest extends TestCase
             self::assertMatchesRegularExpression('/\b' . $key . '\b/', $spec, "the spec writes {$key}");
         }
         self::assertStringContainsString("testMatch: ['page-check.spec.ts']", $config, 'the config runs this spec and none of the project');
+        // tk-page-check-split-host-and-fragments: the public site when the project declares one, and fragments are no pages.
+        self::assertStringContainsString("process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_URL", $spec);
+        self::assertStringContainsString('page.goto(new URL(path, base).href', $spec);
+        self::assertMatchesRegularExpression('/\\bfragment\\b/', $spec, 'the spec writes fragment');
     }
 
     /** @return list<string> */
