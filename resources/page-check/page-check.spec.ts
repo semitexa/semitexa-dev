@@ -64,6 +64,13 @@ async function look(page: Page): Promise<string[]> {
     });
 }
 
+/** A partial: opens with an element (after comments) and carries no doctype, html, head, body or title. */
+function isFragment(body: string): boolean {
+    const start = body.replace(/^\s*(?:<!--[\s\S]*?-->\s*)*/, '');
+    return /^<(?!html\b|head\b|body\b|!doctype\b)[a-z][\w-]*[\s>/]/i.test(start)
+        && !/<!doctype\b|<(?:html|head|body|title)[\s>]/i.test(body);
+}
+
 // Each page on its own: one page failing must not keep the others from being opened.
 if (out !== '') mkdirSync(out, { recursive: true });
 
@@ -88,12 +95,17 @@ for (const path of pages) {
                 const response = await page.goto(new URL(path, base).href, { waitUntil: 'load' });
                 await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
                 const status = response?.status() ?? 0;
-                // An HTML fragment (a partial a page loads into itself) is no page: it has no title or
-                // lang of its own, and is seen where it is shown (tk-page-check-split-host-and-fragments).
-                const body = (response?.headers()['content-type'] ?? '').includes('text/html') ? await response!.text().catch(() => '') : '';
-                const fragment = body !== '' && !/^\s*(?:<!--[\s\S]*?-->\s*)*(?:<!doctype html|<html[\s>])/i.test(body);
-                const html = body !== '' && !fragment;
+                // An HTML fragment (a partial a page loads into itself, /gallery/cards) is no page: it has
+                // no title or lang of its own, and is seen where it is shown. Only on positive evidence: it
+                // opens with an element and holds no part of a document; <html> and the doctype are optional
+                // in HTML, so their absence alone is none (review, dev#256). An unreadable body goes to the
+                // error path below, an empty one is a finding.
+                const isHtml = (response?.headers()['content-type'] ?? '').includes('text/html');
+                const body = isHtml && response !== null ? await response.text() : '';
+                const fragment = isHtml && isFragment(body);
+                const html = isHtml && !fragment;
                 const findings: string[] = [];
+                if (html && body.trim() === '') findings.push('an empty HTML response');
                 if (html) {
                     // The page was reached: a check that breaks on it is a finding, not "not reached".
                     try {
