@@ -81,6 +81,8 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
             ['Semitexa\\Dev\\Tests\\Fixtures\\LintScan\\NowdocNamedLintCommand'],
             self::classesIn((string) file_get_contents(dirname(__DIR__, 2) . '/Fixtures/LintScan/NowdocNamedLintCommand.php')),
         );
+        self::assertSame(['App\\NewLintCommand'], self::classesIn("<?php\nnamespace App;\n#[AsCommand(name: 'lint:new-check')]\nfinal class /* command documentation */ NewLintCommand {}\n"), 'a comment between class and its name');
+        self::assertSame([], self::classesIn("<?php\n\$x = Foo::class;\n\$y = new class {};\n"), 'neither ::class nor an anonymous class is a declaration');
     }
 
     #[Test]
@@ -100,8 +102,11 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                 if (!str_contains($source, 'AsCommand')) {
                     continue;
                 }
-                foreach (self::classesIn($source) as $class) {
-                    self::assertTrue(class_exists($class), "{$class} ({$file->getPathname()}) mentions AsCommand and cannot be loaded");
+                $classes = self::classesIn($source);
+                // A file that names AsCommand and declares nothing readable is a miss of this scan, said out loud.
+                self::assertNotSame([], $classes, "{$file->getPathname()} mentions AsCommand and no declaration was read from it");
+                foreach ($classes as $class) {
+                    self::assertTrue(class_exists($class) || interface_exists($class) || trait_exists($class) || enum_exists($class), "{$class} ({$file->getPathname()}) mentions AsCommand and cannot be loaded");
                     foreach (self::lintCommandNames($class) as $name) {
                         $found[$name] = true;
                     }
@@ -161,13 +166,14 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                     }
                 }
             }
-            if ($token[0] === T_CLASS) {
+            if (in_array($token[0], [T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM], true)) {
                 // `Foo::class` and `new class` are not declarations.
                 $previous = $tokens[$i - 1] ?? null;
                 if (is_array($previous) && $previous[0] === T_DOUBLE_COLON) {
                     continue;
                 }
-                for ($k = $i + 1; isset($tokens[$k]) && is_array($tokens[$k]) && $tokens[$k][0] === T_WHITESPACE; $k++);
+                // A comment may sit between the keyword and the name (review, dev#254).
+                for ($k = $i + 1; isset($tokens[$k]) && is_array($tokens[$k]) && in_array($tokens[$k][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true); $k++);
                 if (isset($tokens[$k]) && is_array($tokens[$k]) && $tokens[$k][0] === T_STRING) {
                     $classes[] = ltrim($namespace . '\\' . $tokens[$k][1], '\\');
                 }
