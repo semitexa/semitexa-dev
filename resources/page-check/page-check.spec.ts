@@ -141,7 +141,8 @@ for (const path of pages) {
         // A mode never reached is no pass either: PageCheckResult reads it as incomplete, and the log says so.
         const norm = (p: string) => { try { return decodeURIComponent(p).replace(/\/+$/, ''); } catch { return p.replace(/\/+$/, ''); } };
         const all = Object.entries(modes).flatMap(([mode, v]) => (v.status === 0 ? [`${mode}: not reached: ${v.error ?? 'no response'}`] : [])
-            .concat(v.html && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
+            // A fragment reached by a redirect is another route's answer, not this one's (review, dev#256).
+            .concat((v.html || v.fragment === true) && v.landed !== undefined && norm(v.landed) !== norm(path) ? [`${mode}: redirected to ${v.landed}`] : [])
             .concat(v.status >= 400 ? [`${mode}: HTTP ${v.status}`] : [])
             .concat(v.findings.map((f) => `${mode}: ${f}`)));
         expect(all, `${path} as a person sees it`).toEqual([]);

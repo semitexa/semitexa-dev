@@ -307,7 +307,9 @@ final class PageCheckVerificationTest extends TestCase
     public function only_a_response_that_opens_with_an_element_and_holds_no_document_is_a_fragment(): void
     {
         $spec = (string) file_get_contents(dirname(__DIR__, 4) . '/resources/page-check/page-check.spec.ts');
-        self::assertSame(1, preg_match('~function isFragment\(body: string\): boolean \{\n\s+const start = body\.replace\(/(.+?)/, \'\'\);\n\s+return /(.+?)/i\.test\(start\)\n\s+&& !/(.+?)/i\.test\(body\);~', $spec, $m), 'isFragment as written');
+        if (preg_match('~function isFragment\(body: string\): boolean \{\n\s+const start = body\.replace\(/(.+?)/, \'\'\);\n\s+return /(.+?)/i\.test\(start\)\n\s+&& !/(.+?)/i\.test\(body\);~', $spec, $m) !== 1) {
+            self::fail('isFragment as written');
+        }
         $isFragment = static function (string $body) use ($m): bool {
             $start = (string) preg_replace('~' . $m[1] . '~', '', $body);
 
@@ -332,6 +334,18 @@ final class PageCheckVerificationTest extends TestCase
         $result = $this->check('/gallery/cards', 'run-1');
         self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
         self::assertStringContainsString('an HTML fragment, not a page', (string) $result->signal);
+    }
+
+    /** Review, dev#256: /shop redirected to a fragment is not /shop checked. */
+    #[Test]
+    public function a_fragment_reached_by_a_redirect_is_not_the_page_asked_for(): void
+    {
+        $view = ['status' => 200, 'html' => false, 'fragment' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/gallery/cards'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/shop', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('redirected to /gallery/cards', (string) $result->signal);
     }
 
     /**
@@ -397,6 +411,7 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('modes[mode] = { status, html, fragment, findings, stylesheets, landed', $spec, 'the spec writes fragment into the result PageCheckResult reads (review, dev#256)');
         self::assertStringContainsString("findings.push('an empty HTML response')", $spec, 'an empty page is a finding, not a skip');
         self::assertStringNotContainsString('response!.text().catch', $spec, 'an unreadable body is an error, not a non-HTML answer');
+        self::assertStringContainsString('(v.html || v.fragment === true) && v.landed', $spec, 'a redirect is reported for a fragment too');
     }
 
     /** @return list<string> */

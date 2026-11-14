@@ -81,18 +81,20 @@ final readonly class PageCheckResult
                 $missing[] = "a malformed result in {$mode}";
                 continue;
             }
-            if ($view['html'] === false) {
-                $html = false;
-                $fragment = $fragment && ($view['fragment'] ?? false) === true;
-                continue;
-            }
-            $fragment = false;
-            // Sent elsewhere (a sign-in page, say): what was looked at is not this page.
+            // Sent elsewhere (a sign-in page, say): what was looked at is not this page. A fragment
+            // reached that way is another route's answer too (review, dev#256).
+            $isFragment = ($view['fragment'] ?? false) === true;
             $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
-            if (rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
+            if (($view['html'] === true || $isFragment) && rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
                 $missing[] = "redirected to {$landed} in {$mode}";
                 continue;
             }
+            if ($view['html'] === false) {
+                $html = false;
+                $fragment = $fragment && $isFragment;
+                continue;
+            }
+            $fragment = false;
             foreach ($view['findings'] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
