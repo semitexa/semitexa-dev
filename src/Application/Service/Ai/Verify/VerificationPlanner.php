@@ -78,6 +78,7 @@ final class VerificationPlanner
         // a region fetched and injected instead of declared deferred. (Parsing is a syntax target, see plan().)
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
         ChangedFile::KIND_STYLESHEET => ['lint:css-tokens'],
+        ChangedFile::KIND_LOCALE_PACK => ['lint:locales'], // a pack fails silently (tk-verify-reads-locale-packs)
         // No KIND_PHP_OTHER row, and the reason is measured: it wedged the
         // suite at ~427/8500 — see ChangedFile::KIND_COMMAND, the narrower kind
         // that replaced it.
@@ -95,8 +96,8 @@ final class VerificationPlanner
         'lint:deferred-slots',
         'lint:components',
         'lint:ui-contracts',
-        // A deleted stylesheet may have held the only declaration an unchanged template uses.
-        'lint:css-tokens',
+        // A deleted stylesheet may have held the only declaration an unchanged template uses; a deleted pack leaves its siblings to read.
+        'lint:css-tokens', 'lint:locales',
     ];
 
     private const ALL_LINTS = [
@@ -113,7 +114,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
-        'lint:css-tokens',
+        'lint:css-tokens', 'lint:locales',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -572,7 +573,7 @@ final class VerificationPlanner
     private static function isPhpstanDiIneligibleKind(string $kind): bool
     {
         return in_array($kind, [ChangedFile::KIND_TEST, ChangedFile::KIND_TEST_FIXTURE, ChangedFile::KIND_TEMPLATE,
-            ChangedFile::KIND_NON_PHP, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_EXAMPLE], true);
+            ChangedFile::KIND_NON_PHP, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_EXAMPLE, ChangedFile::KIND_LOCALE_PACK], true);
     }
 
     /**
@@ -696,9 +697,7 @@ final class VerificationPlanner
             return;
         }
 
-        if ($file->kind === ChangedFile::KIND_NON_PHP
-            || $file->kind === ChangedFile::KIND_CLIENT_SCRIPT
-            || $file->kind === ChangedFile::KIND_TEMPLATE) {
+        if (in_array($file->kind, [ChangedFile::KIND_NON_PHP, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_TEMPLATE], true)) {
             return;
         }
 

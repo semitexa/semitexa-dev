@@ -60,6 +60,11 @@ final readonly class ChangedFile
     public const KIND_CLIENT_SCRIPT = 'client_script';
     /** A stylesheet: nothing fails on a token that does not exist, so a lint reads it. */
     public const KIND_STYLESHEET = 'stylesheet';
+    /**
+     * A module's or package's locale pack (View/locales/*.json): it fails silently, so a lint
+     * reads it (tk-verify-reads-locale-packs). Like KIND_NON_PHP everywhere else.
+     */
+    public const KIND_LOCALE_PACK = 'locale_pack';
     public const KIND_TEST         = 'test';
     /**
      * Phase 6f.5: support classes that live under a `tests/` tree but

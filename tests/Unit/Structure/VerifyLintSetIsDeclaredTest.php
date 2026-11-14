@@ -36,6 +36,7 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         'lint:di',
         'lint:handlers',
         'lint:inline-script',
+        'lint:locales',
         'lint:mechanisms',
         'lint:responses',
         'lint:scoping',

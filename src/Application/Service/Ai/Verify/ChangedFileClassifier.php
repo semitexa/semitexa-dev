@@ -90,6 +90,10 @@ final class ChangedFileClassifier
         if (str_ends_with($path, '.css')) {
             return ChangedFile::KIND_STYLESHEET;
         }
+        // Where JsonFileLoader reads packs from: src/Application/View/locales or Application/View/locales.
+        if (str_ends_with($path, '.json') && preg_match('~/Application/View/locales/[^/]+\.json$~', $normalised) === 1) {
+            return ChangedFile::KIND_LOCALE_PACK;
+        }
         if (!str_ends_with($path, '.php')) {
             return ChangedFile::KIND_NON_PHP;
         }

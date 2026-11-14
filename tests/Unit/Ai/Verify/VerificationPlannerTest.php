@@ -120,6 +120,7 @@ class VerificationPlannerTest extends TestCase
             // A nonce-less inline <script> in a package fails only in a
             // browser, and only on a consumer that enforces a policy.
             'lint:inline-script',
+            'lint:locales',
             // Broad scope runs every lint, including the mechanism check that
             // reports application code hand-rolling a framework capability.
             'lint:mechanisms',

@@ -149,6 +149,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                     'lint:di',
                     'lint:handlers',
                     'lint:inline-script',
+                    'lint:locales',
                     'lint:mechanisms',
                     'lint:responses',
                     'lint:scoping',
@@ -237,6 +238,30 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         self::assertSame(ChangedFile::KIND_TEMPLATE, $classified->kind);
 
         self::assertContains('lint:css-tokens', $this->lintCommandNames($this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD)));
+    }
+
+    /** tk-verify-reads-locale-packs: a pack was non_php, read by nothing, so its task stayed incomplete. */
+    #[Test]
+    public function a_locale_pack_selects_the_locale_lint_where_the_loader_reads_packs(): void
+    {
+        foreach (['src/modules/Marketplace/src/Application/View/locales/ka.json', 'src/modules/Legacy/Application/View/locales/en.json', 'packages/semitexa-cms/src/Application/View/locales/uk.json'] as $path) {
+            $classified = (new ChangedFileClassifier())->classify($path);
+            self::assertSame(ChangedFile::KIND_LOCALE_PACK, $classified->kind, $path);
+            self::assertSame(['lint:locales'], $this->lintCommandNames($this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD)), $path);
+        }
+        // Another JSON is no pack: composer.json, a fixture, a locales directory the loader never reads.
+        foreach (['packages/semitexa-cms/composer.json', 'src/modules/Foo/tests/fixtures/locales/en.json', 'resources/locales/en.json'] as $path) {
+            self::assertSame(ChangedFile::KIND_NON_PHP, (new ChangedFileClassifier())->classify($path)->kind, $path);
+        }
+    }
+
+    /** A deleted pack is a language gone from its directory: the lint still reads the others. */
+    #[Test]
+    public function a_deleted_locale_pack_still_selects_the_locale_lint(): void
+    {
+        $deleted = new ChangedFile('src/modules/Marketplace/src/Application/View/locales/ro.json', ChangedFile::KIND_LOCALE_PACK, ChangedFile::STATUS_DELETED);
+
+        self::assertContains('lint:locales', $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_STANDARD)));
     }
 
     /** REGRESSION (review dev#216): the stylesheet holding a declaration may be the one deleted. */
@@ -354,7 +379,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         /** @var array<string, list<string>> $lintMap */
         $lintMap = $map->getValue();
 
-        $covered = [ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_STYLESHEET];
+        $covered = [ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_STYLESHEET, ChangedFile::KIND_LOCALE_PACK];
         foreach (self::selectionProvider() as [$_path, $kind, $_lints]) {
             $covered[] = $kind;
         }
