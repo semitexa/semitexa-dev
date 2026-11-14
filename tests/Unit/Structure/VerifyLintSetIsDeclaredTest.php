@@ -94,9 +94,14 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         foreach (glob($packages . '/*/src', GLOB_ONLYDIR) ?: [] as $src) {
             // Only what this project installs ships its commands: a checkout under packages/ that
             // composer never installed is not loadable here, and not shipped (release clone, 14.11).
-            $manifest = json_decode((string) @file_get_contents(dirname($src) . '/composer.json'), true);
-            $name = is_array($manifest) && is_string($manifest['name'] ?? null) ? $manifest['name'] : null;
-            self::assertNotNull($name, 'a package without a readable composer.json name: ' . dirname($src));
+            // A directory with no composer.json is no package (review, dev#258); one with a manifest
+            // must name itself, or it could hide from this scan.
+            if (!is_file(dirname($src) . '/composer.json')) {
+                continue;
+            }
+            $manifest = json_decode((string) file_get_contents(dirname($src) . '/composer.json'), true);
+            $name = is_array($manifest) && is_string($manifest['name'] ?? null) ? trim($manifest['name']) : '';
+            self::assertNotSame('', $name, 'a package whose composer.json names no package: ' . dirname($src));
             if (!InstalledVersions::isInstalled($name)) {
                 continue;
             }
