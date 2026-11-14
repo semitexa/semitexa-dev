@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Structure;
 
+use Composer\InstalledVersions;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Attribute\AsCommand;
@@ -91,6 +92,14 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         $packages = dirname(__DIR__, 4);
         $found = [];
         foreach (glob($packages . '/*/src', GLOB_ONLYDIR) ?: [] as $src) {
+            // Only what this project installs ships its commands: a checkout under packages/ that
+            // composer never installed is not loadable here, and not shipped (release clone, 14.11).
+            $manifest = json_decode((string) @file_get_contents(dirname($src) . '/composer.json'), true);
+            $name = is_array($manifest) && is_string($manifest['name'] ?? null) ? $manifest['name'] : null;
+            self::assertNotNull($name, 'a package without a readable composer.json name: ' . dirname($src));
+            if (!InstalledVersions::isInstalled($name)) {
+                continue;
+            }
             $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS));
             foreach ($files as $file) {
                 if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
