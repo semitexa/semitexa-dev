@@ -6,7 +6,10 @@ namespace Semitexa\Dev\Tests\Unit\Structure;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
+use Semitexa\Dev\Tests\Fixtures\LintScan\ConstantNamedLintCommand;
+use Semitexa\Dev\Tests\Fixtures\LintScan\NowdocNamedLintCommand;
 
 /**
  * ai:verify is the one door (tk-verify-one-door): an agent is told about it and nothing else, so
@@ -20,6 +23,8 @@ use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
  */
 final class VerifyLintSetIsDeclaredTest extends TestCase
 {
+    public const RATIONALE = 'Why: ai:verify is the one check an agent is told about, so a lint no plan schedules never runs and reads like a passing check. Learned 2026-10-08: lint:deferred-twig existed, was wired into no gate, and was red on a real template the day it was connected.';
+
     /** The lints a verify plan may schedule: by changed-file kind or in a broad run. */
     private const PLANNED = [
         'lint:access',
@@ -69,20 +74,13 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
     #[Test]
     public function the_scan_reads_every_way_an_attribute_names_a_command(): void
     {
-        self::assertSame(['lint:a', 'lint:b', 'lint:c', 'lint:d', 'lint:f'], self::lintCommandNames(<<<'PHP'
-            <?php
-            #[AsCommand(name: 'lint:a', description: 'x')]
-            #[AsCommand(description: "y", name: "lint:b")]
-            #[AsCommand('lint:c')]
-            #[\Symfony\Component\Console\Attribute\AsCommand(
-                name: 'lint:d',
-            )]
-            #[AsCommand(name: 'docs:e')]
-            #[AsCommand(description: ")]", name: "lint:f")]
-            PHP));
-
-        $this->expectException(\UnexpectedValueException::class);
-        self::lintCommandNames("<?php\n#[AsCommand(name: 'lint:resources' . '-extra')]\n");
+        // verify:accept-test-change: the text scan's fixture cases (quotes, order, `)]`, concatenation) became PHP's job when the scan moved to reflection; these cover the forms text could not read.
+        self::assertSame(['lint:fixture-check', 'lint:fixture-alias'], self::lintCommandNames(ConstantNamedLintCommand::class), 'a constant, a concatenation, an aliased import, and aliases');
+        self::assertSame(['lint:fixture-nowdoc'], self::lintCommandNames(NowdocNamedLintCommand::class), 'a nowdoc, after a description holding )]');
+        self::assertSame(
+            ['Semitexa\\Dev\\Tests\\Fixtures\\LintScan\\NowdocNamedLintCommand'],
+            self::classesIn((string) file_get_contents(dirname(__DIR__, 2) . '/Fixtures/LintScan/NowdocNamedLintCommand.php')),
+        );
     }
 
     #[Test]
@@ -99,8 +97,14 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                 $source = file_get_contents($file->getPathname());
                 // A gate that cannot read a file fails, rather than counting it as declaring nothing.
                 self::assertIsString($source, 'cannot read ' . $file->getPathname());
-                foreach (self::lintCommandNames($source) as $name) {
-                    $found[$name] = true;
+                if (!str_contains($source, 'AsCommand')) {
+                    continue;
+                }
+                foreach (self::classesIn($source) as $class) {
+                    self::assertTrue(class_exists($class), "{$class} ({$file->getPathname()}) mentions AsCommand and cannot be loaded");
+                    foreach (self::lintCommandNames($class) as $name) {
+                        $found[$name] = true;
+                    }
                 }
             }
         }
@@ -114,66 +118,63 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
     }
 
     /**
-     * The lint:* names a file's #[AsCommand] attributes declare: named or first positional
-     * argument, either quote, qualified or not. Read with PHP's tokenizer, because a string
-     * argument can hold anything, `)]` included (review, dev#254).
+     * The lint:* names and aliases a command class's #[AsCommand] declares, read by PHP itself:
+     * a constant, a nowdoc, a concatenation or an aliased import is the name PHP sees. Three
+     * rounds of reading the attribute as text each missed a form (review, dev#254).
      *
+     * @param class-string $class
      * @return list<string>
      */
-    private static function lintCommandNames(string $source): array
+    private static function lintCommandNames(string $class): array
     {
-        $tokens = array_values(array_filter(
-            token_get_all($source),
-            static fn (array|string $t): bool => !is_array($t) || !in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true),
-        ));
         $names = [];
-        foreach ($tokens as $i => $token) {
-            $isAsCommand = is_array($token)
-                && in_array($token[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)
-                && preg_match('/(?:^|\\\\)AsCommand$/', $token[1]) === 1
-                && ($tokens[$i + 1] ?? null) === '(';
-            if (!$isAsCommand) {
-                continue;
-            }
-            // The argument list, to its own closing parenthesis: strings are single tokens.
-            $depth = 0;
-            $first = true;
-            for ($k = $i + 1; isset($tokens[$k]); $k++) {
-                $t = $tokens[$k];
-                if ($t === '(' || $t === '[') {
-                    $depth++;
-                    continue;
-                }
-                if ($t === ')' || $t === ']') {
-                    if (--$depth === 0) {
-                        break;
-                    }
-                    continue;
-                }
-                if ($depth !== 1) {
-                    continue;
-                }
-                $named = is_array($t) && $t[0] === T_STRING && $t[1] === 'name' && ($tokens[$k + 1] ?? null) === ':';
-                $at = $named ? $k + 2 : ($first ? $k : null);
-                $value = $at === null ? null : ($tokens[$at] ?? null);
-                if (is_array($value) && $value[0] === T_CONSTANT_ENCAPSED_STRING) {
-                    // Only a whole literal is the name: 'lint:x' . 'y' is another command (review, dev#254).
-                    if (!in_array($tokens[$at + 1] ?? null, [',', ')'], true)) {
-                        throw new \UnexpectedValueException('a command name that is not one string literal: ' . $value[1] . ' ...');
-                    }
-                    $name = substr($value[1], 1, -1);
-                    if (str_starts_with($name, 'lint:')) {
-                        $names[] = $name;
-                    }
-                }
-                $first = false;
-                if ($named) {
-                    $k += 2;
+        foreach ((new \ReflectionClass($class))->getAttributes(AsCommand::class) as $attribute) {
+            $command = $attribute->newInstance();
+            foreach ([$command->name, ...$command->aliases] as $name) {
+                if (str_starts_with($name, 'lint:')) {
+                    $names[] = $name;
                 }
             }
         }
 
         return $names;
+    }
+
+    /**
+     * The classes a file declares, by its namespace and class tokens.
+     *
+     * @return list<string>
+     */
+    private static function classesIn(string $source): array
+    {
+        $tokens = token_get_all($source);
+        $namespace = '';
+        $classes = [];
+        foreach ($tokens as $i => $token) {
+            if (!is_array($token)) {
+                continue;
+            }
+            if ($token[0] === T_NAMESPACE) {
+                for ($k = $i + 1; isset($tokens[$k]) && $tokens[$k] !== ';' && $tokens[$k] !== '{'; $k++) {
+                    if (is_array($tokens[$k]) && in_array($tokens[$k][0], [T_NAME_QUALIFIED, T_STRING], true)) {
+                        $namespace = $tokens[$k][1];
+                    }
+                }
+            }
+            if ($token[0] === T_CLASS) {
+                // `Foo::class` and `new class` are not declarations.
+                $previous = $tokens[$i - 1] ?? null;
+                if (is_array($previous) && $previous[0] === T_DOUBLE_COLON) {
+                    continue;
+                }
+                for ($k = $i + 1; isset($tokens[$k]) && is_array($tokens[$k]) && $tokens[$k][0] === T_WHITESPACE; $k++);
+                if (isset($tokens[$k]) && is_array($tokens[$k]) && $tokens[$k][0] === T_STRING) {
+                    $classes[] = ltrim($namespace . '\\' . $tokens[$k][1], '\\');
+                }
+            }
+        }
+
+        return $classes;
     }
 
     /**
