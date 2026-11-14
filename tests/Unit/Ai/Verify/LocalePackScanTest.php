@@ -64,8 +64,43 @@ final class LocalePackScanTest extends TestCase
         $problems = LocalePackScan::problems($this->root);
         $en = 'src/modules/Shop/Application/View/locales/en.json';
         self::assertSame(['"n" is neither a string nor a plural map (zero, one, two, few, many, other): the loader drops it', '"p" is neither a string nor a plural map (zero, one, two, few, many, other): the loader drops it'], $problems[$en] ?? null);
-        self::assertStringContainsString('is not a JSON object of messages: the loader skips the whole file', $problems['src/modules/Shop/Application/View/locales/ro.json'][0] ?? '');
-        self::assertStringContainsString('(Syntax error)', $problems['src/modules/Shop/Application/View/locales/uk.json'][0] ?? '');
+        self::assertSame(['is not a JSON object of messages: a pack maps each key to its text'], $problems['src/modules/Shop/Application/View/locales/ro.json'] ?? null);
+        self::assertStringContainsString('is not valid JSON (Syntax error)', $problems['src/modules/Shop/Application/View/locales/uk.json'][0] ?? '');
+    }
+
+    /** Review, dev#261: decoded to arrays, `[]` passed as an empty pack and `{"0": ...}` failed as a list. */
+    #[Test]
+    public function the_root_is_judged_as_json_wrote_it(): void
+    {
+        $this->pack('src/modules/Shop/src/Application/View/locales/en.json', '{"0": "Zero", "1": "One"}');
+        $this->pack('src/modules/Shop/src/Application/View/locales/uk.json', '{"0": "Нуль", "1": "Один"}');
+        $this->pack('src/modules/Cart/src/Application/View/locales/en.json', '[]');
+
+        self::assertSame(
+            ['src/modules/Cart/src/Application/View/locales/en.json' => ['is not a JSON object of messages: a pack maps each key to its text']],
+            LocalePackScan::problems($this->root),
+        );
+    }
+
+    /** Review, dev#261: a directory the lint cannot list fails it, rather than reading as no packs. */
+    #[Test]
+    public function a_locales_directory_that_cannot_be_listed_fails_the_lint(): void
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            // verify:accept-test-change root reads any directory, so the unreadable case cannot be made; the other runs cover it
+            self::assertTrue(is_dir(sys_get_temp_dir()));
+
+            return;
+        }
+        $this->pack('src/modules/Shop/src/Application/View/locales/en.json', '{"a": "A"}');
+        chmod($this->root . '/src/modules/Shop/src/Application/View/locales', 0000);
+        try {
+            $problems = LocalePackScan::problems($this->root);
+        } finally {
+            chmod($this->root . '/src/modules/Shop/src/Application/View/locales', 0755);
+        }
+
+        self::assertSame(['could not be listed: its packs were not read'], $problems['src/modules/Shop/src/Application/View/locales'] ?? null);
     }
 
     #[Test]

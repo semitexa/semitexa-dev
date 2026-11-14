@@ -36,7 +36,17 @@ final class LocalePackScan
         $root = rtrim($projectRoot, '/');
         $problems = [];
         foreach (self::DIRECTORIES as $pattern) {
-            foreach (glob($root . '/' . $pattern, GLOB_ONLYDIR) ?: [] as $dir) {
+            // A project with no packages/ (or no src/modules) has none of those packs; GLOB_ERR reads that as an error.
+            if (!is_dir($root . '/' . strstr($pattern, '/*', true))) {
+                continue;
+            }
+            // GLOB_ERR: a directory that cannot be read fails the lint, never thins it (review, dev#261).
+            $dirs = glob($root . '/' . $pattern, GLOB_ONLYDIR | GLOB_ERR);
+            if ($dirs === false) {
+                $problems[$pattern][] = 'could not be listed: the packs under it were not read';
+                continue;
+            }
+            foreach ($dirs as $dir) {
                 $problems += self::directory($root, $dir);
             }
         }
@@ -50,19 +60,28 @@ final class LocalePackScan
     {
         $problems = [];
         $keys = [];
-        foreach (glob($dir . '/*.json') ?: [] as $file) {
+        $files = glob($dir . '/*.json', GLOB_ERR);
+        if ($files === false) {
+            return [substr($dir, strlen($root) + 1) => ['could not be listed: its packs were not read']];
+        }
+        foreach ($files as $file) {
             $relative = substr($file, strlen($root) + 1);
             $content = @file_get_contents($file);
             if ($content === false) {
                 $problems[$relative][] = 'cannot be read: the loader skips it';
                 continue;
             }
-            $messages = json_decode($content, true);
-            if (!is_array($messages) || ($messages !== [] && array_is_list($messages))) {
-                $problems[$relative][] = 'is not a JSON object of messages: the loader skips the whole file'
-                    . (json_last_error() !== JSON_ERROR_NONE ? ' (' . json_last_error_msg() . ')' : '');
+            // The root as JSON wrote it: decoded to arrays, `[]` and `{}` look alike and `{"0": "a"}`
+            // looks like a list (review, dev#261). The loader skips anything not an array.
+            $decoded = json_decode($content);
+            if (!$decoded instanceof \stdClass) {
+                $problems[$relative][] = json_last_error() !== JSON_ERROR_NONE
+                    ? 'is not valid JSON (' . json_last_error_msg() . '): the loader skips the whole file'
+                    : 'is not a JSON object of messages: a pack maps each key to its text';
                 continue;
             }
+            /** @var array<array-key, mixed> $messages */
+            $messages = json_decode($content, true);
             foreach ($messages as $key => $value) {
                 if (!is_string($value) && !(is_array($value) && self::isPluralMap($value))) {
                     $problems[$relative][] = sprintf('"%s" is neither a string nor a plural map (%s): the loader drops it', $key, implode(', ', self::PLURAL_KEYS));
