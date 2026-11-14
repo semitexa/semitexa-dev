@@ -63,6 +63,7 @@ final readonly class PageCheckResult
         $html = true;
         $fragment = true;
         $noContent = true;
+        $nonHtmlModes = [];
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (is_array($view) && !is_int($view['status'] ?? null)) {
@@ -92,6 +93,7 @@ final readonly class PageCheckResult
             }
             if ($view['html'] === false) {
                 $html = false;
+                $nonHtmlModes[] = $mode;
                 $fragment = $fragment && $isFragment;
                 // 204/205 by the spec's own request: Chromium aborts a navigation to one (tk-page-check-no-content).
                 $noContent = $noContent && ($view['noContent'] ?? false) === true && in_array($status, [204, 205], true);
@@ -119,6 +121,12 @@ final readonly class PageCheckResult
             // started: its answer says nothing about this change (review, dev#226).
             return self::notRun($target, "{$path} answered 404 from the running server, but the file that declares the route changed after it started: "
                 . 'the server answers from the code before that change, not this one. Restart it (bin/semitexa server:restart app) and verify again');
+        }
+
+        // A page in one mode and no page in the other is not "no page": what the other mode showed was
+        // never looked at as this one, so it is no pass and no skip either (review, dev#260).
+        if ($nonHtmlModes !== [] && count($nonHtmlModes) < count(self::MODES)) {
+            $missing[] = 'not an HTML page in ' . implode(', ', $nonHtmlModes) . ' while it was one in the other mode';
         }
 
         if ($missing !== []) {

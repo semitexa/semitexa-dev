@@ -364,6 +364,27 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('is not an HTML page', (string) $result->signal);
     }
 
+    /**
+     * Review, dev#260: No Content in light and a page in dark is no skip. The stylesheet changed and
+     * light never loaded it, so this page was not checked, whatever dark showed.
+     */
+    #[Test]
+    public function no_content_in_one_mode_and_a_page_in_the_other_is_not_skipped(): void
+    {
+        $css = 'packages/semitexa-platform-ui/src/Application/Static/css/components.css';
+        $page = ['status' => 200, 'html' => true, 'findings' => [], 'stylesheets' => ['http://localhost/' . $css]];
+        foreach ([[], [$css]] as $triggers) {
+            file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/mixed'), json_encode(['path' => '/mixed', 'modes' => [
+                'light' => ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []],
+                'dark' => $page,
+            ]]));
+
+            $result = $this->check('/mixed', 'run-1', $triggers);
+            self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status, 'no skip and no pass: ' . (json_encode($triggers) ?: ''));
+            self::assertStringContainsString('not an HTML page in light while it was one in the other mode', (string) $result->signal);
+        }
+    }
+
     /** The spec's own fallback: only a 204 or 205 its request got is filed as No Content. */
     #[Test]
     public function the_spec_files_no_content_only_for_what_its_own_request_got(): void
