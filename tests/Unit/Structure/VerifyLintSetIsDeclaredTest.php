@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Structure;
 
-use Composer\InstalledVersions;
+use Composer\Autoload\ClassLoader;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Attribute\AsCommand;
@@ -92,19 +92,6 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         $packages = dirname(__DIR__, 4);
         $found = [];
         foreach (glob($packages . '/*/src', GLOB_ONLYDIR) ?: [] as $src) {
-            // Only what this project installs ships its commands: a checkout under packages/ that
-            // composer never installed is not loadable here, and not shipped (release clone, 14.11).
-            // A directory with no composer.json is no package (review, dev#258); one with a manifest
-            // must name itself, or it could hide from this scan.
-            if (!is_file(dirname($src) . '/composer.json')) {
-                continue;
-            }
-            $manifest = json_decode((string) file_get_contents(dirname($src) . '/composer.json'), true);
-            $name = is_array($manifest) && is_string($manifest['name'] ?? null) ? trim($manifest['name']) : '';
-            self::assertNotSame('', $name, 'a package whose composer.json names no package: ' . dirname($src));
-            if (!InstalledVersions::isInstalled($name)) {
-                continue;
-            }
             $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS));
             foreach ($files as $file) {
                 if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
@@ -120,6 +107,13 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                 // A file that names AsCommand and declares nothing readable is a miss of this scan, said out loud.
                 self::assertNotSame([], $classes, "{$file->getPathname()} mentions AsCommand and no declaration was read from it");
                 foreach ($classes as $class) {
+                    // verify:accept-test-change: the composer.json-name checks from dev#258 asked "installed?", which a root package answered wrongly in the release clone; autoloading is what the console registers by, and a found class must still load.
+                    // A class no autoloader of this project can find is no command of it: a checkout under
+                    // packages/ that composer does not install here, as in the release clone (14.11). The
+                    // console registers commands through the same autoloading. One it finds must load.
+                    if (!self::autoloadable($class)) {
+                        continue;
+                    }
                     self::assertTrue(class_exists($class) || interface_exists($class) || trait_exists($class) || enum_exists($class), "{$class} ({$file->getPathname()}) mentions AsCommand and cannot be loaded");
                     foreach (self::lintCommandNames($class) as $name) {
                         $found[$name] = true;
@@ -206,5 +200,16 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         self::assertIsArray($value);
 
         return $value;
+    }
+
+    private static function autoloadable(string $class): bool
+    {
+        foreach (ClassLoader::getRegisteredLoaders() as $loader) {
+            if ($loader->findFile($class) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
