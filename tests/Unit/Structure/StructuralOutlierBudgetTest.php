@@ -546,7 +546,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // UUID key as its text against BINARY(16) and matched nothing
         // (platform_user's delete never worked); ten sites now bind it as
         // insert and update do, through one method saying why.
-        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [39, 1043],
+        // 39/1043 -> 40/1082 on 2026-11-14, deliberately: upsert() joins insert/update at
+        // the one write chokepoint (tenant stamping, the transaction, the change event),
+        // as a 30-line method; its key rules, statement and read-back live in
+        // AggregateUpsert, not here (orm-gap-1-repository-upsert).
+        'semitexa-orm/src/Application/Service/Persistence/AggregateWriteEngine.php' => [40, 1082],
         // Newly recorded on 2026-09-24 at 21/704, crossing 700 from 697. Moving a
         // task to in_progress now claims it for the agent session running the
         // command, and refuses a task another live agent holds (--take-over
