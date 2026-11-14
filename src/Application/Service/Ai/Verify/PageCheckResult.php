@@ -62,6 +62,7 @@ final readonly class PageCheckResult
         $missing = [];
         $html = true;
         $fragment = true;
+        $noContent = true;
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (is_array($view) && !is_int($view['status'] ?? null)) {
@@ -92,9 +93,12 @@ final readonly class PageCheckResult
             if ($view['html'] === false) {
                 $html = false;
                 $fragment = $fragment && $isFragment;
+                // 204/205 by the spec's own request: Chromium aborts a navigation to one (tk-page-check-no-content).
+                $noContent = $noContent && ($view['noContent'] ?? false) === true && in_array($status, [204, 205], true);
                 continue;
             }
             $fragment = false;
+            $noContent = false;
             foreach ($view['findings'] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
@@ -126,9 +130,11 @@ final readonly class PageCheckResult
 
         if (!$html && $found === []) {
             // An error is a failure whatever its body; a working non-HTML answer is nothing a person reads.
-            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $fragment
-                ? "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it"
-                : "{$path} is not an HTML page: nothing a person reads");
+            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, match (true) {
+                $fragment => "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it",
+                $noContent => "{$path} answers No Content: there is no page to look at",
+                default => "{$path} is not an HTML page: nothing a person reads",
+            });
         }
 
         // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).
