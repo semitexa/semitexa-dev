@@ -14,8 +14,12 @@
 #   - at most MAKE_IT_WIP PRs in review at once (default 3): CodeRabbit gives
 #     about one review per 30 minutes, and more open PRs only queue.
 #
-# A search that fails exits 2 and says so: "nothing open" read from a failed
-# search would open a PR on top of one already in review.
+# The listing asks GitHub's API for every repository's open PRs, not its search: the
+# search index lags, and a PR opened seconds earlier was missing from it, so a burst
+# of PRs opened a fourth one past the limit (tk-wip-count-misses-just-opened-prs).
+#
+# A listing that fails exits 2 and says so: "nothing open" read from a failed
+# listing would open a PR on top of one already in review.
 #
 # Environment:
 #   MAKE_IT_OWNER   GitHub org/user to scan (default: semitexa)
@@ -35,22 +39,31 @@ case "${1:-}" in
     *) echo "unknown option: $1 (usage: wip.sh [--can-open <repo>])" >&2; exit 2 ;;
 esac
 
-if ! open=$(gh search prs --owner="$OWNER" --state=open --limit 1000 \
-    --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"'); then
-    echo "ERROR gh search prs failed for owner $OWNER; nothing is known about what is open"
+QUERY='query($owner: String!, $endCursor: String) {
+  repositoryOwner(login: $owner) {
+    repositories(first: 100, after: $endCursor, isArchived: false) {
+      pageInfo { hasNextPage endCursor }
+      nodes { nameWithOwner pullRequests(states: OPEN, first: 100) { totalCount nodes { number } } }
+    }
+  }
+}'
+# A repository with more open PRs than one page holds is named, not cut short.
+if ! open=$(gh api graphql --paginate -f owner="$OWNER" -f query="$QUERY" \
+    --jq '.data.repositoryOwner.repositories.nodes[] | .nameWithOwner as $r
+          | if .pullRequests.totalCount > 100 then "TRUNCATED \($r)" else (.pullRequests.nodes[] | "\($r) \(.number)") end'); then
+    echo "ERROR listing open PRs failed for owner $OWNER; nothing is known about what is open"
     exit 2
 fi
 
 prs=()
 while read -r repo number; do
+    if [ "$repo" = TRUNCATED ]; then
+        echo "ERROR $number has more than 100 open PRs; nothing is known about what is open"
+        exit 2
+    fi
     [ -n "$repo" ] && prs+=("$repo#$number")
 done <<< "$open"
 count=${#prs[@]}
-# The search returns at most 1000: a full page may have left PRs out.
-if [ "$count" -ge 1000 ]; then
-    echo "ERROR gh search prs returned its 1000-result limit for owner $OWNER; nothing is known about what is open"
-    exit 2
-fi
 free=$(( WIP > count ? WIP - count : 0 ))
 
 if [ "${1:-}" != "--can-open" ]; then

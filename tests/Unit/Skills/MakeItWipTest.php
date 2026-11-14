@@ -61,7 +61,7 @@ final class MakeItWipTest extends TestCase
     {
         [$status, $out] = $this->wip(null, ['--can-open', 'semitexa-orm']);
 
-        self::assertSame([2, ['ERROR gh search prs failed for owner semitexa; nothing is known about what is open']], [$status, $out]);
+        self::assertSame([2, ['ERROR listing open PRs failed for owner semitexa; nothing is known about what is open']], [$status, $out]);
     }
 
     /** GitHub names are case-insensitive, so a differently cased name is the same busy repository. */
@@ -93,15 +93,24 @@ final class MakeItWipTest extends TestCase
 
     /** A search that came back full (1000) may have left open PRs out of the list. */
     #[Test]
-    public function a_search_at_its_result_limit_says_nothing_is_known(): void
+    public function a_repository_with_more_open_prs_than_a_page_says_nothing_is_known(): void
     {
-        $open = array_map(static fn (int $n): string => 'semitexa/semitexa-x ' . $n, range(1, 1000));
+        // verify:accept-test-change: the 1000-result search limit is gone with the search (tk-wip-count-misses-just-opened-prs); the listing's own page limit is guarded instead.
+        self::assertSame([2, ['ERROR semitexa/semitexa-x has more than 100 open PRs; nothing is known about what is open']], $this->wip(['semitexa/semitexa-core 7', 'TRUNCATED semitexa/semitexa-x'], ['--can-open', 'semitexa-orm']));
+    }
 
-        self::assertSame([2, ['ERROR gh search prs returned its 1000-result limit for owner semitexa; nothing is known about what is open']], $this->wip($open, ['--can-open', 'semitexa-orm']));
+    /** tk-wip-count-misses-just-opened-prs: the listing is the API's, which a PR opened seconds ago is already in. */
+    #[Test]
+    public function the_listing_is_the_apis_not_the_search_index(): void
+    {
+        $script = (string) file_get_contents(dirname(__DIR__, 3) . '/resources/skills/make-it/scripts/wip.sh');
+        self::assertStringNotContainsString('gh search', $script);
+        self::assertStringContainsString('pullRequests(states: OPEN, first: 100)', $script);
+        self::assertStringContainsString('repositories(first: 100, after: $endCursor, isArchived: false)', $script);
     }
 
     /**
-     * Runs scripts/wip.sh against a fake gh that answers the search as the real
+     * Runs scripts/wip.sh against a fake gh that answers the API listing as the real
      * one does after --jq, or fails it when $open is null.
      *
      * @param list<string>|null $open "<owner/repo> <number>"
@@ -115,10 +124,9 @@ final class MakeItWipTest extends TestCase
             mkdir($this->dir . '/bin', 0o755, true);
         }
         $answer = $open === null ? 'exit 1' : 'printf %s ' . escapeshellarg(implode("\n", $open) . "\n");
-        // Only a search for OPEN pull requests, up to the 1000 the guard expects, is
-        // answered: without --state=open merged PRs take slots; with a lower limit
-        // (gh's default is 30) the list is cut short and the guard never fires.
-        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n  ' search prs '*' --state=open --limit 1000 '*) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
+        // Only the paginated API listing for the owner is answered, as gh prints it after
+        // --jq: without --paginate a second page of repositories would be dropped.
+        file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n  ' api graphql --paginate -f owner=semitexa '*) {$answer} ;;\n  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
         chmod($this->dir . '/bin/gh', 0o755);
 
         $script = dirname(__DIR__, 3) . '/resources/skills/make-it/scripts/wip.sh';
