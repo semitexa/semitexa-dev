@@ -24,7 +24,7 @@ const base = process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_UR
 const out = process.env.PAGE_CHECK_OUT ?? '';
 const AXE_RULES = ['color-contrast', 'label', 'button-name', 'link-name', 'document-title', 'html-has-lang'];
 
-type View = { status: number; html: boolean; fragment?: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
+type View = { status: number; html: boolean; fragment?: boolean; noContent?: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
 
 async function look(page: Page): Promise<string[]> {
     return page.evaluate(() => {
@@ -131,7 +131,17 @@ for (const path of pages) {
                 if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
                 modes[mode] = { status, html, fragment, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
             } catch (e) {
-                modes[mode] = { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };
+                // A 204 or 205 has no body to show, and Chromium aborts the navigation to one
+                // (net::ERR_ABORTED): asked again without a browser, it is an answer, not an
+                // unreachable page (tk-page-check-no-content, found by ../apartmens' /gallery/cards).
+                // Only an aborted navigation is asked again: a reset or a timeout stays the failure it was,
+                // and is never turned into a skip by a second answer (independent review, dev#260).
+                const answered = String(e).includes('net::ERR_ABORTED')
+                    ? await context.request.get(new URL(path, base).href, { maxRedirects: 0 }).then((r) => r.status()).catch(() => 0)
+                    : 0;
+                modes[mode] = answered === 204 || answered === 205
+                    ? { status: answered, html: false, noContent: true, findings: [], stylesheets: [] }
+                    : { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };
             } finally {
                 await context.close();
             }

@@ -336,6 +336,81 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('an HTML fragment, not a page', (string) $result->signal);
     }
 
+    /**
+     * tk-page-check-no-content (found by ../apartmens): /gallery/cards without ids answers 204, and
+     * Chromium aborts a navigation to one, so the page was "could not be reached" and its task stayed
+     * blocked. The spec asks again without a browser and files the 204 it gets.
+     */
+    #[Test]
+    public function a_no_content_answer_is_skipped_and_said_to_be_one(): void
+    {
+        $view = ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/gallery/cards'), json_encode(['path' => '/gallery/cards', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/gallery/cards', 'run-1');
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
+        self::assertStringContainsString('answers No Content', (string) $result->signal);
+    }
+
+    /** No Content is said only of a 204 or 205 in both modes; a 200 that claims it is a non-HTML answer. */
+    #[Test]
+    public function no_content_is_said_only_of_a_204_or_205(): void
+    {
+        $claimed = ['status' => 200, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/feed'), json_encode(['path' => '/feed', 'modes' => ['light' => $claimed, 'dark' => ['status' => 205] + $claimed]]));
+
+        $result = $this->check('/feed', 'run-1');
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
+        self::assertStringContainsString('is not an HTML page', (string) $result->signal);
+    }
+
+    /**
+     * Review, dev#260: No Content in light and a page in dark is no skip. The stylesheet changed and
+     * light never loaded it, so this page was not checked, whatever dark showed.
+     */
+    #[Test]
+    public function no_content_in_one_mode_and_a_page_in_the_other_is_not_skipped(): void
+    {
+        $css = 'packages/semitexa-platform-ui/src/Application/Static/css/components.css';
+        $page = ['status' => 200, 'html' => true, 'findings' => [], 'stylesheets' => ['http://localhost/' . $css]];
+        foreach ([[], [$css]] as $triggers) {
+            file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/mixed'), json_encode(['path' => '/mixed', 'modes' => [
+                'light' => ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []],
+                'dark' => $page,
+            ]]));
+
+            $result = $this->check('/mixed', 'run-1', $triggers);
+            self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status, 'no skip and no pass: ' . (json_encode($triggers) ?: ''));
+            self::assertStringContainsString('not an HTML page in light while it was one in the other mode', (string) $result->signal);
+        }
+    }
+
+    /** Independent review, dev#260: No Content in light and dark not reached says "not reached", not "a page". */
+    #[Test]
+    public function no_content_beside_a_mode_not_reached_is_reported_as_not_reached(): void
+    {
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/half'), json_encode(['path' => '/half', 'modes' => [
+            'light' => ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []],
+            'dark' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'net::ERR_CONNECTION_RESET'],
+        ]]));
+
+        $result = $this->check('/half', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('could not be reached in dark', (string) $result->signal);
+        self::assertStringNotContainsString('while it was one in the other mode', (string) $result->signal);
+    }
+
+    /** The spec's own fallback: only a 204 or 205 its request got is filed as No Content. */
+    #[Test]
+    public function the_spec_files_no_content_only_for_what_its_own_request_got(): void
+    {
+        $spec = (string) file_get_contents(dirname(__DIR__, 4) . '/resources/page-check/page-check.spec.ts');
+        // Only an aborted navigation is asked again (independent review, dev#260).
+        self::assertMatchesRegularExpression("~const answered = String\\(e\\)\\.includes\\('net::ERR_ABORTED'\\)\\s+\\? await context\\.request\\.get\\(new URL\\(path, base\\)\\.href, \\{ maxRedirects: 0 \\}\\)[^\\n]*\\n\\s+: 0;~", $spec);
+        self::assertStringContainsString('modes[mode] = answered === 204 || answered === 205', $spec);
+        self::assertStringContainsString('{ status: answered, html: false, noContent: true, findings: [], stylesheets: [] }', $spec);
+    }
+
     /** Review, dev#256: /shop redirected to a fragment is not /shop checked. */
     #[Test]
     public function a_fragment_reached_by_a_redirect_is_not_the_page_asked_for(): void

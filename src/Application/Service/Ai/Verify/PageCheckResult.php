@@ -62,6 +62,9 @@ final readonly class PageCheckResult
         $missing = [];
         $html = true;
         $fragment = true;
+        $noContent = true;
+        $nonHtmlModes = [];
+        $htmlModes = [];
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (is_array($view) && !is_int($view['status'] ?? null)) {
@@ -91,10 +94,15 @@ final readonly class PageCheckResult
             }
             if ($view['html'] === false) {
                 $html = false;
+                $nonHtmlModes[] = $mode;
                 $fragment = $fragment && $isFragment;
+                // 204/205 by the spec's own request: Chromium aborts a navigation to one (tk-page-check-no-content).
+                $noContent = $noContent && ($view['noContent'] ?? false) === true && in_array($status, [204, 205], true);
                 continue;
             }
             $fragment = false;
+            $noContent = false;
+            $htmlModes[] = $mode;
             foreach ($view['findings'] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
@@ -117,6 +125,13 @@ final readonly class PageCheckResult
                 . 'the server answers from the code before that change, not this one. Restart it (bin/semitexa server:restart app) and verify again');
         }
 
+        // A page in one mode and no page in the other is not "no page": what the other mode showed was
+        // never looked at as this one, so it is no pass and no skip either (review, dev#260).
+        // Said only when the other mode was a page: one not reached is reported as that (independent review).
+        if ($nonHtmlModes !== [] && $htmlModes !== []) {
+            $missing[] = 'not an HTML page in ' . implode(', ', $nonHtmlModes) . ' while it was one in the other mode';
+        }
+
         if ($missing !== []) {
             // A finding already seen is a failure, whatever the other mode could not show (review dev#216).
             return $found !== []
@@ -126,9 +141,11 @@ final readonly class PageCheckResult
 
         if (!$html && $found === []) {
             // An error is a failure whatever its body; a working non-HTML answer is nothing a person reads.
-            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $fragment
-                ? "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it"
-                : "{$path} is not an HTML page: nothing a person reads");
+            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, match (true) {
+                $fragment => "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it",
+                $noContent => "{$path} answers No Content: there is no page to look at",
+                default => "{$path} is not an HTML page: nothing a person reads",
+            });
         }
 
         // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).
