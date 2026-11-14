@@ -82,6 +82,27 @@ final class LocalePackScanTest extends TestCase
         );
     }
 
+    /** Independent review, dev#261: a path with glob characters matched nothing, so nothing was read. */
+    #[Test]
+    public function a_project_whose_path_holds_glob_characters_is_still_read(): void
+    {
+        $this->root .= '/[prod] {x}';
+        $this->pack('src/modules/Shop/src/Application/View/locales/en.json', '{"a": "A", "b": "B"}');
+        $this->pack('src/modules/Shop/src/Application/View/locales/uk.json', '{"a": "А"}');
+
+        self::assertSame(['src/modules/Shop/src/Application/View/locales/uk.json'], array_keys(LocalePackScan::problems($this->root)));
+        $this->root = dirname($this->root);
+    }
+
+    /** Independent review, dev#261: a key the loader accepts is no invalid JSON. */
+    #[Test]
+    public function a_key_an_object_decode_refuses_is_read_as_the_loader_reads_it(): void
+    {
+        $this->pack('src/modules/Shop/src/Application/View/locales/en.json', '{"\u0000odd": "x"}');
+
+        self::assertSame([], LocalePackScan::problems($this->root));
+    }
+
     /** Review, dev#261: a directory the lint cannot list fails it, rather than reading as no packs. */
     #[Test]
     public function a_locales_directory_that_cannot_be_listed_fails_the_lint(): void

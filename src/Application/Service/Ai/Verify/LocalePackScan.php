@@ -41,13 +41,15 @@ final class LocalePackScan
                 continue;
             }
             // GLOB_ERR: a directory that cannot be read fails the lint, never thins it (review, dev#261).
-            $dirs = glob($root . '/' . $pattern, GLOB_ONLYDIR | GLOB_ERR);
+            $dirs = glob(self::literal($root) . '/' . $pattern, GLOB_ONLYDIR | GLOB_ERR);
             if ($dirs === false) {
                 $problems[$pattern][] = 'could not be listed: the packs under it were not read';
                 continue;
             }
             foreach ($dirs as $dir) {
-                $problems += self::directory($root, $dir);
+                foreach (self::directory($root, $dir) as $file => $found) {
+                    $problems[$file] = array_merge($problems[$file] ?? [], $found);
+                }
             }
         }
         ksort($problems);
@@ -60,7 +62,7 @@ final class LocalePackScan
     {
         $problems = [];
         $keys = [];
-        $files = glob($dir . '/*.json', GLOB_ERR);
+        $files = glob(self::literal($dir) . '/*.json', GLOB_ERR);
         if ($files === false) {
             return [substr($dir, strlen($root) + 1) => ['could not be listed: its packs were not read']];
         }
@@ -71,17 +73,18 @@ final class LocalePackScan
                 $problems[$relative][] = 'cannot be read: the loader skips it';
                 continue;
             }
-            // The root as JSON wrote it: decoded to arrays, `[]` and `{}` look alike and `{"0": "a"}`
-            // looks like a list (review, dev#261). The loader skips anything not an array.
-            $decoded = json_decode($content);
-            if (!$decoded instanceof \stdClass) {
-                $problems[$relative][] = json_last_error() !== JSON_ERROR_NONE
-                    ? 'is not valid JSON (' . json_last_error_msg() . '): the loader skips the whole file'
-                    : 'is not a JSON object of messages: a pack maps each key to its text';
+            // Read as the loader reads it; the root judged as JSON wrote it, by its first character:
+            // decoded to arrays `[]` and `{}` look alike and `{"0": "a"}` looks like a list, and an
+            // object decode refuses a key the loader accepts (review, dev#261).
+            $messages = json_decode($content, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $problems[$relative][] = 'is not valid JSON (' . json_last_error_msg() . '): the loader skips the whole file';
                 continue;
             }
-            /** @var array<array-key, mixed> $messages */
-            $messages = json_decode($content, true);
+            if (!is_array($messages) || !str_starts_with(ltrim($content), '{')) {
+                $problems[$relative][] = 'is not a JSON object of messages: a pack maps each key to its text';
+                continue;
+            }
             foreach ($messages as $key => $value) {
                 if (!is_string($value) && !(is_array($value) && self::isPluralMap($value))) {
                     $problems[$relative][] = sprintf('"%s" is neither a string nor a plural map (%s): the loader drops it', $key, implode(', ', self::PLURAL_KEYS));
@@ -105,6 +108,12 @@ final class LocalePackScan
         }
 
         return $problems;
+    }
+
+    /** A path as glob reads it literally: a project under `/srv/[prod]` would otherwise match nothing, and pass. */
+    private static function literal(string $path): string
+    {
+        return (string) preg_replace('/([*?\[\]{}\\\\])/', '\\\\$1', $path);
     }
 
     /** @param array<array-key, mixed> $value */
