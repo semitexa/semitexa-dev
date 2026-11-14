@@ -92,6 +92,10 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         $packages = dirname(__DIR__, 4);
         $found = [];
         foreach (glob($packages . '/*/src', GLOB_ONLYDIR) ?: [] as $src) {
+            // A directory with no composer.json is no package (review, dev#258 and dev#259).
+            if (!is_file(dirname($src) . '/composer.json')) {
+                continue;
+            }
             $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS));
             foreach ($files as $file) {
                 if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
