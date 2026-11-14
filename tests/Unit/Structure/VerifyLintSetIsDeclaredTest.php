@@ -80,6 +80,9 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
             #[AsCommand(name: 'docs:e')]
             #[AsCommand(description: ")]", name: "lint:f")]
             PHP));
+
+        $this->expectException(\UnexpectedValueException::class);
+        self::lintCommandNames("<?php\n#[AsCommand(name: 'lint:resources' . '-extra')]\n");
     }
 
     #[Test]
@@ -151,8 +154,13 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
                     continue;
                 }
                 $named = is_array($t) && $t[0] === T_STRING && $t[1] === 'name' && ($tokens[$k + 1] ?? null) === ':';
-                $value = $named ? ($tokens[$k + 2] ?? null) : ($first ? $t : null);
+                $at = $named ? $k + 2 : ($first ? $k : null);
+                $value = $at === null ? null : ($tokens[$at] ?? null);
                 if (is_array($value) && $value[0] === T_CONSTANT_ENCAPSED_STRING) {
+                    // Only a whole literal is the name: 'lint:x' . 'y' is another command (review, dev#254).
+                    if (!in_array($tokens[$at + 1] ?? null, [',', ')'], true)) {
+                        throw new \UnexpectedValueException('a command name that is not one string literal: ' . $value[1] . ' ...');
+                    }
                     $name = substr($value[1], 1, -1);
                     if (str_starts_with($name, 'lint:')) {
                         $names[] = $name;
