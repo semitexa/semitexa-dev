@@ -54,7 +54,7 @@ final class ReviewPrepSlotGateTest extends TestCase
     }
 
     /**
-     * @param list<string> $open "<owner/repo> <number>" open PRs the search returns
+     * @param list<string> $open "<owner/repo> <number>" open PRs the listing returns
      * @param list<string> $extra
      * @return array{int, list<string>}
      */
@@ -62,11 +62,12 @@ final class ReviewPrepSlotGateTest extends TestCase
     {
         $answer = 'printf %s ' . escapeshellarg(implode("\n", $open) . "\n");
         // repo view fails (the slug comes from the remote), pr list finds no PR for the branch,
-        // the search returns the open PRs; anything else, a push included, is reported and stopped.
+        // wip.sh's API listing returns the open PRs (tk-wip-count-misses-just-opened-prs); anything
+        // else, a push included, is reported and stopped.
         file_put_contents($this->dir . '/bin/gh', "#!/bin/bash\ncase \" \$* \" in\n"
             . "  ' repo view '*) exit 1 ;;\n"
             . "  ' pr list '*) exit 0 ;;\n"
-            . "  ' search prs '*' --state=open --limit 1000 '*) {$answer} ;;\n"
+            . "  ' api graphql --paginate -f owner=semitexa '*) {$answer} ;;\n"
             . "  *) echo \"unexpected gh \$*\" >&2; exit 1 ;;\nesac\n");
         file_put_contents($this->dir . '/bin/git', "#!/bin/bash\nif [ \"\$3\" = push ]; then echo PUSHED; exit 1; fi\nexec /usr/bin/git \"\$@\"\n");
         // A mock that is not executable would let the real gh or git run: stop here (review, dev#245).
