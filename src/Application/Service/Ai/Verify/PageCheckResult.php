@@ -64,6 +64,7 @@ final readonly class PageCheckResult
         $fragment = true;
         $noContent = true;
         $nonHtmlModes = [];
+        $htmlModes = [];
         foreach (self::MODES as $mode) {
             $view = $seen['modes'][$mode] ?? null;
             if (is_array($view) && !is_int($view['status'] ?? null)) {
@@ -101,6 +102,7 @@ final readonly class PageCheckResult
             }
             $fragment = false;
             $noContent = false;
+            $htmlModes[] = $mode;
             foreach ($view['findings'] as $finding) {
                 $found[] = "{$mode}: " . (string) $finding;
             }
@@ -125,7 +127,8 @@ final readonly class PageCheckResult
 
         // A page in one mode and no page in the other is not "no page": what the other mode showed was
         // never looked at as this one, so it is no pass and no skip either (review, dev#260).
-        if ($nonHtmlModes !== [] && count($nonHtmlModes) < count(self::MODES)) {
+        // Said only when the other mode was a page: one not reached is reported as that (independent review).
+        if ($nonHtmlModes !== [] && $htmlModes !== []) {
             $missing[] = 'not an HTML page in ' . implode(', ', $nonHtmlModes) . ' while it was one in the other mode';
         }
 

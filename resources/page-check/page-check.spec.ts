@@ -134,7 +134,11 @@ for (const path of pages) {
                 // A 204 or 205 has no body to show, and Chromium aborts the navigation to one
                 // (net::ERR_ABORTED): asked again without a browser, it is an answer, not an
                 // unreachable page (tk-page-check-no-content, found by ../apartmens' /gallery/cards).
-                const answered = await context.request.get(new URL(path, base).href, { maxRedirects: 0 }).then((r) => r.status()).catch(() => 0);
+                // Only an aborted navigation is asked again: a reset or a timeout stays the failure it was,
+                // and is never turned into a skip by a second answer (independent review, dev#260).
+                const answered = String(e).includes('net::ERR_ABORTED')
+                    ? await context.request.get(new URL(path, base).href, { maxRedirects: 0 }).then((r) => r.status()).catch(() => 0)
+                    : 0;
                 modes[mode] = answered === 204 || answered === 205
                     ? { status: answered, html: false, noContent: true, findings: [], stylesheets: [] }
                     : { status: 0, html: true, findings: [], stylesheets: [], error: String(e).split('\n')[0].slice(0, 200) };

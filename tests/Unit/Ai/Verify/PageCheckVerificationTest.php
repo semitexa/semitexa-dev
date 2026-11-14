@@ -385,12 +385,28 @@ final class PageCheckVerificationTest extends TestCase
         }
     }
 
+    /** Independent review, dev#260: No Content in light and dark not reached says "not reached", not "a page". */
+    #[Test]
+    public function no_content_beside_a_mode_not_reached_is_reported_as_not_reached(): void
+    {
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/half'), json_encode(['path' => '/half', 'modes' => [
+            'light' => ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []],
+            'dark' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'net::ERR_CONNECTION_RESET'],
+        ]]));
+
+        $result = $this->check('/half', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('could not be reached in dark', (string) $result->signal);
+        self::assertStringNotContainsString('while it was one in the other mode', (string) $result->signal);
+    }
+
     /** The spec's own fallback: only a 204 or 205 its request got is filed as No Content. */
     #[Test]
     public function the_spec_files_no_content_only_for_what_its_own_request_got(): void
     {
         $spec = (string) file_get_contents(dirname(__DIR__, 4) . '/resources/page-check/page-check.spec.ts');
-        self::assertMatchesRegularExpression('~const answered = await context\.request\.get\(new URL\(path, base\)\.href, \{ maxRedirects: 0 \}\)~', $spec);
+        // Only an aborted navigation is asked again (independent review, dev#260).
+        self::assertMatchesRegularExpression("~const answered = String\\(e\\)\\.includes\\('net::ERR_ABORTED'\\)\\s+\\? await context\\.request\\.get\\(new URL\\(path, base\\)\\.href, \\{ maxRedirects: 0 \\}\\)[^\\n]*\\n\\s+: 0;~", $spec);
         self::assertStringContainsString('modes[mode] = answered === 204 || answered === 205', $spec);
         self::assertStringContainsString('{ status: answered, html: false, noContent: true, findings: [], stylesheets: [] }', $spec);
     }
