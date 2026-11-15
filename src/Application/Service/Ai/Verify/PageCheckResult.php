@@ -141,11 +141,14 @@ final readonly class PageCheckResult
 
         if (!$html && $found === []) {
             // An error is a failure whatever its body; a working non-HTML answer is nothing a person reads.
+            // Skipped and not required: the route was opened in both modes and answered, so there is no
+            // page to look at, and a required skip left the whole run incomplete with nothing anyone could
+            // fix (tk-verify-skipped-page-incomplete, found by a consumer's /gallery/cards answering 204).
             return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, match (true) {
                 $fragment => "{$path} is an HTML fragment, not a page: it is seen inside the page that loads it",
                 $noContent => "{$path} answers No Content: there is no page to look at",
                 default => "{$path} is not an HTML page: nothing a person reads",
-            });
+            }, required: false);
         }
 
         // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).
