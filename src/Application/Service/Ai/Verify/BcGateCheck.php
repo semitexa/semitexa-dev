@@ -79,7 +79,7 @@ final class BcGateCheck
                 $r['exit'],
                 "bc_gate:{$package} → " . SignalText::compress($r['output'])
                     . ' — keep the @api signature, or mark it @deprecated and remove it 90 days later; the release refuses the same break.'
-                    . ' A file not yet tracked is not in the comparison: a class moved into one reads as removed until `git add -N` it',
+                    . ' A file not yet tracked is not in the comparison: a class moved into one reads as removed until it is staged with `git add <path>` (`git add -N` makes git stash create fail)',
             );
         }
 

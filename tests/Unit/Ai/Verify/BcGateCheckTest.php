@@ -69,7 +69,7 @@ final class BcGateCheckTest extends TestCase
         self::assertSame(VerificationResult::STATUS_FAIL, $result->status);
         self::assertStringContainsString('[BREAK] semitexa-core (since 2026.11.13.0659): Parameter 0 of Semitexa\\Core\\Request#getHeader()', $result->signal);
         self::assertStringContainsString('mark it @deprecated', $result->signal);
-        self::assertStringContainsString('git add -N', $result->signal, 'a class moved into an untracked file reads as removed');
+        self::assertStringContainsString('staged with `git add <path>`', $result->signal, 'a class moved into an untracked file reads as removed; staging it is what stash create can read');
     }
 
     #[Test]
