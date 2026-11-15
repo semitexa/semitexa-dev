@@ -21,7 +21,12 @@ declare(strict_types=1);
  *
  * ## Usage
  *
- *   php release-upgrade-notes.php [--version=<release version>] [--write=<file>]
+ *   php release-upgrade-notes.php [--version=<release version>] [--write=<file>] [--removed=<bc gate output>]
+ *
+ * --removed reads what release-bc-gate.php printed and lists its [ALLOWED]
+ * lines — @api parts this release removed or changed after their 90-day
+ * deprecation — under their own heading: the part of an upgrade a user has to
+ * act on (tk-stab-upgrade-notes). A file that cannot be read fails the notes.
  *
  * RELEASE_ROOT selects the tree; SEMITEXA_AUTOLOAD the autoloader that provides
  * the parser (default: RELEASE_ROOT/vendor/autoload.php). Prints the notes as
@@ -40,9 +45,22 @@ use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\ParserFactory;
 
-$options = getopt('', ['version:', 'write:']);
+$options = getopt('', ['version:', 'write:', 'removed:']);
 $version = is_string($options['version'] ?? null) ? $options['version'] : (getenv('RELEASE_VERSION') ?: 'next');
 $write = is_string($options['write'] ?? null) ? $options['write'] : null;
+$removedFrom = is_string($options['removed'] ?? null) ? $options['removed'] : null;
+$removed = [];
+if ($removedFrom !== null) {
+    $gate = @file_get_contents($removedFrom);
+    if ($gate === false) {
+        fail("Cannot read the BC gate output {$removedFrom}: the notes would leave out what was removed.");
+    }
+    foreach (explode("\n", $gate) as $line) {
+        if (str_starts_with($line, '[ALLOWED] ')) {
+            $removed[] = trim(substr($line, strlen('[ALLOWED] ')));
+        }
+    }
+}
 
 $releaseRoot = rtrim(getenv('RELEASE_ROOT') ?: '/home/taras/Documents/Projects/semitexa.rls', DIRECTORY_SEPARATOR);
 $autoload = getenv('SEMITEXA_AUTOLOAD') ?: $releaseRoot . '/vendor/autoload.php';
@@ -93,6 +111,16 @@ if ($sections === []) {
         foreach ($section['added'] as $symbol => [$isApi, $text]) {
             $lines[] = sprintf('- `%s`%s — %s', $symbol, $isApi ? ' (`@api`)' : '', $text !== '' ? $text : 'no reason given');
         }
+    }
+}
+if ($removed !== []) {
+    $lines[] = '';
+    $lines[] = '## Removed after the deprecation window';
+    $lines[] = '';
+    $lines[] = 'These `@api` parts were deprecated at least 90 days before this release and are gone or changed now; move to the replacement their deprecation named.';
+    $lines[] = '';
+    foreach ($removed as $line) {
+        $lines[] = '- ' . $line;
     }
 }
 $markdown = implode("\n", $lines) . "\n";

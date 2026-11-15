@@ -168,6 +168,9 @@ run_stage "sync-release-schema" "$SCRIPT_DIR/release-orm-sync.sh"
 # in the clone's app container (it needs bcmath and intl); a package with no
 # @api at its tag is not checked, so the stage costs nothing until one marks it.
 run_stage "bc-gate" env SEMITEXA_BC_CHECK="$SCRIPT_DIR/release-bc-check-in-clone.sh" php "$SCRIPT_DIR/release-bc-gate.php" --version="$RELEASE_VERSION"
+# The notes again, now with what the gate allowed: an @api part removed after
+# its 90-day deprecation is the one change a user must act on (tk-stab-upgrade-notes).
+run_stage "upgrade-notes-removed" php "$SCRIPT_DIR/release-upgrade-notes.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md" --removed="$RELEASE_STATE_DIR/bc-gate.log"
 # A release run must not accept a skipped check. With this set, a missing node
 # fails RenderParityTest instead of skipping it, so the clone can never again
 # report parity it did not measure. docker-compose.test.yml passes it through to
