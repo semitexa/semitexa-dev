@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\PageCheckResult;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerifyReportSerializer;
 use Semitexa\Dev\Application\Service\Ai\Verify\PageCheckTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\PageRoutes;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
@@ -398,6 +399,45 @@ final class PageCheckVerificationTest extends TestCase
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
         self::assertStringContainsString('could not be reached in dark', (string) $result->signal);
         self::assertStringNotContainsString('while it was one in the other mode', (string) $result->signal);
+    }
+
+    /**
+     * tk-verify-skipped-page-incomplete (found by ../apartmens after dev#260): a route that proved to
+     * be no page was a required skip, so the run stayed incomplete with every other check green and
+     * nothing anyone could fix. It is skipped, and not required; a page that is one is still required.
+     */
+    #[Test]
+    public function a_route_that_is_no_page_does_not_leave_the_run_incomplete(): void
+    {
+        $views = [
+            '/gallery/cards' => ['status' => 204, 'html' => false, 'noContent' => true, 'findings' => [], 'stylesheets' => []],
+            '/cards' => ['status' => 200, 'html' => false, 'fragment' => true, 'findings' => [], 'stylesheets' => []],
+            '/feed' => ['status' => 200, 'html' => false, 'findings' => [], 'stylesheets' => []],
+        ];
+        foreach ($views as $path => $view) {
+            file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName($path), json_encode(['path' => $path, 'modes' => ['light' => $view, 'dark' => $view]]));
+            $result = $this->check($path, 'run-1');
+            self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status, $path);
+            self::assertFalse($result->required, "{$path} is no page: its skip must not make the run incomplete");
+        }
+
+        // The run as the report counts it: one other check passed, the no-page skip beside it.
+        $passed = new VerificationResult($this->check('/gallery/cards', 'run-1')->target, VerificationResult::STATUS_PASS, 0, 'lint passed');
+        self::assertTrue((new VerifyReportSerializer())->completed([$passed, $this->check('/gallery/cards', 'run-1')]));
+
+        // Review, dev#262: /shop redirected to a non-HTML /feed is not /shop answering; still required.
+        $redirected = ['status' => 200, 'html' => false, 'findings' => [], 'stylesheets' => [], 'landed' => '/feed'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => $redirected, 'dark' => $redirected]]));
+        $toFeed = $this->check('/shop', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $toFeed->status);
+        self::assertTrue($toFeed->required);
+        self::assertStringContainsString('redirected to /feed', (string) $toFeed->signal);
+
+        // A page that is one, not reached, is still required and still incomplete.
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'reset'], 'dark' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'reset']]]));
+        $unreached = $this->check('/shop', 'run-1');
+        self::assertTrue($unreached->required);
+        self::assertFalse((new VerifyReportSerializer())->completed([$passed, $unreached]));
     }
 
     /** The spec's own fallback: only a 204 or 205 its request got is filed as No Content. */
