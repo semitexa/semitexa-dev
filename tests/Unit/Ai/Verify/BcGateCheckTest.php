@@ -58,6 +58,7 @@ final class BcGateCheckTest extends TestCase
         $this->check(['stash' => [0, ''], 'gate' => [0, "No break on the @api surface.\n"]]);
 
         self::assertSame($this->gateCommand('HEAD'), $this->commands[1]);
+        self::assertCount(2, $this->commands);
     }
 
     #[Test]
