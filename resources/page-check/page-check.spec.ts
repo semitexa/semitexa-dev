@@ -24,7 +24,7 @@ const base = process.env.PLAYWRIGHT_PUBLIC_URL || process.env.PLAYWRIGHT_BASE_UR
 const out = process.env.PAGE_CHECK_OUT ?? '';
 const AXE_RULES = ['color-contrast', 'label', 'button-name', 'link-name', 'document-title', 'html-has-lang'];
 
-type View = { status: number; html: boolean; fragment?: boolean; noContent?: boolean; findings: string[]; stylesheets: string[]; landed?: string; error?: string; screenshot?: string };
+type View = { status: number; html: boolean; fragment?: boolean; noContent?: boolean; findings: string[]; stylesheets: string[]; landed?: string; firstStatus?: number; error?: string; screenshot?: string };
 
 async function look(page: Page): Promise<string[]> {
     return page.evaluate(() => {
@@ -129,7 +129,13 @@ for (const path of pages) {
                 const landed = end.origin !== new URL(base).origin ? end.href : end.pathname + end.search;
                 const screenshot = join(out, `${file}-${mode}.png`);
                 if (html) await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined);
-                modes[mode] = { status, html, fragment, findings, stylesheets, landed, screenshot: html ? screenshot : undefined };
+                // The route's own first answer, before any redirect it gave: a 3xx is the server
+                // sending the visitor on, which a page bouncing there by script is not
+                // (tk-page-check-intentional-redirect).
+                let first = response?.request() ?? null;
+                while (first?.redirectedFrom()) first = first.redirectedFrom();
+                const firstStatus = (await first?.response())?.status() ?? status;
+                modes[mode] = { status, html, fragment, findings, stylesheets, landed, firstStatus, screenshot: html ? screenshot : undefined };
             } catch (e) {
                 // A 204 or 205 has no body to show, and Chromium aborts the navigation to one
                 // (net::ERR_ABORTED): asked again without a browser, it is an answer, not an

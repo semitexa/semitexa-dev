@@ -58,6 +58,11 @@ final readonly class PageCheckResult
             return self::notRun($target, "{$path} was NOT opened: {$why}");
         }
 
+        $deliberate = self::deliberateRedirect($path, $seen['modes'], $target->triggeredBy);
+        if ($deliberate !== null) {
+            return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $deliberate, required: false);
+        }
+
         $found = [];
         $missing = [];
         $html = true;
@@ -200,6 +205,35 @@ final readonly class PageCheckResult
      * @param list<string> $triggers
      * @return list<string> their file names
      */
+    /**
+     * Whether a changed stylesheet among the triggers is not loaded by the page: each one on
+     * its own, unlike unloaded(), which counts a page as showing the change when any of them
+     * loads. A redirect is skipped only when its landing shows all of them (review, dev#263).
+     *
+     * @param list<string> $triggers
+     */
+    private static function anyStylesheetUnloaded(array $triggers, mixed $loaded): bool
+    {
+        foreach ($triggers as $file) {
+            if (!str_ends_with($file, '.css')) {
+                continue;
+            }
+            $served = self::servedAs($file);
+            $isLoaded = false;
+            foreach (is_array($loaded) ? $loaded : [] as $href) {
+                if (str_ends_with((string) parse_url((string) $href, PHP_URL_PATH), '/' . $served)) {
+                    $isLoaded = true;
+                    break;
+                }
+            }
+            if (!$isLoaded) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static function unloaded(array $triggers, mixed $loaded): array
     {
         if ($triggers === [] || !is_array($loaded)) {
@@ -244,6 +278,53 @@ final readonly class PageCheckResult
         }
 
         return basename($file);
+    }
+
+    /**
+     * A route that answers with a redirect on purpose (a home page that moved to /gallery) is
+     * no page of its own; it is skipped, never passed, and only when every mode shows the
+     * same thing (Fable's design, tk-page-check-intentional-redirect, found by a consumer):
+     * the route's own first answer is a 3xx; it lands on the same path of this site in both
+     * modes; that landing page was opened as HTML and has no finding. Anything else (a page
+     * bouncing by script, a different landing per mode, a landing with a finding or an error)
+     * stays "redirected to", required. Page targets are public routes only (PageRoutes::isPage),
+     * so a protected page sent to sign-in never gets here.
+     *
+     * A changed stylesheet the landing page does not load is not shown there either, so that
+     * stays required too.
+     *
+     * @param mixed $modes
+     * @param list<string> $triggeredBy
+     */
+    private static function deliberateRedirect(string $path, mixed $modes, array $triggeredBy): ?string
+    {
+        if (!is_array($modes)) {
+            return null;
+        }
+        $landing = null;
+        $code = null;
+        foreach (self::MODES as $mode) {
+            $view = $modes[$mode] ?? null;
+            if (!is_array($view) || !is_string($view['landed'] ?? null) || !str_starts_with($view['landed'], '/')
+                || ($view['html'] ?? null) !== true || !is_int($view['status'] ?? null) || $view['status'] >= 400
+                || !is_int($view['firstStatus'] ?? null) || $view['firstStatus'] < 300 || $view['firstStatus'] >= 400
+                || ($view['findings'] ?? null) !== [] || isset($view['error'])) {
+                return null;
+            }
+            if (rtrim(rawurldecode($view['landed']), '/') === rtrim(rawurldecode($path), '/')) {
+                return null;
+            }
+            if ($landing !== null && $view['landed'] !== $landing) {
+                return null;
+            }
+            if (self::anyStylesheetUnloaded($triggeredBy, $view['stylesheets'] ?? null)) {
+                return null;
+            }
+            $landing = $view['landed'];
+            $code = $view['firstStatus'];
+        }
+
+        return "{$path} answers {$code} to {$landing}, checked there in light and dark: no finding";
     }
 
     private static function notRun(VerificationTarget $target, string $why): VerificationResult
