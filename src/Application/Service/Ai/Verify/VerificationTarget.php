@@ -40,6 +40,8 @@ final readonly class VerificationTarget
     public const TYPE_E2E              = 'e2e';
     /** A page opened in light and dark by the host's browser ({@see PageCheckTargets}). */
     public const TYPE_PAGE             = 'page';
+    /** The release's BC gate for a package whose @api file changed ({@see BcGateTargets}). */
+    public const TYPE_BC_GATE          = 'bc_gate';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled

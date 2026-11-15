@@ -88,12 +88,8 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_DOCS              => $this->runDocsGate($target),
                 VerificationTarget::TYPE_E2E               => E2eSpecResultCheck::fromEnvironment($this->projectRoot)->check($target),
                 VerificationTarget::TYPE_PAGE              => PageCheckResult::fromEnvironment($this->projectRoot)->check($target),
-                default                                   => new VerificationResult(
-                    target:   $target,
-                    status:   VerificationResult::STATUS_INCOMPLETE,
-                    exitCode: 1,
-                    signal:   "unknown target type: {$target->type}",
-                ),
+                VerificationTarget::TYPE_BC_GATE           => (new BcGateCheck($this->projectRoot, $this->processRunner))->check($target),
+                default                                   => $this->skipped($target, "unknown target type: {$target->type}"),
             };
             } catch (\Throwable $e) {
                 $results[] = $this->failed($target, 'verification could not complete: ' . SignalText::compress($e->getMessage()));
