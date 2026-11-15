@@ -425,6 +425,14 @@ final class PageCheckVerificationTest extends TestCase
         $passed = new VerificationResult($this->check('/gallery/cards', 'run-1')->target, VerificationResult::STATUS_PASS, 0, 'lint passed');
         self::assertTrue((new VerifyReportSerializer())->completed([$passed, $this->check('/gallery/cards', 'run-1')]));
 
+        // Review, dev#262: /shop redirected to a non-HTML /feed is not /shop answering; still required.
+        $redirected = ['status' => 200, 'html' => false, 'findings' => [], 'stylesheets' => [], 'landed' => '/feed'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => $redirected, 'dark' => $redirected]]));
+        $toFeed = $this->check('/shop', 'run-1');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $toFeed->status);
+        self::assertTrue($toFeed->required);
+        self::assertStringContainsString('redirected to /feed', (string) $toFeed->signal);
+
         // A page that is one, not reached, is still required and still incomplete.
         file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/shop'), json_encode(['path' => '/shop', 'modes' => ['light' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'reset'], 'dark' => ['status' => 0, 'html' => true, 'findings' => [], 'stylesheets' => [], 'error' => 'reset']]]));
         $unreached = $this->check('/shop', 'run-1');

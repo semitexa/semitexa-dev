@@ -85,10 +85,11 @@ final readonly class PageCheckResult
                 continue;
             }
             // Sent elsewhere (a sign-in page, say): what was looked at is not this page. A fragment
-            // reached that way is another route's answer too (review, dev#256).
+            // reached that way is another route's answer too (review, dev#256), and so is a non-HTML
+            // one: its skip is not required, so it must be this route's own (review, dev#262).
             $isFragment = ($view['fragment'] ?? false) === true;
             $landed = is_string($view['landed'] ?? null) ? $view['landed'] : $path;
-            if (($view['html'] === true || $isFragment) && rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
+            if (rtrim(rawurldecode($landed), '/') !== rtrim(rawurldecode($path), '/')) {
                 $missing[] = "redirected to {$landed} in {$mode}";
                 continue;
             }
