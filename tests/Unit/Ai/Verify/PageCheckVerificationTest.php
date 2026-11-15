@@ -126,6 +126,48 @@ final class PageCheckVerificationTest extends TestCase
         self::assertStringContainsString('redirected to /login', (string) $result->signal);
     }
 
+    /**
+     * tk-page-check-intentional-redirect (found by a consumer whose home moved to /gallery, 302):
+     * a route whose own first answer is a 3xx to the same page of this site in both modes, where
+     * that page was checked and has no finding, is skipped, not required, and never a pass.
+     */
+    #[Test]
+    public function a_deliberate_redirect_to_a_clean_page_is_a_skip_that_does_not_block(): void
+    {
+        $view = ['status' => 200, 'firstStatus' => 302, 'html' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/gallery'];
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/'), json_encode(['path' => '/', 'modes' => ['light' => $view, 'dark' => $view]]));
+
+        $result = $this->check('/', 'run-1');
+        self::assertSame(VerificationResult::STATUS_SKIPPED, $result->status);
+        self::assertFalse($result->required);
+        self::assertSame('/ answers 302 to /gallery, checked there in light and dark: no finding', $result->signal);
+    }
+
+    /** Each condition that makes a redirect deliberate, broken one at a time: it stays required. */
+    #[Test]
+    public function a_redirect_that_is_not_shown_to_be_deliberate_stays_required(): void
+    {
+        $good = ['status' => 200, 'firstStatus' => 302, 'html' => true, 'findings' => [], 'stylesheets' => [], 'landed' => '/gallery'];
+        $cases = [
+            'a bounce by script (first answer 200)' => [['firstStatus' => 200] + $good, $good],
+            'no first answer recorded' => [array_diff_key($good, ['firstStatus' => true]), $good],
+            'another landing in dark' => [$good, ['landed' => '/elsewhere'] + $good],
+            'another site' => [['landed' => 'https://other.example/'] + $good, ['landed' => 'https://other.example/'] + $good],
+            'a finding on the landing page' => [['findings' => ['color-contrast x2']] + $good, $good],
+            'an error on the landing page' => [['status' => 500] + $good, ['status' => 500] + $good],
+        ];
+        foreach ($cases as $name => [$light, $dark]) {
+            file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/'), json_encode(['path' => '/', 'modes' => ['light' => $light, 'dark' => $dark]]));
+            $result = $this->check('/', 'run-1');
+            self::assertTrue($result->required, $name);
+            self::assertContains($result->status, [VerificationResult::STATUS_INCOMPLETE, VerificationResult::STATUS_FAIL], $name);
+        }
+
+        // A changed stylesheet the landing page does not load is not shown there.
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/'), json_encode(['path' => '/', 'modes' => ['light' => $good, 'dark' => $good]]));
+        self::assertTrue($this->check('/', 'run-1', ['packages/semitexa-platform-ui/src/Application/Static/css/components.css'])->required);
+    }
+
     /** REGRESSION (review dev#216): a finding beside a redirect in the other mode must keep both */
     #[Test]
     public function a_finding_and_a_redirect_are_both_reported(): void
