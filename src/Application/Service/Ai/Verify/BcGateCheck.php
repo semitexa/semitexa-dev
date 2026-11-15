@@ -74,6 +74,13 @@ final class BcGateCheck
             return new VerificationResult($target, VerificationResult::STATUS_PASS, 0, "bc_gate:{$package} → " . ($lines === [] ? 'no break on the @api surface' : end($lines)));
         }
 
+        // The gate exits 1 for a refused break and for what it could not check
+        // ([UNCHECKED]: a tag roave could not read, a package not found). Only a
+        // [BREAK] line is a verdict on the API (review, dev#265).
+        if (!str_contains($r['output'], '[BREAK]')) {
+            return $this->unchecked($target, SignalText::compress($r['output']));
+        }
+
         return new VerificationResult(
             $target,
             VerificationResult::STATUS_FAIL,

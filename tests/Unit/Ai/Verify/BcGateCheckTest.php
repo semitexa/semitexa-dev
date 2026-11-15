@@ -88,6 +88,17 @@ final class BcGateCheckTest extends TestCase
         self::assertCount(1, $this->commands);
     }
 
+    /** Review, dev#265: the gate exits 1 for what it could not check too; that is no verdict on the API. */
+    #[Test]
+    public function what_the_gate_could_not_check_is_incomplete_not_a_break(): void
+    {
+        $result = $this->check(['stash' => [0, "abc123\n"], 'gate' => [1, "[UNCHECKED] semitexa-core: roave could not read 2026.11.13.0659: Class Semitexa\\Core\\Clock could not be found\n"]]);
+
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
+        self::assertStringContainsString('[UNCHECKED] semitexa-core: roave could not read 2026.11.13.0659', $result->signal);
+        self::assertStringNotContainsString('@deprecated', $result->signal, 'no API advice from a check that did not judge the API');
+    }
+
     /** Review, dev#265: a gate the runner timed out said nothing about the API. */
     #[Test]
     public function a_gate_that_timed_out_is_incomplete_not_a_break(): void
