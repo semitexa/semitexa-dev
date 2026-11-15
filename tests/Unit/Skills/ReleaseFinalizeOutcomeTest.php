@@ -136,7 +136,6 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
         self::assertLessThan(strpos($sweep, 'exit(PACKAGIST_UNVERIFIED_EXIT)'), strpos($sweep, 'exit(1)'));
     }
 
-    /** @return array{int, string} */
     /**
      * A finalize that stops before its handler is installed, on a missing
      * session, still brings back the dev stack (review, semitexa-dev#264).
@@ -164,6 +163,7 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
         self::assertSame("restored\n", (string) @file_get_contents($this->dir . '/restored'));
     }
 
+    /** @return array{int, string} */
     private function finalize(int $tagExit, int $publishedExit, string $script = 'release-finalize.sh'): array
     {
         $command = sprintf(

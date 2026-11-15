@@ -50,7 +50,7 @@ final class ReleaseRestoresDevStackTest extends TestCase
         mkdir($this->dir . '/path');
         file_put_contents(
             $this->dir . '/path/docker',
-            "#!/usr/bin/env bash\n[ \"\$1\" = ps ] && cat " . $this->dir . "/running\n[ \"\$1\" = stop ] && echo \"stop \$*\" >>" . $this->dir . "/calls\nexit 0\n",
+            "#!/usr/bin/env bash\n[ \"\$1\" = ps ] && { echo ps >>" . $this->dir . "/listings; cat " . $this->dir . "/running; }\n[ \"\$1\" = stop ] && echo \"stop \$*\" >>" . $this->dir . "/calls\nexit 0\n",
         );
         chmod($this->dir . '/path/docker', 0755);
     }
@@ -66,6 +66,9 @@ final class ReleaseRestoresDevStackTest extends TestCase
         file_put_contents($this->dir . '/running', "semitexadev-app-1\n");
 
         $this->runScript('release-stop-semitexa.sh');
+        // One listing decides the marker and what is stopped: two let a dev container
+        // started in between be stopped and never restarted (review, semitexa-dev#264).
+        self::assertSame("ps\n", (string) file_get_contents($this->dir . '/listings'));
         $this->runScript('release-restore-dev.sh');
 
         $calls = $this->calls();
