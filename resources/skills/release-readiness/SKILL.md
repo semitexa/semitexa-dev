@@ -66,6 +66,9 @@ Default assumptions:
   fails when something could not be read (the packages, a package's tags or changes, a file now
   or at the tag, nikic/php-parser from the clone's autoloader) or the notes could not be written,
   since notes that skipped something would say "nothing deprecated" about code nobody looked at
+  (`upgrade-notes-removed` writes them again after `bc-gate`, adding what the gate allowed — `@api`
+  parts removed after their 90-day deprecation — under "Removed after the deprecation window";
+  the release report links the file)
 - **the `bc-gate` stage holds the stability contract** (docs: get-started/stability). Per package
   it runs roave/backward-compatibility-check against the package's previous tag, inside the
   clone's app container (roave needs bcmath and intl, which the image carries since 2026-10-30;

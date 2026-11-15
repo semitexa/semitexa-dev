@@ -98,6 +98,43 @@ final class UpgradeNotesReportTest extends TestCase
         ], array_values(array_filter($out, static fn (string $l): bool => str_starts_with($l, '- '))), 'both grouped constants; an @api class\'s property only by its own mark; a docblock after the modifier documents nothing (as for phpDocumentor), so the private helper() is not listed, let alone as @api; no switch label, anonymous member, function or moved class');
     }
 
+    /**
+     * What the BC gate allowed — an @api part removed after its 90-day
+     * deprecation — is listed under its own heading: the part of an upgrade a
+     * user has to act on (tk-stab-upgrade-notes). Only [ALLOWED] lines.
+     */
+    #[Test]
+    public function what_the_bc_gate_allowed_is_listed_as_removed(): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], []);
+        $gate = $this->root . '/bc-gate.log';
+        file_put_contents($gate, "[SAME] semitexa-orm: no source change since 2026.10.29.1052\n"
+            . "[ALLOWED] semitexa-core (since 2026.10.29.1052): Method Semitexa\\Core\\Clock#old() was removed — deprecated 2026.07.01, 120 days before\n"
+            . "1 break(s), each deprecated long enough.\n");
+
+        [$status, $out] = $this->notes('--removed=' . escapeshellarg($gate));
+
+        self::assertSame(0, $status, implode("\n", $out));
+        $heading = array_search('## Removed after the deprecation window', $out, true);
+        self::assertIsInt($heading, implode("\n", $out));
+        self::assertSame(
+            ['- semitexa-core (since 2026.10.29.1052): Method Semitexa\\Core\\Clock#old() was removed — deprecated 2026.07.01, 120 days before'],
+            array_values(array_filter(array_slice($out, $heading), static fn (string $l): bool => str_starts_with($l, '- '))),
+            'only the [ALLOWED] line, not [SAME] or the summary',
+        );
+    }
+
+    #[Test]
+    public function a_bc_gate_output_that_cannot_be_read_fails_the_notes(): void
+    {
+        $this->release(['Clock.php' => "<?php\nnamespace Semitexa\\Core;\nfinal class Clock {}\n"], []);
+
+        [$status, $out] = $this->notes('--removed=' . escapeshellarg($this->root . '/missing.log'));
+
+        self::assertSame(1, $status);
+        self::assertStringStartsWith('Cannot read the BC gate output', end($out) ?: '');
+    }
+
     /** A dangling link is a file that is there and cannot be read, not a deleted one: the notes fail. */
     #[Test]
     public function a_changed_file_that_cannot_be_read_fails_the_notes(): void
@@ -192,7 +229,7 @@ final class UpgradeNotesReportTest extends TestCase
     }
 
     /** @return array{int, list<string>} */
-    private function notes(): array
+    private function notes(string $extra = ''): array
     {
         $script = dirname(__DIR__, 2) . '/resources/skills/release-readiness/scripts/release-upgrade-notes.php';
         // The parser comes from the autoloader running this test (a release clone has its
@@ -200,7 +237,7 @@ final class UpgradeNotesReportTest extends TestCase
         $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
         self::assertIsString($loader);
         $autoload = dirname($loader, 2) . '/autoload.php';
-        exec(sprintf('RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s php %s --version=2026.10.31.0900 2>&1', escapeshellarg($this->root), escapeshellarg($autoload), escapeshellarg($script)), $out, $status);
+        exec(sprintf('RELEASE_ROOT=%s SEMITEXA_AUTOLOAD=%s php %s --version=2026.10.31.0900 %s 2>&1', escapeshellarg($this->root), escapeshellarg($autoload), escapeshellarg($script), $extra), $out, $status);
 
         return [$status, $out];
     }
