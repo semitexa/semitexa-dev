@@ -68,26 +68,32 @@ final class BcGateCheck
         if (isset($r['failure'])) {
             return $this->unchecked($target, 'the gate did not finish (' . $r['failure'] . '): ' . SignalText::compress($r['output']));
         }
-        if ($r['exit'] === 0) {
-            $lines = array_values(array_filter(explode("\n", trim($r['output']))));
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $r['output']))));
 
-            return new VerificationResult($target, VerificationResult::STATUS_PASS, 0, "bc_gate:{$package} → " . ($lines === [] ? 'no break on the @api surface' : end($lines)));
+        // Only a [BREAK] line is a verdict against the API; the gate exits 1 for
+        // it and for what it could not check ([UNCHECKED]) alike (review, dev#265).
+        if ($r['exit'] !== 0 && preg_grep('/^\[BREAK\] /', $lines) !== []) {
+            return new VerificationResult(
+                $target,
+                VerificationResult::STATUS_FAIL,
+                $r['exit'],
+                "bc_gate:{$package} → " . SignalText::compress($r['output'])
+                    . ' — keep the @api signature, or mark it @deprecated and remove it 90 days later; the release refuses the same break.'
+                    . ' A file not yet tracked is not in the comparison: a class moved into one reads as removed until `git add -N` it',
+            );
         }
 
-        // The gate exits 1 for a refused break and for what it could not check
-        // ([UNCHECKED]: a tag roave could not read, a package not found). Only a
-        // [BREAK] line is a verdict on the API (review, dev#265).
-        if (!str_contains($r['output'], '[BREAK]')) {
-            return $this->unchecked($target, SignalText::compress($r['output']));
+        // A pass is the gate saying it judged: its own last line, nothing else.
+        $verdict = end($lines);
+        if ($r['exit'] === 0 && is_string($verdict)
+            && ($verdict === 'No break on the @api surface.' || preg_match('/^\d+ break\(s\), each deprecated long enough\.$/', $verdict) === 1)) {
+            // An exempted tag was not judged: say so beside the pass.
+            $exempt = array_values(preg_grep('/^\[EXEMPT\] /', $lines) ?: []);
+
+            return new VerificationResult($target, VerificationResult::STATUS_PASS, 0, "bc_gate:{$package} → {$verdict}" . ($exempt === [] ? '' : ' ' . SignalText::compress(implode('; ', $exempt))));
         }
 
-        return new VerificationResult(
-            $target,
-            VerificationResult::STATUS_FAIL,
-            $r['exit'],
-            "bc_gate:{$package} → " . SignalText::compress($r['output'])
-                . ' — keep the @api signature, or mark it @deprecated and remove it 90 days later; the release refuses the same break',
-        );
+        return $this->unchecked($target, 'the gate gave no verdict (exit ' . $r['exit'] . '): ' . SignalText::compress($r['output']));
     }
 
     private function unchecked(VerificationTarget $target, string $why): VerificationResult

@@ -69,6 +69,7 @@ final class BcGateCheckTest extends TestCase
         self::assertSame(VerificationResult::STATUS_FAIL, $result->status);
         self::assertStringContainsString('[BREAK] semitexa-core (since 2026.11.13.0659): Parameter 0 of Semitexa\\Core\\Request#getHeader()', $result->signal);
         self::assertStringContainsString('mark it @deprecated', $result->signal);
+        self::assertStringContainsString('git add -N', $result->signal, 'a class moved into an untracked file reads as removed');
     }
 
     #[Test]
@@ -97,6 +98,26 @@ final class BcGateCheckTest extends TestCase
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $result->status);
         self::assertStringContainsString('[UNCHECKED] semitexa-core: roave could not read 2026.11.13.0659', $result->signal);
         self::assertStringNotContainsString('@deprecated', $result->signal, 'no API advice from a check that did not judge the API');
+    }
+
+    /** Independent review, dev#265: exit 0 is a pass only with the gate's own verdict line. */
+    #[Test]
+    public function a_pass_is_the_gate_saying_it_judged(): void
+    {
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check(['stash' => [0, "abc123\n"], 'gate' => [0, '']])->status, 'no output is no verdict');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check(['stash' => [0, "abc123\n"], 'gate' => [0, "PHP Warning: something\n"]])->status);
+
+        $allowed = $this->check(['stash' => [0, "abc123\n"], 'gate' => [0, "[ALLOWED] semitexa-core: Method X#old() was removed — deprecated 2026.07.01\n1 break(s), each deprecated long enough.\n"]]);
+        self::assertSame(VerificationResult::STATUS_PASS, $allowed->status);
+        self::assertSame('bc_gate:semitexa-core → 1 break(s), each deprecated long enough.', $allowed->signal);
+
+        // An exempted tag was not judged: the pass says so.
+        $exempt = $this->check(['stash' => [0, "abc123\n"], 'gate' => [0, "[EXEMPT] semitexa-core (since 2026.11.01.0448): roave could not read it — exempt: Clock moved\nNo break on the @api surface.\n"]]);
+        self::assertSame(VerificationResult::STATUS_PASS, $exempt->status);
+        self::assertStringContainsString('[EXEMPT] semitexa-core (since 2026.11.01.0448)', $exempt->signal);
+
+        // A [BREAK] decides only beside a failing exit; any other failing exit is no verdict.
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check(['stash' => [0, "abc123\n"], 'gate' => [255, "PHP Fatal error: out of memory\n"]])->status);
     }
 
     /** Review, dev#265: a gate the runner timed out said nothing about the API. */
