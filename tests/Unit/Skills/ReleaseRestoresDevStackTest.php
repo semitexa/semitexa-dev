@@ -34,6 +34,7 @@ final class ReleaseRestoresDevStackTest extends TestCase
             DEV_ROOT={$this->dir}/dev
             RELEASE_STATE_DIR={$this->dir}/state
             require_cmd() { :; }
+            fail() { printf '%s\n' "\$*" >&2; exit 1; }
             info() { :; }
             ok() { :; }
             SH);
@@ -100,6 +101,25 @@ final class ReleaseRestoresDevStackTest extends TestCase
         $this->runScript('release-stop-semitexa.sh');
 
         self::assertFileExists($this->dir . '/state/dev-stack-was-running');
+    }
+
+    /**
+     * One listing decides what is stopped and whether dev is remembered; a
+     * listing that fails stops the run before anything is stopped (review,
+     * semitexa-dev#264).
+     */
+    #[Test]
+    public function a_listing_that_fails_stops_nothing(): void
+    {
+        file_put_contents($this->dir . '/running', "semitexadev-app-1\n");
+        file_put_contents($this->dir . '/path/docker', "#!/usr/bin/env bash\n[ \"\$1\" = ps ] && exit 1\necho \"\$*\" >>" . $this->dir . "/calls\n");
+
+        exec('PATH=' . escapeshellarg($this->dir . '/path') . ':$PATH bash ' . escapeshellarg($this->dir . '/scripts/release-stop-semitexa.sh') . ' 2>&1', $out, $code);
+
+        self::assertSame(1, $code);
+        self::assertStringContainsString('docker ps failed', implode("\n", $out));
+        self::assertSame(['rls server:stop'], $this->calls(), 'the clone stop ran, docker stop did not');
+        self::assertFileDoesNotExist($this->dir . '/state/dev-stack-was-running');
     }
 
     private function runScript(string $script): void

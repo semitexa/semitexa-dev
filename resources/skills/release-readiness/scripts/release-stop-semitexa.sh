@@ -21,12 +21,17 @@ fi
 # release that leaves the workspace's app stopped was seen twice on 2026-11-12.
 # A second stop in the same session keeps the first answer (dev is already down).
 DEV_MARKER="${RELEASE_STATE_DIR:-/tmp}/dev-stack-was-running"
-if [ ! -e "$DEV_MARKER" ] && docker ps --format '{{.Names}}' | grep -qE '^semitexadev-'; then
+
+# One listing decides both what is stopped and whether dev is remembered: a dev
+# container that started between two listings was stopped and never restarted
+# (review, semitexa-dev#264). A listing that fails stops the run.
+running="$(docker ps --format '{{.Names}}')" || fail "docker ps failed: the Semitexa stacks were not stopped"
+mapfile -t names < <(printf '%s\n' "$running" | grep -E '^semitexarls-|^semitexadev-' || true)
+if [ ! -e "$DEV_MARKER" ] && printf '%s\n' "${names[@]}" | grep -qE '^semitexadev-'; then
     mkdir -p "$(dirname "$DEV_MARKER")"
     : >"$DEV_MARKER"
 fi
 
-mapfile -t names < <(docker ps --format '{{.Names}}' | grep -E '^semitexarls-|^semitexadev-' || true)
 if [ "${#names[@]}" -gt 0 ]; then
     docker stop "${names[@]}" >/dev/null
 fi

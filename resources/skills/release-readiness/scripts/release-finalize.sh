@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
+# Until the full handler below is installed: a finalize that stops before it,
+# on a missing session say, still brings back the dev stack the preflight
+# stopped (review, semitexa-dev#264). It never changes the exit status.
+trap '"$SCRIPT_DIR/release-restore-dev.sh" || true' EXIT
+
 require_cmd php
 load_release_session
 
