@@ -205,6 +205,35 @@ final readonly class PageCheckResult
      * @param list<string> $triggers
      * @return list<string> their file names
      */
+    /**
+     * Whether a changed stylesheet among the triggers is not loaded by the page: each one on
+     * its own, unlike unloaded(), which counts a page as showing the change when any of them
+     * loads. A redirect is skipped only when its landing shows all of them (review, dev#263).
+     *
+     * @param list<string> $triggers
+     */
+    private static function anyStylesheetUnloaded(array $triggers, mixed $loaded): bool
+    {
+        foreach ($triggers as $file) {
+            if (!str_ends_with($file, '.css')) {
+                continue;
+            }
+            $served = self::servedAs($file);
+            $isLoaded = false;
+            foreach (is_array($loaded) ? $loaded : [] as $href) {
+                if (str_ends_with((string) parse_url((string) $href, PHP_URL_PATH), '/' . $served)) {
+                    $isLoaded = true;
+                    break;
+                }
+            }
+            if (!$isLoaded) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static function unloaded(array $triggers, mixed $loaded): array
     {
         if ($triggers === [] || !is_array($loaded)) {
@@ -288,7 +317,7 @@ final readonly class PageCheckResult
             if ($landing !== null && $view['landed'] !== $landing) {
                 return null;
             }
-            if (self::unloaded($triggeredBy, $view['stylesheets'] ?? null) !== []) {
+            if (self::anyStylesheetUnloaded($triggeredBy, $view['stylesheets'] ?? null)) {
                 return null;
             }
             $landing = $view['landed'];

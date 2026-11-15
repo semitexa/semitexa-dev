@@ -166,6 +166,16 @@ final class PageCheckVerificationTest extends TestCase
         // A changed stylesheet the landing page does not load is not shown there.
         file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/'), json_encode(['path' => '/', 'modes' => ['light' => $good, 'dark' => $good]]));
         self::assertTrue($this->check('/', 'run-1', ['packages/semitexa-platform-ui/src/Application/Static/css/components.css'])->required);
+
+        // Review, dev#263: every changed stylesheet, each on its own; one of two loaded is not enough,
+        // and a template beside them does not wave the check through.
+        $components = 'packages/semitexa-platform-ui/src/Application/Static/css/components.css';
+        $layouts = 'packages/semitexa-theme/src/Application/Static/css/layouts.css';
+        $loadsComponents = ['stylesheets' => ['http://localhost/' . $components]] + $good;
+        file_put_contents($this->root . '/var/run/verify-e2e/run-1/pages/' . PageCheckResult::fileName('/'), json_encode(['path' => '/', 'modes' => ['light' => $loadsComponents, 'dark' => $loadsComponents]]));
+        self::assertTrue($this->check('/', 'run-1', [$components, $layouts])->required, 'one of two changed stylesheets loaded');
+        self::assertTrue($this->check('/', 'run-1', [$components, $layouts, 'src/modules/Gallery/src/Application/View/templates/pages/gallery.html.twig'])->required, 'a template beside them');
+        self::assertFalse($this->check('/', 'run-1', [$components, 'src/modules/Gallery/src/Application/View/templates/pages/gallery.html.twig'])->required, 'every changed stylesheet loaded: the skip holds');
     }
 
     /** REGRESSION (review dev#216): a finding beside a redirect in the other mode must keep both */
