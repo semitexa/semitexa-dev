@@ -36,7 +36,7 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
             RELEASE_VERSION=2026.01.01.0000
             RELEASE_CHANNEL=stable
             require_cmd() { :; }
-            load_release_session() { :; }
+            load_release_session() { [ -z "${NO_SESSION:-}" ] || { printf 'no session\n' >&2; exit 1; }; }
             info() { :; }
             warn() { printf 'warned\n' >>"$SCRIPT_DIR/calls"; }
             report_failure_reason() { printf 'reason'; }
@@ -50,6 +50,8 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
             exit "${PUBLISHED_EXIT:-0}"
             SH);
         chmod($this->dir . '/release-published-install.sh', 0755);
+        file_put_contents($this->dir . '/release-restore-dev.sh', "#!/usr/bin/env bash\nprintf 'restored\\n' >>\"\$(dirname \"\$0\")/restored\"\nexit 0\n");
+        chmod($this->dir . '/release-restore-dev.sh', 0755);
     }
 
     protected function tearDown(): void
@@ -132,6 +134,33 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
         self::assertStringContainsString("\$webhookFailures[] = \$webhookStatus['message'];", $sweep);
         self::assertStringNotContainsString("\$failures[] = \$webhookStatus['message'];", $sweep);
         self::assertLessThan(strpos($sweep, 'exit(PACKAGIST_UNVERIFIED_EXIT)'), strpos($sweep, 'exit(1)'));
+    }
+
+    /**
+     * A finalize that stops before its handler is installed, on a missing
+     * session, still brings back the dev stack (review, semitexa-dev#264).
+     */
+    #[Test]
+    public function a_finalize_that_stops_before_its_handler_still_restores_the_dev_stack(): void
+    {
+        putenv('NO_SESSION=1');
+        try {
+            [$code, $output] = $this->finalize(0, 0);
+        } finally {
+            putenv('NO_SESSION');
+        }
+
+        self::assertSame(1, $code, $output);
+        self::assertSame("restored\n", (string) @file_get_contents($this->dir . '/restored'));
+        self::assertFileDoesNotExist($this->dir . '/calls', 'nothing of the release ran');
+    }
+
+    #[Test]
+    public function every_finalize_restores_the_dev_stack_once(): void
+    {
+        $this->finalize(0, 0);
+
+        self::assertSame("restored\n", (string) @file_get_contents($this->dir . '/restored'));
     }
 
     /** @return array{int, string} */

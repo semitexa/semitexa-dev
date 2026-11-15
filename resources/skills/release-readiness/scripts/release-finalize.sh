@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
+# Until the full handler below is installed: a finalize that stops before it,
+# on a missing session say, still brings back the dev stack the preflight
+# stopped (review, semitexa-dev#264). It never changes the exit status.
+trap '"$SCRIPT_DIR/release-restore-dev.sh" || true' EXIT
+
 require_cmd php
 load_release_session
 
@@ -12,6 +17,9 @@ CURRENT_STAGE="release-tag-master"
 
 on_exit() {
     local status=$?
+    # Whatever the outcome, the workspace's dev stack the preflight stopped comes
+    # back; a failure here is a warning, it never changes the release verdict.
+    "$SCRIPT_DIR/release-restore-dev.sh" || warn "Could not restart the dev stack: run bin/semitexa server:start in the workspace"
     # After the cut the release exists: a published-install verdict is added
     # to the success report, never written over it.
     if [ "$status" -ne 0 ] && [ "$CURRENT_STAGE" != "published-install" ]; then
