@@ -35,11 +35,20 @@ final class BcGateTargets
         /** @var array<string, list<string>> $byPackage */
         $byPackage = [];
         foreach ($changedFiles as $file) {
-            if (preg_match('#^packages/([^/]+)/src/.+\.php$#', $file->path, $m) !== 1) {
-                continue;
+            // A rename is judged at both ends: the old path may have carried the
+            // @api the new one dropped, and may belong to another package (review, dev#265).
+            $paths = [$file->path];
+            if ($file->status === ChangedFile::STATUS_RENAMED && $file->originalPath !== null) {
+                $paths[] = $file->originalPath;
             }
-            if (self::declaresApi($projectRoot, $m[1], $file)) {
-                $byPackage[$m[1]][] = $file->path;
+            foreach ($paths as $index => $path) {
+                if (preg_match('#^packages/([^/]+)/src/.+\.php$#', $path, $m) !== 1) {
+                    continue;
+                }
+                $readNow = $index === 0 && $file->status !== ChangedFile::STATUS_DELETED;
+                if (self::declaresApi($projectRoot, $m[1], $path, $readNow) && !in_array($file->path, $byPackage[$m[1]] ?? [], true)) {
+                    $byPackage[$m[1]][] = $file->path;
+                }
             }
         }
 
@@ -59,29 +68,41 @@ final class BcGateTargets
 
     /**
      * Now or at HEAD: a file whose @api was removed, or that was deleted, is
-     * the break the gate exists for.
+     * the break the gate exists for. A HEAD that cannot be read is not read as
+     * "no @api": the gate runs, and says itself what it could not check
+     * (review, dev#265).
      */
-    private static function declaresApi(string $projectRoot, string $package, ChangedFile $file): bool
+    private static function declaresApi(string $projectRoot, string $package, string $path, bool $readNow): bool
     {
-        $now = $file->status === ChangedFile::STATUS_DELETED ? false : @file_get_contents($projectRoot . '/' . $file->path);
+        $now = $readNow ? @file_get_contents($projectRoot . '/' . $path) : false;
         if (is_string($now) && str_contains($now, '@api')) {
             return true;
         }
+        $atHead = self::atHead($projectRoot . '/packages/' . $package, substr($path, strlen("packages/{$package}/")));
 
-        return str_contains(self::atHead($projectRoot . '/packages/' . $package, substr($file->path, strlen("packages/{$package}/"))), '@api');
+        return $atHead === null || str_contains($atHead, '@api');
     }
 
-    /** The file as the package repository's HEAD has it; '' when it has none. */
-    private static function atHead(string $packageDir, string $relative): string
+    /**
+     * The file as the package repository's HEAD has it; '' when HEAD has no
+     * such file; null when git could not answer.
+     */
+    private static function atHead(string $packageDir, string $relative): ?string
     {
-        $process = @proc_open(['git', '-C', $packageDir, 'show', 'HEAD:' . $relative], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $process = @proc_open(['git', '-C', $packageDir, 'show', 'HEAD:' . $relative], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['LC_ALL' => 'C'] + getenv());
         if (!is_resource($process)) {
-            return '';
+            return null;
         }
         $content = (string) stream_get_contents($pipes[1]);
+        $error = (string) stream_get_contents($pipes[2]);
         fclose($pipes[1]);
         fclose($pipes[2]);
+        if (proc_close($process) === 0) {
+            return $content;
+        }
 
-        return proc_close($process) === 0 ? $content : '';
+        // git's words for a path HEAD does not have (a new file): "does not exist
+        // in 'HEAD'", or "exists on disk, but not in 'HEAD'".
+        return str_contains($error, "in 'HEAD'") ? '' : null;
     }
 }

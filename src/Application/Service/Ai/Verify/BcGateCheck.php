@@ -64,6 +64,10 @@ final class BcGateCheck
             '--package=' . $package,
         ], $this->projectRoot);
 
+        // Timed out or killed: the gate said nothing about the API (review, dev#265).
+        if (isset($r['failure'])) {
+            return $this->unchecked($target, 'the gate did not finish (' . $r['failure'] . '): ' . SignalText::compress($r['output']));
+        }
         if ($r['exit'] === 0) {
             $lines = array_values(array_filter(explode("\n", trim($r['output']))));
 

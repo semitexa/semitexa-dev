@@ -40,6 +40,8 @@ final class BcGateTargetsTest extends TestCase
     #[Test]
     public function one_target_per_package_whose_changed_file_declares_api(): void
     {
+        $this->commitPackage('semitexa-core');
+        $this->commitPackage('semitexa-orm');
         $targets = $this->targets([
             'packages/semitexa-core/src/Request.php',
             'packages/semitexa-core/src/Auth/Guard.php',
@@ -59,8 +61,7 @@ final class BcGateTargetsTest extends TestCase
     public function a_file_that_lost_its_api_or_was_deleted_still_runs_the_gate(): void
     {
         $package = $this->root . '/packages/semitexa-core';
-        exec('git -C ' . escapeshellarg($package) . ' init -q && git -C ' . escapeshellarg($package) . ' -c user.email=t@t -c user.name=t add -A && git -C ' . escapeshellarg($package) . ' -c user.email=t@t -c user.name=t commit -qm init', $out, $code);
-        self::assertSame(0, $code, implode("\n", $out));
+        $this->commitPackage('semitexa-core');
         $this->file('packages/semitexa-core/src/Request.php', "<?php\nfinal class Request {}\n");
         unlink($package . '/src/Auth/Guard.php');
 
@@ -72,6 +73,41 @@ final class BcGateTargetsTest extends TestCase
 
         self::assertCount(1, $targets);
         self::assertSame(['packages/semitexa-core/src/Request.php', 'packages/semitexa-core/src/Auth/Guard.php'], $targets[0]->triggeredBy);
+    }
+
+    /** Review, dev#265: the old path of a rename may be the one that carried @api, in another package. */
+    #[Test]
+    public function a_rename_is_judged_at_its_old_path_too(): void
+    {
+        $this->commitPackage('semitexa-core');
+        rename($this->root . '/packages/semitexa-core/src/Request.php', $this->root . '/packages/semitexa-core/src/LegacyRequest.php');
+        $this->file('packages/semitexa-core/src/LegacyRequest.php', "<?php\nfinal class LegacyRequest {}\n");
+
+        $targets = BcGateTargets::of([
+            new ChangedFile('packages/semitexa-core/src/LegacyRequest.php', ChangedFile::KIND_PHP_OTHER, ChangedFile::STATUS_RENAMED, 'packages/semitexa-core/src/Request.php'),
+        ], VerificationPlan::SCOPE_STANDARD, $this->root);
+
+        self::assertSame(['bc_gate:semitexa-core'], array_map(static fn (VerificationTarget $t): string => $t->id, $targets));
+        self::assertSame(['packages/semitexa-core/src/LegacyRequest.php'], $targets[0]->triggeredBy);
+    }
+
+    /** Review, dev#265: a HEAD git cannot read is not "no @api at HEAD"; the gate runs and says what it could not check. */
+    #[Test]
+    public function a_head_git_cannot_read_runs_the_gate(): void
+    {
+        // packages/semitexa-core is no git repository here: git show fails for another reason than a missing path.
+        $targets = BcGateTargets::of([
+            new ChangedFile('packages/semitexa-core/src/Internal.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_STANDARD, $this->root);
+        self::assertSame(['bc_gate:semitexa-core'], array_map(static fn (VerificationTarget $t): string => $t->id, $targets));
+
+        // A path HEAD simply does not have is a new file: nothing it could break.
+        $this->commitPackage('semitexa-core');
+        $this->file('packages/semitexa-core/src/Fresh.php', "<?php\nfinal class Fresh {}\n");
+        self::assertSame([], BcGateTargets::of([
+            new ChangedFile('packages/semitexa-core/src/Fresh.php', ChangedFile::KIND_PHP_OTHER, ChangedFile::STATUS_ADDED),
+            new ChangedFile('packages/semitexa-core/src/Internal.php', ChangedFile::KIND_PHP_OTHER),
+        ], VerificationPlan::SCOPE_STANDARD, $this->root));
     }
 
     #[Test]
@@ -96,6 +132,13 @@ final class BcGateTargetsTest extends TestCase
             VerificationPlan::SCOPE_STANDARD,
             $this->root,
         );
+    }
+
+    private function commitPackage(string $package): void
+    {
+        $dir = escapeshellarg($this->root . '/packages/' . $package);
+        exec("git -C {$dir} init -q && git -C {$dir} -c user.email=t@t -c user.name=t add -A && git -C {$dir} -c user.email=t@t -c user.name=t commit -qm init", $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
     }
 
     private function file(string $path, string $content): void
