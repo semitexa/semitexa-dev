@@ -52,6 +52,21 @@ final class CoderabbitRetryOrderTest extends TestCase
     }
 
     /**
+     * A head CodeRabbit left no status and no check run on (orm#92, 2026-10-30)
+     * is woken once it is older than the grace, ranked from its commit time;
+     * a fresh one is still being reviewed and waits (tk-coderabbit-retry-silent-head).
+     */
+    #[Test]
+    public function a_head_coderabbit_left_silent_is_woken_once_it_is_old_enough(): void
+    {
+        $old = $this->pick(['semitexa-docs 109 silent:1000', 'semitexa-workflow 26 2000']);
+        self::assertSame('would trigger semitexa/semitexa-docs#109 at do109d0 (2 waiting)', $old, 'committed at 1000, before the skip at 2000');
+
+        $fresh = $this->pick(['semitexa-docs 109 silent:' . time(), 'semitexa-workflow 26 2000']);
+        self::assertSame('would trigger semitexa/semitexa-workflow#26 at wf26wf2 (1 waiting)', $fresh, 'a head pushed just now is not skipped yet');
+    }
+
+    /**
      * Runs the script with --dry-run against a fake gh that answers as the real
      * one does after --jq. Each PR: "<repo> <number> <skipped-at epoch> [label]".
      *
@@ -72,7 +87,12 @@ final class CoderabbitRetryOrderTest extends TestCase
             $search .= "semitexa/{$repo} {$number}\n";
             $cases .= "  *'repos/semitexa/{$repo}/pulls/{$number}'*) echo '{$sha} " . ($label === null ? '[]' : "[\"{$label}\"]") . "' ;;\n";
             $cases .= "  *'repos/semitexa/{$repo}/commits/{$sha}/status'*) echo '' ;;\n";
-            $cases .= "  *'repos/semitexa/{$repo}/commits/{$sha}/check-runs'*) echo '{$skippedAt} Review rate limited' ;;\n";
+            // silent:<commit epoch> — CodeRabbit left nothing; the commit itself answers with its time.
+            $silent = str_starts_with($skippedAt, 'silent:') ? (int) substr($skippedAt, 7) : null;
+            $cases .= "  *'repos/semitexa/{$repo}/commits/{$sha}/check-runs'*) echo '" . ($silent === null ? "{$skippedAt} Review rate limited" : '') . "' ;;\n";
+            if ($silent !== null) {
+                $cases .= "  *'repos/semitexa/{$repo}/commits/{$sha} '*) echo '{$silent}' ;;\n";
+            }
             if (isset($triggered["{$repo} {$number}"])) {
                 file_put_contents($this->dir . "/state/semitexa_{$repo}-{$number}-{$sha}", $triggered["{$repo} {$number}"] . "\n");
             }

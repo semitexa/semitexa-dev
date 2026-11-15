@@ -33,6 +33,9 @@
 #                                     (default: release-blocker; empty disables)
 #   CODERABBIT_RETRY_PRIORITY         PRs that jump the queue, space- or
 #                                     comma-separated owner/repo#number
+#   CODERABBIT_RETRY_SILENT_GRACE_SECONDS  how old a head with no CodeRabbit
+#                                     status or check run must be before it
+#                                     counts as skipped (default: 1200)
 #   CODERABBIT_RETRY_STATE_DIR        where trigger times are kept
 #                                     (default: $XDG_STATE_HOME/semitexa/coderabbit-retry)
 set -euo pipefail
@@ -40,6 +43,7 @@ set -euo pipefail
 OWNER="${CODERABBIT_RETRY_OWNER:-semitexa}"
 MATCH="${CODERABBIT_RETRY_MATCH:-rate limited}"
 MIN_GAP="${CODERABBIT_RETRY_MIN_GAP_SECONDS:-1500}"
+SILENT_GRACE="${CODERABBIT_RETRY_SILENT_GRACE_SECONDS:-1200}"
 PRIORITY_LABEL="${CODERABBIT_RETRY_PRIORITY_LABEL-release-blocker}"
 PRIORITY=" $(printf '%s' "${CODERABBIT_RETRY_PRIORITY:-}" | tr ',' ' ') "
 STATE_DIR="${CODERABBIT_RETRY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/semitexa/coderabbit-retry}"
@@ -94,10 +98,22 @@ while read -r repo number; do
         status=$(gh api --paginate "repos/$repo/commits/$head/check-runs?per_page=100" \
             --jq '.check_runs[] | select(.name | test("coderabbit"; "i")) | "\((.completed_at // .started_at // "") | if . == "" then 0 else fromdate end) \(.output.title // "")"' 2>/dev/null | sed -n 1p) || continue
     fi
+    # Neither a status nor a check run: after a push CodeRabbit sometimes
+    # leaves nothing on the head (orm#92 at 73c610f, 2026-10-30), and a head
+    # that never says "rate limited" waited forever. Once it is older than any
+    # review takes to start, it counts as skipped, from its commit time.
+    silent=0
+    if [ -z "$status" ]; then
+        committed=$(gh api "repos/$repo/commits/$head" --jq '.commit.committer.date | fromdate' 2>/dev/null) || continue
+        case "$committed" in ''|*[!0-9]*) continue ;; esac
+        [ $((now - committed)) -ge "$SILENT_GRACE" ] || continue
+        status="$committed no CodeRabbit status or check run on this head"
+        silent=1
+    fi
     skipped=${status%% *}
     case "$skipped" in ''|*[!0-9]*) skipped=0 ;; esac
     status=${status#* }
-    printf '%s' "$status" | grep -qiE "$MATCH" || continue
+    [ "$silent" -eq 1 ] || printf '%s' "$status" | grep -qiE "$MATCH" || continue
 
     last=$(cat "$(mark_for "$repo" "$number" "$head")" 2>/dev/null || echo 0)
     [ $((now - last)) -ge "$MIN_GAP" ] || continue
