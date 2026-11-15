@@ -380,13 +380,19 @@ function shippedIn(string $packageDir, string $key, string $previousTag, array &
         }
     }
     uksort($tags, static fn (string $a, string $b): int => [$tags[$a], $a] <=> [$tags[$b], $b]);
+    // The start of the deprecation that is in force: the earliest tag of the
+    // last unbroken run. A member removed, or undeprecated, and brought back
+    // later was promised again from its return (tk-bc-gate-reintroduced-member).
+    $since = null;
     foreach ($tags as $tag => $date) {
         if (isset(symbolsAt($packageDir, $tag, $problems)['deprecated'][$key])) {
-            return [$tag, $date];
+            $since ??= [$tag, $date];
+        } else {
+            $since = null;
         }
     }
 
-    return [$previousTag, $until ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))];
+    return $since ?? [$previousTag, $until ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))];
 }
 
 /**

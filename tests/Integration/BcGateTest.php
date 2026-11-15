@@ -244,6 +244,35 @@ final class BcGateTest extends TestCase
         ]], [$status, $out]);
     }
 
+    /**
+     * A member deprecated, removed, then brought back deprecated is dated from
+     * its return: the old deprecation lapsed with the removal
+     * (tk-bc-gate-reintroduced-member, CodeRabbit on semitexa-dev#167).
+     */
+    #[Test]
+    public function a_member_removed_and_brought_back_counts_from_its_return(): void
+    {
+        $dir = $this->root . '/packages/semitexa-core';
+        $clock = static fn (string $old): string => "<?php\nnamespace Semitexa\\Core;\n/** @api */\nfinal class Clock\n{\n    public function now(): int { return 0; }\n{$old}}\n";
+        $deprecated = "    /** @deprecated 2026.07.01 Use now() instead. */\n    public function old(): int { return 1; }\n";
+        file_put_contents($dir . '/composer.json', '{"name":"semitexa/core"}');
+        file_put_contents($dir . '/src/Clock.php', $clock($deprecated));
+        $this->git($dir, ['init -q', 'config user.email t@example.test', 'config user.name T', 'add -A', 'commit -q -m released']);
+        $this->git($dir, ['tag -a -m cut 2026.07.01.0900'], '2026-07-01T09:00:00Z');
+        file_put_contents($dir . '/src/Clock.php', $clock(''));
+        $this->git($dir, ['commit -q -am removed']);
+        $this->git($dir, ['tag -a -m cut 2026.08.01.0900'], '2026-08-01T09:00:00Z');
+        file_put_contents($dir . '/src/Clock.php', $clock($deprecated));
+        $this->git($dir, ['commit -q -am back']);
+        $this->git($dir, ['tag -a -m cut 2026.10.20.0900'], '2026-10-20T09:00:00Z');
+        file_put_contents($dir . '/src/Later.php', "<?php\nnamespace Semitexa\\Core;\nfinal class Later {}\n");
+        $this->git($dir, ['add -A', 'commit -q -m after']);
+
+        [$status, $out] = $this->gate([self::BREAKS[0]]);
+
+        self::assertSame([1, ['[BREAK] semitexa-core (since 2026.10.20.0900): Method Semitexa\\Core\\Clock#old() was removed — @api, deprecated 2026.07.01, shipped in 2026.10.20.0900: only 11 of 90 days ago']], [$status, $out], 'not shipped in 2026.07.01.0900: that deprecation ended when old() was removed');
+    }
+
     /** A member added to a class after the class was deprecated was promised only since it appeared. */
     #[Test]
     public function a_deleted_class_is_judged_by_each_promised_member(): void
