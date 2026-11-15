@@ -535,7 +535,7 @@ lines = [
 # What a user has to do to upgrade: written by the upgrade-notes stages next to this report.
 upgrade_notes = pathlib.Path(report_path).parent / f"UPGRADE-{release_version}.md"
 if upgrade_notes.is_file():
-    lines.append(f"- Upgrade notes: `{upgrade_notes.name}` (next to this report)")
+    lines.append(f"- Upgrade notes: [{upgrade_notes.name}]({upgrade_notes.name})")
 lines += [
     "",
     "## Changes in This Release",

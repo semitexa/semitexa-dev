@@ -16,7 +16,11 @@ run_stage() {
     CURRENT_STAGE="$stage"
     : >"$log_file"
 
-    if ! "$@" > >(tee "$log_file") 2>&1; then
+    # A pipeline, not > >(tee …): process substitution runs on its own, so the
+    # stage could return while tee still held its last lines, and the next
+    # reader of the log (upgrade-notes-removed, the failure tail below) saw a
+    # partial file (review, semitexa-dev#267). pipefail keeps the command's status.
+    if ! "$@" 2>&1 | tee "$log_file"; then
         local failure_output
         failure_output="$(tail -n 120 "$log_file")"
         if [ -n "$failure_output" ]; then
@@ -50,7 +54,11 @@ run_soft_stage() {
     CURRENT_STAGE="$stage"
     : >"$log_file"
 
-    if ! "$@" > >(tee "$log_file") 2>&1; then
+    # A pipeline, not > >(tee …): process substitution runs on its own, so the
+    # stage could return while tee still held its last lines, and the next
+    # reader of the log (upgrade-notes-removed, the failure tail below) saw a
+    # partial file (review, semitexa-dev#267). pipefail keeps the command's status.
+    if ! "$@" 2>&1 | tee "$log_file"; then
         local failure_output
         failure_output="$(tail -n 40 "$log_file")"
         SOFT_FAILURES+=("${stage}
