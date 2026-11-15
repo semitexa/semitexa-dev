@@ -50,6 +50,8 @@ final class ReleaseFinalizeOutcomeTest extends TestCase
             exit "${PUBLISHED_EXIT:-0}"
             SH);
         chmod($this->dir . '/release-published-install.sh', 0755);
+        file_put_contents($this->dir . '/release-restore-dev.sh', "#!/usr/bin/env bash\nexit 0\n");
+        chmod($this->dir . '/release-restore-dev.sh', 0755);
     }
 
     protected function tearDown(): void
