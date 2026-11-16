@@ -16,6 +16,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class SkillsInstallScriptTest extends TestCase
 {
+    /**
+     * A test run inside a git hook inherits these, and they would point the
+     * fixture commits and the script at the caller's checkout. Cleared first;
+     * a test that passes one on purpose sets it after.
+     */
+    private const NO_INHERITED_GIT = 'unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX; ';
+
     private string $tmp = '';
     private string $home = '';
 
@@ -429,7 +436,7 @@ final class SkillsInstallScriptTest extends TestCase
         foreach ($env as $name => $value) {
             $assignments .= $name . '=' . escapeshellarg($value) . ' ';
         }
-        $command = 'cd ' . escapeshellarg($root) . ' && ' . $assignments
+        $command = self::NO_INHERITED_GIT . 'cd ' . escapeshellarg($root) . ' && ' . $assignments
             . 'sh ' . escapeshellarg($script) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
         exec($command, $lines, $exit);
 
@@ -438,7 +445,7 @@ final class SkillsInstallScriptTest extends TestCase
 
     private function git(string $root, string $args): string
     {
-        exec('git -C ' . escapeshellarg($root) . ' -c user.name=t -c user.email=t@t ' . $args . ' 2>&1', $lines, $exit);
+        exec(self::NO_INHERITED_GIT . 'git -C ' . escapeshellarg($root) . ' -c user.name=t -c user.email=t@t ' . $args . ' 2>&1', $lines, $exit);
         self::assertSame(0, $exit, 'git ' . $args . ': ' . implode("\n", $lines));
 
         return implode("\n", $lines);
