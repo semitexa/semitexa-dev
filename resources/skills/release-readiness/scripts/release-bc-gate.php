@@ -375,18 +375,28 @@ function shippedIn(string $packageDir, string $key, string $previousTag, array &
     $tags = [];
     foreach ($status === 0 ? array_filter(array_map('trim', explode("\n", $listed))) : [] as $tag) {
         $date = cutDate($tag);
-        if ($date !== null && $until !== null && $date <= $until) {
+        // By name as well as by day: cutDate() drops the time, so a later tag
+        // of the same day (this release's own, say) would otherwise end the run
+        // the comparison is about (review, semitexa-dev#269). Tag names are
+        // dated, so they sort as the cuts did.
+        if ($date !== null && $until !== null && $date <= $until && strcmp($tag, $previousTag) <= 0) {
             $tags[$tag] = $date;
         }
     }
     uksort($tags, static fn (string $a, string $b): int => [$tags[$a], $a] <=> [$tags[$b], $b]);
+    // The start of the deprecation that is in force: the earliest tag of the
+    // last unbroken run. A member removed, or undeprecated, and brought back
+    // later was promised again from its return (tk-bc-gate-reintroduced-member).
+    $since = null;
     foreach ($tags as $tag => $date) {
         if (isset(symbolsAt($packageDir, $tag, $problems)['deprecated'][$key])) {
-            return [$tag, $date];
+            $since ??= [$tag, $date];
+        } else {
+            $since = null;
         }
     }
 
-    return [$previousTag, $until ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))];
+    return $since ?? [$previousTag, $until ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))];
 }
 
 /**
