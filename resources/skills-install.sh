@@ -228,7 +228,17 @@ install_one() {
             && fail "$_dst was edited after it was installed: move your edit out, delete it, and install again"
         fail "$_dst exists and was not installed by this script: move it away to install here"
     fi
+    # Ignored before it lands: a copy whose exclude line could not be written
+    # would sit there committable, while a stray line for no copy harms nothing.
+    if [ -n "$REPO" ]; then
+        exclude_add "$_name"
+    elif in_project "$_dst"; then
+        say "  note: no git checkout holds $TARGET, so nothing marks $_name as ignored"
+    fi
     _tmp="$TARGET/.$_name.installing.$$"
+    # A run that stops half-way leaves no unignored half-copy behind.
+    trap 'rm -rf "$_tmp"' EXIT
+    trap 'rm -rf "$_tmp"; exit 130' INT TERM
     rm -rf "$_tmp"
     cp -R "$_src" "$_tmp"
     rm -f "$_tmp/$MARKER"
@@ -239,11 +249,7 @@ install_one() {
     } > "$_tmp/$MARKER"
     rm -rf "$_dst"
     mv "$_tmp" "$_dst"
-    if [ -n "$REPO" ]; then
-        exclude_add "$_name"
-    elif in_project "$_dst"; then
-        say "  note: no git checkout holds $TARGET, so nothing marks $_name as ignored"
-    fi
+    trap - EXIT INT TERM
     say "installed $_name -> $_dst"
 }
 

@@ -155,6 +155,39 @@ final class SkillsInstallScriptTest extends TestCase
     }
 
     #[Test]
+    public function a_copy_that_fails_half_way_leaves_nothing_behind(): void
+    {
+        $project = $this->project();
+        $bin = $this->tmp . '/bin';
+        mkdir($bin);
+        // Copies part of the skill, then fails: cp -R <source> <destination>.
+        file_put_contents($bin . '/cp', "#!/bin/sh\nmkdir -p \"\$3\" && echo partial > \"\$3/SKILL.md\"\nexit 1\n");
+        chmod($bin . '/cp', 0755);
+
+        [$exit, $out] = $this->runScriptWith(['PATH' => $bin . ':' . getenv('PATH')], $project, '--agent=claude', '--skill=demo');
+
+        self::assertNotSame(0, $exit, $out);
+        self::assertSame([], glob($project . '/.claude/skills/.demo.installing.*') ?: [], 'no half-copy left behind');
+        self::assertSame('', $this->git($project, 'status --porcelain --untracked-files=all -- .claude'));
+    }
+
+    #[Test]
+    public function a_copy_whose_exclude_line_cannot_be_written_never_lands(): void
+    {
+        $project = $this->project();
+        $exclude = $project . '/.git/info/exclude';
+        if (is_file($exclude)) {
+            unlink($exclude);
+        }
+        mkdir($exclude, 0777, true); // an exclude file nothing can be appended to
+
+        [$exit, $out] = $this->runScript($project, '--agent=claude', '--skill=demo');
+
+        self::assertNotSame(0, $exit, $out);
+        self::assertDirectoryDoesNotExist($project . '/.claude/skills/demo', 'unignored, it would sit there committable');
+    }
+
+    #[Test]
     public function a_symlink_whose_target_is_missing_is_left_alone(): void
     {
         $project = $this->project();
