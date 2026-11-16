@@ -429,7 +429,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // unloadableClasses() and the shared set behind it, so a scan says which
         // classes it could not inspect. The two drops that recorded nothing now
         // record why. The state lives beside the attribute cache it describes.
-        'semitexa-core/src/Discovery/ClassDiscovery.php' => [21, 795],
+        // 21/795 -> 22/815 on 2026-11-16 (tk-contracts-list-test-order-dependent):
+        // followProjectRoot() and the root the instance's own state was read
+        // under. An instance kept its classmap across a root change and answered
+        // the new root from the old map, into the new root's shared bucket, so a
+        // worker container first built under a test fixture root found no
+        // commands for the rest of the process. The check belongs where the state is.
+        'semitexa-core/src/Discovery/ClassDiscovery.php' => [22, 815],
         // NEW on 2026-09-26, at 735 -> 781 lines, recorded rather than trimmed.
         // #[InjectAsFactory] now injects the generated Factory* class chosen by
         // the property's declared type, and a worker-scoped service runs
