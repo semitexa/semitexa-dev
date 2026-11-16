@@ -145,10 +145,72 @@ final class SkillsInstallScriptTest extends TestCase
     }
 
     #[Test]
+    public function a_relative_directory_is_excluded_as_git_names_it(): void
+    {
+        $project = $this->project();
+
+        [$exit, $out] = $this->runScript($project, '--into=./.agents/skills', '--skill=demo');
+
+        self::assertSame(0, $exit, $out);
+        self::assertSame(['/.agents/skills/demo/'], $this->excludeLines($project), 'no ./ segment: git would not match it');
+        self::assertSame('', $this->git($project, 'status --porcelain --untracked-files=all -- .agents'));
+    }
+
+    #[Test]
+    public function a_project_inside_a_larger_repository_is_excluded_by_its_path_there(): void
+    {
+        $outer = $this->checkout('outer');
+        $project = $outer . '/app';
+        $this->tree($this->resources($project));
+
+        [$exit, $out] = $this->runScript($project, '--agent=claude', '--skill=demo');
+
+        self::assertSame(0, $exit, $out);
+        self::assertSame(['/app/.claude/skills/demo/'], $this->excludeLines($outer));
+        self::assertSame('', $this->git($outer, 'status --porcelain --untracked-files=all -- app/.claude'));
+    }
+
+    #[Test]
+    public function a_directory_inside_another_checkout_is_excluded_in_that_checkout(): void
+    {
+        $project = $this->project();
+        $other = $this->checkout('other');
+
+        [$exit, $out] = $this->runScript($project, '--into=' . $other . '/agent/skills', '--skill=demo');
+
+        self::assertSame(0, $exit, $out);
+        self::assertFileExists($other . '/agent/skills/demo/SKILL.md');
+        self::assertSame(['/agent/skills/demo/'], $this->excludeLines($other));
+        self::assertSame('', $this->git($other, 'status --porcelain --untracked-files=all'), 'nothing to commit in the other checkout either');
+        self::assertSame([], $this->excludeLines($project));
+    }
+
+    #[Test]
+    public function a_path_another_checkout_tracks_is_refused_even_with_force(): void
+    {
+        $project = $this->project();
+        $other = $this->checkout('other');
+        mkdir($other . '/agent/skills/demo', 0777, true);
+        file_put_contents($other . '/agent/skills/demo/SKILL.md', "committed over there\n");
+        $this->git($other, 'add agent/skills/demo/SKILL.md');
+        $this->git($other, 'commit -q -m tracked');
+
+        [$exit, $out] = $this->runScript($project, '--into=' . $other . '/agent/skills', '--skill=demo', '--force');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString($other . '/agent/skills/demo is tracked by git', $out);
+        self::assertSame("committed over there\n", file_get_contents($other . '/agent/skills/demo/SKILL.md'));
+    }
+
+    #[Test]
     public function remove_takes_the_copies_and_their_exclude_lines_away(): void
     {
         $project = $this->project();
-        $this->runScript($project, '--agent=claude');
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude');
+        self::assertSame(0, $installed, $installedOut);
+        self::assertFileExists($project . '/.claude/skills/demo/SKILL.md');
+        self::assertFileExists($project . '/.claude/skills/shared/SKILL.md');
+        self::assertSame(['/.claude/skills/demo/', '/.claude/skills/shared/'], $this->excludeLines($project));
 
         [$exit, $out] = $this->runScript($project, '--remove', '--agent=claude');
 
@@ -156,6 +218,23 @@ final class SkillsInstallScriptTest extends TestCase
         self::assertDirectoryDoesNotExist($project . '/.claude/skills/demo');
         self::assertDirectoryDoesNotExist($project . '/.claude/skills/shared');
         self::assertSame([], $this->excludeLines($project));
+    }
+
+    #[Test]
+    public function remove_keeps_a_copy_someone_committed(): void
+    {
+        $project = $this->project();
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        self::assertSame(0, $installed, $installedOut);
+        $this->git($project, 'add -f .claude/skills/demo');
+        $this->git($project, 'commit -q -m committed-anyway');
+
+        [$exit, $out] = $this->runScript($project, '--remove', '--agent=claude');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('kept ' . $project . '/.claude/skills/demo: git tracks it', $out);
+        self::assertFileExists($project . '/.claude/skills/demo/SKILL.md');
+        self::assertSame('', $this->git($project, 'status --porcelain -- .claude'), 'no tracked file deleted from the working tree');
     }
 
     #[Test]
@@ -189,6 +268,18 @@ final class SkillsInstallScriptTest extends TestCase
         $this->git($project, 'commit -q -m start');
 
         return $project;
+    }
+
+    private function checkout(string $name): string
+    {
+        $dir = $this->tmp . '/' . $name;
+        mkdir($dir, 0777, true);
+        $this->git($dir, 'init -q');
+        file_put_contents($dir . '/README.md', "{$name}\n");
+        $this->git($dir, 'add README.md');
+        $this->git($dir, 'commit -q -m start');
+
+        return $dir;
     }
 
     private function resources(string $project): string
@@ -241,15 +332,19 @@ final class SkillsInstallScriptTest extends TestCase
     }
 
     /** @return list<string> */
-    private function excludeLines(string $project): array
+    private function excludeLines(string $checkout): array
     {
-        $file = $project . '/.git/info/exclude';
+        $file = $checkout . '/.git/info/exclude';
         if (!is_file($file)) {
             return [];
         }
+        $lines = file($file);
+        if ($lines === false) {
+            self::fail('cannot read ' . $file);
+        }
 
         return array_values(array_filter(
-            array_map('trim', (array) file($file)),
+            array_map(static fn (string $line): string => trim($line), $lines),
             static fn (string $line): bool => $line !== '' && !str_starts_with($line, '#'),
         ));
     }
