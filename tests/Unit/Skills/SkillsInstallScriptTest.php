@@ -93,7 +93,7 @@ final class SkillsInstallScriptTest extends TestCase
         [$check, $checkOut] = $this->runScript($project, '--check', '--agent=claude');
 
         self::assertSame(1, $again);
-        self::assertStringContainsString('was edited after it was installed; --force replaces the edit', $againOut);
+        self::assertStringContainsString('was edited after it was installed: move your edit out, delete it, and install again', $againOut);
         self::assertStringContainsString('my own notes', (string) file_get_contents($project . '/.claude/skills/demo/SKILL.md'));
         self::assertSame(1, $check);
         self::assertStringContainsString('edited here: ' . $project . '/.claude/skills/demo', $checkOut);
@@ -140,7 +140,7 @@ final class SkillsInstallScriptTest extends TestCase
         [$exit, $out] = $this->runScript($project, '--agent=claude', '--skill=demo');
 
         self::assertSame(1, $exit);
-        self::assertStringContainsString('exists and was not installed by this script; --force replaces it', $out);
+        self::assertStringContainsString('exists and was not installed by this script: move it away to install here', $out);
         self::assertSame("someone else's\n", file_get_contents($project . '/.claude/skills/demo/SKILL.md'));
     }
 
@@ -186,7 +186,7 @@ final class SkillsInstallScriptTest extends TestCase
     }
 
     #[Test]
-    public function a_path_another_checkout_tracks_is_refused_even_with_force(): void
+    public function a_path_another_checkout_tracks_is_refused(): void
     {
         $project = $this->project();
         $other = $this->checkout('other');
@@ -195,7 +195,7 @@ final class SkillsInstallScriptTest extends TestCase
         $this->git($other, 'add agent/skills/demo/SKILL.md');
         $this->git($other, 'commit -q -m tracked');
 
-        [$exit, $out] = $this->runScript($project, '--into=' . $other . '/agent/skills', '--skill=demo', '--force');
+        [$exit, $out] = $this->runScript($project, '--into=' . $other . '/agent/skills', '--skill=demo');
 
         self::assertSame(1, $exit);
         self::assertStringContainsString($other . '/agent/skills/demo is tracked by git', $out);
@@ -257,6 +257,105 @@ final class SkillsInstallScriptTest extends TestCase
         self::assertStringContainsString("'ws-only' is a workspace skill: installed in the workspace only, never globally", $refusedOut);
     }
 
+    #[Test]
+    public function git_is_asked_about_the_skills_directory_not_an_inherited_repository(): void
+    {
+        $project = $this->project();
+        $other = $this->checkout('other');
+
+        [$exit, $out] = $this->runScriptWith(
+            ['GIT_DIR' => $project . '/.git', 'GIT_WORK_TREE' => $project],
+            $project,
+            '--into=' . $other . '/agent/skills',
+            '--skill=demo',
+        );
+
+        self::assertSame(0, $exit, $out);
+        self::assertSame(['/agent/skills/demo/'], $this->excludeLines($other), 'the checkout that holds the copy excludes it');
+        self::assertSame([], $this->excludeLines($project), 'not the one the environment pointed at');
+    }
+
+    #[Test]
+    public function a_checkout_git_cannot_answer_for_stops_the_run(): void
+    {
+        $project = $this->project();
+        $other = $this->checkout('other');
+        file_put_contents($other . '/.git/HEAD', "not a ref\n");
+
+        [$exit, $out] = $this->runScript($project, '--into=' . $other . '/agent/skills', '--skill=demo');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('git cannot answer for the checkout at ' . $other, $out);
+        self::assertDirectoryDoesNotExist($other . '/agent/skills/demo', 'not installed unprotected');
+    }
+
+    #[Test]
+    public function a_tracked_listing_git_cannot_give_stops_the_run(): void
+    {
+        $project = $this->project();
+        file_put_contents($project . '/.git/index', 'not an index');
+
+        [$exit, $out] = $this->runScript($project, '--agent=claude', '--skill=demo');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('git cannot list what ' . $project . ' tracks', $out);
+        self::assertDirectoryDoesNotExist($project . '/.claude/skills/demo');
+    }
+
+    #[Test]
+    public function remove_keeps_a_copy_edited_after_it_was_installed(): void
+    {
+        $project = $this->project();
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        self::assertSame(0, $installed, $installedOut);
+        file_put_contents($project . '/.claude/skills/demo/SKILL.md', "my own notes\n", FILE_APPEND);
+
+        [$exit, $out] = $this->runScript($project, '--remove', '--agent=claude');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('kept ' . $project . '/.claude/skills/demo: it changed after it was installed', $out);
+        self::assertStringContainsString('my own notes', (string) file_get_contents($project . '/.claude/skills/demo/SKILL.md'));
+    }
+
+    #[Test]
+    public function a_skill_directory_that_became_a_checkout_of_its_own_is_left_alone(): void
+    {
+        $project = $this->project();
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        self::assertSame(0, $installed, $installedOut);
+        $this->git($project . '/.claude/skills/demo', 'init -q');
+
+        [$again, $againOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        [$remove, $removeOut] = $this->runScript($project, '--remove', '--agent=claude');
+
+        self::assertSame(1, $again);
+        self::assertStringContainsString('was edited after it was installed', $againOut);
+        self::assertSame(1, $remove);
+        self::assertStringContainsString('kept ' . $project . '/.claude/skills/demo', $removeOut);
+        self::assertDirectoryExists($project . '/.claude/skills/demo/.git', 'its history is still there');
+    }
+
+    #[Test]
+    public function an_exclude_file_that_cannot_be_read_is_left_as_it_was(): void
+    {
+        $project = $this->project();
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        self::assertSame(0, $installed, $installedOut);
+        self::assertSame(['/.claude/skills/demo/'], $this->excludeLines($project));
+
+        // A grep that cannot read the file it filters, whoever runs the test.
+        $bin = $this->tmp . '/bin';
+        mkdir($bin);
+        exec('command -v grep', $found);
+        file_put_contents($bin . '/grep', "#!/bin/sh\ncase \"\$1\" in -vxF) exit 2 ;; esac\nexec " . escapeshellarg($found[0] ?? '/bin/grep') . " \"\$@\"\n");
+        chmod($bin . '/grep', 0755);
+        [$exit, $out] = $this->runScriptWith(['PATH' => $bin . ':' . getenv('PATH')], $project, '--remove', '--agent=claude');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('cannot read ' . $project . '/.git/info/exclude, so it is left as it was', $out);
+        self::assertSame(['/.claude/skills/demo/'], $this->excludeLines($project), 'not replaced by what was not read');
+    }
+
     private function project(): string
     {
         $project = $this->tmp . '/project';
@@ -313,11 +412,25 @@ final class SkillsInstallScriptTest extends TestCase
     /** @return array{int, string} */
     private function runScript(string $root, string ...$args): array
     {
+        return $this->runScriptWith([], $root, ...$args);
+    }
+
+    /**
+     * @param array<string, string> $env
+     * @return array{int, string}
+     */
+    private function runScriptWith(array $env, string $root, string ...$args): array
+    {
         $script = is_dir($root . '/packages')
             ? $root . '/packages/semitexa-dev/resources/skills-install.sh'
             : $this->resources($root) . '/skills-install.sh';
-        $command = 'cd ' . escapeshellarg($root) . ' && HOME=' . escapeshellarg($this->home)
-            . ' sh ' . escapeshellarg($script) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
+        $env['HOME'] = $this->home;
+        $assignments = '';
+        foreach ($env as $name => $value) {
+            $assignments .= $name . '=' . escapeshellarg($value) . ' ';
+        }
+        $command = 'cd ' . escapeshellarg($root) . ' && ' . $assignments
+            . 'sh ' . escapeshellarg($script) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
         exec($command, $lines, $exit);
 
         return [$exit, implode("\n", $lines)];

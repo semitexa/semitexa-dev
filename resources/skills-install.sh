@@ -14,14 +14,18 @@
 # ~/.codex/skills), gemini (.gemini/skills, ~/.gemini/skills), agents
 # (.agents/skills, ~/.agents/skills). --global picks the home directory.
 #
-# NEVER COMMITTED. An installed skill is a copy of what semitexa/dev ships, so it
-# belongs to no commit: each copy is added to the .git/info/exclude (never
-# committed itself, unlike .gitignore) of whichever git checkout holds it, the
-# project's or any other, as git itself names the path; a path that checkout
-# already tracks is refused, --force or not, and --remove leaves it alone. A copy
-# no checkout holds is outside every repository. Every copy carries a marker (.semitexa-skill) with the hash
-# of its source and of what was installed, so --check tells "a newer version is
-# available" from "edited here", and an edit is never overwritten silently.
+# NEVER COMMITTED, AND NOTHING OF YOURS DELETED. An installed skill is a copy of
+# what semitexa/dev ships, so it belongs to no commit: each copy is added to the
+# .git/info/exclude (never committed itself, unlike .gitignore) of whichever git
+# checkout holds it, as git itself names the path, and a path that checkout
+# tracks is refused. A copy no checkout holds is outside every repository. Every
+# copy carries a marker (.semitexa-skill) with the hash of its source and of what
+# was installed. Only a copy still exactly as installed is ever replaced or
+# removed: an edit, a directory this script did not install, a checkout of its
+# own are left alone (move them away yourself), and --check tells "a newer
+# version is available" from "edited here". When git cannot answer for the
+# checkout that holds a copy (unsafe ownership, a broken repository), nothing is
+# installed or removed there.
 #
 # Host-side on purpose: bin/semitexa runs PHP commands in the app container,
 # whose home directory is not yours, so a --global install from there would
@@ -33,9 +37,13 @@
 #   --skill=NAME                only this skill (repeatable); default: all offered here
 #   --list                      what can be installed here, and what is (the default)
 #   --check                     report installed copies that are stale or edited; exit 1 if any
-#   --remove                    delete installed copies and their exclude lines; exit 1 if one is kept
-#   --force                     replace a copy that was edited, or a directory not installed here
+#   --remove                    delete copies still as installed, and their exclude lines; exit 1 if one is kept
 set -eu
+
+# Git is asked about the skills directory itself, never about a repository an
+# inherited environment points at (a hook, an alias or an editor can export these).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_CEILING_DIRECTORIES
 
 MARKER='.semitexa-skill'
 
@@ -57,7 +65,7 @@ case "$RES_DIR" in
 esac
 ROOT="$(cd "$ROOT" && pwd)"
 
-ACTION=''; AGENT=''; INTO=''; GLOBAL=0; FORCE=0; ONLY=''
+ACTION=''; AGENT=''; INTO=''; GLOBAL=0; ONLY=''
 for arg in "$@"; do
     case "$arg" in
         --agent=*)  AGENT="${arg#--agent=}" ;;
@@ -67,8 +75,7 @@ for arg in "$@"; do
         --list)     ACTION=list ;;
         --check)    ACTION=check ;;
         --remove)   ACTION=remove ;;
-        --force)    FORCE=1 ;;
-        --help|-h)  sed -n '2,37p' "$0"; exit 0 ;;
+        --help|-h)  sed -n '2,40p' "$0"; exit 0 ;;
         *) fail "unknown option: $arg (see --help)" ;;
     esac
 done
@@ -106,12 +113,21 @@ in_project() { case "$1" in "$ROOT"/*) return 0 ;; *) return 1 ;; esac; }
 # them: REPO is that checkout's top, PREFIX the directory's path in it (with a
 # trailing slash, or empty at the top). Both empty when no checkout holds it, or
 # when the directory is not there (then nothing is installed in it either).
+# Whether one holds it is a .git in the directory or above it; when there is one,
+# git must answer for it: a checkout git cannot read is not "no checkout".
 REPO=''; PREFIX=''
 find_repo() {
     REPO=''; PREFIX=''
     [ -d "$TARGET" ] || return 0
-    REPO="$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null)" || { REPO=''; return 0; }
-    PREFIX="$(git -C "$TARGET" rev-parse --show-prefix)"
+    _up="$(cd "$TARGET" && pwd -P)"
+    while [ ! -e "$_up/.git" ]; do
+        [ "$_up" != / ] || return 0
+        _up="$(dirname "$_up")"
+    done
+    REPO="$(git -C "$TARGET" rev-parse --show-toplevel 2>&1)" \
+        || fail "git cannot answer for the checkout at $_up, so nothing is done in $TARGET: $REPO"
+    PREFIX="$(git -C "$TARGET" rev-parse --show-prefix 2>&1)" \
+        || fail "git cannot answer for the checkout at $_up, so nothing is done in $TARGET: $PREFIX"
 }
 
 hash_file() {
@@ -125,6 +141,9 @@ tree_hash() {
     done) | hash_file
 }
 marker_value() { sed -n "s/^$2=//p" "$1/$MARKER" 2>/dev/null | head -n 1; }
+# Whether $1 is a copy this script installed that nobody changed since: the only
+# kind it ever replaces or removes (a checkout inside it changes it too).
+as_installed() { [ -f "$1/$MARKER" ] && [ "$(tree_hash "$1")" = "$(marker_value "$1" tree)" ]; }
 
 manifest_rows() { grep -v '^[[:space:]]*#' "$MANIFEST" | awk 'NF >= 3 {print $1, $2, $3}'; }
 
@@ -181,14 +200,19 @@ exclude_drop() {
     _ef="$(exclude_file)"; _line="/$PREFIX$1/"
     [ -f "$_ef" ] || return 0
     _tmp="$_ef.tmp.$$"
-    grep -vxF "$_line" "$_ef" > "$_tmp" || true
+    # 1 is "nothing but that line was there"; above it the file was not read,
+    # and it stays as it was rather than be replaced by what was not read.
+    _st=0; grep -vxF "$_line" "$_ef" > "$_tmp" || _st=$?
+    if [ "$_st" -gt 1 ]; then rm -f "$_tmp"; fail "cannot read $_ef, so it is left as it was"; fi
     mv -f "$_tmp" "$_ef"
 }
 
-# Whether the checkout that holds the skills directory tracks anything of skill $1.
+# Whether the checkout that holds the skills directory tracks anything of skill
+# $1. A listing git cannot give stops the run: it must not read as "untracked".
 tracked() {
     [ -n "$REPO" ] || return 1
-    [ -n "$(git -C "$REPO" ls-files -- "$PREFIX$1" 2>/dev/null | head -n 1)" ]
+    _ls="$(git -C "$REPO" ls-files -- "$PREFIX$1" 2>&1)" || fail "git cannot list what $REPO tracks: $_ls"
+    [ -n "$_ls" ]
 }
 
 install_one() {
@@ -197,13 +221,10 @@ install_one() {
     if tracked "$_name"; then
         fail "$_dst is tracked by git ($REPO): an installed copy must not live in a commit; pick another directory"
     fi
-    if [ -e "$_dst" ]; then
-        if [ ! -f "$_dst/$MARKER" ] && [ "$FORCE" = 0 ]; then
-            fail "$_dst exists and was not installed by this script; --force replaces it"
-        fi
-        if [ -f "$_dst/$MARKER" ] && [ "$(tree_hash "$_dst")" != "$(marker_value "$_dst" tree)" ] && [ "$FORCE" = 0 ]; then
-            fail "$_dst was edited after it was installed; --force replaces the edit"
-        fi
+    if [ -e "$_dst" ] && ! as_installed "$_dst"; then
+        [ -f "$_dst/$MARKER" ] \
+            && fail "$_dst was edited after it was installed: move your edit out, delete it, and install again"
+        fail "$_dst exists and was not installed by this script: move it away to install here"
     fi
     _tmp="$TARGET/.$_name.installing.$$"
     rm -rf "$_tmp"
@@ -249,8 +270,8 @@ case "$ACTION" in
             _dir="$(dirname "$m")"; _name="$(basename "$_dir")"
             if [ -n "$ONLY" ]; then case "$ONLY" in *" $_name "*) ;; *) continue ;; esac; fi
             _from="$(marker_value "$_dir" from)"
-            if [ "$(tree_hash "$_dir")" != "$(marker_value "$_dir" tree)" ]; then
-                say "edited here: $_dir (an install will not replace it without --force)"; _bad=1
+            if ! as_installed "$_dir"; then
+                say "edited here: $_dir (an install or --remove leaves it alone)"; _bad=1
             fi
             if [ -d "$MANIFEST_DIR/$_from" ] && [ "$(tree_hash "$MANIFEST_DIR/$_from")" != "$(marker_value "$_dir" source)" ]; then
                 say "newer version available: $_name (install again to update)"; _bad=1
@@ -270,6 +291,10 @@ case "$ACTION" in
             if tracked "$_name"; then
                 # Someone committed it: deleting it is a change to that repository, not ours to make.
                 say "kept $_dir: git tracks it in $REPO, so removing it is that repository's change"; _kept=1
+                continue
+            fi
+            if ! as_installed "$_dir"; then
+                say "kept $_dir: it changed after it was installed, so removing it is yours to do"; _kept=1
                 continue
             fi
             rm -rf "$_dir"
