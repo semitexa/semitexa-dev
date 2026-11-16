@@ -28,7 +28,9 @@ final class SkillsInstallScriptTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmp = sys_get_temp_dir() . '/skills-install-' . bin2hex(random_bytes(6));
+        // The physical path: the script resolves checkouts with pwd -P, and the
+        // temp directory may be configured through a symlink.
+        $this->tmp = (realpath(sys_get_temp_dir()) ?: sys_get_temp_dir()) . '/skills-install-' . bin2hex(random_bytes(6));
         $this->home = $this->tmp . '/home';
         mkdir($this->home, 0777, true);
     }
@@ -135,6 +137,35 @@ final class SkillsInstallScriptTest extends TestCase
         self::assertSame(1, $exit);
         self::assertStringContainsString('is tracked by git', $out);
         self::assertSame("committed by the project\n", file_get_contents($project . '/.agents/skills/demo/SKILL.md'));
+    }
+
+    #[Test]
+    public function an_edit_in_a_nested_file_named_like_the_marker_still_counts_as_an_edit(): void
+    {
+        $project = $this->project();
+        [$installed, $installedOut] = $this->runScript($project, '--agent=claude', '--skill=demo');
+        self::assertSame(0, $installed, $installedOut);
+        file_put_contents($project . '/.claude/skills/demo/scripts/.semitexa-skill', "my notes\n");
+
+        [$exit, $out] = $this->runScript($project, '--remove', '--agent=claude');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('kept ' . $project . '/.claude/skills/demo: it changed after it was installed', $out);
+        self::assertSame("my notes\n", file_get_contents($project . '/.claude/skills/demo/scripts/.semitexa-skill'));
+    }
+
+    #[Test]
+    public function a_symlink_whose_target_is_missing_is_left_alone(): void
+    {
+        $project = $this->project();
+        mkdir($project . '/.claude/skills', 0777, true);
+        symlink($this->tmp . '/not-mounted-yet', $project . '/.claude/skills/demo');
+
+        [$exit, $out] = $this->runScript($project, '--agent=claude', '--skill=demo');
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('exists and was not installed by this script', $out);
+        self::assertSame($this->tmp . '/not-mounted-yet', readlink($project . '/.claude/skills/demo'));
     }
 
     #[Test]

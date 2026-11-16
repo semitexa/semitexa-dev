@@ -134,9 +134,10 @@ hash_file() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
     else shasum -a 256 | cut -d' ' -f1; fi
 }
-# One hash for a directory's files and their relative paths, the marker left out.
+# One hash for a directory's files and their relative paths, the root marker left
+# out (only it: a file of that name deeper down is content like any other).
 tree_hash() {
-    (cd "$1" && find . -type f ! -name "$MARKER" | LC_ALL=C sort | while IFS= read -r f; do
+    (cd "$1" && find . -type f ! -path "./$MARKER" | LC_ALL=C sort | while IFS= read -r f; do
         printf '%s %s\n' "$f" "$(hash_file < "$f")"
     done) | hash_file
 }
@@ -221,7 +222,8 @@ install_one() {
     if tracked "$_name"; then
         fail "$_dst is tracked by git ($REPO): an installed copy must not live in a commit; pick another directory"
     fi
-    if [ -e "$_dst" ] && ! as_installed "$_dst"; then
+    # -L too: a symlink to a directory that is missing for now is still not ours.
+    if { [ -e "$_dst" ] || [ -L "$_dst" ]; } && ! as_installed "$_dst"; then
         [ -f "$_dst/$MARKER" ] \
             && fail "$_dst was edited after it was installed: move your edit out, delete it, and install again"
         fail "$_dst exists and was not installed by this script: move it away to install here"
