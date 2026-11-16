@@ -88,6 +88,37 @@ final class AgentRegistry
     }
 
     /**
+     * The sessions this project may see in full: its own, and an agent of
+     * another project only when it works on this one — a repo it declared lies
+     * inside this project (host paths, as WorkspaceActivity claims repos), or it
+     * holds a task of this backlog. What the others do (intent, task, paths) is
+     * their project's: ai:orient's output goes to whatever model runs here, and
+     * a third-party one was shown another project's agent, task and paths
+     * (2026-11-16).
+     *
+     * @param list<AgentSession> $sessions
+     * @return list<AgentSession>
+     */
+    public function visibleHere(array $sessions): array
+    {
+        $here = WorkspaceActivity::normalize($this->project);
+
+        return array_values(array_filter($sessions, function (AgentSession $s) use ($here): bool {
+            if ($s->project === '' || $s->project === $this->project || $s->taskProject === $this->project) {
+                return true;
+            }
+            foreach ($s->repos as $declared) {
+                $theirs = WorkspaceActivity::normalize(str_starts_with($declared, '/') ? $declared : $s->project . '/' . $declared);
+                if ($theirs === $here || str_starts_with($theirs, $here . '/')) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+    }
+
+    /**
      * @param list<string> $repos
      */
     public function join(string $agent, string $intent, array $repos = []): AgentSession

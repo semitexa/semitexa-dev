@@ -264,6 +264,30 @@ final class AgentPresenceTest extends TestCase
         self::assertSame($theirs->id, $portal->holderOf('llms-2', null)?->id);
     }
 
+    /**
+     * tk-orient-shows-other-projects-agents: ai:orient in a consumer project
+     * showed a third-party model this workspace's agent, its task and paths.
+     * Another project's agent is shown here only when it works on this one.
+     */
+    #[Test]
+    public function another_projects_agent_is_shown_only_when_it_works_on_this_one(): void
+    {
+        $store = $this->root . '/store';
+        $portal = new AgentRegistry($this->root . '/portal', $store);
+        $dev = new AgentRegistry($this->root . '/dev', $store);
+        $mine = $dev->join('claude', 'working the workspace backlog');
+        $private = $portal->join('codex', 'releasing the portal', ['packages/semitexa-site']);
+        $editsHere = $portal->join('claude', 'fixing a workspace package from the portal', ['../dev/packages/semitexa-core']);
+        $holdsOurTask = $portal->join('gemini', 'taking a workspace task');
+        $dev->recordTask($holdsOurTask, 'llms-2');
+        $holdsOurTask = $dev->get($holdsOurTask->id) ?? self::fail('the session must be readable');
+
+        $visible = array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$mine, $private, $editsHere, $holdsOurTask]));
+
+        self::assertSame([$mine->id, $editsHere->id, $holdsOurTask->id], $visible);
+        self::assertNotContains($private->id, $visible, "the portal's own work is the portal's");
+    }
+
     #[Test]
     public function a_task_taken_in_another_projects_backlog_is_held_there_not_where_the_agent_joined(): void
     {

@@ -73,10 +73,15 @@ final class AiAgentCommand extends BaseCommand
         $now = time();
         $self = $envelope['session']['id'] ?? (getenv(AgentRegistry::ENV) ?: null);
         $live = $registry->all(false, $now);
+        $sessions = (bool) $input->getOption('all') ? $registry->all(true, $now) : $live;
+        // Another project's agent is a count unless it works on this one: what it
+        // does is listed in its own project.
+        $shown = $registry->visibleHere($sessions);
         $envelope['agents'] = array_map(
             static fn (AgentSession $s): array => $s->toArray() + ['live' => $s->isLive($now), 'silent_s' => $s->secondsSilent($now), 'you' => $s->id === $self, 'elsewhere' => $s->project !== $registry->project()],
-            (bool) $input->getOption('all') ? $registry->all(true, $now) : $live,
+            $shown,
         );
+        $envelope['agents_elsewhere'] = count($sessions) - count($shown);
         // Matched as host paths: packages/semitexa-site here is not the portal's,
         // but a portal agent that declared ../semitexa.dev/packages/x claims x here.
         $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now, $registry->project());
@@ -186,6 +191,10 @@ final class AiAgentCommand extends BaseCommand
                 $a['intent'],
                 ($a['task'] !== null ? '  [task ' . $a['task'] . ']' : '') . ($a['repos'] !== [] ? '  (' . implode(', ', $a['repos']) . ')' : ''),
             ));
+        }
+        $elsewhere = (int) ($envelope['agents_elsewhere'] ?? 0);
+        if ($elsewhere > 0) {
+            $output->writeln(sprintf('  and %d agent(s) working on other projects (ai:agent list there shows them)', $elsewhere));
         }
         $output->writeln('');
         if (($envelope['stack'] ?? []) !== []) {
