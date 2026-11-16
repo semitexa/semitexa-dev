@@ -1,0 +1,18 @@
+# The Semitexa agent skills, and who may install them (skills-install.sh).
+#
+#   name  scope  source
+#
+# scope:
+#   workspace  the framework's own process (pull requests, review, releases):
+#              installed only in the semitexa.dev workspace, never globally
+#   project    for a project built on Semitexa: installable in it, or globally
+# source: the skill's directory, relative to this file.
+#
+# A skill name may appear twice, once per scope: an agent says "make it" in
+# either place and gets the edition that belongs there.
+codereview          workspace  skills/codereview
+make-it             workspace  skills/make-it
+package-quality     workspace  skills/package-quality
+release-readiness   workspace  skills/release-readiness
+release-repair      workspace  skills/release-repair
+review-prep         workspace  skills/review-prep
