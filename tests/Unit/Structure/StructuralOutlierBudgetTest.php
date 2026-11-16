@@ -126,7 +126,7 @@ final class StructuralOutlierBudgetTest extends TestCase
         // adapter, inside run(), FOR UPDATE where the server locks rows, no
         // aggregates) live in Query/LockingRead; here only the flag and the
         // calls into it, which need the private SQL builders.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [58, 1177],
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1134],
         // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
         // (fail fast while the database is down) is wired through here, and
         // shutdown() now resets it so the next connect is a real attempt.
