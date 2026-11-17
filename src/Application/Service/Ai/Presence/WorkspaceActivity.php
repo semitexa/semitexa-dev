@@ -153,7 +153,8 @@ final class WorkspaceActivity
         return self::normalize($theirs) === self::normalize($hostProject . '/' . $repo);
     }
 
-    private static function normalize(string $path): string
+    /** An absolute path with its ., .. and empty segments resolved, as text. */
+    public static function normalize(string $path): string
     {
         $parts = [];
         foreach (explode('/', $path) as $part) {

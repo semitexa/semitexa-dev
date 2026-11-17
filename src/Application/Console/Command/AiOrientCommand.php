@@ -351,7 +351,7 @@ final class AiOrientCommand extends BaseCommand
      * Every other live agent, and what is uncommitted in the workspace — the
      * two things an agent otherwise finds out by colliding with them.
      *
-     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, project: string, unclaimed_fresh: list<string>, unreadable: list<string>}
+     * @return array{you: ?array<string, mixed>, agents: list<array<string, mixed>>, agents_elsewhere: int, activity: list<array<string, mixed>>, activity_known: bool, stack: list<array<string, mixed>>, agent_docs: string, project: string, unclaimed_fresh: list<string>, unreadable: list<string>}
      */
     private function workingNow(): array
     {
@@ -360,16 +360,19 @@ final class AiOrientCommand extends BaseCommand
         $registry->beat();
         $you = $registry->current();
         $live = $registry->all(false, $now);
-        $others = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
+        $everyone = array_values(array_filter($live, static fn (AgentSession $a): bool => $a->id !== $you?->id));
+        $others = $registry->visibleHere($everyone);
         $radar = new WorkspaceActivity(ProjectRoot::get());
         // Repo paths are matched as host paths: an agent that joined in another
         // project and edits this one's packages claims them too.
-        $activity = $radar->dirtyRepos($live, $now, $registry->project());
+        // Only sessions this project may see can claim its repos: a claim names its session.
+        $activity = $radar->dirtyRepos($registry->visibleHere($live), $now, $registry->project());
 
         return [
             'you' => $you?->toArray(),
-            // Agents of other projects on this machine too: they edit the same packages.
+            // Agents of other projects on this machine only when they work on this one; the rest are a count.
             'agents' => array_map(static fn (AgentSession $a): array => $a->toArray() + ['silent_s' => $a->secondsSilent($now), 'elsewhere' => $a->project !== $registry->project()], $others),
+            'agents_elsewhere' => count($everyone) - count($others),
             'activity' => $activity,
             // false: git is not available here, so "no edits" means unknown, not clean.
             'activity_known' => $radar->gitAvailable(),
@@ -639,6 +642,7 @@ final class AiOrientCommand extends BaseCommand
         if ($wn['agents'] === []) {
             $io->writeln('  no other agent has joined');
         }
+        if ($wn['agents_elsewhere'] > 0) { $io->writeln(sprintf('  and %d agent(s) working on other projects', $wn['agents_elsewhere'])); }
         if ($wn['stack'] !== []) {
             $io->writeln('  dev stack: last ' . StackEvents::describe($wn['stack'][0]));
         }

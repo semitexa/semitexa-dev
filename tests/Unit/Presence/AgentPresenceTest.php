@@ -264,6 +264,72 @@ final class AgentPresenceTest extends TestCase
         self::assertSame($theirs->id, $portal->holderOf('llms-2', null)?->id);
     }
 
+    /**
+     * tk-orient-shows-other-projects-agents: ai:orient in a consumer project
+     * showed a third-party model this workspace's agent, its task and paths.
+     * Another project's agent is shown here only when it works on this one.
+     */
+    #[Test]
+    public function another_projects_agent_is_shown_only_when_it_works_on_this_one(): void
+    {
+        $store = $this->root . '/store';
+        $portal = new AgentRegistry($this->root . '/portal', $store);
+        $dev = new AgentRegistry($this->root . '/dev', $store);
+        $mine = $dev->join('claude', 'working the workspace backlog');
+        $private = $portal->join('codex', 'releasing the portal', ['packages/semitexa-site']);
+        $editsHere = $portal->join('claude', 'fixing a workspace package from the portal', ['../dev/packages/semitexa-core']);
+        $holdsOurTask = $portal->join('gemini', 'taking a workspace task');
+        $dev->recordTask($holdsOurTask, 'llms-2');
+        $holdsOurTask = $dev->get($holdsOurTask->id) ?? self::fail('the session must be readable');
+
+        $visible = array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$mine, $private, $editsHere, $holdsOurTask]));
+
+        self::assertSame([$mine->id, $editsHere->id, $holdsOurTask->id], $visible);
+        self::assertNotContains($private->id, $visible, "the portal's own work is the portal's");
+    }
+
+    #[Test]
+    public function a_shared_record_that_names_no_project_is_not_shown_as_ours(): void
+    {
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $mine = $dev->join('claude', 'working the workspace backlog');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $ownerUnknown = new AgentSession('codex-0001', 'codex', 'releasing something', 'llms-9', ['packages/semitexa-site'], $now, $now, null, '');
+
+        $visible = array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$mine, $ownerUnknown]));
+
+        self::assertSame([$mine->id], $visible, 'an owner nobody recorded is counted, not listed');
+    }
+
+    #[Test]
+    public function a_hidden_session_claims_nothing_here(): void
+    {
+        // What both commands pass to dirtyRepos(): the visible sessions only, so a
+        // hidden one's id cannot surface through claimed_by (review of dev#274).
+        $repo = $this->root . '/dev/packages/semitexa-demo';
+        mkdir($repo, 0o755, true);
+        exec('git -C ' . escapeshellarg($repo) . ' init -q 2>&1');
+        file_put_contents($repo . '/article.md', 'draft');
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $ownerUnknown = new AgentSession('codex-0003', 'codex', 'an owner nobody recorded', null, ['packages/semitexa-demo'], $now, $now, null, '');
+
+        $activity = (new WorkspaceActivity($this->root . '/dev'))->dirtyRepos($dev->visibleHere([$ownerUnknown]), null, $dev->project());
+
+        self::assertSame('packages/semitexa-demo', $activity[0]['repo'] ?? null);
+        self::assertSame([], $activity[0]['claimed_by'], 'a session this project does not see names no claim');
+    }
+
+    #[Test]
+    public function the_same_project_spelled_with_a_trailing_slash_is_still_this_project(): void
+    {
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $sameProject = new AgentSession('claude-0002', 'claude', 'from another process', null, [], $now, $now, null, $this->root . '/dev/');
+
+        self::assertSame(['claude-0002'], array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$sameProject])));
+    }
+
     #[Test]
     public function a_task_taken_in_another_projects_backlog_is_held_there_not_where_the_agent_joined(): void
     {
