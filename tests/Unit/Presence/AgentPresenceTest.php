@@ -428,6 +428,92 @@ final class AgentPresenceTest extends TestCase
         self::assertNull($again->endedAt);
     }
 
+    /**
+     * tk-inherited-session-id-takes-another-agents-identity (Guard, 2026-11-16): Codex
+     * started from a Claude Code shell inherits that shell's derived id. Joining as
+     * codex kept it ("Joined as claude-…") and rewrote the Claude session's record.
+     */
+    #[Test]
+    public function another_agent_inheriting_the_derived_id_joins_under_an_id_of_its_own(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        self::assertNotNull($registry->current(), 'the Claude session is listed from its first command');
+
+        $codex = $registry->join('codex', 'deploying the project from a fresh clone');
+
+        self::assertMatchesRegularExpression('/^codex-[0-9a-f]{6}$/', $codex->id);
+        self::assertSame(['codex', false], [$codex->agent, $registry->isImplicitSession($codex)], 'its own id, to export');
+        $claude = $registry->get('claude-a339fb');
+        self::assertSame(['claude', $this->root, null], [$claude?->agent, $claude?->project, $claude?->endedAt], 'the Claude record is untouched');
+    }
+
+    /** The same derived id, run in another project: that project's live session is not rewritten or ended from here. */
+    #[Test]
+    public function a_live_session_of_another_project_is_neither_rewritten_nor_ended_from_here(): void
+    {
+        $store = $this->root . '/store';
+        $workspace = new AgentRegistry($this->root . '/workspace', $store);
+        $guard = new AgentRegistry($this->root . '/guard', $store);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        $workspace->join('claude', 'releasing the framework this morning');
+
+        $joinedThere = $guard->join('claude', 'reading the guard deploy logs');
+        self::assertMatchesRegularExpression('/^claude-[0-9a-f]{6}$/', $joinedThere->id);
+        self::assertNotSame('claude-a339fb', $joinedThere->id, 'a new id, not the workspace session moved');
+        self::assertSame([$this->root . '/guard', false], [$joinedThere->project, $guard->isImplicitSession($joinedThere)], 'its own, to export');
+
+        try {
+            $guard->leave('claude-a339fb');
+            self::fail('a live session of another project was ended from here');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringStartsWith("session 'claude-a339fb' is live in another project ({$this->root}/workspace)", $e->getMessage());
+        }
+        // Read through the workspace's registry: one store, so the same record.
+        $still = $workspace->get('claude-a339fb');
+        self::assertNotNull($still, 'the workspace session is still recorded');
+        self::assertSame([$this->root . '/workspace', null], [$still->project, $still->endedAt], 'still live, still the workspace session');
+        $ended = $workspace->leave('claude-a339fb');
+        self::assertNotNull($ended);
+        self::assertNotNull($ended->endedAt, 'its own project ends it');
+    }
+
+    /** Review, dev#277: a record that exists but cannot be read is not free to write over. */
+    #[Test]
+    public function an_unreadable_record_of_the_derived_id_is_not_written_over(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        $record = (new \ReflectionMethod(AgentRegistry::class, 'path'))->invoke($registry, 'claude-a339fb');
+        self::assertIsString($record);
+        mkdir(dirname($record), 0o777, true);
+        file_put_contents($record, '{half a record');
+
+        $joined = $registry->join('claude', 'joining over a record it cannot read');
+
+        self::assertMatchesRegularExpression('/^claude-[0-9a-f]{6}$/', $joined->id);
+        self::assertNotSame('claude-a339fb', $joined->id, 'a new id of its own');
+        self::assertSame('{half a record', file_get_contents($record), 'the unreadable record is left as it was');
+    }
+
+    /** Review, dev#277: join reads and writes as one step, under the same lock as leave, beats and claims. */
+    #[Test]
+    public function a_join_goes_through_the_registry_lock(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $dir = (new \ReflectionProperty(AgentRegistry::class, 'dir'))->getValue($registry);
+        self::assertIsString($dir);
+        mkdir($dir, 0o777, true);
+        symlink($this->root . '/elsewhere', $dir . '/.lock');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('.lock is a symbolic link; refusing to write presence through it');
+        $registry->join('codex', 'joining while the lock is not a lock');
+    }
+
     #[Test]
     public function an_id_bin_semitexa_did_not_derive_is_not_registered_on_its_behalf(): void
     {
@@ -494,6 +580,8 @@ final class AgentPresenceTest extends TestCase
             $mine = $registry->join('claude', 'joining into the shared store');
             self::assertSame(0o600, fileperms($shared . '/' . $mine->id . '.json') & 0o777);
 
+            // The join took the lock, so its file is there: a link planted in its place.
+            unlink($shared . '/.lock');
             symlink($this->root . '/elsewhere', $shared . '/.lock');
             $this->expectException(\RuntimeException::class);
             $registry->locked(static fn (): null => null);

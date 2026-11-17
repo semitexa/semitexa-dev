@@ -138,33 +138,77 @@ final class AgentRegistry
             throw new \InvalidArgumentException('--intent must say in a sentence what you are about to do — it is what the other agents read');
         }
 
-        $now = gmdate('c');
-        // An agent bin/semitexa already recognises keeps its id: joining names
-        // the session every one of its commands reports to, no export needed.
-        $implicit = $this->implicitId();
-        $before = $implicit !== null ? $this->get($implicit) : null;
-        $ongoing = $before !== null && $before->endedAt === null ? $before : null;
-        $session = new AgentSession(
-            $implicit ?? $agent . '-' . bin2hex(random_bytes(3)),
-            $agent,
-            $intent,
-            $ongoing?->task,
-            array_values(array_unique($repos)),
-            $ongoing->startedAt ?? $now,
-            $now,
-            null,
-            $this->project,
-            $ongoing?->taskProject,
-        );
-        $this->save($session);
+        // Read and written as one step under the registry lock: two projects joining
+        // at once with the same inherited id both found no record, and the second
+        // save replaced the first project's session (review, dev#277).
+        return $this->locked(function () use ($agent, $intent, $repos): AgentSession {
+            $now = gmdate('c');
+            // An agent bin/semitexa already recognises keeps its id: joining names
+            // the session every one of its commands reports to, no export needed.
+            // Only that agent, though, and only here (implicitIdFor()).
+            $implicit = $this->implicitIdFor($agent);
+            $before = $implicit !== null ? $this->get($implicit) : null;
+            $ongoing = $before !== null && $before->endedAt === null ? $before : null;
+            $session = new AgentSession(
+                $implicit ?? $agent . '-' . bin2hex(random_bytes(3)),
+                $agent,
+                $intent,
+                $ongoing?->task,
+                array_values(array_unique($repos)),
+                $ongoing->startedAt ?? $now,
+                $now,
+                null,
+                $this->project,
+                $ongoing?->taskProject,
+            );
+            $this->save($session);
 
-        return $session;
+            return $session;
+        });
     }
 
     /** Whether the id this process reports to was derived by bin/semitexa, not exported. */
     public function isImplicit(): bool
     {
         return $this->implicitId() !== null;
+    }
+
+    /** Whether $session is the one bin/semitexa derived for this process: it needs no export. */
+    public function isImplicitSession(AgentSession $session): bool
+    {
+        return $this->implicitId() === $session->id;
+    }
+
+    /**
+     * The derived id when it is $agent's to keep. Codex started from a Claude Code
+     * shell inherits that shell's id: joining as codex kept it ("Joined as
+     * claude-…") and rewrote the Claude session's record with another agent and
+     * project (Guard, 2026-11-16). An id derived for another agent, or held by a
+     * live session of another project, gets a new id instead.
+     */
+    private function implicitIdFor(string $agent): ?string
+    {
+        $id = $this->implicitId();
+        if ($id === null || self::env(self::IMPLICIT_ENV) !== $agent) {
+            return null;
+        }
+        $held = $this->get($id);
+        if ($held === null) {
+            // No record, or one that cannot be read: get() says null for both, and
+            // saving over an unreadable record would replace a session nobody could
+            // check the owner of (review, dev#277).
+            return is_file($this->path($id)) ? null : $id;
+        }
+
+        return $this->liveElsewhere($held) ? null : $id;
+    }
+
+    /** A session still live in another project: not this project's to rewrite or end. */
+    private function liveElsewhere(AgentSession $session): bool
+    {
+        return $session->endedAt === null
+            && $session->project !== ''
+            && WorkspaceActivity::normalize($session->project) !== WorkspaceActivity::normalize($this->project);
     }
 
     public function get(string $id): ?AgentSession
@@ -270,6 +314,15 @@ final class AgentRegistry
             $session = $this->get($id);
             if ($session === null) {
                 return null;
+            }
+            // An id inherited into another agent's shell ended the Claude session's
+            // record from another project (Guard, 2026-11-16).
+            if ($this->liveElsewhere($session)) {
+                throw new \InvalidArgumentException(sprintf(
+                    "session '%s' is live in another project (%s): it leaves from there; you joined as a session of your own, leave that one (--id)",
+                    $id,
+                    $session->project,
+                ));
             }
             $ended = $session->with(endedAt: gmdate('c'));
             $this->save($ended);
