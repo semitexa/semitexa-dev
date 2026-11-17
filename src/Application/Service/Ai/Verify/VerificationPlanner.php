@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 use Semitexa\Dev\Application\Console\Command\ScaffoldSyncDocsCommand;
+use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanExcludedPaths;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureTargetResolver;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 
@@ -385,15 +386,13 @@ final class VerificationPlanner
      */
     private function phpstanDiTarget(array $files, array $contractMoves = []): ?VerificationTarget
     {
+        $excluded = PhpstanExcludedPaths::forProject($this->projectRoot);
         $eligible = [];
         foreach ($files as $file) {
-            if ($file->status === ChangedFile::STATUS_DELETED) {
+            if ($file->status === ChangedFile::STATUS_DELETED || !str_ends_with($file->path, '.php')) {
                 continue;
             }
-            if (!str_ends_with($file->path, '.php')) {
-                continue;
-            }
-            if (self::isPhpstanDiIneligibleKind($file->kind)) {
+            if (self::isPhpstanDiIneligibleKind($file->kind) || $excluded->excludes($file->path)) {
                 continue;
             }
             $eligible[] = $file->path;
@@ -408,7 +407,7 @@ final class VerificationPlanner
                 // Apply the SAME production-only eligibility as the changed files:
                 // a dependent test/fixture/template (.php) must not be injected
                 // into phpstan_di, or it produces noisy non-actionable DI failures.
-                if (self::isPhpstanDiIneligibleKind($this->classifier->classify($dependent)->kind)) {
+                if (self::isPhpstanDiIneligibleKind($this->classifier->classify($dependent)->kind) || $excluded->excludes($dependent)) {
                     continue;
                 }
                 $eligible[]              = $dependent;

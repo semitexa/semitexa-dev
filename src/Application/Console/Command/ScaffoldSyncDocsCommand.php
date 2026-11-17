@@ -14,8 +14,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Mirrors the project root's AI-guidance .md files into the scaffold package
  * (packages/semitexa-ultimate/). Run this before tagging a new release of
- * semitexa/ultimate so new projects created via `bin/semitexa init` get the
- * current guidance.
+ * semitexa/ultimate so new projects (made by the installer from its archive)
+ * get the current guidance.
  *
  * Source of truth: project root.
  * Target: packages/semitexa-ultimate/.
