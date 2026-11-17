@@ -77,6 +77,7 @@ final class AChangeToAnExcludedFileCanPassVerifyTest extends TestCase
         self::assertTrue($excluded->excludes('packages//semitexa-ultimate/./src/Capabilities.php'));
         self::assertFalse($excluded->excludes('packages/semitexa-ultimate/src/../../semitexa-api/src/Application/Console/Command/DumpOpenApiCommand.php'), 'it climbs out of the excluded directory');
         self::assertFalse($excluded->excludes('../packages/semitexa-ultimate/src/Capabilities.php'), 'above the project root nothing is excluded');
+        self::assertFalse($excluded->excludes('/packages/semitexa-ultimate/src/Capabilities.php'), 'an absolute path is not a project path');
     }
 
     #[Test]

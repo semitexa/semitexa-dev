@@ -82,9 +82,16 @@ final class PhpstanExcludedPaths
         return false;
     }
 
-    /** The path with its `.`, `..` and empty segments resolved; null when it climbs above the root. */
+    /**
+     * The path with its `.`, `..` and empty segments resolved; null when it is
+     * absolute or climbs above the root, since neither is a project path
+     * (an excluded one would skip a check that should run).
+     */
     private static function normalize(string $path): ?string
     {
+        if (str_starts_with($path, '/')) {
+            return null;
+        }
         $segments = [];
         foreach (explode('/', $path) as $segment) {
             if ($segment === '' || $segment === '.') {
