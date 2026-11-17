@@ -101,10 +101,11 @@ final class AiAgentCommand extends BaseCommand
         );
 
         $leave = ['cmd' => 'ai:agent', 'args' => ['leave', '--json'], 'why' => 'when you are done, so nobody waits on you'];
-        if ($registry->isImplicit()) {
+        if ($registry->isImplicitSession($session)) {
             // bin/semitexa derived this id from the agent itself and passes it on
             // every command: an export would be lost anyway (Claude Code starts a
-            // fresh shell per command) and is not needed.
+            // fresh shell per command) and is not needed. A join that was given a
+            // new id (another agent, another project's live session) needs the export.
             return ['action' => 'join', 'session' => $session->toArray(), 'recognised' => true, 'next_command' => [$leave]];
         }
 

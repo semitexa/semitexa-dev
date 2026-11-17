@@ -428,6 +428,58 @@ final class AgentPresenceTest extends TestCase
         self::assertNull($again->endedAt);
     }
 
+    /**
+     * tk-inherited-session-id-takes-another-agents-identity (Guard, 2026-11-16): Codex
+     * started from a Claude Code shell inherits that shell's derived id. Joining as
+     * codex kept it ("Joined as claude-…") and rewrote the Claude session's record.
+     */
+    #[Test]
+    public function another_agent_inheriting_the_derived_id_joins_under_an_id_of_its_own(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        self::assertNotNull($registry->current(), 'the Claude session is listed from its first command');
+
+        $codex = $registry->join('codex', 'deploying the project from a fresh clone');
+
+        self::assertMatchesRegularExpression('/^codex-[0-9a-f]{6}$/', $codex->id);
+        self::assertSame(['codex', false], [$codex->agent, $registry->isImplicitSession($codex)], 'its own id, to export');
+        $claude = $registry->get('claude-a339fb');
+        self::assertSame(['claude', $this->root, null], [$claude?->agent, $claude?->project, $claude?->endedAt], 'the Claude record is untouched');
+    }
+
+    /** The same derived id, run in another project: that project's live session is not rewritten or ended from here. */
+    #[Test]
+    public function a_live_session_of_another_project_is_neither_rewritten_nor_ended_from_here(): void
+    {
+        $store = $this->root . '/store';
+        $workspace = new AgentRegistry($this->root . '/workspace', $store);
+        $guard = new AgentRegistry($this->root . '/guard', $store);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        $workspace->join('claude', 'releasing the framework this morning');
+
+        $joinedThere = $guard->join('claude', 'reading the guard deploy logs');
+        self::assertMatchesRegularExpression('/^claude-[0-9a-f]{6}$/', $joinedThere->id);
+        self::assertNotSame('claude-a339fb', $joinedThere->id, 'a new id, not the workspace session moved');
+        self::assertSame([$this->root . '/guard', false], [$joinedThere->project, $guard->isImplicitSession($joinedThere)], 'its own, to export');
+
+        try {
+            $guard->leave('claude-a339fb');
+            self::fail('a live session of another project was ended from here');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringStartsWith("session 'claude-a339fb' is live in another project ({$this->root}/workspace)", $e->getMessage());
+        }
+        // Read through the workspace's registry: one store, so the same record.
+        $still = $workspace->get('claude-a339fb');
+        self::assertNotNull($still, 'the workspace session is still recorded');
+        self::assertSame([$this->root . '/workspace', null], [$still->project, $still->endedAt], 'still live, still the workspace session');
+        $ended = $workspace->leave('claude-a339fb');
+        self::assertNotNull($ended);
+        self::assertNotNull($ended->endedAt, 'its own project ends it');
+    }
+
     #[Test]
     public function an_id_bin_semitexa_did_not_derive_is_not_registered_on_its_behalf(): void
     {
