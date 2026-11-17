@@ -54,8 +54,30 @@ final class PageRoutes
         if (!in_array('GET', (array) $methods, true) || $access !== 'public' || $path === '' || str_contains($path, '{') || preg_match(self::ACTIONS, rtrim($path, '/')) === 1) {
             return false;
         }
+        if (self::isCollectionFeed($route['class'] ?? null)) {
+            return false;
+        }
         $produces = array_filter((array) ($route['produces'] ?? []), 'is_string');
 
         return $produces === [] || array_filter($produces, static fn (string $type): bool => str_contains($type, 'html')) !== [];
+    }
+
+    /**
+     * A collection feed answers rows for a grid, not a page, though its route says
+     * nothing it produces (a produces list would answer an SSE or browser request
+     * 406). Read as HTML, a feed whose source refuses an anonymous visitor answered
+     * 403 as a broken page (a consumer's team directory and activity feeds,
+     * 2026-11-16). By name: semitexa-dev does not depend on crud. #[AsCrud], whose
+     * route is the screen itself, stays a page.
+     */
+    private const FEED_ATTRIBUTE = 'Semitexa\\Crud\\Attribute\\AsCollectionFeed';
+
+    private static function isCollectionFeed(mixed $class): bool
+    {
+        if (!is_string($class) || $class === '' || !class_exists(self::FEED_ATTRIBUTE) || !class_exists($class)) {
+            return false;
+        }
+
+        return (new \ReflectionClass($class))->getAttributes(self::FEED_ATTRIBUTE) !== [];
     }
 }

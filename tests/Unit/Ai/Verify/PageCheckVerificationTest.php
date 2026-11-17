@@ -83,6 +83,22 @@ final class PageCheckVerificationTest extends TestCase
         self::assertFalse(PageRoutes::isPage(['methods' => ['POST']] + $page));
     }
 
+    /**
+     * tk-page-check-opens-collection-feeds: a public feed's route declares no
+     * produces, so it was opened as a page, and its source's own refusal read
+     * as "HTTP 403" on a consumer's team directory and activity feeds.
+     */
+    #[Test]
+    public function a_collection_feed_is_not_opened_as_a_page(): void
+    {
+        $feed = new #[\Semitexa\Crud\Attribute\AsCollectionFeed(path: '/team/directory', name: 'team.directory', source: \stdClass::class, access: \Semitexa\Core\Auth\PayloadAccessType::Public, reason: 'test')] class {
+        };
+        $route = ['path' => '/team/directory', 'methods' => ['GET'], 'accessType' => 'public'];
+
+        self::assertTrue(PageRoutes::isPage($route + ['class' => \stdClass::class]), 'the same route on a plain class is a page');
+        self::assertFalse(PageRoutes::isPage($route + ['class' => $feed::class]), 'a feed answers rows, not a page');
+    }
+
     #[Test]
     public function a_non_html_error_fails_rather_than_being_skipped(): void
     {
