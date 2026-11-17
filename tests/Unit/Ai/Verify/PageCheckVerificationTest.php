@@ -99,6 +99,26 @@ final class PageCheckVerificationTest extends TestCase
         self::assertFalse(PageRoutes::isPage($route + ['class' => $feed::class]), 'a feed answers rows, not a page');
     }
 
+    /** Since crud#13 a feed says who may read it in its attribute's name: those are feeds too. */
+    #[Test]
+    public function a_feed_named_protected_or_public_is_not_opened_as_a_page(): void
+    {
+        $protected = new #[\Semitexa\Crud\Attribute\AsProtectedFeed(path: '/team/members', name: 'team.members', model: \stdClass::class)] class {
+        };
+        $public = new #[\Semitexa\Crud\Attribute\AsPublicFeed(path: '/prices', name: 'prices', reason: 'the public price list', model: \stdClass::class)] class {
+        };
+        $route = ['methods' => ['GET'], 'accessType' => 'public'];
+
+        self::assertSame(
+            ['protected' => false, 'public' => false, 'plain' => true],
+            [
+                'protected' => PageRoutes::isPage($route + ['path' => '/team/members', 'class' => $protected::class]),
+                'public' => PageRoutes::isPage($route + ['path' => '/prices', 'class' => $public::class]),
+                'plain' => PageRoutes::isPage($route + ['path' => '/prices', 'class' => \stdClass::class]),
+            ],
+        );
+    }
+
     #[Test]
     public function a_non_html_error_fails_rather_than_being_skipped(): void
     {
