@@ -516,7 +516,13 @@ final class PhpstanRunner
 
     private function discoverConfig(): string
     {
-        $workspace = $this->projectRoot . '/' . self::CONFIG_REL_PATH;
+        return self::configPathFor($this->projectRoot);
+    }
+
+    /** The config ai:verify runs phpstan with in this project: the workspace's, else the consumer one. */
+    public static function configPathFor(string $projectRoot): string
+    {
+        $workspace = $projectRoot . '/' . self::CONFIG_REL_PATH;
         if (is_file($workspace)) {
             return $workspace;
         }
