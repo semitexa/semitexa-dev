@@ -68,9 +68,15 @@ final class PageRoutes
      * 406). Read as HTML, a feed whose source refuses an anonymous visitor answered
      * 403 as a broken page (a consumer's team directory and activity feeds,
      * 2026-11-16). By name: semitexa-dev does not depend on crud. #[AsCrud], whose
-     * route is the screen itself, stays a page.
+     * route is the screen itself, stays a page. A feed says who may read it in its
+     * attribute's name since crud#13 (#[AsProtectedFeed], #[AsPublicFeed]), and those
+     * are feeds as much as #[AsCollectionFeed] is.
      */
-    private const FEED_ATTRIBUTE = 'Semitexa\\Crud\\Attribute\\AsCollectionFeed';
+    private const FEED_ATTRIBUTES = [
+        'Semitexa\\Crud\\Attribute\\AsCollectionFeed',
+        'Semitexa\\Crud\\Attribute\\AsProtectedFeed',
+        'Semitexa\\Crud\\Attribute\\AsPublicFeed',
+    ];
 
     private static function isCollectionFeed(mixed $class): bool
     {
@@ -79,6 +85,13 @@ final class PageRoutes
         }
 
         // Matched by name: the attribute class itself need not be loadable.
-        return (new \ReflectionClass($class))->getAttributes(self::FEED_ATTRIBUTE) !== [];
+        $reflection = new \ReflectionClass($class);
+        foreach (self::FEED_ATTRIBUTES as $attribute) {
+            if ($reflection->getAttributes($attribute) !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
