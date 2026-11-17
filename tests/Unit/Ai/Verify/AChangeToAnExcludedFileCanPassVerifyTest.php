@@ -67,6 +67,18 @@ final class AChangeToAnExcludedFileCanPassVerifyTest extends TestCase
         self::assertFalse($excluded->excludes('packages/semitexa-core/src/Composer/SemitexaPluginTest.php'));
     }
 
+    /** Review, dev#278: a --files value keeps its spelling, so ./ and .. are resolved before matching. */
+    #[Test]
+    public function a_path_is_matched_as_it_resolves_not_as_it_is_spelled(): void
+    {
+        $excluded = PhpstanExcludedPaths::forProject($this->root);
+
+        self::assertTrue($excluded->excludes('./packages/semitexa-ultimate/src/Capabilities.php'));
+        self::assertTrue($excluded->excludes('packages//semitexa-ultimate/./src/Capabilities.php'));
+        self::assertFalse($excluded->excludes('packages/semitexa-ultimate/src/../../semitexa-api/src/Application/Console/Command/DumpOpenApiCommand.php'), 'it climbs out of the excluded directory');
+        self::assertFalse($excluded->excludes('../packages/semitexa-ultimate/src/Capabilities.php'), 'above the project root nothing is excluded');
+    }
+
     #[Test]
     public function the_workspace_config_is_read_the_same_way(): void
     {
@@ -87,6 +99,9 @@ final class AChangeToAnExcludedFileCanPassVerifyTest extends TestCase
             new ChangedFile('packages/semitexa-ultimate/src/Capabilities.php', ChangedFile::KIND_PHP_OTHER),
         ], VerificationPlan::SCOPE_STANDARD);
 
+        // Review, dev#278: the file is still checked, only not by phpstan; an empty plan would pass the line after.
+        $syntax = array_values(array_filter($plan->targets, static fn (VerificationTarget $t): bool => $t->type === VerificationTarget::TYPE_SYNTAX));
+        self::assertSame([['packages/semitexa-ultimate/src/Capabilities.php']], array_map(static fn (VerificationTarget $t): array => $t->triggeredBy, $syntax));
         self::assertSame([], $this->diTargets($plan));
     }
 

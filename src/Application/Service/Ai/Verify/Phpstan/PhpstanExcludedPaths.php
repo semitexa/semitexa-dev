@@ -66,12 +66,40 @@ final class PhpstanExcludedPaths
 
     public function excludes(string $relativePath): bool
     {
+        // A --files value keeps its spelling: ./packages/... must match, and
+        // packages/x/src/../../y must not (review, dev#278). A path that climbs
+        // above the project root is never excluded.
+        $normalized = self::normalize($relativePath);
+        if ($normalized === null) {
+            return false;
+        }
         foreach ($this->paths as $path) {
-            if ($relativePath === $path || str_starts_with($relativePath, $path . '/')) {
+            if ($normalized === $path || str_starts_with($normalized, $path . '/')) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /** The path with its `.`, `..` and empty segments resolved; null when it climbs above the root. */
+    private static function normalize(string $path): ?string
+    {
+        $segments = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                if ($segments === []) {
+                    return null;
+                }
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+
+        return implode('/', $segments);
     }
 }
