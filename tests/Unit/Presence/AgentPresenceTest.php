@@ -302,6 +302,16 @@ final class AgentPresenceTest extends TestCase
     }
 
     #[Test]
+    public function the_same_project_spelled_with_a_trailing_slash_is_still_this_project(): void
+    {
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $sameProject = new AgentSession('claude-0002', 'claude', 'from another process', null, [], $now, $now, null, $this->root . '/dev/');
+
+        self::assertSame(['claude-0002'], array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$sameProject])));
+    }
+
+    #[Test]
     public function a_task_taken_in_another_projects_backlog_is_held_there_not_where_the_agent_joined(): void
     {
         // The portal session ran the workspace's bin/semitexa and took the

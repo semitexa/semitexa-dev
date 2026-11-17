@@ -103,10 +103,14 @@ final class AgentRegistry
     {
         $here = WorkspaceActivity::normalize($this->project);
 
-        return array_values(array_filter($sessions, function (AgentSession $s) use ($here): bool {
+        // Compared as paths, not strings: a trailing slash in one process's root is the same project.
+        $isHere = static fn (?string $project): bool => $project !== null && $project !== ''
+            && WorkspaceActivity::normalize($project) === $here;
+
+        return array_values(array_filter($sessions, function (AgentSession $s) use ($here, $isHere): bool {
             // No project named is an owner unknown, not this project: a record of
             // this project's own store that predates the field already reads as ours.
-            if ($s->project === $this->project || $s->taskProject === $this->project) {
+            if ($isHere($s->project) || $isHere($s->taskProject)) {
                 return true;
             }
             foreach ($s->repos as $declared) {
