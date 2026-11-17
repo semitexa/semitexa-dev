@@ -480,6 +480,40 @@ final class AgentPresenceTest extends TestCase
         self::assertNotNull($ended->endedAt, 'its own project ends it');
     }
 
+    /** Review, dev#277: a record that exists but cannot be read is not free to write over. */
+    #[Test]
+    public function an_unreadable_record_of_the_derived_id_is_not_written_over(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        putenv(AgentRegistry::ENV . '=claude-a339fb');
+        putenv(AgentRegistry::IMPLICIT_ENV . '=claude');
+        $record = (new \ReflectionMethod(AgentRegistry::class, 'path'))->invoke($registry, 'claude-a339fb');
+        self::assertIsString($record);
+        mkdir(dirname($record), 0o777, true);
+        file_put_contents($record, '{half a record');
+
+        $joined = $registry->join('claude', 'joining over a record it cannot read');
+
+        self::assertMatchesRegularExpression('/^claude-[0-9a-f]{6}$/', $joined->id);
+        self::assertNotSame('claude-a339fb', $joined->id, 'a new id of its own');
+        self::assertSame('{half a record', file_get_contents($record), 'the unreadable record is left as it was');
+    }
+
+    /** Review, dev#277: join reads and writes as one step, under the same lock as leave, beats and claims. */
+    #[Test]
+    public function a_join_goes_through_the_registry_lock(): void
+    {
+        $registry = new AgentRegistry($this->root);
+        $dir = (new \ReflectionProperty(AgentRegistry::class, 'dir'))->getValue($registry);
+        self::assertIsString($dir);
+        mkdir($dir, 0o777, true);
+        symlink($this->root . '/elsewhere', $dir . '/.lock');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('.lock is a symbolic link; refusing to write presence through it');
+        $registry->join('codex', 'joining while the lock is not a lock');
+    }
+
     #[Test]
     public function an_id_bin_semitexa_did_not_derive_is_not_registered_on_its_behalf(): void
     {
@@ -546,6 +580,8 @@ final class AgentPresenceTest extends TestCase
             $mine = $registry->join('claude', 'joining into the shared store');
             self::assertSame(0o600, fileperms($shared . '/' . $mine->id . '.json') & 0o777);
 
+            // The join took the lock, so its file is there: a link planted in its place.
+            unlink($shared . '/.lock');
             symlink($this->root . '/elsewhere', $shared . '/.lock');
             $this->expectException(\RuntimeException::class);
             $registry->locked(static fn (): null => null);
