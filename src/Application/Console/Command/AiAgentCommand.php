@@ -84,7 +84,8 @@ final class AiAgentCommand extends BaseCommand
         $envelope['agents_elsewhere'] = count($sessions) - count($shown);
         // Matched as host paths: packages/semitexa-site here is not the portal's,
         // but a portal agent that declared ../semitexa.dev/packages/x claims x here.
-        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($live, $now, $registry->project());
+        // Only sessions this project may see can claim its repos: a claim names its session.
+        $envelope['activity'] = (new WorkspaceActivity($root))->dirtyRepos($registry->visibleHere($live), $now, $registry->project());
         $envelope['stack'] = (new StackEvents($root))->recent(5, $now);
 
         return $this->emit($output, $input, $envelope, self::SUCCESS);

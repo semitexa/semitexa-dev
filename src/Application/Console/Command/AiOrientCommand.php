@@ -365,7 +365,8 @@ final class AiOrientCommand extends BaseCommand
         $radar = new WorkspaceActivity(ProjectRoot::get());
         // Repo paths are matched as host paths: an agent that joined in another
         // project and edits this one's packages claims them too.
-        $activity = $radar->dirtyRepos($live, $now, $registry->project());
+        // Only sessions this project may see can claim its repos: a claim names its session.
+        $activity = $radar->dirtyRepos($registry->visibleHere($live), $now, $registry->project());
 
         return [
             'you' => $you?->toArray(),

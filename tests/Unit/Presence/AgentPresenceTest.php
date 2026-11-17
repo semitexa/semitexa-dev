@@ -302,6 +302,25 @@ final class AgentPresenceTest extends TestCase
     }
 
     #[Test]
+    public function a_hidden_session_claims_nothing_here(): void
+    {
+        // What both commands pass to dirtyRepos(): the visible sessions only, so a
+        // hidden one's id cannot surface through claimed_by (review of dev#274).
+        $repo = $this->root . '/dev/packages/semitexa-demo';
+        mkdir($repo, 0o755, true);
+        exec('git -C ' . escapeshellarg($repo) . ' init -q 2>&1');
+        file_put_contents($repo . '/article.md', 'draft');
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $ownerUnknown = new AgentSession('codex-0003', 'codex', 'an owner nobody recorded', null, ['packages/semitexa-demo'], $now, $now, null, '');
+
+        $activity = (new WorkspaceActivity($this->root . '/dev'))->dirtyRepos($dev->visibleHere([$ownerUnknown]), null, $dev->project());
+
+        self::assertSame('packages/semitexa-demo', $activity[0]['repo'] ?? null);
+        self::assertSame([], $activity[0]['claimed_by'], 'a session this project does not see names no claim');
+    }
+
+    #[Test]
     public function the_same_project_spelled_with_a_trailing_slash_is_still_this_project(): void
     {
         $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
