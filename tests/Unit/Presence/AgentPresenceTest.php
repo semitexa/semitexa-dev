@@ -289,6 +289,19 @@ final class AgentPresenceTest extends TestCase
     }
 
     #[Test]
+    public function a_shared_record_that_names_no_project_is_not_shown_as_ours(): void
+    {
+        $dev = new AgentRegistry($this->root . '/dev', $this->root . '/store');
+        $mine = $dev->join('claude', 'working the workspace backlog');
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $ownerUnknown = new AgentSession('codex-0001', 'codex', 'releasing something', 'llms-9', ['packages/semitexa-site'], $now, $now, null, '');
+
+        $visible = array_map(static fn (AgentSession $s): string => $s->id, $dev->visibleHere([$mine, $ownerUnknown]));
+
+        self::assertSame([$mine->id], $visible, 'an owner nobody recorded is counted, not listed');
+    }
+
+    #[Test]
     public function a_task_taken_in_another_projects_backlog_is_held_there_not_where_the_agent_joined(): void
     {
         // The portal session ran the workspace's bin/semitexa and took the

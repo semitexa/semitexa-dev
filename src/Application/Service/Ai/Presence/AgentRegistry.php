@@ -104,7 +104,9 @@ final class AgentRegistry
         $here = WorkspaceActivity::normalize($this->project);
 
         return array_values(array_filter($sessions, function (AgentSession $s) use ($here): bool {
-            if ($s->project === '' || $s->project === $this->project || $s->taskProject === $this->project) {
+            // No project named is an owner unknown, not this project: a record of
+            // this project's own store that predates the field already reads as ours.
+            if ($s->project === $this->project || $s->taskProject === $this->project) {
                 return true;
             }
             foreach ($s->repos as $declared) {
