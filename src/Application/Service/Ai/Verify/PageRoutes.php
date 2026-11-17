@@ -74,10 +74,11 @@ final class PageRoutes
 
     private static function isCollectionFeed(mixed $class): bool
     {
-        if (!is_string($class) || $class === '' || !class_exists(self::FEED_ATTRIBUTE) || !class_exists($class)) {
+        if (!is_string($class) || $class === '' || !class_exists($class)) {
             return false;
         }
 
+        // Matched by name: the attribute class itself need not be loadable.
         return (new \ReflectionClass($class))->getAttributes(self::FEED_ATTRIBUTE) !== [];
     }
 }
