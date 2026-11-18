@@ -126,7 +126,13 @@ final class StructuralOutlierBudgetTest extends TestCase
         // adapter, inside run(), FOR UPDATE where the server locks rows, no
         // aggregates) live in Query/LockingRead; here only the flag and the
         // calls into it, which need the private SQL builders.
-        'semitexa-orm/src/Query/ResourceModelQuery.php' => [57, 1134],
+        // 57/1134 -> 59/1187 on 2026-11-18 (orm-gap-5-expression-order-group),
+        // recorded on Fable's design: orderByValues() is ordering state and sits
+        // beside orderBy(); aggregate() is the one entry to the grouped and
+        // distinct reads, which live on Query/ResourceModelAggregate, and the
+        // ORDER BY CASE in Query/ValueRankOrdering. Here the two methods, their
+        // docblocks, and binding the CASE values next to the WHERE's.
+        'semitexa-orm/src/Query/ResourceModelQuery.php' => [59, 1187],
         // 917 -> 934 on 2026-09-26, NO NEW METHOD: the connect circuit breaker
         // (fail fast while the database is down) is wired through here, and
         // shutdown() now resets it so the next connect is a real attempt.
