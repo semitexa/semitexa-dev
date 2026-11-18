@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -26,13 +27,17 @@ final class ResourcePlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $responseClass = $this->inflector->toResponseClass($params['name']);
+        $responseClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toResponseClass($params['name']), 'The response class');
+        // The page name is written into a Twig comment, a Twig string and a CSS
+        // comment, none of which can carry an encoded value: an identifier fits all three.
+        $studlyName = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The resource name');
         $kebabName = $this->inflector->toKebab($params['name']);
 
         $namespace = "{$moduleNs}\\Application\\Resource\\Response";
-        $templatePath = $params['template'] ?? "@project-layouts-{$module}/pages/{$kebabName}.html.twig";
+        $templatePath = GenerationInput::valid(GenerationInput::TEMPLATE, $params['template'] ?? "@project-layouts-{$module}/pages/{$kebabName}.html.twig", 'The template');
+        $handle = GenerationInput::valid(GenerationInput::HANDLE, $params['handle'], 'The handle');
 
         $imports = [
             'use Semitexa\\Core\\Attribute\\AsResource;',
@@ -46,8 +51,9 @@ final class ResourcePlanBuilder
         $content = $this->renderer->render($template, [
             'namespace' => $namespace,
             'imports' => implode("\n", $imports),
-            'handle' => $params['handle'],
-            'template' => $templatePath,
+            // String literals of #[AsResource]: checked above, and written as literals all the same.
+            'handle' => GenerationInput::phpString($handle),
+            'template' => GenerationInput::phpString($templatePath),
             'className' => $responseClass,
         ], 'make:resource');
 
@@ -55,7 +61,6 @@ final class ResourcePlanBuilder
         $files = [new PlannedFile($filePath, $content, FileType::PhpClass)];
 
         if ($params['withTemplate'] ?? false) {
-            $studlyName = $this->inflector->toStudly($params['name']);
             $twigTemplate = $this->templateResolver->resolve('page-template.html.twig.tpl');
             $twigContent = $this->renderer->render($twigTemplate, [
                 'pageName' => $studlyName,
@@ -73,7 +78,6 @@ final class ResourcePlanBuilder
         }
 
         if ($params['withAssets'] ?? false) {
-            $studlyName = $this->inflector->toStudly($params['name']);
             // Where the runtime reads a module's assets (tk-guard-make-assets-legacy-path):
             // Application/Static with one v2 assets.json per module. The old
             // View/assets/pages/<page>.{json,css,js} was read by nothing, so the

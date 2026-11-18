@@ -23,6 +23,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   and a module there is discovered by its directory alone, so a typo
  *   (`Playgound`) planned cleanly, recommended --write, and then quietly
  *   started a second module. Creating one is make:module's job.
+ * - An option's value was never checked for what it is. It is substituted
+ *   into generated PHP, so a class name or a command name that was really a
+ *   line of code became one ({@see GenerationInput}).
  */
 final class GenerationPreflight
 {
@@ -78,10 +81,32 @@ final class GenerationPreflight
             ];
         }
 
+        // What a value may be, by what its option means, before a builder is even
+        // constructed (tk-generator-option-values-reach-php-unescaped): the value
+        // goes into generated PHP, and `--command-name="a')] … system('…');"` was
+        // a class file with the caller's code in it. Every option is looked at,
+        // not only the required ones.
+        $invalid = [];
+        foreach ($input->getOptions() as $option => $value) {
+            $rule = GenerationInput::ruleForOption((string) $option);
+            $problem = $rule !== null && is_string($value) && $value !== '' ? GenerationInput::problem($rule, $value) : null;
+            if ($problem === null || !is_string($value)) {
+                continue;
+            }
+            $invalid[] = (string) $option;
+            $errors[] = [
+                'path' => '',
+                'reason' => self::REASON_INVALID_OPTION,
+                'detail' => sprintf('--%s %s is refused: it must be %s.', $option, GenerationInput::shown($value), $problem),
+                'option' => (string) $option,
+            ];
+        }
+
         $closest = null;
         $newModule = null;
         $given = $input->hasOption('module') ? $input->getOption('module') : null;
-        if (is_string($given) && $given !== '') {
+        // A module name that is not a name has no "did you mean": it was refused above.
+        if (is_string($given) && $given !== '' && !in_array('module', $invalid, true)) {
             $module = (new NameInflector())->toStudly($given);
             $existing = self::existingModules($projectRoot);
             if (!in_array($module, $existing, true)) {

@@ -6,13 +6,13 @@ namespace {{namespace}};
 
 {{imports}}
 
-#[AsCommand(name: '{{commandName}}', description: '{{description}}')]
+#[AsCommand(name: {{commandName}}, description: {{description}})]
 final class {{className}} extends BaseCommand
 {
     protected function configure(): void
     {
-        $this->setName('{{commandName}}')
-            ->setDescription('{{description}}');
+        $this->setName({{commandName}})
+            ->setDescription({{description}});
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

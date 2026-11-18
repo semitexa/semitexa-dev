@@ -7,8 +7,8 @@ namespace {{namespace}};
 {{imports}}
 
 #[{{accessAttribute}}(
-    path: '{{path}}',
-    methods: ['{{method}}'],
+    path: {{path}},
+    methods: [{{method}}],
     responseWith: {{responseClass}}::class,
 )]
 {{graphqlAttribute}}class {{className}}{{implements}}

@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -74,9 +75,11 @@ final class PayloadPlanBuilder
         }
         [$accessShort, $accessFqcn] = self::ACCESS_TO_ATTRIBUTE[$access];
 
-        $payloadClass = $this->inflector->toPayloadClass($params['name']);
-        $responseClass = $this->inflector->toResponseClass($params['response']);
-        $module = $this->inflector->toStudly($params['module']);
+        $payloadClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toPayloadClass($params['name']), 'The payload class');
+        $responseClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toResponseClass($params['response']), 'The response class');
+        $path = GenerationInput::valid(GenerationInput::ROUTE_PATH, $params['path'], 'The route path');
+        $method = strtoupper(GenerationInput::valid(GenerationInput::HTTP_METHOD, $params['method'], 'The HTTP method'));
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
 
         $namespace = "{$moduleNs}\\Application\\Payload\\Request";
@@ -119,8 +122,9 @@ final class PayloadPlanBuilder
             'namespace' => $namespace,
             'imports' => implode("\n", $imports),
             'accessAttribute' => $accessShort,
-            'path' => $params['path'],
-            'method' => strtoupper($params['method']),
+            // String literals of the route attribute: checked above, and written as literals all the same.
+            'path' => GenerationInput::phpString($path),
+            'method' => GenerationInput::phpString($method),
             'responseClass' => $responseClass,
             'className' => $payloadClass,
             // Empty when GraphQL is off (placeholder collapses to nothing); the
@@ -149,12 +153,12 @@ final class PayloadPlanBuilder
      */
     private function renderGraphqlAttribute(?string $field): string
     {
-        $field = $field !== null ? trim($field) : '';
+        $field = $field !== null ? trim(GenerationInput::valid(GenerationInput::GRAPHQL_FIELD, $field, 'The GraphQL field')) : '';
 
         if ($field === '') {
             return "#[ExposeAsGraphql]\n";
         }
 
-        return "#[ExposeAsGraphql(field: '" . addslashes($field) . "')]\n";
+        return '#[ExposeAsGraphql(field: ' . GenerationInput::phpString($field) . ")]\n";
     }
 }

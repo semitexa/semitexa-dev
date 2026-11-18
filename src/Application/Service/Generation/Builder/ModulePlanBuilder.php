@@ -8,6 +8,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\NameInflectorInterface;
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 
 final class ModulePlanBuilder
 {
@@ -23,7 +24,8 @@ final class ModulePlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['name']);
+        // The name becomes a directory, a namespace and a line of .gitkeep.
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The module');
         $target = $this->normalizeTarget($params['target'] ?? self::TARGET_CUSTOM);
         $base = $target === self::TARGET_PACKAGE
             ? sprintf('packages/semitexa-%s/src', $this->inflector->toKebab($module))
