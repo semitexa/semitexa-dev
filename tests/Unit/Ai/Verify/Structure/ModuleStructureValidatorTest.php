@@ -115,6 +115,34 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertEmpty($violations, $this->renderViolations($violations));
     }
 
+    public function test_scheduled_jobs_under_application_job_pass(): void
+    {
+        // Application/Job is the canonical home for #[AsScheduledJob] classes,
+        // with feature grouping. Before the rule existed the directory fired
+        // an unknown-directory violation.
+        $this->scaffoldModule('Hello', [
+            'Application/Job/Cleanup',
+        ]);
+        $this->writeFile('src/modules/Hello/src/Application/Job/FooJob.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Job/Cleanup/BarJob.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->module('Hello'));
+        $this->assertEmpty($violations, $this->renderViolations($violations));
+    }
+
+    public function test_scheduled_job_under_application_service_still_passes(): void
+    {
+        // Application/Job is additive: the older home under Application/Service
+        // (feature grouping) carries no violation.
+        $this->scaffoldModule('Hello', [
+            'Application/Service/Job',
+        ]);
+        $this->writeFile('src/modules/Hello/src/Application/Service/Job/FooJob.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->module('Hello'));
+        $this->assertEmpty($violations, $this->renderViolations($violations));
+    }
+
     // ----------------------- REJECTED ------------------------
 
     public function test_command_under_src_console_command_fails_with_command_wrong_location(): void
