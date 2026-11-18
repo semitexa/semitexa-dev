@@ -19,6 +19,7 @@ use Semitexa\Dev\Application\Service\Generation\Builder\ResourcePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Builder\ServicePlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Builder\TestPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
+use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateResolver;
@@ -202,7 +203,13 @@ final class HostileInputTest extends TestCase
     public function every_file_a_plain_run_plans_is_one_declaration_of_valid_php(): void
     {
         foreach (self::PLAIN as $generator => $params) {
-            foreach (self::build($generator, $params)->files as $file) {
+            $plan = self::build($generator, $params);
+            // A generator that planned nothing would pass the loop below unlooked at (review, dev#280).
+            self::assertNotSame([], $plan->files, "{$generator} plans files");
+            $php = array_filter($plan->files, static fn (PlannedFile $file): bool => str_ends_with($file->path, '.php'));
+            // make:module plans directories (.gitkeep) and no class; every other generator plans PHP.
+            self::assertSame($generator !== 'make:module', $php !== [], "{$generator} plans PHP");
+            foreach ($plan->files as $file) {
                 if (!str_ends_with($file->path, '.php')) {
                     continue;
                 }

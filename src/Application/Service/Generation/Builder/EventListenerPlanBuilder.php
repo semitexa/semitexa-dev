@@ -28,7 +28,7 @@ final class EventListenerPlanBuilder
     {
         $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $className = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The listener class');
+        $className = GenerationInput::valid(GenerationInput::DECLARED_NAME, $this->inflector->toStudly($params['name']), 'The listener class');
         [$eventImport, $eventClass] = $this->resolveEventReference($module, $params['event']);
         GenerationInput::valid(GenerationInput::CLASS_NAME, $eventImport, 'The event class');
         $execution = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['execution']), 'The execution mode');

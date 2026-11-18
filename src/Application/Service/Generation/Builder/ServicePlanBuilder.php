@@ -28,7 +28,7 @@ final class ServicePlanBuilder
     {
         $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $className = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The service class');
+        $className = GenerationInput::valid(GenerationInput::DECLARED_NAME, $this->inflector->toStudly($params['name']), 'The service class');
 
         $namespace = "{$moduleNs}\\Domain\\Service";
 

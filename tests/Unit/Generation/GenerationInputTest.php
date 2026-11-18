@@ -90,6 +90,71 @@ final class GenerationInputTest extends TestCase
         self::assertSame('"' . str_repeat('ї', 30) . '…"', $shown);
     }
 
+    /**
+     * Words php.net lists as keywords, compile-time constants and reserved type
+     * names, with words it only soft-reserves or does not reserve mixed in:
+     * which is which is asked of PHP below, not written here.
+     */
+    private const WORDS = [
+        '__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone',
+        'const', 'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare',
+        'endfor', 'endforeach', 'endif', 'endswitch', 'endwhile', 'eval', 'exit', 'extends', 'final', 'finally', 'fn',
+        'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof',
+        'insteadof', 'interface', 'isset', 'list', 'match', 'namespace', 'new', 'or', 'print', 'private', 'protected',
+        'public', 'readonly', 'require', 'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset',
+        'use', 'var', 'while', 'xor', 'yield', 'from',
+        '__class__', '__dir__', '__file__', '__function__', '__line__', '__method__', '__namespace__', '__property__', '__trait__',
+        'enum', 'resource', 'numeric', 'integer', 'boolean', 'double', 'get', 'set', 'cart', 'order',
+    ];
+
+    /** Type names PHP refuses when it compiles the declaration, which a parse alone does not show. */
+    private const RESERVED_TYPE_NAMES = ['self', 'parent', 'int', 'float', 'bool', 'string', 'true', 'false', 'null', 'void', 'iterable', 'object', 'mixed', 'never'];
+
+    #[Test]
+    public function a_declared_name_is_refused_exactly_when_php_refuses_to_parse_it_as_a_class_an_interface_or_an_enum(): void
+    {
+        $refused = 0;
+        foreach (self::WORDS as $word) {
+            foreach ([$word, strtoupper($word), ucfirst($word)] as $name) {
+                foreach (['class', 'interface', 'enum'] as $kind) {
+                    try {
+                        \PhpToken::tokenize("<?php {$kind} {$name} {}", TOKEN_PARSE);
+                        $parses = true;
+                    } catch (\ParseError) {
+                        $parses = false;
+                    }
+                    self::assertSame($parses, GenerationInput::problem(GenerationInput::DECLARED_NAME, $name) === null, "{$kind} {$name}");
+                    $refused += $parses ? 0 : 1;
+                }
+            }
+        }
+        self::assertGreaterThan(600, $refused, 'the list is mostly words PHP refuses');
+        self::assertNull(GenerationInput::problem(GenerationInput::DECLARED_NAME, 'Enum'), 'a soft-reserved word declares');
+    }
+
+    #[Test]
+    public function a_declared_name_is_not_a_type_name_php_reserves_in_any_case(): void
+    {
+        foreach (self::RESERVED_TYPE_NAMES as $word) {
+            foreach ([$word, strtoupper($word), ucfirst($word)] as $name) {
+                self::assertNotNull(GenerationInput::problem(GenerationInput::DECLARED_NAME, $name), $name);
+                self::assertNull(GenerationInput::problem(GenerationInput::DECLARED_NAME, $name . 'Value'), $name . 'Value');
+            }
+        }
+    }
+
+    #[Test]
+    public function a_reserved_word_is_still_an_identifier_where_no_class_is_declared(): void
+    {
+        // A module is a namespace segment and a directory: PHP 8 takes App\Modules\List.
+        self::assertSame('List', GenerationInput::valid(GenerationInput::IDENTIFIER, 'List', 'The module'));
+        self::assertNotNull(GenerationInput::problem(GenerationInput::DECLARED_NAME, 'Foo{}'), 'and a declared name is an identifier first');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('The service class "List" is refused: it must be a PHP identifier');
+        GenerationInput::valid(GenerationInput::DECLARED_NAME, 'List', 'The service class');
+    }
+
     /** @return iterable<string, array{string}> */
     public static function texts(): iterable
     {

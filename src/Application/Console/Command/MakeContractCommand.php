@@ -61,12 +61,18 @@ final class MakeContractCommand extends BaseCommand
         $builder = new ContractPlanBuilder($inflector, $resolver, $renderer);
         $replayArgs = ReplayArgBuilder::fromInput($input, ['module', 'name', 'implementation']);
 
-        $plan = $builder->build([
-            'module' => $input->getOption('module'),
-            'name' => $input->getOption('name'),
-            'implementation' => $input->getOption('implementation'),
-            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
-        ]);
+        // What the builder still refuses is a name PHP reserves for itself
+        // (`--name=List`): only it knows which class the name becomes.
+        try {
+            $plan = $builder->build([
+                'module' => $input->getOption('module'),
+                'name' => $input->getOption('name'),
+                'implementation' => $input->getOption('implementation'),
+                'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return GenerationPreflight::reject($input, $output, 'make:contract', GenerationPreflight::REASON_INVALID_OPTION, $e->getMessage());
+        }
 
         $plannedResult = new \Semitexa\Dev\Application\Service\Generation\Data\GenerationResult(
             command: 'make:contract',

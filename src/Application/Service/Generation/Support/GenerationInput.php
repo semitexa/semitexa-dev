@@ -37,6 +37,14 @@ final class GenerationInput
     public const NAME = 'name';
     /** A PHP identifier: what a derived class or module name must be. */
     public const IDENTIFIER = 'identifier';
+    /**
+     * The name a generated class or interface is declared with: an identifier
+     * PHP also accepts after `class`. `final class List {}` and `class Int {}`
+     * are refused by PHP itself, so a name that is one of its reserved words is
+     * refused here. A namespace segment is not held to this (PHP 8 takes
+     * `App\Modules\List`): a module stays {@see self::IDENTIFIER}.
+     */
+    public const DECLARED_NAME = 'declared_name';
     /** A class name, namespaced or not. */
     public const CLASS_NAME = 'class';
     /** {@see self::CLASS_NAME} or {@see self::NAME}: an option that takes a class or the short name of one. */
@@ -63,6 +71,10 @@ final class GenerationInput
         self::IDENTIFIER => [
             '/\A' . self::IDENT . '\z/',
             'a PHP identifier: letters, digits and "_", not starting with a digit',
+        ],
+        self::DECLARED_NAME => [
+            '/\A' . self::IDENT . '\z/',
+            'a PHP identifier (letters, digits and "_", not starting with a digit) that is not a word PHP reserves, such as class, list or int',
         ],
         self::CLASS_NAME => [
             '/\A\\\\?' . self::IDENT . '(?:\\\\' . self::IDENT . ')*\z/',
@@ -108,6 +120,25 @@ final class GenerationInput
         ],
     ];
 
+    /**
+     * What PHP refuses as the name of a class, an interface or an enum, in any
+     * case: its keywords, its compile-time constants and the type names it
+     * reserves (php.net: "List of Keywords", "Other Reserved Words"). `enum`,
+     * `resource` and `numeric` are soft-reserved and still declare; checked
+     * with `php -l` on PHP 8.4.
+     */
+    private const RESERVED_NAMES = [
+        '__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone',
+        'const', 'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare',
+        'endfor', 'endforeach', 'endif', 'endswitch', 'endwhile', 'eval', 'exit', 'extends', 'final', 'finally', 'fn',
+        'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof',
+        'insteadof', 'interface', 'isset', 'list', 'match', 'namespace', 'new', 'or', 'print', 'private', 'protected',
+        'public', 'readonly', 'require', 'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset',
+        'use', 'var', 'while', 'xor', 'yield',
+        '__class__', '__dir__', '__file__', '__function__', '__line__', '__method__', '__namespace__', '__property__', '__trait__',
+        'self', 'parent', 'int', 'float', 'bool', 'string', 'true', 'false', 'null', 'void', 'iterable', 'object', 'mixed', 'never',
+    ];
+
     /** option => rule, for every make:* option whose value reaches generated code. Free text (description, nav, submit-text) has no rule: it is encoded. */
     private const OPTION_RULES = [
         'module' => self::NAME,
@@ -142,7 +173,11 @@ final class GenerationInput
             throw new \LogicException(sprintf('No generation input rule "%s".', $rule));
         }
 
-        return preg_match($definition[0], $value) === 1 ? null : $definition[1];
+        if (preg_match($definition[0], $value) !== 1) {
+            return $definition[1];
+        }
+
+        return $rule === self::DECLARED_NAME && in_array(strtolower($value), self::RESERVED_NAMES, true) ? $definition[1] : null;
     }
 
     /**

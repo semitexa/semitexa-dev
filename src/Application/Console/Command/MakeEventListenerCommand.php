@@ -72,13 +72,19 @@ final class MakeEventListenerCommand extends BaseCommand
         $renderer = new TemplateRenderer();
         $builder = new EventListenerPlanBuilder($inflector, $resolver, $renderer);
 
-        $plan = $builder->build([
-            'module' => $input->getOption('module'),
-            'name' => $input->getOption('name'),
-            'event' => $input->getOption('event'),
-            'execution' => $execution,
-            'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
-        ]);
+        // What the builder still refuses is a name PHP reserves for itself
+        // (`--name=List`): only it knows which class the name becomes.
+        try {
+            $plan = $builder->build([
+                'module' => $input->getOption('module'),
+                'name' => $input->getOption('name'),
+                'event' => $input->getOption('event'),
+                'execution' => $execution,
+                'dryRun' => $input->getOption('dry-run') || !$input->getOption('write'),
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return GenerationPreflight::reject($input, $output, 'make:event-listener', GenerationPreflight::REASON_INVALID_OPTION, $e->getMessage());
+        }
 
         $module = $inflector->toStudly($input->getOption('module'));
         $moduleNs = ModuleNamespace::of($module);

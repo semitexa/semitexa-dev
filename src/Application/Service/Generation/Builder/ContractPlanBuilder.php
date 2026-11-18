@@ -29,13 +29,13 @@ final class ContractPlanBuilder
         $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
         $name = $this->inflector->toStudly($params['name']);
-        $implName = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['implementation']), 'The implementation class');
+        $implName = GenerationInput::valid(GenerationInput::DECLARED_NAME, $this->inflector->toStudly($params['implementation']), 'The implementation class');
 
         $interfaceClass = $name;
         if (!str_ends_with($interfaceClass, 'Interface')) {
             $interfaceClass .= 'Interface';
         }
-        GenerationInput::valid(GenerationInput::IDENTIFIER, $interfaceClass, 'The contract interface');
+        GenerationInput::valid(GenerationInput::DECLARED_NAME, $interfaceClass, 'The contract interface');
 
         $contractNamespace = "{$moduleNs}\\Domain\\Contract";
         $implNamespace = "{$moduleNs}\\Domain\\Service";

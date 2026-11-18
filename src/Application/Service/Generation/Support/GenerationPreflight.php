@@ -89,15 +89,27 @@ final class GenerationPreflight
         $invalid = [];
         foreach ($input->getOptions() as $option => $value) {
             $rule = GenerationInput::ruleForOption((string) $option);
-            $problem = $rule !== null && is_string($value) && $value !== '' ? GenerationInput::problem($rule, $value) : null;
-            if ($problem === null || !is_string($value)) {
+            if ($rule === null || !is_string($value)) {
+                continue;
+            }
+            // An option left out is null and takes its default. One given empty
+            // is held to its rule like any value (review, dev#280): `--template=`
+            // and `--permission=` passed here and threw in the builder, outside
+            // the caller's format. A required one is named as missing above, and
+            // --method has its own answer.
+            if ($value === '' && ($option === 'method' || in_array($option, $required, true))) {
+                continue;
+            }
+            $problem = GenerationInput::problem($rule, $value);
+            if ($problem === null) {
                 continue;
             }
             $invalid[] = (string) $option;
             $errors[] = [
                 'path' => '',
                 'reason' => self::REASON_INVALID_OPTION,
-                'detail' => sprintf('--%s %s is refused: it must be %s.', $option, GenerationInput::shown($value), $problem),
+                'detail' => sprintf('--%s %s is refused: it must be %s.', $option, GenerationInput::shown($value), $problem)
+                    . ($value === '' ? ' Leave the option out for its default.' : ''),
                 'option' => (string) $option,
             ];
         }

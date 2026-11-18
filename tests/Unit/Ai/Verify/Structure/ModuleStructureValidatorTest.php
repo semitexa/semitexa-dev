@@ -145,6 +145,44 @@ class ModuleStructureValidatorTest extends TestCase
 
     // ----------------------- REJECTED ------------------------
 
+    public function test_a_command_under_application_job_is_still_inspected_and_refused(): void
+    {
+        // Review, dev#280: "no violations" is also what a validator that
+        // accepted the directory and never opened it would answer. A file
+        // that belongs elsewhere, beside a job, is named.
+        $this->scaffoldModule('Hello', [
+            'Application/Job/Cleanup',
+        ]);
+        $this->writeFile('src/modules/Hello/src/Application/Job/FooJob.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Job/Cleanup/StrayCommand.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->module('Hello'));
+
+        $this->assertSame(
+            [[ModuleStructureViolation::CODE_COMMAND_WRONG_LOCATION, 'src/modules/Hello/src/Application/Job/Cleanup/StrayCommand.php']],
+            array_map(static fn (ModuleStructureViolation $v): array => [$v->code, $v->path], $violations),
+            'the job beside it carries none',
+        );
+    }
+
+    public function test_a_command_under_application_service_job_is_still_inspected_and_refused(): void
+    {
+        $this->scaffoldModule('Hello', [
+            'Application/Service/Job',
+        ]);
+        $this->writeFile('src/modules/Hello/src/Application/Service/Job/FooJob.php', "<?php\n");
+        $this->writeFile('src/modules/Hello/src/Application/Service/Job/StrayCommand.php', "<?php\n");
+
+        $violations = $this->validator()->validate($this->module('Hello'));
+
+        $this->assertSame(
+            [[ModuleStructureViolation::CODE_COMMAND_WRONG_LOCATION, 'src/modules/Hello/src/Application/Service/Job/StrayCommand.php']],
+            array_map(static fn (ModuleStructureViolation $v): array => [$v->code, $v->path], $violations),
+            'the job beside it carries none',
+        );
+    }
+
+
     public function test_command_under_src_console_command_fails_with_command_wrong_location(): void
     {
         // ACCEPTANCE 2: a command under src/Console/Command fails.
