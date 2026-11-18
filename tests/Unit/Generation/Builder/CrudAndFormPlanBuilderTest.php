@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Tests\Unit\Generation\Builder;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Generation\Builder\CrudPlanBuilder;
@@ -93,6 +94,56 @@ final class CrudAndFormPlanBuilderTest extends TestCase
         self::assertStringContainsString("Field::text('title')->required()", $class);
         self::assertStringNotContainsString("'tenant", $class);
         self::assertStringContainsString("CrudScreens::get('billing.categories')", $plan->files[1]->content);
+    }
+
+    /** tk-generator-option-values-reach-php-unescaped: the group is free text, and stays text. */
+    #[Test]
+    public function make_crud_writes_a_navigation_group_as_a_string_literal_whatever_it_holds(): void
+    {
+        $hostile = "Money')] final class Pwned {} system('id'); __halt_compiler();//";
+        $build = static fn (string $nav): string => (new CrudPlanBuilder(new NameInflector(), new TemplateResolver(), new TemplateRenderer()))->build([
+            'module' => 'Billing',
+            'name' => 'Category',
+            'metadata' => ResourceModelMetadataRegistry::default()->for(GeneratedInvoiceModel::class),
+            'nav' => $nav,
+            'dryRun' => true,
+        ])->files[0]->content;
+        // Every token PHP runs, a string literal reduced to the fact that it is one.
+        $code = static fn (string $php): array => array_values(array_map(
+            static fn (\PhpToken $t): string => $t->id === T_CONSTANT_ENCAPSED_STRING ? "'…'" : $t->text,
+            array_filter(\PhpToken::tokenize($php, TOKEN_PARSE), static fn (\PhpToken $t): bool => !$t->isIgnorable()),
+        ));
+
+        self::assertSame($code($build('Money')), $code($build($hostile)), 'the group changes no token of the class except a string literal');
+        self::assertStringContainsString('nav: ' . var_export($hostile, true) . ',', $build($hostile));
+    }
+
+    /** The permission is also named in the class docblock, the path is a route: neither is free text. */
+    #[Test]
+    #[DataProvider('refusedCrudValues')]
+    public function make_crud_refuses_a_value_that_is_not_what_its_option_means(string $param, string $value): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('is refused: it must be');
+
+        (new CrudPlanBuilder(new NameInflector(), new TemplateResolver(), new TemplateRenderer()))->build([
+            'module' => $param === 'module' ? $value : 'Billing',
+            'name' => $param === 'name' ? $value : 'Category',
+            'metadata' => ResourceModelMetadataRegistry::default()->for(GeneratedInvoiceModel::class),
+            'path' => $param === 'path' ? $value : null,
+            'permission' => $param === 'permission' ? $value : null,
+            'dryRun' => true,
+        ]);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function refusedCrudValues(): iterable
+    {
+        yield 'a permission that closes the docblock' => ['permission', "x */ system('id'); /*"];
+        yield 'a path that is not a URL path' => ['path', "/billing' . system('id') . '"];
+        yield 'a name that is not a class name' => ['name', "Foo{}system('id');__halt_compiler();"];
+        yield 'a module that is not a module name' => ['module', "Foo{}system('id');__halt_compiler();"];
+        yield 'a module that leaves src/modules' => ['module', '../../../etc'];
     }
 
     #[Test]

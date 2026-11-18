@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -25,9 +26,9 @@ final class ServicePlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $className = $this->inflector->toStudly($params['name']);
+        $className = GenerationInput::valid(GenerationInput::DECLARED_NAME, $this->inflector->toStudly($params['name']), 'The service class');
 
         $namespace = "{$moduleNs}\\Domain\\Service";
 

@@ -16,5 +16,5 @@
     statusInitialMessage: '',
     autoFields: true,
     submitAction: '{{actionName}}',
-    submitText: '{{submitText}}',
+    submitText: {{submitText}},
 }, {content: _fields}) }}

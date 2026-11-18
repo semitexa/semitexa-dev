@@ -151,6 +151,10 @@ class ChangedFileClassifierTest extends TestCase
                 'src/modules/Demo/Domain/Service/Thing.php',
                 ChangedFile::KIND_SERVICE,
             ],
+            'scheduled job in its own home' => [
+                'src/modules/Demo/src/Application/Job/Cleanup/PurgeJob.php',
+                ChangedFile::KIND_SERVICE,
+            ],
         ];
     }
 

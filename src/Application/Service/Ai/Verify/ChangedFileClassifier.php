@@ -29,6 +29,10 @@ final class ChangedFileClassifier
         // verified green while violating DI rules outright.
         '/Application/Service/'                => ChangedFile::KIND_SERVICE,
         '/Domain/Service/'                     => ChangedFile::KIND_SERVICE,
+        // A scheduled job is #[AsService] too (the worker builds it through the
+        // container), so its canonical home keeps the same checks a job under
+        // Application/Service/ gets.
+        '/Application/Job/'                    => ChangedFile::KIND_SERVICE,
         '/Domain/Contract/'                    => ChangedFile::KIND_CONTRACT,
         // Console commands are container-managed like a service and can inline
         // a prompt like a handler, so they need a row of their own rather than

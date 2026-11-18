@@ -23,6 +23,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   and a module there is discovered by its directory alone, so a typo
  *   (`Playgound`) planned cleanly, recommended --write, and then quietly
  *   started a second module. Creating one is make:module's job.
+ * - An option's value was never checked for what it is. It is substituted
+ *   into generated PHP, so a class name or a command name that was really a
+ *   line of code became one ({@see GenerationInput}).
  */
 final class GenerationPreflight
 {
@@ -78,10 +81,44 @@ final class GenerationPreflight
             ];
         }
 
+        // What a value may be, by what its option means, before a builder is even
+        // constructed (tk-generator-option-values-reach-php-unescaped): the value
+        // goes into generated PHP, and `--command-name="a')] … system('…');"` was
+        // a class file with the caller's code in it. Every option is looked at,
+        // not only the required ones.
+        $invalid = [];
+        foreach ($input->getOptions() as $option => $value) {
+            $rule = GenerationInput::ruleForOption((string) $option);
+            if ($rule === null || !is_string($value)) {
+                continue;
+            }
+            // An option left out is null and takes its default. One given empty
+            // is held to its rule like any value (review, dev#280): `--template=`
+            // and `--permission=` passed here and threw in the builder, outside
+            // the caller's format. A required one is named as missing above, and
+            // --method has its own answer.
+            if ($value === '' && ($option === 'method' || in_array($option, $required, true))) {
+                continue;
+            }
+            $problem = GenerationInput::problem($rule, $value);
+            if ($problem === null) {
+                continue;
+            }
+            $invalid[] = (string) $option;
+            $errors[] = [
+                'path' => '',
+                'reason' => self::REASON_INVALID_OPTION,
+                'detail' => sprintf('--%s %s is refused: it must be %s.', $option, GenerationInput::shown($value), $problem)
+                    . ($value === '' ? ' Leave the option out for its default.' : ''),
+                'option' => (string) $option,
+            ];
+        }
+
         $closest = null;
         $newModule = null;
         $given = $input->hasOption('module') ? $input->getOption('module') : null;
-        if (is_string($given) && $given !== '') {
+        // A module name that is not a name has no "did you mean": it was refused above.
+        if (is_string($given) && $given !== '' && !in_array('module', $invalid, true)) {
             $module = (new NameInflector())->toStudly($given);
             $existing = self::existingModules($projectRoot);
             if (!in_array($module, $existing, true)) {

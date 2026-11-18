@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 use Semitexa\Dev\Application\Service\Generation\Support\FieldDeclarationWriter;
 use Semitexa\Dev\Application\Service\Generation\Support\ModelFieldInference;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\Orm\Metadata\ResourceModelMetadata;
@@ -33,12 +34,12 @@ final class CrudPlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $name = $this->inflector->toStudly($params['name']);
+        $name = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The screen name');
         $metadata = $params['metadata'];
         $className = $name . 'Crud';
-        $modelClass = $metadata->className;
+        $modelClass = GenerationInput::valid(GenerationInput::CLASS_NAME, $metadata->className, 'The model class');
         $modelShort = substr($modelClass, (int) strrpos($modelClass, '\\') + 1);
 
         $label = ucfirst(strtolower(trim((string) preg_replace('/(?<!^)[A-Z]/', ' $0', $name))));
@@ -47,8 +48,10 @@ final class CrudPlanBuilder
         $pluralKebab = $this->inflector->toKebab(\Semitexa\Crud\Attribute\AsCrud::pluralOf($name));
         $moduleKebab = $this->inflector->toKebab($module);
         $id = $moduleKebab . '.' . $pluralKebab;
-        $path = $params['path'] ?? ('/' . $moduleKebab . '/' . $pluralKebab);
-        $permission = $params['permission'] ?? $pluralKebab;
+        // Both are written as string literals below (var_export); the permission
+        // is also named in the class docblock, where only this check holds it.
+        $path = GenerationInput::valid(GenerationInput::ROUTE_PATH, $params['path'] ?? ('/' . $moduleKebab . '/' . $pluralKebab), 'The route path');
+        $permission = GenerationInput::valid(GenerationInput::PERMISSION, $params['permission'] ?? $pluralKebab, 'The permission');
         $nav = $params['nav'] ?? $module;
 
         $args = [

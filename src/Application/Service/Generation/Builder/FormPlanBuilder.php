@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
 use Semitexa\Dev\Application\Service\Generation\Support\FieldDeclarationWriter;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 use Semitexa\PlatformUi\Domain\Model\Field\Field;
@@ -68,9 +69,9 @@ final class FormPlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $name = $this->inflector->toStudly($params['name']);
+        $name = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['name']), 'The form name');
         $kebab = $this->inflector->toKebab($name);
         $className = $name . 'FormAction';
         $actionName = $this->inflector->toKebab($module) . '.' . $kebab;
@@ -81,6 +82,11 @@ final class FormPlanBuilder
         $declarations = [];
         $sample = [];
         foreach ($params['fields'] as $spec) {
+            // parseFields() holds a command line to this; a caller of build() is held to it here.
+            GenerationInput::valid(GenerationInput::FIELD_NAME, $spec['name'], 'The field name');
+            if (!in_array($spec['type'], self::TYPES, true)) {
+                throw new \InvalidArgumentException(sprintf('The field type %s is refused: it must be one of %s.', GenerationInput::shown($spec['type']), implode(', ', self::TYPES)));
+            }
             $field = Field::{$spec['type']}($spec['name']);
             $declarations[] = '            ' . $writer->write($spec['required'] ? $field->required() : $field) . ',';
             $sample[$spec['name']] = self::SAMPLES[$spec['type']];
@@ -94,7 +100,8 @@ final class FormPlanBuilder
             'module' => $module,
             'kebab' => $kebab,
             'fields' => implode("\n", $declarations),
-            'submitText' => $params['submitText'] ?? 'Send',
+            // Free text inside a Twig expression of the partial: written as the Twig string it is.
+            'submitText' => GenerationInput::twigString($params['submitText'] ?? 'Send'),
             'doneMessage' => 'Sent.',
         ];
 

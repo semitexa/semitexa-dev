@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -25,13 +26,14 @@ final class CommandPlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
         // Single source of truth for command-class normalization. Handles
         // every input shape (sync, sync-command, sync_command, syncCommand,
         // SyncCommand, SYNC_COMMAND, synccommand) → SyncCommand, with no
         // CommandCommand duplication. See NameInflector::withSuffix.
-        $className = $this->inflector->toCommandClass($params['name']);
+        $className = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toCommandClass($params['name']), 'The command class');
+        $commandName = GenerationInput::valid(GenerationInput::COMMAND_NAME, $params['commandName'], 'The command name');
 
         // Canonical: Application/Console/Command/ — required by the
         // module-structure validator (see packages/semitexa-docs/docs/MODULE_STRUCTURE.md).
@@ -51,8 +53,11 @@ final class CommandPlanBuilder
         $content = $this->renderer->render($template, [
             'namespace' => $namespace,
             'imports' => implode("\n", $imports),
-            'commandName' => $params['commandName'],
-            'description' => $params['description'],
+            // Both land in PHP string literals (the attribute and configure()).
+            // The name is checked above; the description is free text, so the
+            // literal is all that keeps it data.
+            'commandName' => GenerationInput::phpString($commandName),
+            'description' => GenerationInput::phpString($params['description']),
             'className' => $className,
         ], 'make:command');
 

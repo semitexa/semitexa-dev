@@ -6,7 +6,7 @@ namespace {{namespace}};
 
 {{imports}}
 
-#[AsResource(handle: '{{handle}}', template: '{{template}}')]
+#[AsResource(handle: {{handle}}, template: {{template}})]
 class {{className}} extends HtmlResponse implements ResourceInterface
 {
 }

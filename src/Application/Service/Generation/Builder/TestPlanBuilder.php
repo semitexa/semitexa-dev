@@ -9,6 +9,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -38,7 +39,11 @@ final class TestPlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
+        // Every class the tests name is this name with a suffix.
+        foreach ([$this->inflector->toPayloadClass($params['name']), $this->inflector->toHandlerClass($params['name']), $this->inflector->toResponseClass($params['name'])] as $class) {
+            GenerationInput::valid(GenerationInput::IDENTIFIER, $class, 'The subject name');
+        }
         $target = $params['target'] ?? self::TARGET_BOTH;
 
         $files = [];

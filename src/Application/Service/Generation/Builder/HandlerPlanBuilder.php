@@ -12,6 +12,7 @@ use Semitexa\Dev\Application\Service\Generation\Contract\TemplateResolverInterfa
 use Semitexa\Dev\Application\Service\Generation\Data\FileType;
 use Semitexa\Dev\Application\Service\Generation\Data\GenerationPlan;
 use Semitexa\Dev\Application\Service\Generation\Data\PlannedFile;
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
 use Semitexa\Dev\Application\Service\Generation\Support\ModuleNamespace;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
 
@@ -31,11 +32,11 @@ final class HandlerPlanBuilder
      */
     public function build(array $params): GenerationPlan
     {
-        $module = $this->inflector->toStudly($params['module']);
+        $module = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toStudly($params['module']), 'The module');
         $moduleNs = ModuleNamespace::of($module);
-        $handlerClass = $this->inflector->toHandlerClass($params['name']);
-        $payloadClass = $this->inflector->toPayloadClass($params['payload']);
-        $resourceClass = $this->inflector->toResponseClass($params['resource']);
+        $handlerClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toHandlerClass($params['name']), 'The handler class');
+        $payloadClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toPayloadClass($params['payload']), 'The payload class');
+        $resourceClass = GenerationInput::valid(GenerationInput::IDENTIFIER, $this->inflector->toResponseClass($params['resource']), 'The resource class');
 
         $namespace = "{$moduleNs}\\Application\\Handler\\PayloadHandler";
         $payloadNamespace = "{$moduleNs}\\Application\\Payload\\Request";
