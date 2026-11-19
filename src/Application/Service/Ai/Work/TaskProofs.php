@@ -221,7 +221,7 @@ final readonly class TaskProofs
         foreach ($runs as $run) {
             $tree = self::tree($run);
             if (($run['verdict'] ?? null) !== 'pass') {
-                if (self::covers($covered, $tree)) {
+                if (self::onlyLeftFilesUnread($run) || self::covers($covered, $tree)) {
                     continue;
                 }
 
@@ -236,6 +236,32 @@ final readonly class TaskProofs
         }
 
         return null;
+    }
+
+    /**
+     * An incomplete run whose every target passed: ai:verify ran all it chose
+     * and only left a file no check reads, which is the work a reason is for.
+     * It stands neither for a close nor against one (triage 19.11: it refused
+     * the reason of a task whose only file is the quality baseline). Any other
+     * incomplete run means a check never ran: a target timed out, could not
+     * start, matched no tests or was skipped. That stands against a close like
+     * a fail (review, dev#285).
+     *
+     * @param array<string, mixed> $run
+     */
+    private static function onlyLeftFilesUnread(array $run): bool
+    {
+        $targets = is_array($run['targets'] ?? null) ? $run['targets'] : [];
+        if (($run['verdict'] ?? null) !== 'incomplete' || $targets === []) {
+            return false;
+        }
+        foreach ($targets as $target) {
+            if (!is_array($target) || ($target['status'] ?? null) !== 'pass') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

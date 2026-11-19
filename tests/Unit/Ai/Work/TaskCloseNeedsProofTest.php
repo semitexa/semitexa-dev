@@ -229,8 +229,9 @@ final class TaskCloseNeedsProofTest extends TestCase
      *
      * @param array<string, string> $files path => content, written to the project
      * @param list<string> $changedDuringRun the files the receipt says changed while it ran
+     * @param string|null $targetStatus its one target's status, the verdict when null
      */
-    private function receipt(int $number, string $verdict, array $files, array $changedDuringRun = []): void
+    private function receipt(int $number, string $verdict, array $files, array $changedDuringRun = [], ?string $targetStatus = null): void
     {
         $tree = [];
         foreach ($files as $path => $content) {
@@ -243,7 +244,7 @@ final class TaskCloseNeedsProofTest extends TestCase
         $id = sprintf('rcpt-20261119-%06d-dddddd', $number);
         file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/' . $id . '.json', (string) json_encode([
             'id' => $id, 'generated_at' => sprintf('2026-11-19T01:00:%02d+00:00', $number), 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => $verdict,
-            'targets' => [['id' => 'docs:reference', 'type' => 'docs', 'status' => $verdict]], 'tree' => $tree, 'changed_during_run' => $changedDuringRun,
+            'targets' => [['id' => 'docs:reference', 'type' => 'docs', 'status' => $targetStatus ?? $verdict]], 'tree' => $tree, 'changed_during_run' => $changedDuringRun,
         ]));
     }
 
@@ -316,5 +317,36 @@ final class TaskCloseNeedsProofTest extends TestCase
 
         self::assertNull((new TaskProofs($this->root))->find($this->task()));
         self::assertNotNull($this->refusal($this->task(), $this->reason()));
+    }
+
+    /** Triage 19.11: a run left incomplete by a file no check reads refused the reason that file needs. */
+    public function test_an_incomplete_run_stands_neither_for_nor_against_a_close(): void
+    {
+        // Every target passed; the run is incomplete only because no check reads the file.
+        $this->receipt(1, 'incomplete', ['resources/baseline.json' => '{}'], [], 'pass');
+
+        self::assertNull($this->refusal($this->task(), $this->reason()), 'the reason closes it');
+        self::assertStringContainsString(
+            "task 'tk-a' has no proof: no passing ai:verify run for it holds a test of its code",
+            (string) $this->refusal($this->task()),
+            'and nothing else does: it is no proof',
+        );
+    }
+
+    public function test_a_fail_under_a_newer_incomplete_run_still_refuses_the_reason(): void
+    {
+        $this->receipt(1, 'fail', ['Code.php' => 'code']);
+        $this->receipt(2, 'incomplete', ['resources/baseline.json' => '{}'], [], 'pass');
+
+        self::assertStringContainsString('its latest ai:verify run (rcpt-20261119-000001-dddddd) failed', (string) $this->refusal($this->task(), $this->reason()), 'the older fail, not the newer incomplete run');
+    }
+
+    /** Review, dev#285: a run is also incomplete when a check never ran, and a reason must not close past that. */
+    public function test_an_incomplete_run_whose_check_never_ran_refuses_the_reason(): void
+    {
+        // The target timed out, or could not start: its own status is incomplete.
+        $this->receipt(1, 'incomplete', ['Code.php' => 'code'], [], 'incomplete');
+
+        self::assertStringContainsString('its latest ai:verify run (rcpt-20261119-000001-dddddd) failed', (string) $this->refusal($this->task(), $this->reason()));
     }
 }
