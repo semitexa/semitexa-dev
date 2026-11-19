@@ -324,7 +324,11 @@ final class TaskCloseNeedsProofTest extends TestCase
         $this->receipt(1, 'incomplete', ['resources/baseline.json' => '{}']);
 
         self::assertNull($this->refusal($this->task(), $this->reason()), 'the reason closes it');
-        self::assertNotNull($this->refusal($this->task()), 'and nothing else does: it is no proof');
+        self::assertStringContainsString(
+            "task 'tk-a' has no proof: no passing ai:verify run for it holds a test of its code",
+            (string) $this->refusal($this->task()),
+            'and nothing else does: it is no proof',
+        );
     }
 
     public function test_a_fail_under_a_newer_incomplete_run_still_refuses_the_reason(): void
@@ -332,6 +336,6 @@ final class TaskCloseNeedsProofTest extends TestCase
         $this->receipt(1, 'fail', ['Code.php' => 'code']);
         $this->receipt(2, 'incomplete', ['resources/baseline.json' => '{}']);
 
-        self::assertNotNull($this->refusal($this->task(), $this->reason()));
+        self::assertStringContainsString('its latest ai:verify run (rcpt-20261119-000001-dddddd) failed', (string) $this->refusal($this->task(), $this->reason()), 'the older fail, not the newer incomplete run');
     }
 }
