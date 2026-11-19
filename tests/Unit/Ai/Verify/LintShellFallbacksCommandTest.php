@@ -19,8 +19,13 @@ final class LintShellFallbacksCommandTest extends TestCase
 
     private string|false $cwd;
 
+    /** What ProjectRoot held before this test: put back as it was, since another test may have left it there on purpose. */
+    private ?string $rootBefore = null;
+
     protected function setUp(): void
     {
+        $before = (new \ReflectionProperty(ProjectRoot::class, 'root'))->getValue();
+        $this->rootBefore = is_string($before) ? $before : null;
         $this->root = sys_get_temp_dir() . '/semitexa-lint-shell-' . bin2hex(random_bytes(4));
         mkdir($this->root . '/src/modules', 0777, true);
         mkdir($this->root . '/bin');
@@ -35,8 +40,29 @@ final class LintShellFallbacksCommandTest extends TestCase
         if ($this->cwd !== false) {
             chdir($this->cwd);
         }
-        ProjectRoot::reset();
+        (new \ReflectionProperty(ProjectRoot::class, 'root'))->setValue(null, $this->rootBefore);
         exec('rm -rf ' . escapeshellarg($this->root));
+    }
+
+    /** Review round 2, dev#282: the root an earlier test left in the static is put back, not cleared. */
+    #[Test]
+    public function the_project_root_it_found_is_the_one_it_leaves(): void
+    {
+        $property = new \ReflectionProperty(ProjectRoot::class, 'root');
+        $this->tearDown();
+        $before = $property->getValue();
+        $property->setValue(null, '/a-root-an-earlier-test-left');
+
+        try {
+            $this->setUp();
+            self::assertSame($this->root, ProjectRoot::get(), 'inside the test the root is its own');
+            $this->tearDown();
+            self::assertSame('/a-root-an-earlier-test-left', $property->getValue());
+        } finally {
+            $property->setValue(null, $before);
+            // PHPUnit's own tearDown still runs: give it a fixture to end.
+            $this->setUp();
+        }
     }
 
     #[Test]

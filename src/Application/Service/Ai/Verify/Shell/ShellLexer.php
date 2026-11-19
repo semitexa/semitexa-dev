@@ -169,7 +169,12 @@ final class ShellLexer
                 $i = $end + 1;
             } elseif ($c === '"') {
                 for ($i++; $i < $n && $word[$i] !== '"'; $i++) {
-                    // Inside double quotes a backslash escapes only these four.
+                    // A backslash-newline joins two lines here as it does outside quotes: neither byte is in the word.
+                    if ($word[$i] === '\\' && $i + 1 < $n && $word[$i + 1] === "\n") {
+                        $i++;
+                        continue;
+                    }
+                    // Otherwise a backslash inside double quotes escapes only these four.
                     if ($word[$i] === '\\' && $i + 1 < $n && strpbrk($word[$i + 1], '$`"\\') !== false) {
                         $i++;
                     }

@@ -352,6 +352,13 @@ while [ -f x ] || : > x; do sleep 1; done
             SH));
     }
 
+    /** Review round 2, dev#282: inside double quotes a backslash-newline joins two lines too, and is no part of the delimiter. */
+    #[Test]
+    public function a_continued_double_quoted_delimiter_is_joined(): void
+    {
+        self::assertSame([[6, ':']], self::flagged("#!/bin/sh\ncat <<\"E\\\nOF\"\n: > inside || echo this is data\nEOF\n: > \"\$log\" || echo fallback\ncat <<'E\\\nOF'\n: > inside || echo this is data too\nE\\\nOF\n: > \"\$log\" || echo fallback\n"), 'in single quotes the pair stays in the delimiter, which no single line can then equal: that heredoc runs to the end and line 12 is data');
+    }
+
     /** Review, dev#282: a redirection with nothing after it took the newline for its target. */
     #[Test]
     public function a_compound_command_redirected_to_nothing_is_not_parsed(): void
