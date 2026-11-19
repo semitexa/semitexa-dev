@@ -14,7 +14,9 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  * phase (ep-project-progress-from-backlog).
  *
  * Done means proven: a task closed with no proof stays done, is shown as
- * unproven and adds nothing to the percent.
+ * unproven and adds nothing to the percent. One closed with a stated reason
+ * no test can prove it counts as done and is shown apart, "N closed with a
+ * reason" (dec-closed-with-reason-counts-shown-apart).
  *
  * Except what was closed before a proof could be asked for: a task done, with
  * no proof, and last changed before the proof rule shipped is history. A
@@ -50,7 +52,7 @@ final readonly class BacklogProgress
     public const PROOF_RULE_SINCE = '2026-11-06T09:35:30+00:00';
 
     /**
-     * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int, before_proof: int}> $phases
+     * @param array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int, before_proof: int, with_reason: int}> $phases
      * @param array<string, AuditRecord> $audits the newest that speaks for each phase
      */
     private function __construct(
@@ -68,7 +70,7 @@ final readonly class BacklogProgress
      */
     public static function of(array $tasks, bool $withFramework, array $audits = [], ?\DateTimeImmutable $now = null): self
     {
-        $done = $unproven = $approved = $beforeProof = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
+        $done = $unproven = $approved = $beforeProof = $withReason = array_fill_keys(array_map(static fn (Phase $p): string => $p->value, Phase::cases()), 0);
         $ideas = 0;
         $noPhase = 0;
         foreach ($tasks as $task) {
@@ -85,13 +87,15 @@ final readonly class BacklogProgress
                 $noPhase++;
                 continue;
             }
-            if ($task->status === TaskStatus::DONE && $task->proof === null && self::closedBeforeProof($task)) {
+            if ($task->status === TaskStatus::DONE && $task->proof === null && $task->noProof === null && self::closedBeforeProof($task)) {
                 $beforeProof[$phase->value]++;
                 continue;
             }
             $approved[$phase->value]++;
             if ($task->status === TaskStatus::DONE) {
-                $task->proof !== null ? $done[$phase->value]++ : $unproven[$phase->value]++;
+                $task->proof !== null || $task->noProof !== null ? $done[$phase->value]++ : $unproven[$phase->value]++;
+                // Done all the same, and counted apart so every use of the escape shows.
+                $withReason[$phase->value] += $task->proof === null && $task->noProof !== null ? 1 : 0;
             }
         }
 
@@ -105,6 +109,7 @@ final readonly class BacklogProgress
                 'open' => $total - $done[$phase] - $unproven[$phase],
                 'unproven' => $unproven[$phase],
                 'before_proof' => $beforeProof[$phase],
+                'with_reason' => $withReason[$phase],
             ];
         }
 
@@ -149,7 +154,7 @@ final readonly class BacklogProgress
         return $task->isApproved() || TaskFiling::isBug($task->recipe);
     }
 
-    /** "work 80% (8/10, 1 open, 1 unproven) · right not measured · fast 100% (3/3) · 4 ideas" */
+    /** "work 80% (8/10, 1 open, 1 unproven, 1 closed with a reason) · right not measured · fast 100% (3/3) · 4 ideas" */
     public function line(): string
     {
         $parts = [];
@@ -162,6 +167,7 @@ final readonly class BacklogProgress
                     $p['done'] . '/' . $p['approved'],
                     $p['open'] > 0 ? $p['open'] . ' open' : null,
                     $p['unproven'] > 0 ? $p['unproven'] . ' unproven' : null,
+                    $p['with_reason'] > 0 ? $p['with_reason'] . ' closed with a reason' : null,
                     $p['before_proof'] > 0 ? $p['before_proof'] . ' closed before proof' : null,
                 ]))),
             };
@@ -188,7 +194,7 @@ final readonly class BacklogProgress
         return $audit->isFresh($this->now) ? "nothing open (audited {$when})" : "not measured (last audit {$when})";
     }
 
-    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool, audits: array<string, array<string, mixed>>} */
+    /** @return array{phases: array<string, array{percent: ?int, done: int, approved: int, open: int, unproven: int, before_proof: int, with_reason: int}>, ideas: int, approved_with_no_phase: int, with_framework: bool, audits: array<string, array<string, mixed>>} */
     public function toArray(): array
     {
         return [

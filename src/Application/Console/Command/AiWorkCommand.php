@@ -93,6 +93,7 @@ final class AiWorkCommand extends BaseCommand
             ->addOption('context-ref', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Path or symbol the task is anchored to (repeatable)')
             ->addOption('next-step', null, InputOption::VALUE_REQUIRED, 'One-line next step for the resuming agent')
             ->addOption('note', null, InputOption::VALUE_REQUIRED, 'Free-form note (appended to the linked trace)')
+            ->addOption('no-proof-because', null, InputOption::VALUE_REQUIRED, 'Close a task no test can prove, with the reason: at least 20 characters, only with update --status=done, refused after a failing ai:verify run; kept on the task')
             ->addOption('tail', null, InputOption::VALUE_REQUIRED, 'How many trailing trace events to surface on resume (default 5)')
             ->addOption('trace', null, InputOption::VALUE_REQUIRED, 'Trace id for this task (defaults to the task id on start)')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Emit a single JSON envelope instead of NDJSON');
@@ -316,8 +317,7 @@ final class AiWorkCommand extends BaseCommand
             return $this->error($output, $e->getMessage(), $jsonMode);
         }
         $nextStep = $this->optionalString($input, 'next-step');
-        $refs = $this->contextRefs($input);
-        $refsOpt = $refs === [] ? null : $refs;
+        $refsOpt = ($refs = $this->contextRefs($input)) === [] ? null : $refs;
 
         // Re-parenting. Epic membership is derived from the task, so a move is
         // one field — and without this it was one field edited in the JSON by
@@ -354,8 +354,9 @@ final class AiWorkCommand extends BaseCommand
             return $this->error($output, 'update requires at least one of --title, --recipe, --risk, --status, --phase, --next-step, --context-ref, --note, --epic', $jsonMode);
         }
 
-        if (($refused = TaskClaim::claim(ProjectRoot::get(), $id, $status, (bool) $input->getOption('take-over'))) !== null) {
-            return $this->error($output, $refused, $jsonMode);
+        $because = TaskProofs::because($reasonGiven = $this->optionalString($input, 'no-proof-because'));
+        if (($refused = TaskProofs::refusalOfReason($reasonGiven, $status) ?? (new TaskProofs(ProjectRoot::get()))->refusalToClose($task, $status, $because, $recipe) ?? TaskClaim::claim(ProjectRoot::get(), $id, $status, (bool) $input->getOption('take-over'))) !== null) {
+            return $this->error($output, $refused, $jsonMode, TaskNextCommands::afterRefusal($task, $refused));
         }
         $updated = $this->taskStore->change($id, static fn (Task $current): Task => (new TaskProofs(ProjectRoot::get()))->settle(TaskFiling::afterEdit($current->with(
             title:       $title,
@@ -367,7 +368,7 @@ final class AiWorkCommand extends BaseCommand
             updatedAt:   date('c'),
             epicId:      $epicId,
             phase:       $phase,
-        ), date('c')), $status));
+        ), date('c')), $status, $because));
 
         $kind = $status !== null ? TraceEventKind::NEXT_STEP : TraceEventKind::NOTE;
         $summary = match (true) {

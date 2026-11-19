@@ -105,19 +105,23 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
         $this->work(['action' => 'update', '--id' => 'tk-cart', '--status' => 'done']);
         self::assertSame('work 50% (1/2, 1 open) · right not measured · fast not measured', $this->line(), 'closed with a test: done');
 
-        $this->work(['action' => 'update', '--id' => 'tk-checkout', '--status' => 'done']);
-        self::assertSame('work 50% (1/2, 1 unproven) · right not measured · fast not measured', $this->line(), 'closed with no run behind it: unproven, adds nothing');
+        // No run behind the checkout: the close is refused, and the task stays as open as it was.
+        $this->work(['action' => 'update', '--id' => 'tk-checkout', '--status' => 'done'], refused: true);
+        self::assertSame('work 50% (1/2, 1 open) · right not measured · fast not measured', $this->line(), 'closed with no run behind it: refused, nothing moves');
+
+        $this->work(['action' => 'update', '--id' => 'tk-checkout', '--status' => 'done', '--no-proof-because' => 'accepted by hand at the till, no test can stand in']);
+        self::assertSame('work 100% (2/2, 1 closed with a reason) · right not measured · fast not measured', $this->line(), 'closed with a reason: done, and shown apart');
 
         // A bug counts the moment it is filed: no approval asked, the percent moves by itself.
         $this->work(['action' => 'start', '--epic' => 'ep-shop', '--id' => 'tk-cart-rounding', '--title' => 'The cart total rounds down', '--recipe' => 'fix_bug', '--phase' => 'work']);
-        self::assertSame('work 33% (1/3, 1 open, 1 unproven) · right not measured · fast not measured', $this->line());
+        self::assertSame('work 66% (2/3, 1 open, 1 closed with a reason) · right not measured · fast not measured', $this->line());
 
         $this->audit(['action' => 'record', '--phase' => 'right', '--covered' => 'the Shop module']);
-        self::assertSame('work 33% (1/3, 1 open, 1 unproven) · right nothing open (audited today) · fast not measured', $this->line(), 'looked and found nothing is not unmeasured');
+        self::assertSame('work 66% (2/3, 1 open, 1 closed with a reason) · right nothing open (audited today) · fast not measured', $this->line(), 'looked and found nothing is not unmeasured');
     }
 
     /** @param array<string, mixed> $input */
-    private function work(array $input): void
+    private function work(array $input, bool $refused = false): void
     {
         $hygiene = new BacklogHygiene();
         PropertyInjector::inject($hygiene, new ArrayContainer([EpicStore::class => $this->epics, TaskStore::class => $this->tasks]));
@@ -131,7 +135,7 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
             ResumeService::class => $resume,
             BacklogHygiene::class => $hygiene,
         ]));
-        $this->runCommand($command, $input + ['--json' => true]);
+        $this->runCommand($command, $input + ['--json' => true], $refused ? 1 : 0);
     }
 
     private function approve(string $id): void
@@ -173,11 +177,11 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
     }
 
     /** @param array<string, mixed> $input */
-    private function runCommand(Command $command, array $input): string
+    private function runCommand(Command $command, array $input, int $expected = 0): string
     {
         $tester = new CommandTester($command);
         $status = $tester->execute($input, ['interactive' => false]);
-        self::assertSame(0, $status, $command->getName() . ' ' . json_encode($input) . ': ' . $tester->getDisplay());
+        self::assertSame($expected, $status, $command->getName() . ' ' . json_encode($input) . ': ' . $tester->getDisplay());
 
         return $tester->getDisplay();
     }

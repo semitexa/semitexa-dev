@@ -10,6 +10,7 @@ use Semitexa\Dev\Application\Service\Ai\State\BacklogProgress;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskNoProof;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskProof;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
 
@@ -38,8 +39,25 @@ final class BacklogProgressTest extends TestCase
     {
         $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(TaskStatus::DONE, proven: false), $this->task()], false);
 
-        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 0], $progress->phases['work']);
+        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 0, 'with_reason' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven) · ', $progress->line());
+    }
+
+    public function test_closed_with_a_reason_is_done_and_shown_apart(): void
+    {
+        // dec-closed-with-reason-counts-shown-apart: it counts, and every use of the escape shows.
+        $reason = new TaskNoProof('a manual acceptance run', self::NOW);
+        $progress = BacklogProgress::of([
+            $this->task(TaskStatus::DONE),
+            $this->task(TaskStatus::DONE, proven: false)->withProof(null, $reason),
+            // Not history either, however old: someone said why.
+            $this->task(TaskStatus::DONE, proven: false, updatedAt: '2026-11-06T09:35:29+00:00')->withProof(null, $reason),
+            $this->task(TaskStatus::DONE, proven: false),
+            $this->task(),
+        ], false);
+
+        self::assertSame(['percent' => 60, 'done' => 3, 'approved' => 5, 'open' => 1, 'unproven' => 1, 'before_proof' => 0, 'with_reason' => 2], $progress->phases['work']);
+        self::assertStringStartsWith('work 60% (3/5, 1 open, 1 unproven, 2 closed with a reason) · ', $progress->line());
     }
 
     public function test_a_task_closed_before_the_proof_rule_is_history_not_owed(): void
@@ -55,7 +73,7 @@ final class BacklogProgressTest extends TestCase
             $this->task(),
         ], false);
 
-        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 2], $progress->phases['work']);
+        self::assertSame(['percent' => 33, 'done' => 1, 'approved' => 3, 'open' => 1, 'unproven' => 1, 'before_proof' => 2, 'with_reason' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 33% (1/3, 1 open, 1 unproven, 2 closed before proof) · ', $progress->line());
     }
 
@@ -85,7 +103,7 @@ final class BacklogProgressTest extends TestCase
             $this->task(TaskStatus::DONE, proven: false, updatedAt: 'not a date'),
         ], false);
 
-        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 1, 'unproven' => 2, 'before_proof' => 0], $progress->phases['work']);
+        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 1, 'unproven' => 2, 'before_proof' => 0, 'with_reason' => 0], $progress->phases['work']);
     }
 
     public function test_a_hundred_needs_every_task_proven(): void
@@ -107,7 +125,7 @@ final class BacklogProgressTest extends TestCase
     {
         $progress = BacklogProgress::of([$this->task(TaskStatus::DONE), $this->task(), $this->task(TaskStatus::IN_PROGRESS), $this->task(TaskStatus::BLOCKED)], false);
 
-        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0, 'before_proof' => 0], $progress->phases['work']);
+        self::assertSame(['percent' => 25, 'done' => 1, 'approved' => 4, 'open' => 3, 'unproven' => 0, 'before_proof' => 0, 'with_reason' => 0], $progress->phases['work']);
         self::assertStringStartsWith('work 25% (1/4, 3 open) · ', $progress->line());
     }
 

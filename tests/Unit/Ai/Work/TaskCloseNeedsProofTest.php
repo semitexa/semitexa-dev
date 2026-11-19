@@ -1,0 +1,225 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Tests\Unit\Ai\Work;
+
+use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
+use Semitexa\Dev\Application\Service\Ai\Work\Task;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskNextCommands;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskNoProof;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskProof;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskProofs;
+use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
+
+/**
+ * A task that counts closes on a proof or on a stated reason, never on
+ * neither (tk-triage-unproven-tasks: 17 tasks had been closed with no proof
+ * and nothing had said so at the time).
+ */
+final class TaskCloseNeedsProofTest extends TestCase
+{
+    private const NOW = '2026-11-19T00:00:00+00:00';
+
+    private string $root;
+
+    protected function setUp(): void
+    {
+        $this->root = sys_get_temp_dir() . '/semitexa-dev-task-close-' . uniqid('', true);
+        mkdir($this->root . '/' . VerifyReceipts::DIR, 0755, true);
+    }
+
+    protected function tearDown(): void
+    {
+        exec('rm -rf ' . escapeshellarg($this->root));
+    }
+
+    private function task(bool $approved = true, string $recipe = ''): Task
+    {
+        return new Task('tk-a', 'ep-a', 't', TaskStatus::IN_PROGRESS, $recipe, 'low', ['src/X.php'], null, 'tk-a', self::NOW, self::NOW, $approved ? new TaskApproval('owner', 'yes', self::NOW) : null);
+    }
+
+    private function reason(string $why = 'a manual acceptance run, no test can stand in for it'): TaskNoProof
+    {
+        return new TaskNoProof($why, self::NOW, 'claude-1');
+    }
+
+    private function passingRun(): void
+    {
+        file_put_contents($this->root . '/Code.php', 'code');
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20261119-000001-aaaaaa.json', (string) json_encode([
+            'id' => 'rcpt-20261119-000001-aaaaaa', 'generated_at' => self::NOW, 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'pass',
+            'targets' => [['id' => 'phpunit:X', 'type' => 'phpunit', 'status' => 'pass']], 'tree' => ['Code.php' => hash('sha256', 'code')], 'changed_during_run' => [],
+        ]));
+    }
+
+    /** A run of this task over its code that failed, newer than any other receipt. */
+    private function failingRun(): void
+    {
+        file_put_contents($this->root . '/Code.php', 'code');
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20261119-000002-bbbbbb.json', (string) json_encode([
+            'id' => 'rcpt-20261119-000002-bbbbbb', 'generated_at' => '2026-11-19T00:00:02+00:00', 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'fail',
+            'targets' => [['id' => 'phpunit:X', 'type' => 'phpunit', 'status' => 'fail']], 'tree' => ['Code.php' => hash('sha256', 'code')], 'changed_during_run' => [],
+        ]));
+    }
+
+    private function refusal(Task $task, ?TaskNoProof $because = null, ?TaskStatus $to = TaskStatus::DONE, ?string $recipe = null): ?string
+    {
+        return (new TaskProofs($this->root))->refusalToClose($task, $to, $because, $recipe);
+    }
+
+    public function test_a_counted_task_with_no_proof_and_no_reason_is_refused(): void
+    {
+        $refusal = $this->refusal($this->task());
+
+        self::assertSame(
+            "task 'tk-a' has no proof: no passing ai:verify run for it holds a test of its code. Run `bin/semitexa ai:verify --trace=tk-a --files=src/X.php` and close again, or, when no test can prove it, close with `--no-proof-because=\"<why>\"`; the reason is kept on the task.",
+            $refusal,
+        );
+    }
+
+    public function test_only_a_close_is_asked_for_proof(): void
+    {
+        self::assertNull($this->refusal($this->task(), to: TaskStatus::BLOCKED));
+        self::assertNull($this->refusal($this->task(), to: null), 'an edit that moves no status');
+    }
+
+    public function test_a_reason_closes_it_and_is_kept_on_the_task(): void
+    {
+        self::assertNull($this->refusal($this->task(), $this->reason()));
+
+        $closed = (new TaskProofs($this->root))->settle($this->task()->with(status: TaskStatus::DONE), TaskStatus::DONE, $this->reason());
+
+        self::assertNull($closed->proof);
+        self::assertSame(['reason' => 'a manual acceptance run, no test can stand in for it', 'at' => self::NOW, 'by' => 'claude-1'], $closed->noProof?->toArray());
+    }
+
+    public function test_a_blank_reason_is_no_reason(): void
+    {
+        self::assertNull(TaskNoProof::because(null, self::NOW));
+        self::assertNull(TaskNoProof::because(" \t ", self::NOW));
+        self::assertNull(TaskProofs::because('   '));
+        self::assertNotNull($this->refusal($this->task(), TaskProofs::because('   ')));
+        self::assertSame('why', TaskProofs::because(' why ')?->reason);
+    }
+
+    public function test_a_proof_wins_over_a_reason(): void
+    {
+        $this->passingRun();
+
+        self::assertNull($this->refusal($this->task()), 'proven: nothing more is asked');
+        $closed = (new TaskProofs($this->root))->settle($this->task(), TaskStatus::DONE, $this->reason());
+
+        self::assertSame('rcpt-20261119-000001-aaaaaa', $closed->proof?->receipt);
+        self::assertNull($closed->noProof, 'a reason beside a real proof would say the task has none');
+    }
+
+    public function test_reopening_drops_the_reason(): void
+    {
+        $proofs = new TaskProofs($this->root);
+        $closed = $proofs->settle($this->task(), TaskStatus::DONE, $this->reason());
+
+        self::assertNotNull($proofs->settle($closed, null)->noProof, 'an edit that does not move the status keeps it');
+        self::assertNull($proofs->settle($closed, TaskStatus::IN_PROGRESS)->noProof);
+    }
+
+    public function test_a_task_closed_with_a_reason_closes_again_and_keeps_it(): void
+    {
+        $proofs = new TaskProofs($this->root);
+        $closed = $proofs->settle($this->task(), TaskStatus::DONE, $this->reason());
+
+        self::assertNull($this->refusal($closed));
+        self::assertSame($closed->noProof, $proofs->settle($closed, TaskStatus::DONE)->noProof);
+        self::assertSame('a newer one', $proofs->settle($closed, TaskStatus::DONE, $this->reason('a newer one'))->noProof?->reason);
+    }
+
+    public function test_history_nobody_approved_closes_freely_and_a_bug_does_not(): void
+    {
+        self::assertNull($this->refusal($this->task(approved: false)));
+        self::assertNotNull($this->refusal($this->task(approved: false, recipe: 'fix_bug')), 'a bug counts with no approval');
+        self::assertNotNull($this->refusal($this->task(approved: false), recipe: 'fix_bug'), 'it becomes a bug in this same update');
+    }
+
+    public function test_a_proof_kept_after_its_receipts_are_pruned_still_closes(): void
+    {
+        $kept = $this->task()->withProof(new TaskProof('rcpt-old', self::NOW, ['phpunit:X'], []));
+
+        self::assertNull($this->refusal($kept));
+    }
+
+    public function test_the_reason_survives_a_round_trip_and_later_edits(): void
+    {
+        $task = Task::fromArray($this->task()->withProof(null, $this->reason())->toArray());
+
+        self::assertEquals($this->reason(), $task->noProof);
+        self::assertEquals($this->reason(), $task->with(title: 'new')->noProof);
+        self::assertEquals($this->reason(), $task->withApproval(null, self::NOW)->noProof);
+        self::assertNull(TaskNoProof::fromStored(['reason' => ' ', 'at' => self::NOW]));
+        self::assertNull(TaskNoProof::fromStored(['reason' => 'why']));
+        self::assertNull(TaskNoProof::fromStored('yes'));
+    }
+
+    public function test_a_refusal_for_want_of_proof_names_the_run_and_no_other_refusal_does(): void
+    {
+        $refusal = (string) $this->refusal($this->task());
+
+        $next = TaskNextCommands::afterRefusal($this->task(), $refusal)['next_command'] ?? [];
+        self::assertSame(['ai:verify', ['--trace=tk-a', '--files=src/X.php', '--json']], [$next[0]['cmd'] ?? null, $next[0]['args'] ?? null]);
+        self::assertSame([], TaskNextCommands::afterRefusal($this->task(), "task 'tk-a' is held by claude-2"));
+    }
+
+    public function test_a_task_closed_with_a_reason_is_not_sent_to_verify_again(): void
+    {
+        $closed = $this->task()->with(status: TaskStatus::DONE)->withProof(null, $this->reason());
+
+        self::assertSame(['ai:orient', 'ai:trace'], array_column(TaskNextCommands::for($closed), 'cmd'));
+        self::assertSame(['ai:verify', 'ai:orient', 'ai:trace'], array_column(TaskNextCommands::for($closed->withProof(null)), 'cmd'), 'with neither it still is');
+    }
+
+    /** Review of part B: `--no-proof-because=x` closed a task whose latest run had failed. */
+    public function test_a_reason_never_closes_past_a_failing_run(): void
+    {
+        $this->failingRun();
+
+        $refusal = $this->refusal($this->task(), $this->reason());
+
+        self::assertNotNull($refusal);
+        self::assertStringContainsString("task 'tk-a' has no proof: its latest ai:verify run (rcpt-20261119-000002-bbbbbb) failed", $refusal);
+        self::assertStringNotContainsString('--no-proof-because', $refusal, 'a failed run is not offered the escape');
+    }
+
+    public function test_a_reason_kept_from_an_earlier_close_does_not_close_past_a_failing_run_either(): void
+    {
+        $this->failingRun();
+        $closedBefore = (new TaskProofs($this->root))->settle($this->task(), TaskStatus::DONE, $this->reason());
+        self::assertNotNull($closedBefore->noProof);
+
+        self::assertNotNull($this->refusal($closedBefore));
+    }
+
+    public function test_a_pass_after_the_failing_run_closes_it_again(): void
+    {
+        $this->failingRun();
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20261119-000003-cccccc.json', (string) json_encode([
+            'id' => 'rcpt-20261119-000003-cccccc', 'generated_at' => '2026-11-19T00:00:03+00:00', 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'pass',
+            'targets' => [['id' => 'phpunit:X', 'type' => 'phpunit', 'status' => 'pass']], 'tree' => ['Code.php' => hash('sha256', 'code')], 'changed_during_run' => [],
+        ]));
+
+        self::assertNull($this->refusal($this->task()));
+        self::assertNull($this->refusal($this->task(), $this->reason()));
+    }
+
+    /** Review of part B: a pass over no files held no test and still read as a proof. */
+    public function test_a_pass_over_no_files_is_no_proof(): void
+    {
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/rcpt-20261119-000001-aaaaaa.json', (string) json_encode([
+            'id' => 'rcpt-20261119-000001-aaaaaa', 'generated_at' => self::NOW, 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'pass',
+            'targets' => [], 'tree' => [], 'changed_during_run' => [],
+        ]));
+
+        self::assertNull((new TaskProofs($this->root))->find($this->task()));
+        self::assertNotNull($this->refusal($this->task()));
+    }
+}

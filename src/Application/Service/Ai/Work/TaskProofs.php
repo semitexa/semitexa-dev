@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Work;
 
+use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
@@ -20,26 +21,99 @@ use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
  * Only a task with no code in any run can count on a pass alone. The files must
  * still be what the run checked.
  *
- * A task with no proof stays done and is shown as unproven; closing it again
- * after a run looks again. Its commits are the ones that say so, with a line
+ * A task that counts is not closed with no proof unless a reason is given
+ * ({@see TaskNoProof}); one closed before that rule stays done and is shown as
+ * unproven. Closing again after a run looks again. Its commits are the ones that say so, with a line
  * "Task: <id>": anything else would be a guess from HEAD.
  */
 final readonly class TaskProofs
 {
+    /** What a refusal for want of proof says, so its next command can be told from a claim's. */
+    public const NO_PROOF = 'has no proof';
     private const TEST_TARGETS = ['phpunit', 'e2e'];
     private const NOTHING_TO_TEST = '/\.(md|txt|json|ya?ml|neon|xml|ini|toml)$|(^|\/)\.env(\.[a-z]+)?$/';
 
     public function __construct(private string $projectRoot) {}
 
-    /** The task as its status now leaves it: closing looks for proof, reopening drops it. */
-    public function settle(Task $task, ?TaskStatus $movedTo): Task
+    /**
+     * The task as its status now leaves it: closing looks for proof, reopening
+     * drops it. With no proof the reason stands in, the one given now or the one
+     * the task already carries; a proof found wins over both.
+     */
+    public function settle(Task $task, ?TaskStatus $movedTo, ?TaskNoProof $because = null): Task
     {
-        return match (true) {
-            $movedTo === null => $task,
-            // Receipts are pruned within days: no run left says nothing against a proof kept on the task.
-            $movedTo === TaskStatus::DONE => $task->withProof($this->runs($task) === [] ? $task->proof : $this->find($task)),
-            default => $task->withProof(null),
-        };
+        if ($movedTo === null) {
+            return $task;
+        }
+        if ($movedTo !== TaskStatus::DONE) {
+            return $task->withProof(null);
+        }
+        // Receipts are pruned within days: no run left says nothing against a proof kept on the task.
+        $proof = $this->runs($task) === [] ? $task->proof : $this->find($task);
+
+        return $task->withProof($proof, $proof === null ? ($because ?? $task->noProof) : null);
+    }
+
+    /** The reason as it is given now, by this agent session; null when none is. */
+    public static function because(?string $reason): ?TaskNoProof
+    {
+        $by = getenv(AgentRegistry::ENV);
+
+        return TaskNoProof::because($reason, date('c'), is_string($by) ? $by : null);
+    }
+
+    /**
+     * Why a reason given with this update is refused, or null. It is read only
+     * when a task closes: anywhere else it was dropped with exit 0, and the agent
+     * believed it was kept. A reason too short to judge is refused too (review of
+     * part B). A blank one is left to refusalToClose(), which reads it as none.
+     */
+    public static function refusalOfReason(?string $given, ?TaskStatus $movedTo): ?string
+    {
+        if ($given === null) {
+            return null;
+        }
+        if ($movedTo !== TaskStatus::DONE) {
+            return '--no-proof-because closes a task: use it with --status=done';
+        }
+        $given = trim($given);
+
+        return $given !== '' && mb_strlen($given) < TaskNoProof::MIN_REASON
+            ? '--no-proof-because needs at least ' . TaskNoProof::MIN_REASON . ' characters: say what no test can reach'
+            : null;
+    }
+
+    /**
+     * Why this close is refused, or null. A task that counts (approved, or a
+     * bug) closes on a proof or on a stated reason; history nobody approved
+     * closes freely. Asked before the claim is touched: a refused close must
+     * leave everything as it was.
+     */
+    public function refusalToClose(Task $task, ?TaskStatus $movedTo, ?TaskNoProof $because, ?string $recipe = null): ?string
+    {
+        if ($movedTo !== TaskStatus::DONE || !($task->isApproved() || TaskFiling::isBug($recipe ?? $task->recipe))) {
+            return null;
+        }
+        $files = $task->contextRefs === [] ? '<its files>' : implode(',', $task->contextRefs);
+        // A reason stands in for a test nobody can write, never for a run that
+        // failed: given now or kept from before, it does not close past one
+        // (review of part B: `--no-proof-because=x` closed a task whose latest
+        // run had failed, the one case the rule forbids).
+        $failing = self::failingRun($this->runs($task));
+        if ($failing !== null) {
+            $run = is_string($failing['id'] ?? null) ? " ({$failing['id']})" : '';
+
+            return "task '{$task->id}' " . self::NO_PROOF . ": its latest ai:verify run{$run} failed, and neither a proof nor a reason closes past a failing run. Fix what it found, run `bin/semitexa ai:verify --trace={$task->traceId} --files={$files}` until it passes, and close again.";
+        }
+        if ($because !== null) {
+            return null;
+        }
+        $settled = $this->settle($task, $movedTo);
+        if ($settled->proof !== null || $settled->noProof !== null) {
+            return null;
+        }
+
+        return "task '{$task->id}' " . self::NO_PROOF . ": no passing ai:verify run for it holds a test of its code. Run `bin/semitexa ai:verify --trace={$task->traceId} --files={$files}` and close again, or, when no test can prove it, close with `--no-proof-because=\"<why>\"`; the reason is kept on the task.";
     }
 
     public function find(Task $task): ?TaskProof
@@ -54,6 +128,9 @@ final readonly class TaskProofs
             return null;
         }
         $tree = self::tree($run);
+        if ($tree === []) {
+            return null; // a run over no files checked nothing, so it proves nothing
+        }
         $tests = self::passedTests($run);
         if ($tests === [] && !self::hasNothingToTest($tree)) {
             return null;
@@ -89,6 +166,27 @@ final readonly class TaskProofs
         }
 
         return $withoutCode;
+    }
+
+    /**
+     * The run that stands against closing, read the way decidingRun() reads for
+     * a proof: a run that did not pass before any pass over code, newest first.
+     *
+     * @param list<array<string, mixed>> $runs newest first
+     * @return array<string, mixed>|null
+     */
+    private static function failingRun(array $runs): ?array
+    {
+        foreach ($runs as $run) {
+            if (($run['verdict'] ?? null) !== 'pass') {
+                return $run;
+            }
+            if (!self::hasNothingToTest(self::tree($run))) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**

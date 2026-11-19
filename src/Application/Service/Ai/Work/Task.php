@@ -42,6 +42,7 @@ final readonly class Task
         public ?TaskApproval $approval = null,
         public ?Phase $phase = null,
         public ?TaskProof $proof = null,
+        public ?TaskNoProof $noProof = null,
     ) {}
 
     /** An idea until someone approves it for implementation. */
@@ -68,11 +69,12 @@ final readonly class Task
             approval:     $approval,
             phase:        $this->phase,
             proof:        $this->proof,
+            noProof:      $this->noProof,
         );
     }
 
-    /** The same task with what proves it, or with none ({@see with()} reads null as "keep"). */
-    public function withProof(?TaskProof $proof): self
+    /** The same task with what proves it, or the reason nothing does, or neither ({@see with()} reads null as "keep"). */
+    public function withProof(?TaskProof $proof, ?TaskNoProof $noProof = null): self
     {
         return new self(
             id:           $this->id,
@@ -89,6 +91,7 @@ final readonly class Task
             approval:     $this->approval,
             phase:        $this->phase,
             proof:        $proof,
+            noProof:      $noProof,
         );
     }
 
@@ -129,6 +132,7 @@ final readonly class Task
             approval:     $this->approval,
             phase:        $phase ?? $this->phase,
             proof:        $this->proof,
+            noProof:      $this->noProof,
         );
     }
 
@@ -154,6 +158,7 @@ final readonly class Task
             'approval'       => $this->approval?->toArray(),
             'phase'          => $this->phase?->value,
             'proof'          => $this->proof?->toArray(),
+            'no_proof'       => $this->noProof?->toArray(),
         ];
     }
 
@@ -188,6 +193,7 @@ final readonly class Task
             approval:     TaskApproval::fromStored($row['approval'] ?? null),
             phase:        is_string($row['phase'] ?? null) ? Phase::tryFrom($row['phase']) : null,
             proof:        TaskProof::fromStored($row['proof'] ?? null),
+            noProof:      TaskNoProof::fromStored($row['no_proof'] ?? null),
         );
     }
 }
