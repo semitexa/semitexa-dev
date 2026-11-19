@@ -42,6 +42,10 @@ final readonly class VerificationTarget
     public const TYPE_PAGE             = 'page';
     /** The release's BC gate for a package whose @api file changed ({@see BcGateTargets}). */
     public const TYPE_BC_GATE          = 'bc_gate';
+    /** A changed file only a dev surface shows: names the E2E specs that look at it ({@see DevSurfaceAssets}). */
+    public const TYPE_DEV_SURFACE      = 'dev_surface';
+    /** Where the UI flow does not close in the changed modules: a warning, never required ({@see UiFlowCheck}). */
+    public const TYPE_UI_FLOW          = 'ui_flow';
 
     /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled

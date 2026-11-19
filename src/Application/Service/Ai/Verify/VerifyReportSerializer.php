@@ -126,6 +126,11 @@ final readonly class VerifyReportSerializer
         if ($result->diagnostics !== []) {
             $out['diagnostics_count'] = count($result->diagnostics);
         }
+        if ($result->warnings !== []) {
+            // In full, on the result that found them: they are not violations,
+            // so they are in no list a failing run is read by.
+            $out['warnings'] = $result->warnings;
+        }
         if ($result->accepted !== []) {
             // In full, with their reasons. A count and the first path in the
             // signal line told a reader that something was excused without ever

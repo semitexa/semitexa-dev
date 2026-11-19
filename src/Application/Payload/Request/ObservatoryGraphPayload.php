@@ -10,12 +10,14 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 /**
  * The project graph, sliced for the Observatory's Graph view.
  *
- * One path, seven views: `summary` (what the view opens on), `node` (one node
+ * One path, its views: `summary` (what the view opens on), `node` (one node
  * and its edges), `subgraph` (a walk from a root, for tree expansion and the
  * DAG focus), `path` (entry point down to a node, to reveal it in the tree),
- * `search`, `findings` (unused classes and loops, as the CLI reports them)
- * and `traces` (recent recorded traces that ran the node's class). Dev only, like the Explorer: the graph is a map of
- * the application's internals.
+ * `search`, `findings` (unused classes and loops, as the CLI reports them),
+ * `traces` (recent recorded traces that ran the node's class), `flows` and
+ * `flow`, and `ui` (the UI flow: the modules that have screens, one module
+ * with `module`, one screen with `id`). Dev only, like the Explorer: the
+ * graph is a map of the application's internals.
  *
  * GET only and side-effect free — the hydrator binds query parameters on every
  * method, so a GET that wrote anything would write on a crafted link.
@@ -27,7 +29,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 )]
 final class ObservatoryGraphPayload
 {
-    public const VIEWS = ['summary', 'node', 'subgraph', 'path', 'search', 'findings', 'traces', 'flows', 'flow'];
+    public const VIEWS = ['summary', 'node', 'subgraph', 'path', 'search', 'findings', 'traces', 'flows', 'flow', 'ui'];
 
     public string $view = 'summary';
 
@@ -37,6 +39,9 @@ final class ObservatoryGraphPayload
     public int $depth = 1;
 
     public string $q = '';
+
+    /** A module name, for the `ui` view. Only ever compared with the graph's own. */
+    public string $module = '';
 
     /**
      * The hydrator fills payloads through set{CamelCase}() rather than by writing
@@ -59,6 +64,11 @@ final class ObservatoryGraphPayload
     public function setDepth(mixed $value): void
     {
         $this->depth = is_numeric($value) ? (int) $value : 1;
+    }
+
+    public function setModule(mixed $value): void
+    {
+        $this->module = is_string($value) ? substr($value, 0, 200) : '';
     }
 
     public function setQ(mixed $value): void

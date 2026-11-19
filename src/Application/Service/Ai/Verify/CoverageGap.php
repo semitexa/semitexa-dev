@@ -36,6 +36,8 @@ final readonly class CoverageGap
 
     /** Targets that decide by a path, never by what the file says. */
     private const PATH_ONLY_IDS = ['lint:var-artifacts'];
+    /** Targets that only warn: a check that cannot fail the run is no evidence the file was checked. */
+    private const ADVISORY_IDS = [UiFlowTargets::ID];
 
     /**
      * @param list<ChangedFile> $unchecked
@@ -59,7 +61,7 @@ final readonly class CoverageGap
             if ($result->completed() && $target->type === VerificationTarget::TYPE_CAPABILITY_INDEX) {
                 $indexRead = true;
             }
-            if (!$result->completed() || in_array($target->type, self::STRUCTURAL_ONLY, true) || in_array($target->id, self::PATH_ONLY_IDS, true)) {
+            if (!$result->completed() || in_array($target->type, self::STRUCTURAL_ONLY, true) || in_array($target->id, self::PATH_ONLY_IDS, true) || in_array($target->id, self::ADVISORY_IDS, true)) {
                 continue;
             }
             foreach ($target->triggeredBy as $path) {

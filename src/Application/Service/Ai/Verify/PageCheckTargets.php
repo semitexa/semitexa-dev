@@ -16,7 +16,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  * Which pages: public GET routes with no parameter. A file of a local module
  * picks that module's pages, a package's file that package's pages; only one
  * whose package has no page of its own (the theme, a layout) and a project
- * file outside a module pick the project's pages. Capped: a browser is the dearest check there is, so not at
+ * file outside a module pick the project's pages. A file only a dev surface shows
+ * (the graph viewer's stylesheet) picks no page: {@see DevSurfaceAssets}. Capped: a browser is the dearest check there is, so not at
  * minimal scope either.
  */
 final class PageCheckTargets
@@ -41,8 +42,15 @@ final class PageCheckTargets
         foreach ($routes as $route) {
             $declaredIn[$route['path']] = $route['file'] ?? '';
         }
+        /** @var array<string, list<string>> $devSurfaces surface => the files it alone shows */
+        $devSurfaces = [];
         foreach ($changedFiles as $file) {
             if ($file->status === ChangedFile::STATUS_DELETED || !in_array($file->kind, [ChangedFile::KIND_TEMPLATE, ChangedFile::KIND_STYLESHEET], true)) {
+                continue;
+            }
+            $surface = DevSurfaceAssets::surfaceOf($file->path);
+            if ($surface !== null) {
+                $devSurfaces[$surface][] = $file->path;
                 continue;
             }
             foreach (self::pagesOf($file->path, $routes) as $path) {
@@ -61,7 +69,7 @@ final class PageCheckTargets
             );
         }
 
-        return $targets;
+        return [...$targets, ...DevSurfaceAssets::targets($devSurfaces)];
     }
 
     /**
