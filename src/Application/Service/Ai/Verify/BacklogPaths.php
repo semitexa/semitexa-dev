@@ -38,12 +38,28 @@ final class BacklogPaths
     }
 
     /**
-     * @template T of array{path: string}
+     * A file renamed INTO the backlog is one entry, named by where it went: its
+     * source is code that is gone, so it stays as a deletion (review, dev#288).
+     * A rename inside the backlog is dropped whole.
+     *
+     * @template T of array{path: string, status: string, originalPath?: string}
      * @param list<T> $entries
-     * @return list<T>
+     * @return list<T|array{path: string, status: string}>
      */
     public static function without(array $entries): array
     {
-        return array_values(array_filter($entries, static fn (array $entry): bool => !self::holds($entry['path'])));
+        $kept = [];
+        foreach ($entries as $entry) {
+            if (!self::holds($entry['path'])) {
+                $kept[] = $entry;
+                continue;
+            }
+            $source = $entry['originalPath'] ?? '';
+            if ($source !== '' && !self::holds($source)) {
+                $kept[] = ['path' => $source, 'status' => ChangedFile::STATUS_DELETED];
+            }
+        }
+
+        return $kept;
     }
 }

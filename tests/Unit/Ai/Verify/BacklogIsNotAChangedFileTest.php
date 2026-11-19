@@ -146,7 +146,25 @@ final class BacklogIsNotAChangedFileTest extends TestCase
     {
         $this->write('src/var/ai-work/Thing.php', "<?php\n");
 
-        self::assertContains('src/var/ai-work/Thing.php', $this->collected());
+        $expected = [...self::CODE, 'src/var/ai-work/Thing.php'];
+        sort($expected);
+
+        self::assertSame($expected, $this->collected());
+    }
+
+    /**
+     * A file moved INTO the backlog is one entry, named by where it went. Dropping
+     * the entry lost the removal of the code it came from (review, dev#288).
+     */
+    #[Test]
+    public function a_file_renamed_into_the_backlog_is_still_a_deletion_of_its_source(): void
+    {
+        $this->git('add -A && %s commit -q -m "the task"');
+        $this->git('mv src/A.php var/ai-work/A.php && %s mv var/ai-work/charter.json var/ai-work/charter-old.json');
+        $gone = [['path' => 'src/A.php', 'status' => ChangedFile::STATUS_DELETED]];
+
+        self::assertSame($gone, (new DirtyWorkspaceScanner($this->root))->changedFiles());
+        self::assertSame($gone, (new GitRefChanges($this->root))->changes('HEAD'));
     }
 
     /** @return list<string> what a bare `ai:verify` collects, sorted */
@@ -183,6 +201,7 @@ final class BacklogIsNotAChangedFileTest extends TestCase
         ], [], $receipts->fingerprintOf($paths), 'tk-a');
         $id = is_array($envelope['receipt'] ?? null) ? ($envelope['receipt']['id'] ?? null) : null;
         self::assertIsString($id, 'the receipt was not written');
+        self::assertNotSame('', $id, 'the receipt has no id');
 
         return $id;
     }
