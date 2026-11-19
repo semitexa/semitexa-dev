@@ -7,8 +7,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
 /**
  * Plans the UI flow warning ({@see UiFlowCheck}) when a template, a payload
  * or a handler changed: the three places a link, a form or the route it
- * means is written. A deleted one counts, since removing a route is how a
- * link elsewhere goes dead; the check reports the modules it can still place.
+ * means is written. A deleted one counts, and so does the path a file was
+ * renamed from, since removing a route is how a link elsewhere goes dead.
  *
  * Its own target, not a row of the planner's lint map: those are console
  * commands whose non-zero exit fails the run, and this may never fail it. No
@@ -34,9 +34,20 @@ final class UiFlowTargets
             return [];
         }
         $triggeredBy = [];
+        $classifier = null;
         foreach ($files as $file) {
             if (in_array($file->kind, self::KINDS, true)) {
                 $triggeredBy[] = $file->path;
+            }
+            // A rename is a deletion of the old path too, and only the new one
+            // was classified: a template renamed to notes.txt removed its
+            // forms and planned nothing. Both paths, so a move between
+            // modules reports both.
+            if ($file->originalPath !== null && $file->originalPath !== '' && $file->originalPath !== $file->path) {
+                $classifier ??= new ChangedFileClassifier();
+                if (in_array($classifier->classify($file->originalPath, ChangedFile::STATUS_DELETED)->kind, self::KINDS, true)) {
+                    $triggeredBy[] = $file->originalPath;
+                }
             }
         }
         if ($triggeredBy === []) {

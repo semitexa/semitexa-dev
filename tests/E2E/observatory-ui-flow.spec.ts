@@ -6,7 +6,8 @@ import { test, expect, Page } from '@playwright/test';
  * one and read its links and forms with where they lead.
  *
  * Asserted against what the endpoint itself answers on this stack, so the
- * spec holds on any project: no module or screen is named here. A stack that
+ * spec holds on any project: no module or screen is named here, and what a
+ * project does not have (a form the graph can follow) is noted, not failed. A stack that
  * never built a graph must still get a page that says so.
  *
  * UI_FLOW_SHOTS=<dir> also saves a screenshot per theme, for a person to look
@@ -129,31 +130,35 @@ for (const scheme of ['light', 'dark'] as const) {
             const candidate = await (await request.get('/__observatory/graph?view=ui&module=' + encodeURIComponent(m.module))).json();
             if (candidate.wires.some((w: any) => w.layer === 'action')) { withForms = candidate; break; }
         }
-        expect(withForms, 'a module of this stack with a form the graph can follow').not.toBeNull();
-        await page.locator(`.gv-find[data-module="${withForms.module}"]`).click();
-        await expect(page.locator('.gv-main h2')).toContainText(`UI flow · ${withForms.module} · `);
-        // Opening another module clears the screen described beside the picture.
-        await expect(page.locator('.gv-detail .gv-head')).toHaveCount(0);
-        const drawn = (layers: string[]) => withForms.wires.filter((w: any) => layers.includes(w.layer));
-        const actions = drawn(['action']);
-        const stillReached = new Set(drawn(['navigation']).map((w: any) => w.to));
-        const endpointsLeft = withForms.endpoints.filter((n: any) => stillReached.has(n.id)).length;
-        expect(actions.length).toBeGreaterThan(0);
-        await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length);
-        await expect(page.locator('.gv-ui-wire.gv-ui-action')).toHaveCount(actions.length);
-        await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(withForms.endpoints.length);
-        await page.locator('.gv-ui-layers button', { hasText: 'actions' }).click();
-        await expect(page.locator('.gv-ui-wire.gv-ui-action')).toHaveCount(0);
-        await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length - actions.length);
-        // An endpoint a link still reaches stays; one only forms reached goes with them.
-        await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(endpointsLeft);
-        await page.locator('.gv-ui-layers button', { hasText: 'actions' }).click();
-        await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length);
-        await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(withForms.endpoints.length);
-        // A ghost opens its module only when that module has a screen to show.
-        for (const ghost of withForms.ghosts) {
-            const box = page.locator(`.gv-ui-box.gv-ui-ghost[data-id="${ghost.id}"]`);
-            if (ghost.screens > 0) await expect(box).toBeEnabled(); else await expect(box).toBeDisabled();
+        if (withForms === null) {
+            // A project may have screens and no form the graph can follow: its UI is not wrong for that.
+            test.info().annotations.push({ type: 'not-applicable', description: 'no module of this stack has a form wire: the action layer, endpoint and ghost checks were not run' });
+        } else {
+            await page.locator(`.gv-find[data-module="${withForms.module}"]`).click();
+            await expect(page.locator('.gv-main h2')).toContainText(`UI flow · ${withForms.module} · `);
+            // Opening another module clears the screen described beside the picture.
+            await expect(page.locator('.gv-detail .gv-head')).toHaveCount(0);
+            const drawn = (layers: string[]) => withForms.wires.filter((w: any) => layers.includes(w.layer));
+            const actions = drawn(['action']);
+            const stillReached = new Set(drawn(['navigation']).map((w: any) => w.to));
+            const endpointsLeft = withForms.endpoints.filter((n: any) => stillReached.has(n.id)).length;
+            expect(actions.length).toBeGreaterThan(0);
+            await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length);
+            await expect(page.locator('.gv-ui-wire.gv-ui-action')).toHaveCount(actions.length);
+            await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(withForms.endpoints.length);
+            await page.locator('.gv-ui-layers button', { hasText: 'actions' }).click();
+            await expect(page.locator('.gv-ui-wire.gv-ui-action')).toHaveCount(0);
+            await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length - actions.length);
+            // An endpoint a link still reaches stays; one only forms reached goes with them.
+            await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(endpointsLeft);
+            await page.locator('.gv-ui-layers button', { hasText: 'actions' }).click();
+            await expect(page.locator('.gv-ui-wire')).toHaveCount(withForms.wires.length);
+            await expect(page.locator('.gv-ui-box.gv-ui-endpoint:visible')).toHaveCount(withForms.endpoints.length);
+            // A ghost opens its module only when that module has a screen to show.
+            for (const ghost of withForms.ghosts) {
+                const box = page.locator(`.gv-ui-box.gv-ui-ghost[data-id="${ghost.id}"]`);
+                if (ghost.screens > 0) await expect(box).toBeEnabled(); else await expect(box).toBeDisabled();
+            }
         }
 
         // Leaving the tab gives the main pane back to the DAG.
@@ -164,3 +169,75 @@ for (const scheme of ['light', 'dark'] as const) {
         expect(errors.filter((e) => /Refused|inline style|pageerror/i.test(e))).toEqual([]);
     });
 }
+
+/**
+ * The main pane's title and the detail panel are shared with the other tabs.
+ * An answer that arrives after the UI flow tab was left must write to
+ * neither, and a screen asked for a moment ago must not answer over the
+ * endpoint selected since (review of project-graph#39).
+ */
+const HANDLER = 'class:Semitexa\\Dev\\Application\\Handler\\PayloadHandler\\ObservatoryHandler';
+
+async function slowly(page: Page, which: (url: URL) => boolean): Promise<void> {
+    await page.route('**/__observatory/graph?*', async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.get('view') === 'ui' && which(url)) await new Promise((r) => setTimeout(r, 900));
+        await route.continue();
+    });
+}
+
+test('a late answer does not write over another tab, or over an endpoint selected since', async ({ page, request }) => {
+    const overviewResponse = await request.get('/__observatory/graph?view=ui');
+    const errors = await strict(page);
+    if (overviewResponse.status() === 404) {
+        expect((await overviewResponse.json()).error).toBe('no-graph');
+        return;
+    }
+    const overview = await overviewResponse.json();
+    expect(overview.modules.length).toBeGreaterThan(0);
+
+    // The overview is slow: the tab is left before it answers.
+    await slowly(page, (url) => !url.searchParams.has('module') && !url.searchParams.has('id'));
+    await page.goto('/__observatory#graph=' + encodeURIComponent(HANDLER));
+    await expect(page.locator('.gv-detail h3')).toContainText('ObservatoryHandler');
+    await expect(page.locator('.gv-main h2')).toContainText('Focus · ObservatoryHandler');
+    await page.locator('.gv-tabs button', { hasText: 'UI flow' }).click();
+    await page.locator('.gv-tabs button', { hasText: 'Entry points' }).click();
+    // Long enough for the overview and the module it opens to have answered.
+    await page.waitForResponse((r) => new URL(r.url()).searchParams.has('module'));
+    await page.waitForTimeout(300);
+    await expect(page.locator('.gv-main h2')).toContainText('Focus · ObservatoryHandler');
+    await expect(page.locator('.gv-detail h3')).toContainText('ObservatoryHandler');
+    // What arrived was kept: back on the tab, the module is drawn and the title is the tab's.
+    await page.locator('.gv-tabs button', { hasText: 'UI flow' }).click();
+    await expect(page.locator('.gv-main h2')).toContainText('UI flow · ');
+    await expect(page.locator('.gv-ui-box').first()).toBeVisible();
+    await expect(page.locator('.gv-ui-wire').first()).toBeAttached();
+    await page.unroute('**/__observatory/graph?*');
+
+    // A screen is slow: an endpoint is selected before it answers.
+    let withEndpoint: any = null;
+    for (const m of overview.modules) {
+        const candidate = await (await request.get('/__observatory/graph?view=ui&module=' + encodeURIComponent(m.module))).json();
+        if (candidate.endpoints.length) { withEndpoint = candidate; break; }
+    }
+    if (withEndpoint === null) {
+        test.info().annotations.push({ type: 'not-applicable', description: 'no module of this stack has an endpoint: the endpoint selection check was not run' });
+    } else {
+        await slowly(page, (url) => url.searchParams.has('id'));
+        await page.locator(`.gv-find[data-module="${withEndpoint.module}"]`).click();
+        await expect(page.locator('.gv-main h2')).toContainText(`UI flow · ${withEndpoint.module} · `);
+        const screen = page.locator(`.gv-ui-box[data-id="${withEndpoint.entry.replace(/\\/g, '\\\\')}"]`);
+        const endpoint = page.locator('.gv-ui-box.gv-ui-endpoint').first();
+        const answered = page.waitForResponse((r) => new URL(r.url()).searchParams.has('id'));
+        await screen.click();
+        await endpoint.click();
+        await expect(page.locator('.gv-detail h3 .gv-type')).toHaveText('endpoint');
+        await answered;
+        await page.waitForTimeout(300);
+        await expect(page.locator('.gv-detail h3 .gv-type')).toHaveText('endpoint');
+        await expect(endpoint).toHaveClass(/sel/);
+    }
+
+    expect(errors.filter((e) => /Refused|inline style|pageerror/i.test(e))).toEqual([]);
+});

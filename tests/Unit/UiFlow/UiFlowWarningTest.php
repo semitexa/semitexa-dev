@@ -65,6 +65,18 @@ final class UiFlowWarningTest extends TestCase
         // Removing a route is how a link elsewhere goes dead.
         self::assertCount(1, $planned(new ChangedFile(UiFlowShop::ORDERS_TEMPLATE, ChangedFile::KIND_TEMPLATE, ChangedFile::STATUS_DELETED)));
 
+        // A template renamed to something that is none of the three took its links and forms with it:
+        // the path it had is a trigger, and a move between modules names both.
+        self::assertSame(
+            [['ui_flow', [UiFlowShop::ORDERS_TEMPLATE], null]],
+            $planned(new ChangedFile('src/modules/Shop/notes.txt', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_RENAMED, UiFlowShop::ORDERS_TEMPLATE)),
+        );
+        self::assertSame(
+            [['ui_flow', [UiFlowShop::BLOG_TEMPLATE, UiFlowShop::ORDERS_TEMPLATE], null]],
+            $planned(new ChangedFile(UiFlowShop::BLOG_TEMPLATE, ChangedFile::KIND_TEMPLATE, ChangedFile::STATUS_RENAMED, UiFlowShop::ORDERS_TEMPLATE)),
+        );
+        self::assertSame([], $planned(new ChangedFile('src/modules/Shop/b.txt', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_RENAMED, 'src/modules/Shop/a.txt')));
+
         self::assertSame([], $planned(new ChangedFile('src/modules/Shop/Application/Service/Pricing.php', ChangedFile::KIND_SERVICE)));
         // It reads the project graph: with the lints, not in a minimal run.
         self::assertSame([], $planned(new ChangedFile(UiFlowShop::ORDERS_TEMPLATE, ChangedFile::KIND_TEMPLATE), VerificationPlan::SCOPE_MINIMAL));

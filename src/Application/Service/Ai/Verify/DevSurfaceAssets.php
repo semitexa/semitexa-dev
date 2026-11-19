@@ -19,7 +19,9 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  * whose result names the E2E specs that open that surface: those are where
  * the change is looked at, and a changed spec among them is run by its own
  * target ({@see E2eSpecTargets}). That is a statement of where the check
- * lives, not a pass: the result is a skip. It says nothing was read here, so
+ * lives, not a pass: the result is a skip (and incomplete, required, when a
+ * spec that is there cannot be read: which specs open the surface is then
+ * not known). It says nothing was read here, so
  * it does not count the file as checked either: when no other target reads
  * it (lint:css-tokens reads a stylesheet), CoverageGap lists it as unchecked
  * and a change of dev-surface files alone ends incomplete. That is the
@@ -79,8 +81,19 @@ final class DevSurfaceAssets
     {
         $surface = $target->commandInput['path'] ?? '';
         $surface = is_string($surface) ? $surface : '';
-        $specs = $surface === '' ? [] : self::specsOpening($surface, rtrim($projectRoot, '/'));
         $files = implode(', ', array_map(basename(...), $target->triggeredBy));
+        $unread = [];
+        $specs = $surface === '' ? [] : self::specsOpening($surface, rtrim($projectRoot, '/'), $unread);
+        if ($unread !== []) {
+            // "No spec opens it" would be a guess: one of these may. A gate that
+            // cannot read a file does not answer as if the file were not there.
+            return new VerificationResult(
+                $target,
+                VerificationResult::STATUS_INCOMPLETE,
+                1,
+                "{$files}: shown only on {$surface}, and which E2E specs open that surface could not be told: " . implode(', ', $unread) . ' could not be read',
+            );
+        }
 
         return new VerificationResult(
             $target,
@@ -95,16 +108,22 @@ final class DevSurfaceAssets
     }
 
     /**
+     * @param list<string> $unread filled with the specs that are there and could not be read
      * @return list<string> project-relative paths of the specs that open the surface
      */
-    private static function specsOpening(string $surface, string $root): array
+    private static function specsOpening(string $surface, string $root, array &$unread): array
     {
         $specs = [];
+        $failed = [];
         foreach (['packages/*', 'vendor/semitexa/*', 'src/modules/*'] as $owners) {
             foreach (glob("{$root}/{$owners}/tests/E2E/*.spec.ts") ?: [] as $spec) {
                 $source = @file_get_contents($spec);
+                if ($source === false) {
+                    $failed[$spec] = substr($spec, strlen($root) + 1);
+                    continue;
+                }
                 // A spec that OPENS the surface (goto('/__observatory#graph')), not one that mentions it or opens a page under it.
-                if (is_string($source) && preg_match('#goto\\(\\s*[\'"`]' . preg_quote($surface, '#') . '(?![A-Za-z0-9_/-])#', $source) === 1) {
+                if (preg_match('#goto\\(\\s*[\'"`]' . preg_quote($surface, '#') . '(?![A-Za-z0-9_/-])#', $source) === 1) {
                     // Once each: a package linked into vendor/ is the package, not a second spec.
                     $specs[realpath($spec) ?: $spec] ??= substr($spec, strlen($root) + 1);
                 }
@@ -112,6 +131,8 @@ final class DevSurfaceAssets
         }
         $specs = array_values($specs);
         sort($specs);
+        $unread = array_values($failed);
+        sort($unread);
 
         return $specs;
     }

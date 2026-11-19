@@ -62,6 +62,21 @@ final class DevSurfaceAssetsTest extends TestCase
         self::assertStringContainsString('packages/semitexa-dev/tests/E2E/observatory-graph.spec.ts', $result->signal);
     }
 
+    /** A spec that is there and cannot be read may be the one that opens the surface. */
+    #[Test]
+    public function a_spec_that_cannot_be_read_leaves_the_run_incomplete(): void
+    {
+        // A link to nowhere: nobody can read it, root included, which a file without permissions could be.
+        symlink($this->root . '/no-such-directory/gone.spec.ts', $this->root . '/packages/semitexa-dev/tests/E2E/unreadable.spec.ts');
+
+        $result = DevSurfaceAssets::check(DevSurfaceAssets::targets(['/__observatory' => [self::VIEWER_CSS]])[0], $this->root);
+
+        self::assertSame([VerificationResult::STATUS_INCOMPLETE, 1, true], [$result->status, $result->exitCode, $result->required]);
+        self::assertStringContainsString('packages/semitexa-dev/tests/E2E/unreadable.spec.ts could not be read', $result->signal);
+        $passed = new VerificationResult(new VerificationTarget('lint', 'lint:lint:css-tokens', 'r', [self::VIEWER_CSS]), VerificationResult::STATUS_PASS, 0, 'clean');
+        self::assertSame('incomplete', (new \ReflectionMethod(AiVerifyCommand::class, 'verdict'))->invoke(new AiVerifyCommand(), [$passed, $result]));
+    }
+
     protected function tearDown(): void
     {
         exec('rm -rf ' . escapeshellarg($this->root));

@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Lifecycle\CurrentRequestStore;
+use Semitexa\Core\Request;
 use Semitexa\Dev\Application\Handler\PayloadHandler\ObservatoryGraphHandler;
 use Semitexa\Dev\Application\Payload\Request\ObservatoryGraphPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
@@ -30,8 +31,13 @@ final class ObservatoryUiFlowViewTest extends TestCase
 
     private UiFlowShop $shop;
 
+    private ?Request $requestBefore = null;
+
     protected function setUp(): void
     {
+        // The gate reads the current request: none here, and whatever was there is put back.
+        $this->requestBefore = CurrentRequestStore::get();
+        CurrentRequestStore::clear();
         foreach (self::ENV_KEYS as $key) {
             $this->envSnapshot[$key] = getenv($key);
         }
@@ -44,6 +50,9 @@ final class ObservatoryUiFlowViewTest extends TestCase
     {
         $this->shop->remove();
         CurrentRequestStore::clear();
+        if ($this->requestBefore !== null) {
+            CurrentRequestStore::set($this->requestBefore);
+        }
         foreach ($this->envSnapshot as $key => $value) {
             putenv($value === false ? $key : "{$key}={$value}");
         }
