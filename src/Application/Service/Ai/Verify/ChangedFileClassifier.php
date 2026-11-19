@@ -98,6 +98,10 @@ final class ChangedFileClassifier
         if (str_ends_with($path, '.json') && preg_match('~/Application/View/locales/[^/]+\.json$~', $normalised) === 1) {
             return ChangedFile::KIND_LOCALE_PACK;
         }
+        // bin/semitexa has no extension: a file without one in a bin directory is taken for a script, and the lint reads its shebang.
+        if (str_ends_with($path, '.sh') || preg_match('~/bin/[^/.]+$~', $normalised) === 1) {
+            return ChangedFile::KIND_SHELL_SCRIPT;
+        }
         if (!str_ends_with($path, '.php')) {
             return ChangedFile::KIND_NON_PHP;
         }
