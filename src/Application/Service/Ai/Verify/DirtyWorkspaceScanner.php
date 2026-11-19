@@ -21,6 +21,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  *
  * Untracked files count as added: a file that does not exist in git yet is
  * exactly the one a generator just wrote and nobody has verified.
+ *
+ * The backlog is no change of the work: {@see BacklogPaths}.
  */
 final readonly class DirtyWorkspaceScanner
 {
@@ -48,7 +50,7 @@ final readonly class DirtyWorkspaceScanner
             }
         }
 
-        return $out;
+        return BacklogPaths::without($out);
     }
 
     /** Repository-relative path to workspace-relative path. */

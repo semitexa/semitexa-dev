@@ -77,6 +77,6 @@ final class GitRefChanges
             }
         }
 
-        return $changes;
+        return BacklogPaths::without($changes); // the backlog is not code
     }
 }

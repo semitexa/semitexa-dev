@@ -35,7 +35,7 @@ final readonly class TaskCommitFiles
         }
         ksort($out);
 
-        return array_values($out);
+        return BacklogPaths::without(array_values($out)); // the task's own record is not what it changed
     }
 
     /**
