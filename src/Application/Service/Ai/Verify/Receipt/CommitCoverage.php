@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify\Receipt;
 
+use Semitexa\Dev\Application\Service\Ai\Verify\BacklogPaths;
 use Semitexa\Dev\Application\Service\Ai\Verify\DirtyWorkspaceScanner;
 use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
 
@@ -16,7 +17,8 @@ use Semitexa\Dev\Application\Service\Ai\Verify\UnselectedChanges;
  * either: `--files=A` passed, A and B were committed. This compares the commit
  * with the receipt, file by file: every file the commit adds or changes must be
  * one the run checked, with the bytes the run checked. A deletion has no bytes
- * left for a check to read and is not asked about.
+ * left for a check to read and is not asked about. Neither is the backlog
+ * ({@see BacklogPaths}) a project commits beside its code: it is not code.
  *
  * Each workspace repository a receipt touches is its own git repository, so the
  * revision is resolved in each (HEAD, a sha, a branch); one it does not name a
@@ -73,6 +75,10 @@ final readonly class CommitCoverage
                     continue;
                 }
                 $path = $prefix === '' ? $relative : $prefix . '/' . $relative;
+                // The backlog committed beside the code is not code: no run is asked to have read it.
+                if (BacklogPaths::holds($path)) {
+                    continue;
+                }
                 if (!array_key_exists($path, $tree)) {
                     $unchecked[] = $path;
                 } elseif (($blob = $this->git($absolute, ['show', $sha . ':' . $relative])) === null || hash('sha256', $blob) !== $tree[$path]) {
