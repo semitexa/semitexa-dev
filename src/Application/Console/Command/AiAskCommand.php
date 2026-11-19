@@ -25,12 +25,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   ai:ask api          --name=Column | --search=regex [--json]
  *   ai:ask components   [--name=platform.grid] [--kind=component] [--json]
  *   ai:ask logs         [--file=app] [--lines=200] [--grep=…] [--json]
+ *   ai:ask ui-flow      [--screen=<id|class|path> | --module=Billing]
  *
  * Output contracts (envelope shapes, JSON keys, exit codes) belong to the
  * dispatched targets — `ai:ask` only routes; the dev:graph:* / logs:app
  * commands own behavior.
  */
-#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, components, project, module, route, event, path, api, logs)')]
+#[AsCommand(name: 'ai:ask', description: 'Agent-facing introspection aggregator (capabilities, mechanisms, components, project, module, route, event, path, api, logs, ui-flow)')]
 final class AiAskCommand extends BaseCommand
 {
     /**
@@ -56,6 +57,10 @@ final class AiAskCommand extends BaseCommand
         // The UI catalog: what can be rendered, its props and how to call it.
         'components'   => 'platform-ui:catalog',
         'logs'         => 'logs:app',
+        // The UI flow: which screens there are and where a visitor can go or
+        // post from each, as JSON. The model the Observatory's "UI flow" tab
+        // draws (UiFlowView in semitexa/project-graph), so both say the same.
+        'ui-flow'      => 'ai:review-graph:ui-flow',
         // `path` explains a file/directory path using global module-structure
         // rules + any package-local extension. Auto-selected when --path is
         // passed without an explicit subject (see execute()).
@@ -79,6 +84,8 @@ final class AiAskCommand extends BaseCommand
             // ones the target actually declares are forwarded (see
             // CommandDelegator). Anything else is silently dropped.
             ->addOption('name', null, InputOption::VALUE_REQUIRED, 'Module/event name, a framework class, or a UI entry (for subject=module|event|api|components)')
+            ->addOption('screen', null, InputOption::VALUE_REQUIRED, 'One screen: its node id, its payload class or its path (for subject=ui-flow)')
+            ->addOption('module', null, InputOption::VALUE_REQUIRED, 'One module: its screens and the wires between them (for subject=ui-flow)')
             ->addOption('search', null, InputOption::VALUE_REQUIRED, 'Find framework classes and members by name or doc summary (for subject=api), or mechanisms and commands by a word (for subject=mechanisms|capabilities)')
             ->addOption('path', null, InputOption::VALUE_REQUIRED, 'Path: route path (subject=route) | file/directory path (subject=path, default when --path used)')
             ->addOption('method', null, InputOption::VALUE_REQUIRED, 'HTTP method (for subject=route)')

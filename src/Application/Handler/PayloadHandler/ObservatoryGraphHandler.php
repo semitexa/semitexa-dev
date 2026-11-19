@@ -14,7 +14,10 @@ use Semitexa\Dev\Application\Payload\Request\ObservatoryGraphPayload;
 use Semitexa\Dev\Application\Service\Trace\ObservatoryPanelGate;
 use Semitexa\Dev\Application\Service\Trace\TraceClassIndex;
 use Semitexa\Dev\Application\Service\Trace\TraceGraphReader;
+use Semitexa\ProjectGraph\Application\Service\Findings\TestCode;
+use Semitexa\ProjectGraph\Application\Service\Graph\GraphStorage;
 use Semitexa\ProjectGraph\Application\Service\Query\GraphBrowser;
+use Semitexa\ProjectGraph\Application\Service\UiFlow\UiFlowView;
 
 /**
  * Serves {@see ObservatoryGraphPayload}. A refusal is the 404 every other
@@ -81,14 +84,33 @@ final class ObservatoryGraphHandler implements TypedHandlerInterface
             // The list is read off the flow nodes; only the opened flow is traced (~1 s, all of them ~40 s).
             'flows' => ['flows' => $browser->flows()],
             'flow' => $browser->flow($payload->id),
+            'ui' => $this->uiFlow($storage, $payload),
             default => $browser->summary() + ['stale' => $this->graph->isStale()],
         };
 
         if ($body === null) {
-            return $this->json($resource, ['error' => 'no-node', 'id' => $payload->id], HttpStatus::NotFound->value);
+            return $this->json($resource, ['error' => 'no-node', 'id' => $payload->view === 'ui' && $payload->id === '' ? $payload->module : $payload->id], HttpStatus::NotFound->value);
         }
 
         return $this->json($resource, $body, HttpStatus::Ok->value);
+    }
+
+    /**
+     * The UI flow, from the model `ai:ask ui-flow` reads: one screen (`id`),
+     * one module (`module`), or the modules that have screens. A graph whose
+     * project is not on this machine still answers 200: its `status` says
+     * so, which is what the tab shows instead of an empty module list.
+     *
+     * @return array<string, mixed>|null null when no such screen or module
+     */
+    private function uiFlow(GraphStorage $storage, ObservatoryGraphPayload $payload): ?array
+    {
+        $view = new UiFlowView($storage, TestCode::of($storage));
+        if ($payload->id !== '') {
+            return $view->screen($payload->id);
+        }
+
+        return $payload->module !== '' ? $view->module($payload->module) : $view->overview();
     }
 
     /** @param array<string, mixed> $body */

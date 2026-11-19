@@ -218,7 +218,7 @@ final class AiVerifyCommand extends BaseCommand
             $this->emitError($output, 'Application not available — cannot dispatch lint commands', $jsonMode);
             return self::FAILURE;
         }
-        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()), baseRef: $baseRef);
+        $executor = new VerificationExecutor($app, $projectRoot, $recorder = new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\RecordingProcessRunner(new \Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner()), baseRef: $baseRef, uiFlow: new \Semitexa\Dev\Application\Service\Ai\Verify\UiFlowCheck($this->connections, projectRoot: $projectRoot));
         // What the targets are about to check: a file edited before the receipt is written must not ride on this verdict.
         $treeBefore = (new \Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts($projectRoot))->fingerprintOf(array_map(static fn (ChangedFile $f): string => $f->path, $plan->changedFiles));
         $results = $executor->execute($plan);

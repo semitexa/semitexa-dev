@@ -36,6 +36,14 @@ final readonly class VerificationResult
          * @var list<array<string, mixed>>
          */
         public array $accepted = [],
+        /**
+         * What a check that never fails the run found worth a look
+         * ({@see UiFlowCheck}). Not among the diagnostics: those are the
+         * run's violations, and a passing run has none.
+         *
+         * @var list<array<string, mixed>>
+         */
+        public array $warnings = [],
     ) {}
 
     public function completed(): bool
