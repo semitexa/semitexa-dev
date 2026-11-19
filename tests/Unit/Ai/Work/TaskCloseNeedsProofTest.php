@@ -228,8 +228,9 @@ final class TaskCloseNeedsProofTest extends TestCase
      * number is a newer run.
      *
      * @param array<string, string> $files path => content, written to the project
+     * @param list<string> $changedDuringRun the files the receipt says changed while it ran
      */
-    private function receipt(int $number, string $verdict, array $files): void
+    private function receipt(int $number, string $verdict, array $files, array $changedDuringRun = []): void
     {
         $tree = [];
         foreach ($files as $path => $content) {
@@ -242,7 +243,7 @@ final class TaskCloseNeedsProofTest extends TestCase
         $id = sprintf('rcpt-20261119-%06d-dddddd', $number);
         file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/' . $id . '.json', (string) json_encode([
             'id' => $id, 'generated_at' => sprintf('2026-11-19T01:00:%02d+00:00', $number), 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => $verdict,
-            'targets' => [['id' => 'docs:reference', 'type' => 'docs', 'status' => $verdict]], 'tree' => $tree, 'changed_during_run' => [],
+            'targets' => [['id' => 'docs:reference', 'type' => 'docs', 'status' => $verdict]], 'tree' => $tree, 'changed_during_run' => $changedDuringRun,
         ]));
     }
 
@@ -284,5 +285,36 @@ final class TaskCloseNeedsProofTest extends TestCase
 
         self::assertNull($settled->proof);
         self::assertNull($settled->noProof, 'left unproven, so it counts nothing');
+    }
+
+    /** Review, dev#284: settle() read the receipts twice, so a run failing between the reads let a reason close it. */
+    public function test_one_read_of_the_receipts_decides_both_the_proof_and_the_failing_run(): void
+    {
+        file_put_contents($this->root . '/Code.php', 'code');
+        $pass = ['id' => 'rcpt-20261119-000001-aaaaaa', 'generated_at' => self::NOW, 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'pass',
+            'targets' => [['id' => 'phpunit:X', 'type' => 'phpunit', 'status' => 'pass']], 'tree' => ['Code.php' => hash('sha256', 'code')], 'changed_during_run' => []];
+        $fail = ['verdict' => 'fail', 'id' => 'rcpt-20261119-000002-bbbbbb'] + $pass;
+        $reads = 0;
+        $proofs = new TaskProofs($this->root, static function () use (&$reads, $pass, $fail): array {
+            // The first read sees the pass; a run that failed lands before any later read.
+            return ++$reads === 1 ? [$pass] : [$fail, $pass];
+        });
+
+        $settled = $proofs->settle($this->task(), TaskStatus::DONE, $this->reason());
+
+        self::assertSame(1, $reads, 'one read');
+        self::assertNotNull($settled->proof, 'the read it made held a pass over the code');
+        self::assertNull($settled->noProof);
+    }
+
+    /** Review, dev#284: a pass whose files changed while it ran covered an older fail it never checked. */
+    public function test_a_pass_whose_files_changed_under_it_covers_no_older_fail(): void
+    {
+        $this->receipt(1, 'fail', ['docs/b.md' => 'draft']);
+        $this->receipt(2, 'pass', ['docs/b.md' => 'edited during the run'], ['docs/b.md']);
+        $this->receipt(3, 'pass', ['README.md' => 'fixed']);
+
+        self::assertNull((new TaskProofs($this->root))->find($this->task()));
+        self::assertNotNull($this->refusal($this->task(), $this->reason()));
     }
 }

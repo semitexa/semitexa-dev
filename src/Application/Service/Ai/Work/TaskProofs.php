@@ -33,7 +33,11 @@ final readonly class TaskProofs
     private const TEST_TARGETS = ['phpunit', 'e2e'];
     private const NOTHING_TO_TEST = '/\.(md|txt|json|ya?ml|neon|xml|ini|toml)$|(^|\/)\.env(\.[a-z]+)?$/';
 
-    public function __construct(private string $projectRoot) {}
+    /**
+     * @param (\Closure(Task): list<array<string, mixed>>)|null $readRuns how the
+     *     receipts are read, newest first; a seam for tests, the receipts directory otherwise
+     */
+    public function __construct(private string $projectRoot, private ?\Closure $readRuns = null) {}
 
     /**
      * The task as its status now leaves it: closing looks for proof, reopening
@@ -42,6 +46,18 @@ final readonly class TaskProofs
      */
     public function settle(Task $task, ?TaskStatus $movedTo, ?TaskNoProof $because = null): Task
     {
+        return $this->settleOn($task, $movedTo, $because, $movedTo === TaskStatus::DONE ? $this->runs($task) : []);
+    }
+
+    /**
+     * One read of the receipts decides both the proof and whether a failing run
+     * stands. Two reads let a run that failed between them close the task with a
+     * reason (review, dev#284).
+     *
+     * @param list<array<string, mixed>> $runs newest first
+     */
+    private function settleOn(Task $task, ?TaskStatus $movedTo, ?TaskNoProof $because, array $runs): Task
+    {
         if ($movedTo === null) {
             return $task;
         }
@@ -49,8 +65,7 @@ final readonly class TaskProofs
             return $task->withProof(null);
         }
         // Receipts are pruned within days: no run left says nothing against a proof kept on the task.
-        $runs = $this->runs($task);
-        $proof = $runs === [] ? $task->proof : $this->find($task);
+        $proof = $runs === [] ? $task->proof : $this->proofIn($task, $runs);
         // The write keeps the rule refusalToClose() checks first: a reason never
         // stands over a failing run, even one that finished between the check and
         // this read (review, dev#284). Such a close is left unproven, and counts nothing.
@@ -104,7 +119,8 @@ final readonly class TaskProofs
         // failed: given now or kept from before, it does not close past one
         // (review of part B: `--no-proof-because=x` closed a task whose latest
         // run had failed, the one case the rule forbids).
-        $failing = self::failingRun($this->runs($task));
+        $runs = $this->runs($task);
+        $failing = self::failingRun($runs);
         if ($failing !== null) {
             $run = is_string($failing['id'] ?? null) ? " ({$failing['id']})" : '';
 
@@ -113,7 +129,7 @@ final readonly class TaskProofs
         if ($because !== null) {
             return null;
         }
-        $settled = $this->settle($task, $movedTo);
+        $settled = $this->settleOn($task, $movedTo, null, $runs);
         if ($settled->proof !== null || $settled->noProof !== null) {
             return null;
         }
@@ -123,7 +139,13 @@ final readonly class TaskProofs
 
     public function find(Task $task): ?TaskProof
     {
-        $run = self::decidingRun($this->runs($task));
+        return $this->proofIn($task, $this->runs($task));
+    }
+
+    /** @param list<array<string, mixed>> $runs newest first */
+    private function proofIn(Task $task, array $runs): ?TaskProof
+    {
+        $run = self::decidingRun($runs);
         if ($run === null || ($run['changed_during_run'] ?? []) !== []) {
             return null;
         }
@@ -150,6 +172,10 @@ final readonly class TaskProofs
     /** @return list<array<string, mixed>> */
     private function runs(Task $task): array
     {
+        if ($this->readRuns !== null) {
+            return ($this->readRuns)($task);
+        }
+
         return (new VerifyReceipts($this->projectRoot))->forTraces([$task->id, $task->traceId]);
     }
 
@@ -174,7 +200,9 @@ final readonly class TaskProofs
                 return $run;
             }
             $withoutCode ??= $run;
-            $covered += $tree;
+            if (($run['changed_during_run'] ?? []) === []) {
+                $covered += $tree; // a pass whose files changed under it checked nothing it can vouch for
+            }
         }
 
         return $withoutCode;
@@ -202,7 +230,9 @@ final readonly class TaskProofs
             if (!self::hasNothingToTest($tree)) {
                 return null;
             }
-            $covered += $tree;
+            if (($run['changed_during_run'] ?? []) === []) {
+                $covered += $tree; // a pass whose files changed under it checked nothing it can vouch for
+            }
         }
 
         return null;
