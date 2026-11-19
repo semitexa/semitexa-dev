@@ -153,6 +153,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
                     'lint:mechanisms',
                     'lint:responses',
                     'lint:scoping',
+                    'lint:shell-fallbacks',
                     'lint:templates',
                     'lint:transport-doors',
                     'lint:ui-contracts',
@@ -253,6 +254,48 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         foreach (['packages/semitexa-cms/composer.json', 'src/modules/Foo/tests/fixtures/locales/en.json', 'resources/locales/en.json'] as $path) {
             self::assertSame(ChangedFile::KIND_NON_PHP, (new ChangedFileClassifier())->classify($path)->kind, $path);
         }
+    }
+
+    /** tk-verify-catches-review-no-classes: a shell script was non_php, so no check read the fallback that could never run. */
+    #[Test]
+    public function a_shell_script_selects_the_shell_fallback_lint(): void
+    {
+        foreach (['bin/semitexa', 'packages/semitexa-ultimate/bin/semitexa', 'packages/semitexa-installer/scaffold/bin/semitexa', 'bin/semitexa-router', 'packages/semitexa-dev/resources/skills-install.sh', '.claude/skills/codereview/scripts/commit.sh'] as $path) {
+            $classified = (new ChangedFileClassifier())->classify($path);
+            self::assertSame(ChangedFile::KIND_SHELL_SCRIPT, $classified->kind, $path);
+            $plan = $this->planner()->plan([$classified], VerificationPlan::SCOPE_STANDARD);
+            self::assertSame(['lint:shell-fallbacks'], $this->lintCommandNames($plan), $path);
+            // A script has no PHP to parse and no test named after it.
+            self::assertSame([], array_values(array_filter($plan->targets, static fn (VerificationTarget $t): bool => in_array($t->type, [VerificationTarget::TYPE_SYNTAX, VerificationTarget::TYPE_PHPUNIT], true))), $path);
+        }
+        // No script: a file with an extension under bin/, a document about one, a directory that only starts with the word.
+        foreach (['bin/notes.md', 'docs/semitexa.sh.md', 'packages/semitexa-dev/sbin/tool', 'cabin/semitexa'] as $path) {
+            self::assertSame(ChangedFile::KIND_NON_PHP, (new ChangedFileClassifier())->classify($path)->kind, $path);
+        }
+        self::assertSame(ChangedFile::KIND_PHP_OTHER, (new ChangedFileClassifier())->classify('bin/tool.php')->kind);
+    }
+
+    /** Review, dev#282: a root-level script is in no directory the lint walks, so a target that names it must hand it over. */
+    #[Test]
+    public function the_shell_fallback_lint_is_given_the_changed_scripts(): void
+    {
+        $classifier = new ChangedFileClassifier();
+        $scripts = [$classifier->classify('deploy.sh'), $classifier->classify('bin/semitexa')];
+        $input = $this->shellLintInput(...);
+
+        self::assertSame(['--file' => ['deploy.sh', 'bin/semitexa']], $input($scripts, VerificationPlan::SCOPE_STANDARD));
+        // A broad run reads the whole project, and the changed scripts its walk would miss.
+        self::assertSame(['--file' => ['deploy.sh', 'bin/semitexa'], '--all' => true], $input($scripts, VerificationPlan::SCOPE_BROAD));
+        self::assertSame([], $input([$classifier->classify('src/modules/Foo/src/Domain/Service/A.php')], VerificationPlan::SCOPE_BROAD));
+    }
+
+    /** A deleted script leaves nothing to read, and the lint compares it with no other file. */
+    #[Test]
+    public function a_deleted_shell_script_selects_no_lint(): void
+    {
+        $deleted = new ChangedFile('bin/semitexa-router', ChangedFile::KIND_SHELL_SCRIPT, ChangedFile::STATUS_DELETED);
+
+        self::assertSame([], $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_STANDARD)));
     }
 
     /** A deleted pack is a language gone from its directory: the lint still reads the others. */
@@ -379,7 +422,7 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         /** @var array<string, list<string>> $lintMap */
         $lintMap = $map->getValue();
 
-        $covered = [ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_STYLESHEET, ChangedFile::KIND_LOCALE_PACK];
+        $covered = [ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_STYLESHEET, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_SHELL_SCRIPT];
         foreach (self::selectionProvider() as [$_path, $kind, $_lints]) {
             $covered[] = $kind;
         }
@@ -394,6 +437,21 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             . 'a rule that stops matching just makes the plan smaller, and a smaller plan passes faster.',
             implode(', ', $missing),
         ));
+    }
+
+    /**
+     * @param list<ChangedFile> $files
+     * @return array<string, string|bool|list<string>>|null what lint:shell-fallbacks is run with; null when it is not planned
+     */
+    private function shellLintInput(array $files, string $scope): ?array
+    {
+        foreach ($this->planner()->plan($files, $scope)->targets as $target) {
+            if ($target->commandName === 'lint:shell-fallbacks') {
+                return $target->commandInput;
+            }
+        }
+
+        return null;
     }
 
     private function planner(): VerificationPlanner

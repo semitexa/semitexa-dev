@@ -65,6 +65,12 @@ final readonly class ChangedFile
      * reads it (tk-verify-reads-locale-packs). Like KIND_NON_PHP everywhere else.
      */
     public const KIND_LOCALE_PACK = 'locale_pack';
+    /**
+     * A shell script: any `*.sh`, and a file without an extension in a `bin`
+     * directory (`bin/semitexa`). The path cannot say which shell runs it, so
+     * lint:shell-fallbacks reads the shebang. Like KIND_NON_PHP everywhere else.
+     */
+    public const KIND_SHELL_SCRIPT = 'shell_script';
     public const KIND_TEST         = 'test';
     /**
      * Phase 6f.5: support classes that live under a `tests/` tree but

@@ -126,6 +126,8 @@ class VerificationPlannerTest extends TestCase
             'lint:mechanisms',
             'lint:responses',
             'lint:scoping',
+            // POSIX sh scripts: a special builtin whose failed redirection exits the shell.
+            'lint:shell-fallbacks',
             'lint:templates',
             'lint:transport-doors',
             // A UI contract example the runtime drops is refused here.

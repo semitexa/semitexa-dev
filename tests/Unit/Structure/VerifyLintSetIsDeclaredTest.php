@@ -40,6 +40,8 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         'lint:mechanisms',
         'lint:responses',
         'lint:scoping',
+        // The one lint that reads no PHP, Twig, CSS or JSON: no existing lint could hold the rule as a detector (design 2026-11-19, class 1a).
+        'lint:shell-fallbacks',
         'lint:templates',
         'lint:transport-doors',
         'lint:ui-contracts',

@@ -78,7 +78,7 @@ final class VerificationPlanner
         // Client JavaScript is where a framework mechanism gets hand-rolled:
         // a region fetched and injected instead of declared deferred. (Parsing is a syntax target, see plan().)
         ChangedFile::KIND_CLIENT_SCRIPT => ['lint:mechanisms'],
-        ChangedFile::KIND_STYLESHEET => ['lint:css-tokens'],
+        ChangedFile::KIND_STYLESHEET => ['lint:css-tokens'], ChangedFile::KIND_SHELL_SCRIPT => ['lint:shell-fallbacks'], // sh: a fallback the shell never reaches
         ChangedFile::KIND_LOCALE_PACK => ['lint:locales'], // a pack fails silently (tk-verify-reads-locale-packs)
         // No KIND_PHP_OTHER row, and the reason is measured: it wedged the
         // suite at ~427/8500 — see ChangedFile::KIND_COMMAND, the narrower kind
@@ -115,7 +115,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
-        'lint:css-tokens', 'lint:locales',
+        'lint:css-tokens', 'lint:locales', 'lint:shell-fallbacks',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -209,7 +209,7 @@ final class VerificationPlanner
                 reason: $meta['reason'],
                 triggeredBy: array_values(array_unique($meta['triggeredBy'])),
                 commandName: $commandName,
-                commandInput: $commandName === 'lint:mechanisms' && $meta['triggeredBy'] !== [] && $effectiveScope !== VerificationPlan::SCOPE_BROAD ? ['--file' => array_values(array_unique($meta['triggeredBy']))] : [],
+                commandInput: LintTargetInput::of($commandName, array_values(array_unique($meta['triggeredBy'])), $effectiveScope === VerificationPlan::SCOPE_BROAD),
             );
         }
         foreach ($phpunitTargets as $target) {
@@ -572,7 +572,7 @@ final class VerificationPlanner
     private static function isPhpstanDiIneligibleKind(string $kind): bool
     {
         return in_array($kind, [ChangedFile::KIND_TEST, ChangedFile::KIND_TEST_FIXTURE, ChangedFile::KIND_TEMPLATE,
-            ChangedFile::KIND_NON_PHP, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_EXAMPLE, ChangedFile::KIND_LOCALE_PACK], true);
+            ChangedFile::KIND_NON_PHP, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_EXAMPLE, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_SHELL_SCRIPT], true);
     }
 
     /**
@@ -696,7 +696,7 @@ final class VerificationPlanner
             return;
         }
 
-        if (in_array($file->kind, [ChangedFile::KIND_NON_PHP, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_TEMPLATE], true)) {
+        if (in_array($file->kind, [ChangedFile::KIND_NON_PHP, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_SHELL_SCRIPT, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_TEMPLATE], true)) {
             return;
         }
 

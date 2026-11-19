@@ -42,6 +42,9 @@ class ChangedFileClassifierTest extends TestCase
             ],
             'php_other' => ['src/modules/Foo/Random.php', ChangedFile::KIND_PHP_OTHER],
             'non_php' => ['composer.json', ChangedFile::KIND_NON_PHP],
+            'shell_script_by_extension' => ['packages/semitexa-dev/resources/skills-install.sh', ChangedFile::KIND_SHELL_SCRIPT],
+            'shell_script_in_bin' => ['packages/semitexa-ultimate/bin/semitexa', ChangedFile::KIND_SHELL_SCRIPT],
+            'root_entry_point' => ['bin/semitexa', ChangedFile::KIND_SHELL_SCRIPT],
 
             // Phase 6f.5: fixture / stub / helper / support code under
             // a tests/ tree must NOT be classified as KIND_TEST,
