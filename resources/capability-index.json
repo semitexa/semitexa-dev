@@ -1,8 +1,8 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-10T22:14:14+00:00",
-    "source_version": "dev-master@f5c7104",
-    "count": 83,
+    "generated_at": "2026-11-19T08:44:57+00:00",
+    "source_version": "dev-master@d41ebd1",
+    "count": 84,
     "packages": [
         "semitexa/api",
         "semitexa/auth",
@@ -16,6 +16,7 @@
         "semitexa/docs",
         "semitexa/files",
         "semitexa/graphql",
+        "semitexa/installer",
         "semitexa/ledger",
         "semitexa/llm",
         "semitexa/locale",
@@ -51,10 +52,9 @@
         "semitexa/workflow"
     ],
     "not_packages": {
-        "semitexa-companion": "browser extension",
-        "semitexa-installer": "docker project (publishes an image, not a Composer package)"
+        "semitexa-companion": "browser extension"
     },
-    "content_hash": "c02975308640e9f53b376f5e7154d91fe02535529dcc7837d9e95137485e2334",
+    "content_hash": "4bf827b95ecca5406467664d215c38ad4b6edd54274e17154b4682ba7a70ddca",
     "capabilities": [
         {
             "id": "api.external",
@@ -298,6 +298,22 @@
             "declared_by": "Semitexa\\Dev\\Capabilities",
             "declared_by_short": "Capabilities",
             "package": "semitexa/dev"
+        },
+        {
+            "id": "dist.installer",
+            "summary": "The project scaffold and the image that writes it: bin/semitexa, the Dockerfile, the Compose files and .env.default a Semitexa project runs on, each with the hashes it ever shipped with.",
+            "use_when": "Starting a project (the semitexa/installer image writes the scaffold into an empty directory) or keeping one current: bin/semitexa update replaces the scaffold files a project has not edited.",
+            "avoid_when": "Changing how one project runs - edit that project's own copy, or its docker-compose.override.yml; an edited scaffold file is kept, and its new version arrives beside it as .new.",
+            "replaces": [
+                "writing a Dockerfile, the Compose files and a CLI wrapper by hand for each project",
+                "copying those files from the previous project and finding out later which of them were stale"
+            ],
+            "usage": "",
+            "see_also": "",
+            "kind": "package",
+            "declared_by": "Semitexa\\Installer\\Capabilities",
+            "declared_by_short": "Capabilities",
+            "package": "semitexa/installer"
         },
         {
             "id": "dist.ultimate",
