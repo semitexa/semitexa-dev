@@ -347,6 +347,32 @@ final class TaskCloseNeedsProofTest extends TestCase
         // The target timed out, or could not start: its own status is incomplete.
         $this->receipt(1, 'incomplete', ['Code.php' => 'code'], [], 'incomplete');
 
-        self::assertStringContainsString('its latest ai:verify run (rcpt-20261119-000001-dddddd) failed', (string) $this->refusal($this->task(), $this->reason()));
+        $refusal = (string) $this->refusal($this->task(), $this->reason());
+        self::assertStringContainsString('its latest ai:verify run (rcpt-20261119-000001-dddddd) never ran docs:reference', $refusal);
+        self::assertStringContainsString('closes past a check that never ran', $refusal);
+        // Nothing was found wrong, so nothing is there to fix: the refusal sends to the check's own line.
+        self::assertStringNotContainsString('Fix what it found', $refusal);
+        self::assertSame($refusal, (string) $this->refusal($this->task()), 'and no pass of the other targets closes it either');
+    }
+
+    /** Apartspace, 19.11: an image with no node. The .js file was never read, so nothing closes past it, and the refusal says which check to look at. */
+    public function test_a_check_the_runtime_could_not_run_refuses_the_close_and_is_named(): void
+    {
+        file_put_contents($this->root . '/collab-form.js', 'const a = 1;');
+        $id = 'rcpt-20261119-000001-eeeeee';
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/' . $id . '.json', (string) json_encode([
+            'id' => $id, 'generated_at' => '2026-11-19T01:00:01+00:00', 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => 'incomplete',
+            'targets' => [
+                ['id' => 'phpunit:tests/FormTest.php', 'type' => 'phpunit', 'status' => 'pass'],
+                ['id' => 'syntax:collab-form.js', 'type' => 'syntax', 'status' => 'incomplete'],
+            ],
+            'tree' => ['collab-form.js' => hash('sha256', 'const a = 1;')], 'changed_during_run' => [],
+        ]));
+
+        foreach ([null, $this->reason()] as $because) {
+            $refusal = (string) $this->refusal($this->task(), $because);
+            self::assertStringContainsString("its latest ai:verify run ({$id}) never ran syntax:collab-form.js,", $refusal, 'the passed test is not named');
+            self::assertStringContainsString('a tool this runtime does not have', $refusal);
+        }
     }
 }
