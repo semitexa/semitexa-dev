@@ -786,6 +786,45 @@ class VerificationPlannerTest extends TestCase
         }
     }
 
+    public function test_two_changed_tests_of_one_name_in_two_packages_both_run_and_each_names_itself(): void
+    {
+        $core = 'packages/semitexa-core/tests/Unit/RetryPolicyTest.php';
+        $scheduler = 'packages/semitexa-scheduler/tests/Unit/RetryPolicyTest.php';
+
+        $plan = $this->planner()->plan([
+            new ChangedFile($core, ChangedFile::KIND_TEST),
+            new ChangedFile($scheduler, ChangedFile::KIND_TEST),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $ran = [];
+        foreach ($this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT) as $target) {
+            $ran[(string) $target->filePath] = [$target->testFilter, $target->triggeredBy];
+        }
+        ksort($ran);
+        $this->assertSame([
+            $core => ['RetryPolicyTest', [$core]],
+            $scheduler => ['RetryPolicyTest', [$scheduler]],
+        ], $ran, 'each file runs, and each target names only the file it runs');
+    }
+
+    public function test_a_class_and_its_changed_test_are_one_target_naming_both(): void
+    {
+        mkdir($this->root . '/tests/Unit/Foo', 0755, true);
+        file_put_contents($this->root . '/tests/Unit/Foo/GetThingHandlerTest.php', "<?php\nclass GetThingHandlerTest {}\n");
+        $handler = 'src/modules/Foo/src/Application/Handler/PayloadHandler/GetThingHandler.php';
+        $test = 'tests/Unit/Foo/GetThingHandlerTest.php';
+
+        $plan = $this->planner()->plan([
+            new ChangedFile($handler, ChangedFile::KIND_HANDLER),
+            new ChangedFile($test, ChangedFile::KIND_TEST),
+        ], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        $this->assertCount(1, $phpunit);
+        $this->assertSame($test, $phpunit[0]->filePath);
+        $this->assertEqualsCanonicalizing([$handler, $test], $phpunit[0]->triggeredBy);
+    }
+
     public function test_a_record_with_no_reader_plans_no_test_and_stays_unread(): void
     {
         $this->writeFile('packages/semitexa-dev/tests/Unit/Structure/SemanticRuleCountsRecordTest.php');
