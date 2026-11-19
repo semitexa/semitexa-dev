@@ -192,6 +192,20 @@ final class UiFlowWarningTest extends TestCase
         self::assertSame(VerificationResult::STATUS_PASS, $this->warn([UiFlowShop::ORDERS_TEMPLATE])->status);
     }
 
+    /** Review, project-graph#39: a lock file this process cannot open is a setup to fix, said with its path, and still never fails the run. */
+    #[Test]
+    public function a_lock_that_cannot_be_opened_is_a_named_skip_not_a_failure(): void
+    {
+        mkdir($this->shop->root . '/var/tmp', 0777, true);
+        symlink($this->shop->root . '/var/no-such-directory/lock', $this->shop->root . '/var/tmp/.project-graph.lock');
+
+        $result = $this->warn([UiFlowShop::ORDERS_TEMPLATE]);
+
+        self::assertSame([VerificationResult::STATUS_SKIPPED, false], [$result->status, $result->required]);
+        self::assertStringContainsString('.project-graph.lock', $result->signal);
+        self::assertStringNotContainsString('another process is writing', $result->signal);
+    }
+
     #[Test]
     public function a_link_written_after_the_graph_was_built_is_read(): void
     {

@@ -211,8 +211,8 @@ test('a late answer does not write over another tab, or over an endpoint selecte
     // What arrived was kept: back on the tab, the module is drawn and the title is the tab's.
     await page.locator('.gv-tabs button', { hasText: 'UI flow' }).click();
     await expect(page.locator('.gv-main h2')).toContainText('UI flow · ');
+    // A box, not a wire: a project's module may have one screen and no links (review, dev#281).
     await expect(page.locator('.gv-ui-box').first()).toBeVisible();
-    await expect(page.locator('.gv-ui-wire').first()).toBeAttached();
     await page.unroute('**/__observatory/graph?*');
 
     // A screen is slow: an endpoint is selected before it answers.
