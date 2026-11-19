@@ -119,7 +119,7 @@ final class ShellLexer
             while (in_array($this->at($this->i), [' ', "\t"], true)) {
                 $this->i++;
             }
-            $delimiter = str_replace(["'", '"', '\\'], '', $this->word());
+            $delimiter = self::unquoted($this->word());
             if ($delimiter === '') {
                 throw new \UnexpectedValueException("line {$line}: a here-document with no delimiter");
             }
@@ -151,14 +151,63 @@ final class ShellLexer
         $this->heredocs = [];
     }
 
-    /** One word, with every quoted or substituted part kept inside it. */
+    /**
+     * A word as the shell compares it: quote removal done, expansions left as written.
+     * `'E"OF'` is `E"OF`, `E\OF` is `EOF`, `"/dev/null"` is `/dev/null`.
+     */
+    public static function unquoted(string $word): string
+    {
+        $out = '';
+        $n = strlen($word);
+        $i = 0;
+        while ($i < $n) {
+            $c = $word[$i];
+            if ($c === "'") {
+                $end = strpos($word, "'", $i + 1);
+                $end = $end === false ? $n : $end;
+                $out .= substr($word, $i + 1, $end - $i - 1);
+                $i = $end + 1;
+            } elseif ($c === '"') {
+                for ($i++; $i < $n && $word[$i] !== '"'; $i++) {
+                    // Inside double quotes a backslash escapes only these four.
+                    if ($word[$i] === '\\' && $i + 1 < $n && strpbrk($word[$i + 1], '$`"\\') !== false) {
+                        $i++;
+                    }
+                    $out .= $word[$i];
+                }
+                $i++;
+            } elseif ($c === '\\' && $i + 1 < $n) {
+                $out .= $word[$i + 1];
+                $i += 2;
+            } else {
+                $out .= $c;
+                $i++;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * One word, with every quoted or substituted part kept inside it. A
+     * backslash-newline outside quotes joins two lines and is no part of the
+     * word, so it is left out of the spelling and still counted as a line.
+     */
     private function word(): string
     {
+        $text = '';
         $start = $this->i;
         while ($this->i < $this->n) {
             $c = $this->s[$this->i];
             if (strpbrk($c, " \t\r\n;&|()<>") !== false) {
                 break;
+            }
+            if ($c === '\\' && $this->at($this->i + 1) === "\n") {
+                $text .= substr($this->s, $start, $this->i - $start);
+                $this->i += 2;
+                $this->line++;
+                $start = $this->i;
+                continue;
             }
             match ($c) {
                 '\\' => $this->advanceTo($this->i + 2),
@@ -170,7 +219,7 @@ final class ShellLexer
             };
         }
 
-        return substr($this->s, $start, $this->i - $start);
+        return $text . substr($this->s, $start, $this->i - $start);
     }
 
     private function skipSingle(): void
@@ -262,21 +311,29 @@ final class ShellLexer
 
     /**
      * At the `(` of `$( … )` or `$(( … ))`: to its matching `)`. A `case`
-     * pattern ends in a `)` that opens nothing, so the patterns of each open
-     * `case` are counted out; a `#` comment is skipped whole.
+     * pattern ends in a `)` that opens nothing, so each open `case` is followed
+     * through its parts: the keyword, its subject, `in`, a pattern list (`start`
+     * until its first character, where `esac` still ends the case; then
+     * `pattern`, where every word is a pattern, `case` and `esac` included) and
+     * a body. A `#` comment is skipped whole.
      */
     private function skipParentheses(): void
     {
         $opened = $this->line;
         $this->i++;
         $depth = 1;
-        /** @var list<int> $cases the depth each open `case` sits at */
+        /** @var list<array{depth: int, part: string}> $cases each open `case`: the depth it sits at, the part being read */
         $cases = [];
         $wordStart = true;
         $commandStart = true;
         while ($this->i < $this->n) {
             $c = $this->s[$this->i];
+            $last = count($cases) - 1;
+            $part = $last >= 0 && $cases[$last]['depth'] === $depth ? $cases[$last]['part'] : '';
             if ($c === "\n" || $c === ' ' || $c === "\t" || $c === "\r") {
+                if ($part === 'keyword' || ($part === 'subject' && !$wordStart)) {
+                    $cases[$last] = ['depth' => $depth, 'part' => $part === 'keyword' ? 'subject' : 'in'];
+                }
                 $commandStart = $commandStart || $c === "\n";
                 $wordStart = true;
                 $this->advanceTo($this->i + 1);
@@ -287,38 +344,47 @@ final class ShellLexer
                 $this->i = $end === false ? $this->n : $end;
                 continue;
             }
-            if ($c === '(') {
-                $depth++;
+            if ($c === '(' || $c === ')') {
                 $this->i++;
                 $wordStart = $commandStart = true;
-                continue;
-            }
-            if ($c === ')') {
-                $this->i++;
-                $wordStart = $commandStart = true;
-                if ($cases !== [] && $cases[count($cases) - 1] === $depth) {
-                    continue;
-                }
-                if (--$depth === 0) {
+                if ($part === 'start' || $part === 'pattern') {
+                    // The optional `(` before a pattern list, or the `)` that ends it: neither nests.
+                    $cases[$last] = ['depth' => $depth, 'part' => $c === '(' ? 'pattern' : 'body'];
+                } elseif ($c === '(') {
+                    $depth++;
+                } elseif (--$depth === 0) {
                     return;
                 }
                 continue;
             }
             if ($c === ';' || $c === '&' || $c === '|') {
+                if ($part === 'body' && $c === ';' && $this->at($this->i + 1) === ';') {
+                    $cases[$last] = ['depth' => $depth, 'part' => 'start'];
+                    $this->i++;
+                }
                 $this->i++;
                 $wordStart = $commandStart = true;
                 continue;
             }
             if ($wordStart && preg_match('/\G[A-Za-z_!{}][A-Za-z0-9_]*(?![^\s;&|()<>])/', $this->s, $bare, 0, $this->i) === 1) {
-                if ($commandStart && $bare[0] === 'case') {
-                    $cases[] = $depth;
-                } elseif ($commandStart && $bare[0] === 'esac' && $cases !== [] && $cases[count($cases) - 1] === $depth) {
+                if ($part === '' || $part === 'body') {
+                    if ($commandStart && $bare[0] === 'case') {
+                        $cases[] = ['depth' => $depth, 'part' => 'keyword'];
+                    } elseif ($commandStart && $bare[0] === 'esac' && $part === 'body') {
+                        array_pop($cases);
+                    }
+                    $commandStart = in_array($bare[0], self::COMMAND_FOLLOWS, true);
+                } elseif ($part === 'start' && $bare[0] === 'esac') {
                     array_pop($cases);
+                } elseif ($part === 'in' || $part === 'start') {
+                    $cases[$last] = ['depth' => $depth, 'part' => $part === 'in' && $bare[0] === 'in' ? 'start' : ($part === 'start' ? 'pattern' : 'in')];
                 }
-                $commandStart = in_array($bare[0], self::COMMAND_FOLLOWS, true);
                 $wordStart = false;
                 $this->i += strlen($bare[0]);
                 continue;
+            }
+            if ($part === 'start') {
+                $cases[$last] = ['depth' => $depth, 'part' => 'pattern'];
             }
             $wordStart = $commandStart = false;
             match ($c) {

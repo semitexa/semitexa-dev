@@ -248,35 +248,171 @@ while [ -f x ] || : > x; do sleep 1; done
         self::assertSame(['bin/semitexa', 'packages/acme/resources/broken.sh', 'packages/acme/resources/setup.sh'], array_keys($problems));
         self::assertCount(1, $problems['bin/semitexa']);
         self::assertStringStartsWith('line 3: `:` with a file redirection is in the condition of if;', $problems['bin/semitexa'][0]);
-        self::assertStringContainsString('( : > "$file" ) 2>/dev/null', $problems['bin/semitexa'][0]);
+        self::assertStringContainsString('Run it in a subshell: ( : > "$d/x.log" ) 2>/dev/null', $problems['bin/semitexa'][0]);
         self::assertStringStartsWith('line 2: `exec` with a file redirection', $problems['packages/acme/resources/setup.sh'][0]);
         self::assertStringStartsWith('could not be parsed', $problems['packages/acme/resources/broken.sh'][0]);
 
         self::assertSame(['packages/acme/resources/setup.sh'], array_keys(ShellFallbackScan::problems($root, ['packages/acme/resources/setup.sh', 'packages/acme/bin/run'])));
     }
 
+    /** Review, dev#282: the advice once named `( : > "$file" )` for every builtin, which empties a file the script only reads or appends to. */
+    #[Test]
+    public function the_advice_keeps_the_redirection_the_script_wrote(): void
+    {
+        $root = $this->project([
+            'bin/read' => "#!/bin/sh\nif exec 3< \"\$config\"; then echo open; else echo fallback; fi\n",
+            'bin/append' => "#!/bin/sh\n: >> \"\$log\" || echo fallback\n",
+            'bin/both' => "#!/bin/sh\nexec < \"\$in\" >> \"\$out\" 2>/dev/null || echo fallback\n",
+        ]);
+
+        $problems = ShellFallbackScan::problems($root);
+
+        self::assertSame(['bin/append', 'bin/both', 'bin/read'], array_keys($problems));
+        // The whole advice, to its end: nothing in it writes to a file the script only reads.
+        self::assertStringEndsWith('so the fallback never runs. Try the same redirection in a subshell first, and run the builtin only when that worked: ( : < "$config" ) 2>/dev/null && exec …', $problems['bin/read'][0]);
+        self::assertStringContainsString('Run it in a subshell: ( : >> "$log" ) 2>/dev/null', $problems['bin/append'][0]);
+        self::assertStringContainsString('( : < "$in" >> "$out" ) 2>/dev/null && exec', $problems['bin/both'][0]);
+    }
+
+    /** Review, dev#282: a longer name that only starts with the marker accepted the finding. */
+    #[Test]
+    public function only_the_exact_marker_name_accepts(): void
+    {
+        $result = ShellFallbackScan::scan(<<<'SH'
+            #!/bin/sh
+            # verify:accept-shell-fallbacks are not allowed anywhere in this script
+            : > "$log" || echo fallback
+            # verify:accept-shell-fallback-not this is another word, whatever follows it
+            : > "$log" || echo fallback
+
+            SH);
+
+        self::assertSame([3, 5], array_column($result['findings'], 'line'));
+        self::assertSame([false, false], array_column($result['findings'], 'shortReason'));
+        self::assertSame([], $result['accepted']);
+    }
+
+    /** Review, dev#282: quote characters that belong to the file name were trimmed away. */
+    #[Test]
+    public function only_dev_null_itself_is_exempt(): void
+    {
+        self::assertSame([[2, ':'], [3, ':']], self::flagged(<<<'SH'
+            #!/bin/sh
+            : > '/dev/null"' || echo fallback
+            : > "'/dev/null" || echo fallback
+            : > "/dev/null" || echo fine
+            : > '/dev/null' || echo fine
+            : > /dev/nul\l || echo fine
+
+            SH));
+    }
+
+    /** Review, dev#282: valid sh the parser refused or misread. */
+    #[Test]
+    public function reserved_words_as_plain_words_are_read_as_words(): void
+    {
+        self::assertSame([[3, ':']], self::flagged(<<<'SH'
+            #!/bin/sh
+            for x in do done; do echo "$x"; done
+            : > "$log" || echo fallback
+
+            SH));
+        self::assertSame([[4, ':']], self::flagged(<<<'SH'
+            #!/bin/sh
+            x=$(case case in (case) echo ok;; esac)
+            y=$(case a in a) case b in b) echo in ;; esac ;; (c|esac) echo c ;; esac)
+            : > "$log" || echo fallback
+
+            SH));
+    }
+
+    /** Review, dev#282: a backslash-newline inside a word is no part of the word. */
+    #[Test]
+    public function a_line_continuation_does_not_hide_the_builtin(): void
+    {
+        self::assertSame([[2, ':'], [4, 'exec']], self::flagged("#!/bin/sh\n:\\\n > \"\$log\" || echo fallback\nex\\\nec 3> \"\$log\" || echo fallback\n"));
+    }
+
+    /** Review, dev#282: the delimiter is the word after quote removal, so a quoted quote stays in it. */
+    #[Test]
+    public function a_heredoc_ends_at_its_delimiter_after_quote_removal(): void
+    {
+        self::assertSame([[6, ':'], [10, ':']], self::flagged(<<<'SH'
+            #!/bin/sh
+            cat <<'E"OF'
+            EOF
+            : > inside || echo this is data
+            E"OF
+            : > "$log" || echo fallback
+            cat <<E\OF"'"
+            : > inside || echo this is data too
+            EOF'
+            : > "$log" || echo fallback
+
+            SH));
+    }
+
+    /** Review, dev#282: a redirection with nothing after it took the newline for its target. */
+    #[Test]
+    public function a_compound_command_redirected_to_nothing_is_not_parsed(): void
+    {
+        self::assertSame([], self::flagged("#!/bin/sh\n{ :; } > \"\$log\"\n"));
+
+        $root = $this->project(['bin/cut' => "#!/bin/sh\n{ :; } >\n"]);
+        $problems = ShellFallbackScan::problems($root);
+        self::assertSame(['bin/cut'], array_keys($problems));
+        self::assertStringStartsWith('could not be parsed (line 2: `>` with no target)', $problems['bin/cut'][0]);
+    }
+
+    /** A script the lint cannot open is a problem, never a script it did not see (review, dev#282). */
+    #[Test]
+    public function a_script_link_with_no_target_is_reported(): void
+    {
+        $root = $this->project(['scripts/real.sh' => "#!/bin/sh\necho fine\n"]);
+        symlink($root . '/scripts/gone.sh', $root . '/scripts/deploy.sh');
+        $this->trash[] = $root . '/scripts/deploy.sh';
+
+        self::assertSame(['scripts/deploy.sh' => ['cannot be read: the lint did not check it']], ShellFallbackScan::problems($root));
+    }
+
+    /** Review, dev#282: a root-level script is in no directory the lint walks, so the changed paths are given to it. */
+    #[Test]
+    public function given_files_are_read_alone_or_beside_the_project(): void
+    {
+        $bad = "#!/bin/sh\n: > \"\$log\" || echo fallback\n";
+        $root = $this->project(['deploy.sh' => $bad, 'bin/tool' => $bad]);
+
+        self::assertSame(['bin/tool'], array_keys(ShellFallbackScan::problems($root)));
+        self::assertSame(['deploy.sh'], array_keys(ShellFallbackScan::problems($root, ['deploy.sh'])));
+        self::assertSame(['bin/tool', 'deploy.sh'], array_keys(ShellFallbackScan::problems($root, ['deploy.sh', 'bin/tool'], true)));
+        // An empty path names no script: it fails, and never turns into a scan of the project.
+        self::assertSame(['(empty --file)'], array_keys(ShellFallbackScan::problems($root, [''])));
+    }
+
     /**
-     * The rule is about what the shell does, so the shell says it: the flagged script never
-     * reaches its fallback, and the fix the lint prints does.
+     * The rule is about what the shell does, so the shell says it: the flagged script reaches
+     * the redirection and never its fallback, and the fix the lint prints does.
      */
     #[Test]
     public function the_shell_this_runs_on_exits_where_the_lint_says_so(): void
     {
-        $tail = "\"\$d/x.log\" 2>/dev/null; then echo writable; else echo fallback; fi\necho after\n";
-        $root = $this->project([
-            'flagged.sh' => "#!/bin/sh\nd=/nonexistent-dir-for-this-test\nif true && : > " . $tail,
-            'fixed.sh' => "#!/bin/sh\nd=/nonexistent-dir-for-this-test\nif true && ( : > \"\$d/x.log\" ) 2>/dev/null; then echo writable; else echo fallback; fi\necho after\n",
-        ]);
+        // The target is a directory this test made: opening it for writing fails for any user, on any filesystem.
+        $root = $this->project(['target/keep' => '']);
+        $head = "#!/bin/sh\nd=" . escapeshellarg($root . '/target') . "\necho before\n";
+        $tail = "; then echo writable; else echo fallback; fi\necho after\n";
+        file_put_contents($root . '/flagged.sh', $head . 'if true && : > "$d" 2>/dev/null' . $tail);
+        file_put_contents($root . '/fixed.sh', $head . 'if true && ( : > "$d" ) 2>/dev/null' . $tail);
+        array_push($this->trash, $root . '/flagged.sh', $root . '/fixed.sh');
 
-        self::assertSame([[3, ':']], self::flagged((string) file_get_contents($root . '/flagged.sh')));
+        self::assertSame([[4, ':']], self::flagged((string) file_get_contents($root . '/flagged.sh')));
         self::assertSame([], self::flagged((string) file_get_contents($root . '/fixed.sh')));
 
         [$flaggedOut, $flaggedExit] = self::sh($root . '/flagged.sh');
         [$fixedOut, $fixedExit] = self::sh($root . '/fixed.sh');
 
-        self::assertSame('', $flaggedOut, 'the shell left before the fallback and before the next statement');
+        self::assertSame("before\n", $flaggedOut, 'the shell reached the redirection and left before the fallback and the next statement');
         self::assertNotSame(0, $flaggedExit);
-        self::assertSame("fallback\nafter\n", $fixedOut);
+        self::assertSame("before\nfallback\nafter\n", $fixedOut);
         self::assertSame(0, $fixedExit);
     }
 

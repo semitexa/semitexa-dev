@@ -26,21 +26,18 @@ final class LintShellFallbacksCommand extends BaseCommand
     protected function configure(): void
     {
         $this->addOption('file', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Check these scripts (relative to the project root) instead of every script of the project');
+        $this->addOption('all', null, InputOption::VALUE_NONE, 'With --file: check every script of the project as well');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $files = [];
-        foreach ((array) $input->getOption('file') as $file) {
-            if (is_string($file) && $file !== '') {
-                $files[] = $file;
-            }
-        }
-        $problems = ShellFallbackScan::problems($this->getProjectRoot(), $files);
+        // An empty value is kept: the scan reports it, where dropping it turned `--file=""` into a pass over other files.
+        $files = array_values(array_filter((array) $input->getOption('file'), is_string(...)));
+        $problems = ShellFallbackScan::problems($this->getProjectRoot(), $files, (bool) $input->getOption('all'));
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['ok' => $problems === [], 'problems' => $problems], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), OutputInterface::OUTPUT_RAW);
+            $output->writeln((string) json_encode(['ok' => $problems === [], 'problems' => $problems], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
 
             return $problems === [] ? self::SUCCESS : self::FAILURE;
         }

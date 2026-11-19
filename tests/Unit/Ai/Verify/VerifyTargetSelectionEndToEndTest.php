@@ -275,6 +275,20 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         self::assertSame(ChangedFile::KIND_PHP_OTHER, (new ChangedFileClassifier())->classify('bin/tool.php')->kind);
     }
 
+    /** Review, dev#282: a root-level script is in no directory the lint walks, so a target that names it must hand it over. */
+    #[Test]
+    public function the_shell_fallback_lint_is_given_the_changed_scripts(): void
+    {
+        $classifier = new ChangedFileClassifier();
+        $scripts = [$classifier->classify('deploy.sh'), $classifier->classify('bin/semitexa')];
+        $input = $this->shellLintInput(...);
+
+        self::assertSame(['--file' => ['deploy.sh', 'bin/semitexa']], $input($scripts, VerificationPlan::SCOPE_STANDARD));
+        // A broad run reads the whole project, and the changed scripts its walk would miss.
+        self::assertSame(['--file' => ['deploy.sh', 'bin/semitexa'], '--all' => true], $input($scripts, VerificationPlan::SCOPE_BROAD));
+        self::assertSame([], $input([$classifier->classify('src/modules/Foo/src/Domain/Service/A.php')], VerificationPlan::SCOPE_BROAD));
+    }
+
     /** A deleted script leaves nothing to read, and the lint compares it with no other file. */
     #[Test]
     public function a_deleted_shell_script_selects_no_lint(): void
@@ -423,6 +437,21 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             . 'a rule that stops matching just makes the plan smaller, and a smaller plan passes faster.',
             implode(', ', $missing),
         ));
+    }
+
+    /**
+     * @param list<ChangedFile> $files
+     * @return array<string, string|bool|list<string>>|null what lint:shell-fallbacks is run with; null when it is not planned
+     */
+    private function shellLintInput(array $files, string $scope): ?array
+    {
+        foreach ($this->planner()->plan($files, $scope)->targets as $target) {
+            if ($target->commandName === 'lint:shell-fallbacks') {
+                return $target->commandInput;
+            }
+        }
+
+        return null;
     }
 
     private function planner(): VerificationPlanner

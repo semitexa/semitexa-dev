@@ -65,7 +65,7 @@ final class ShellFallbackScan
 
     private int $position = 0;
 
-    /** @var list<array{line: int, builtin: string, context: string}> */
+    /** @var list<array{line: int, builtin: string, probe: string, context: string}> */
     private array $flagged = [];
 
     /** @param list<ShellToken> $tokens */
@@ -79,8 +79,8 @@ final class ShellFallbackScan
 
     /**
      * @return array{
-     *     findings: list<array{line: int, builtin: string, context: string, shortReason: bool}>,
-     *     accepted: list<array{line: int, builtin: string, context: string, reason: string}>,
+     *     findings: list<array{line: int, builtin: string, probe: string, context: string, shortReason: bool}>,
+     *     accepted: list<array{line: int, builtin: string, probe: string, context: string, reason: string}>,
      * }
      *
      * @throws \UnexpectedValueException when the script cannot be parsed: a scan that could not read must not pass
@@ -114,14 +114,21 @@ final class ShellFallbackScan
     /**
      * Every POSIX sh script of the project, or the given ones, with what was found in each.
      *
-     * @param list<string> $files paths relative to the project root; empty: every script under the project's own directories
+     * @param list<string> $files       paths relative to the project root; empty: every script under the project's own directories
+     * @param bool         $withProject read the project's scripts beside the given ones: a changed script may lie in no directory the walk enters
      * @return array<string, list<string>> script, relative to the project => its problems
      */
-    public static function problems(string $projectRoot, array $files = []): array
+    public static function problems(string $projectRoot, array $files = [], bool $withProject = false): array
     {
         $root = rtrim($projectRoot, '/');
         $problems = [];
-        foreach ($files === [] ? self::scripts($root) : $files as $relative) {
+        $scripts = $files === [] || $withProject ? array_values(array_unique([...$files, ...self::scripts($root)])) : $files;
+        foreach ($scripts as $relative) {
+            if ($relative === '') {
+                // An unset variable in `--file="$script"`: it names nothing, and must not pass as "nothing found".
+                $problems['(empty --file)'][] = 'no path was given: the lint checked nothing for it';
+                continue;
+            }
             $source = @file_get_contents($root . '/' . $relative);
             if ($source === false) {
                 $problems[$relative][] = 'cannot be read: the lint did not check it';
@@ -142,9 +149,10 @@ final class ShellFallbackScan
                     $finding['line'],
                     $finding['builtin'],
                     $finding['context'],
+                    // The probe repeats the script's own redirection: any other mode would empty or create a file the script did not mean to.
                     $finding['builtin'] === ':'
-                        ? 'Run it in a subshell: ( : > "$file" ) 2>/dev/null'
-                        : 'Check the file first ( : > "$file" ) 2>/dev/null, or run the builtin in a subshell if nothing after it needs its effect',
+                        ? "Run it in a subshell: {$finding['probe']}"
+                        : "Try the same redirection in a subshell first, and run the builtin only when that worked: {$finding['probe']} && {$finding['builtin']} …",
                     $finding['shortReason'] ? sprintf('. Its `# %s` gives no reason of %d characters', self::MARKER, self::MIN_REASON) : '',
                 );
             }
@@ -171,7 +179,8 @@ final class ShellFallbackScan
                 static fn (\SplFileInfo $entry): bool => !$entry->isDir() || !in_array($entry->getFilename(), self::PRUNED, true),
             ));
             foreach ($tree as $file) {
-                if (!$file instanceof \SplFileInfo || !$file->isFile()) {
+                // A link to nothing is no file, and still a script the project names: kept, so reading it fails aloud.
+                if (!$file instanceof \SplFileInfo || !($file->isFile() || ($file->isLink() && !file_exists($file->getPathname())))) {
                     continue;
                 }
                 $name = $file->getFilename();
@@ -193,7 +202,7 @@ final class ShellFallbackScan
     {
         $short = false;
         foreach ([$line, $line - 1] as $at) {
-            if (preg_match('~^#+\s*' . preg_quote(self::MARKER, '~') . '(.*)$~u', $comments[$at] ?? '', $match) !== 1) {
+            if (preg_match('~^#+\s*' . preg_quote(self::MARKER, '~') . '(?![\w-])(.*)$~u', $comments[$at] ?? '', $match) !== 1) {
                 continue;
             }
             $reason = trim($match[1], " \t\r:—-");
@@ -209,7 +218,7 @@ final class ShellFallbackScan
     /**
      * A list of and-or lists, up to whatever closes it.
      *
-     * @return list<array{line: int, builtin: string}> the redirected special builtins nothing in the list has judged yet
+     * @return list<array{line: int, builtin: string, probe: string}> the redirected special builtins nothing in the list has judged yet
      */
     private function list(): array
     {
@@ -227,7 +236,7 @@ final class ShellFallbackScan
         }
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function andOr(): array
     {
         $mark = count($this->flagged);
@@ -251,7 +260,7 @@ final class ShellFallbackScan
         return $open;
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function pipeline(): array
     {
         $mark = count($this->flagged);
@@ -282,7 +291,7 @@ final class ShellFallbackScan
         return $open;
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function command(): array
     {
         $token = $this->peek();
@@ -331,12 +340,12 @@ final class ShellFallbackScan
         throw new \UnexpectedValueException("line {$token->line}: unexpected " . ($token->type === ShellToken::END ? 'end of the script' : "`{$token->text}`"));
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function simple(): array
     {
         $name = null;
         $line = 0;
-        $toFile = false;
+        $toFile = [];
         while (true) {
             $token = $this->peek();
             if ($token->type === ShellToken::WORD) {
@@ -347,13 +356,11 @@ final class ShellFallbackScan
                     $line = $token->line;
                 }
             } elseif ($token->type === ShellToken::REDIRECT) {
-                $this->position++;
-                $target = $this->peek();
-                if ($target->type !== ShellToken::WORD) {
-                    throw new \UnexpectedValueException("line {$token->line}: `{$token->text}` with no target");
+                $target = $this->redirectTarget();
+                // After quote removal, so a quote that belongs to the name stays in it.
+                if (in_array($token->text, self::FILE_REDIRECTS, true) && ShellLexer::unquoted($target) !== '/dev/null') {
+                    $toFile[] = "{$token->text} {$target}";
                 }
-                $this->position++;
-                $toFile = $toFile || (in_array($token->text, self::FILE_REDIRECTS, true) && trim($target->text, '"\'') !== '/dev/null');
             } elseif ($token->type === ShellToken::HEREDOC) {
                 $this->position++;
             } else {
@@ -361,10 +368,12 @@ final class ShellFallbackScan
             }
         }
 
-        return $name !== null && $toFile && in_array($name, self::SPECIAL_BUILTINS, true) ? [['line' => $line, 'builtin' => $name]] : [];
+        return $name !== null && $toFile !== [] && in_array($name, self::SPECIAL_BUILTINS, true)
+            ? [['line' => $line, 'builtin' => $name, 'probe' => '( : ' . implode(' ', $toFile) . ' ) 2>/dev/null']]
+            : [];
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function conditional(): array
     {
         $keyword = 'if';
@@ -384,7 +393,7 @@ final class ShellFallbackScan
         return [];
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function loop(string $keyword): array
     {
         $this->position++;
@@ -394,15 +403,16 @@ final class ShellFallbackScan
         return [];
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function forLoop(): array
     {
         $this->position += 2;
         $this->skipNewlines();
         if ($this->peek()->isWord('in')) {
+            // Up to the `;` or newline every word is a value, `do` and `done` too.
             do {
                 $this->position++;
-            } while ($this->peek()->type === ShellToken::WORD && !$this->peek()->isWord('do'));
+            } while ($this->peek()->type === ShellToken::WORD);
         }
         while ($this->peek()->type === ShellToken::NEWLINE || $this->peek()->isOperator(';')) {
             $this->position++;
@@ -419,7 +429,7 @@ final class ShellFallbackScan
         $this->expectWord('done');
     }
 
-    /** @return list<array{line: int, builtin: string}> */
+    /** @return list<array{line: int, builtin: string, probe: string}> */
     private function caseOf(): array
     {
         $this->position += 2;
@@ -447,7 +457,7 @@ final class ShellFallbackScan
         }
     }
 
-    /** @return list<array{line: int, builtin: string}> what the group holds stands where the group stands */
+    /** @return list<array{line: int, builtin: string, probe: string}> what the group holds stands where the group stands */
     private function group(): array
     {
         $this->position++;
@@ -463,7 +473,7 @@ final class ShellFallbackScan
         while (true) {
             $token = $this->peek();
             if ($token->type === ShellToken::REDIRECT) {
-                $this->position += 2;
+                $this->redirectTarget();
             } elseif ($token->type === ShellToken::HEREDOC) {
                 $this->position++;
             } else {
@@ -472,7 +482,21 @@ final class ShellFallbackScan
         }
     }
 
-    /** @param list<array{line: int, builtin: string}> $open */
+    /** At a redirection operator: over it and its target, which must be a word. */
+    private function redirectTarget(): string
+    {
+        $operator = $this->peek();
+        $this->position++;
+        $target = $this->peek();
+        if ($target->type !== ShellToken::WORD) {
+            throw new \UnexpectedValueException("line {$operator->line}: `{$operator->text}` with no target");
+        }
+        $this->position++;
+
+        return $target->text;
+    }
+
+    /** @param list<array{line: int, builtin: string, probe: string}> $open */
     private function flag(array $open, string $context): void
     {
         foreach ($open as $found) {

@@ -209,7 +209,7 @@ final class VerificationPlanner
                 reason: $meta['reason'],
                 triggeredBy: array_values(array_unique($meta['triggeredBy'])),
                 commandName: $commandName,
-                commandInput: $commandName === 'lint:mechanisms' && $meta['triggeredBy'] !== [] && $effectiveScope !== VerificationPlan::SCOPE_BROAD ? ['--file' => array_values(array_unique($meta['triggeredBy']))] : [],
+                commandInput: LintTargetInput::of($commandName, array_values(array_unique($meta['triggeredBy'])), $effectiveScope === VerificationPlan::SCOPE_BROAD),
             );
         }
         foreach ($phpunitTargets as $target) {
