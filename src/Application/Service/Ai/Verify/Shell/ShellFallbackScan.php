@@ -48,8 +48,13 @@ final class ShellFallbackScan
 
     private const MIN_REASON = 20;
 
-    /** The POSIX special builtins a script redirects in practice. */
-    private const SPECIAL_BUILTINS = [':', 'exec', 'export', 'readonly', 'set', 'unset', 'eval', '.'];
+    /**
+     * Every POSIX special builtin (XCU 2.14): a failed redirection on any of
+     * them can end the shell, not only on the ones scripts redirect most
+     * (review, dev#282: trap, shift, times, break, continue, return and exit
+     * were missing).
+     */
+    private const SPECIAL_BUILTINS = [':', '.', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset'];
 
     /** Redirections that open a file; `>&` and `<&` copy or close a descriptor. */
     private const FILE_REDIRECTS = ['>', '>>', '<', '>|', '<>'];

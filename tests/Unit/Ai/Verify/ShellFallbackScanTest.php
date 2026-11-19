@@ -467,4 +467,18 @@ while [ -f x ] || : > x; do sleep 1; done
 
         return $root;
     }
+
+    /** Review, dev#282: every POSIX special builtin counts, not only the common ones. */
+    #[Test]
+    public function every_posix_special_builtin_is_one(): void
+    {
+        self::assertSame([[2, 'trap'], [3, 'shift'], [4, 'times'], [5, 'return'], [6, 'exit']], self::flagged(<<<'SH'
+            #!/bin/sh
+            trap > "$log" || echo fallback
+            shift 2> "$log" || echo fallback
+            times > "$log" || echo fallback
+            if return 2> "$log"; then :; fi
+            exit 3> "$log" || echo fallback
+            SH));
+    }
 }
