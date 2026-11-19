@@ -317,4 +317,21 @@ final class TaskCloseNeedsProofTest extends TestCase
         self::assertNull((new TaskProofs($this->root))->find($this->task()));
         self::assertNotNull($this->refusal($this->task(), $this->reason()));
     }
+
+    /** Triage 19.11: a run left incomplete by a file no check reads refused the reason that file needs. */
+    public function test_an_incomplete_run_stands_neither_for_nor_against_a_close(): void
+    {
+        $this->receipt(1, 'incomplete', ['resources/baseline.json' => '{}']);
+
+        self::assertNull($this->refusal($this->task(), $this->reason()), 'the reason closes it');
+        self::assertNotNull($this->refusal($this->task()), 'and nothing else does: it is no proof');
+    }
+
+    public function test_a_fail_under_a_newer_incomplete_run_still_refuses_the_reason(): void
+    {
+        $this->receipt(1, 'fail', ['Code.php' => 'code']);
+        $this->receipt(2, 'incomplete', ['resources/baseline.json' => '{}']);
+
+        self::assertNotNull($this->refusal($this->task(), $this->reason()));
+    }
 }

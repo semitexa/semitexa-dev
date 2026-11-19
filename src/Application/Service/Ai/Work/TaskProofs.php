@@ -221,7 +221,11 @@ final readonly class TaskProofs
         foreach ($runs as $run) {
             $tree = self::tree($run);
             if (($run['verdict'] ?? null) !== 'pass') {
-                if (self::covers($covered, $tree)) {
+                // An incomplete run failed nothing: it says a file no check
+                // reads, which is the work a reason is for. It stands neither
+                // for a close nor against one (triage 19.11: it refused the
+                // reason of a task whose only file is the quality baseline).
+                if (($run['verdict'] ?? null) === 'incomplete' || self::covers($covered, $tree)) {
                     continue;
                 }
 
