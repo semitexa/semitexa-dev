@@ -8,7 +8,12 @@
 # scaffold change synced with scaffold:sync alone leaves it stale. Tagged stale,
 # step 2 would start from wrong hashes (Fable's review of step 1, Minor 1).
 #
-# --check writes nothing and exits 1 when the derived manifest would differ.
+# --check writes nothing and exits 1 when the derived manifest would differ, 2
+# when it cannot read what it derives from. The tool only reads files, so it runs
+# on the host like the other structural stages: this stage runs before any
+# container is up, and an exec into a stopped app container read as a stale
+# manifest (review, dev#283). Only exit 1 is called stale; any other failure is
+# reported as the check failing.
 # A release whose installer has no derive tool yet (before step 1) passes.
 set -euo pipefail
 
@@ -24,17 +29,27 @@ if [ ! -f "$tool" ]; then
     exit 0
 fi
 
-if docker compose exec -T app php "$tool" --check; then
-    exit 0
-fi
+status=0
+php "$tool" --check || status=$?
 
-cat >&2 <<'MSG'
+case "$status" in
+    0)
+        exit 0
+        ;;
+    1)
+        cat >&2 <<'MSG'
 
 semitexa/installer's scaffold manifest no longer matches its scaffold or
 semitexa/update's history. Derive it again and commit it with the scaffold change:
 
     bin/semitexa update:scaffold:rebuild
-    docker compose exec -T app php packages/semitexa-installer/tools/derive-manifest.php
+    php packages/semitexa-installer/tools/derive-manifest.php
 
 MSG
-exit 1
+        exit 1
+        ;;
+    *)
+        printf '\nCould not check semitexa/installer'"'"'s scaffold manifest: the derive tool exited %s.\nThis is not a stale manifest; its message above says what failed.\n' "$status" >&2
+        exit "$status"
+        ;;
+esac
