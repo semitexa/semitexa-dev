@@ -148,6 +148,7 @@ final class AiWorkCloseNeedsProofTest extends TestCase
         self::assertSame(0, $this->tester->getStatusCode(), $this->tester->getDisplay());
         $stored = self::decoded($this->stored()[0]);
         self::assertSame('done', self::at($stored, 'status'));
+        self::assertArrayHasKey('proof', $stored, 'a missing key would pass the null check below');
         self::assertNull(self::at($stored, 'proof'));
         self::assertSame('the files are outside this workspace', self::at($stored, 'no_proof', 'reason'));
         self::assertNotSame('', self::text(self::at($stored, 'no_proof', 'at')));
@@ -160,12 +161,15 @@ final class AiWorkCloseNeedsProofTest extends TestCase
     public function test_reopening_through_the_command_drops_the_reason(): void
     {
         $this->close(['--no-proof-because' => 'the files are outside this workspace']);
+        self::assertSame(0, $this->tester->getStatusCode(), $this->tester->getDisplay());
+        self::assertSame('the files are outside this workspace', self::at(self::decoded($this->stored()[0]), 'no_proof', 'reason'), 'the reason is there to be dropped');
 
         $this->tester->execute(['action' => 'update', '--id' => 'tk-a', '--status' => 'in_progress', '--json' => true]);
 
         self::assertSame(0, $this->tester->getStatusCode());
         $stored = self::decoded($this->stored()[0]);
         self::assertSame('in_progress', self::at($stored, 'status'));
+        self::assertArrayHasKey('no_proof', $stored, 'a missing key would pass the null check below');
         self::assertNull(self::at($stored, 'no_proof'));
     }
 

@@ -49,9 +49,14 @@ final readonly class TaskProofs
             return $task->withProof(null);
         }
         // Receipts are pruned within days: no run left says nothing against a proof kept on the task.
-        $proof = $this->runs($task) === [] ? $task->proof : $this->find($task);
+        $runs = $this->runs($task);
+        $proof = $runs === [] ? $task->proof : $this->find($task);
+        // The write keeps the rule refusalToClose() checks first: a reason never
+        // stands over a failing run, even one that finished between the check and
+        // this read (review, dev#284). Such a close is left unproven, and counts nothing.
+        $reason = $proof === null && self::failingRun($runs) === null ? ($because ?? $task->noProof) : null;
 
-        return $task->withProof($proof, $proof === null ? ($because ?? $task->noProof) : null);
+        return $task->withProof($proof, $reason);
     }
 
     /** The reason as it is given now, by this agent session; null when none is. */
@@ -155,14 +160,21 @@ final readonly class TaskProofs
     private static function decidingRun(array $runs): ?array
     {
         $withoutCode = null;
+        $covered = [];
         foreach ($runs as $run) {
+            $tree = self::tree($run);
             if (($run['verdict'] ?? null) !== 'pass') {
+                if (self::covers($covered, $tree)) {
+                    continue;
+                }
+
                 return null;
             }
-            if (!self::hasNothingToTest(self::tree($run))) {
+            if (!self::hasNothingToTest($tree)) {
                 return $run;
             }
             $withoutCode ??= $run;
+            $covered += $tree;
         }
 
         return $withoutCode;
@@ -177,16 +189,38 @@ final readonly class TaskProofs
      */
     private static function failingRun(array $runs): ?array
     {
+        $covered = [];
         foreach ($runs as $run) {
+            $tree = self::tree($run);
             if (($run['verdict'] ?? null) !== 'pass') {
+                if (self::covers($covered, $tree)) {
+                    continue;
+                }
+
                 return $run;
             }
-            if (!self::hasNothingToTest(self::tree($run))) {
+            if (!self::hasNothingToTest($tree)) {
                 return null;
             }
+            $covered += $tree;
         }
 
         return null;
+    }
+
+    /**
+     * Whether newer passes went over every file a run that did not pass was
+     * over. Without this, a docs or config task whose check failed once, on
+     * README.md say, never closed: the newer pass over the same file did not
+     * count against the older fail (review, dev#284). A pass over docs never
+     * covers a fail over code, since a pass over code ends both walks first.
+     *
+     * @param array<string, ?string> $covered the files of the newer passes over nothing to test
+     * @param array<string, ?string> $tree the files of the run that did not pass
+     */
+    private static function covers(array $covered, array $tree): bool
+    {
+        return $covered !== [] && array_diff_key($tree, $covered) === [];
     }
 
     /**

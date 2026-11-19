@@ -192,9 +192,9 @@ final class TaskCloseNeedsProofTest extends TestCase
 
     public function test_a_reason_kept_from_an_earlier_close_does_not_close_past_a_failing_run_either(): void
     {
-        $this->failingRun();
         $closedBefore = (new TaskProofs($this->root))->settle($this->task(), TaskStatus::DONE, $this->reason());
-        self::assertNotNull($closedBefore->noProof);
+        self::assertNotNull($closedBefore->noProof, 'closed with a reason while no run stood against it');
+        $this->failingRun();
 
         self::assertNotNull($this->refusal($closedBefore));
     }
@@ -221,5 +221,68 @@ final class TaskCloseNeedsProofTest extends TestCase
 
         self::assertNull((new TaskProofs($this->root))->find($this->task()));
         self::assertNotNull($this->refusal($this->task()));
+    }
+
+    /**
+     * A run of this task over these files, its receipt numbered so a higher
+     * number is a newer run.
+     *
+     * @param array<string, string> $files path => content, written to the project
+     */
+    private function receipt(int $number, string $verdict, array $files): void
+    {
+        $tree = [];
+        foreach ($files as $path => $content) {
+            if (!is_dir(dirname($this->root . '/' . $path))) {
+                mkdir(dirname($this->root . '/' . $path), 0755, true);
+            }
+            file_put_contents($this->root . '/' . $path, $content);
+            $tree[$path] = hash('sha256', $content);
+        }
+        $id = sprintf('rcpt-20261119-%06d-dddddd', $number);
+        file_put_contents($this->root . '/' . VerifyReceipts::DIR . '/' . $id . '.json', (string) json_encode([
+            'id' => $id, 'generated_at' => sprintf('2026-11-19T01:00:%02d+00:00', $number), 'run_by' => ['agent_session' => 's', 'trace' => 'tk-a'], 'verdict' => $verdict,
+            'targets' => [['id' => 'docs:reference', 'type' => 'docs', 'status' => $verdict]], 'tree' => $tree, 'changed_during_run' => [],
+        ]));
+    }
+
+    /** Review, dev#284: a docs task whose check failed once on README.md never closed again. */
+    public function test_a_pass_over_the_files_an_older_docs_fail_was_over_closes_it(): void
+    {
+        $this->receipt(1, 'fail', ['README.md' => 'draft']);
+        $this->receipt(2, 'pass', ['README.md' => 'fixed']);
+
+        self::assertNull($this->refusal($this->task()));
+        self::assertNotNull((new TaskProofs($this->root))->find($this->task()));
+    }
+
+    public function test_a_pass_over_docs_never_covers_an_older_fail_over_code(): void
+    {
+        $this->receipt(1, 'fail', ['Code.php' => 'code']);
+        $this->receipt(2, 'pass', ['README.md' => 'fixed']);
+
+        $refusal = $this->refusal($this->task(), $this->reason());
+
+        self::assertNotNull($refusal);
+        self::assertStringContainsString('rcpt-20261119-000001-dddddd) failed', $refusal);
+    }
+
+    public function test_a_pass_over_only_some_of_the_files_a_fail_was_over_does_not_cover_it(): void
+    {
+        $this->receipt(1, 'fail', ['README.md' => 'draft', 'docs/b.md' => 'draft']);
+        $this->receipt(2, 'pass', ['README.md' => 'fixed']);
+
+        self::assertNotNull($this->refusal($this->task(), $this->reason()));
+    }
+
+    /** Review, dev#284: a run that failed between the check and the write must not get the reason stored over it. */
+    public function test_the_write_never_stores_a_reason_over_a_failing_run(): void
+    {
+        $this->failingRun();
+
+        $settled = (new TaskProofs($this->root))->settle($this->task(), TaskStatus::DONE, $this->reason());
+
+        self::assertNull($settled->proof);
+        self::assertNull($settled->noProof, 'left unproven, so it counts nothing');
     }
 }
