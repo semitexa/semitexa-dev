@@ -697,6 +697,7 @@ final class VerificationPlanner
         }
 
         if (in_array($file->kind, [ChangedFile::KIND_NON_PHP, ChangedFile::KIND_LOCALE_PACK, ChangedFile::KIND_SHELL_SCRIPT, ChangedFile::KIND_CLIENT_SCRIPT, ChangedFile::KIND_TEMPLATE], true)) {
+            $phpunitTargets = RatchetRecordTargets::with($file, $phpunitTargets, $this->projectRoot);
             return;
         }
 
@@ -797,7 +798,7 @@ final class VerificationPlanner
             new \RecursiveDirectoryIterator($absDir, \FilesystemIterator::SKIP_DOTS),
         );
         foreach ($iter as $entry) {
-            if (!$entry->isFile()) {
+            if (!$entry instanceof \SplFileInfo || !$entry->isFile()) {
                 continue;
             }
             if (str_ends_with((string) $entry->getRealPath(), 'Test.php')) {
@@ -839,7 +840,7 @@ final class VerificationPlanner
                 new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
             );
             foreach ($iter as $entry) {
-                if (!$entry->isFile()) {
+                if (!$entry instanceof \SplFileInfo || !$entry->isFile()) {
                     continue;
                 }
                 $entryPath = (string) $entry->getRealPath();
@@ -876,5 +877,4 @@ final class VerificationPlanner
         }
         return $roots;
     }
-
 }

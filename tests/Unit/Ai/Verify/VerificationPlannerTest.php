@@ -9,9 +9,11 @@ use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFile;
 use Semitexa\Dev\Application\Service\Ai\Verify\ChangedFileClassifier;
 use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveExpansion;
 use Semitexa\Dev\Application\Service\Ai\Verify\ContractMoveResolver;
+use Semitexa\Dev\Application\Service\Ai\Verify\CoverageGap;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlan;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProjectGuardTargets;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationPlanner;
+use Semitexa\Dev\Application\Service\Ai\Verify\VerificationResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\VerificationTarget;
 
 class VerificationPlannerTest extends TestCase
@@ -741,6 +743,77 @@ class VerificationPlannerTest extends TestCase
         }
     }
 
+    public function test_a_changed_ratchet_record_plans_the_test_that_reads_it(): void
+    {
+        $record = 'packages/semitexa-dev/resources/phpstan/semantic-rule-counts.json';
+        $reader = 'packages/semitexa-dev/tests/Unit/Structure/SemanticRuleCountsRecordTest.php';
+        $this->writeFile($reader);
+
+        $plan = $this->planner()->plan([new ChangedFile($record, ChangedFile::KIND_NON_PHP)], VerificationPlan::SCOPE_STANDARD);
+
+        $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+        $this->assertCount(1, $phpunit);
+        $this->assertSame('phpunit:SemanticRuleCountsRecordTest', $phpunit[0]->id);
+        $this->assertSame([$record], $phpunit[0]->triggeredBy);
+        $this->assertSame($reader, $phpunit[0]->filePath);
+        $this->assertSame('SemanticRuleCountsRecordTest', $phpunit[0]->testFilter);
+
+        // The run is not incomplete for lack of a reader: with every target
+        // run, the record is a file a check read.
+        $gap = CoverageGap::of($plan, array_map(static fn (VerificationTarget $t): VerificationResult => new VerificationResult($t, VerificationResult::STATUS_PASS, 0, ''), $plan->targets), $this->root);
+        $this->assertSame([], $gap->unchecked);
+        $this->assertSame(VerificationResult::STATUS_PASS, $gap->adjust(VerificationResult::STATUS_PASS));
+        $this->assertStringEndsWith('over 1 changed file; every file was read by at least one check', $gap->headline());
+    }
+
+    public function test_a_record_and_its_own_test_changed_together_are_one_target_naming_both(): void
+    {
+        $record = 'vendor/semitexa/dev/resources/phpstan/phpstan-ceiling.json';
+        $reader = 'vendor/semitexa/dev/tests/Unit/Structure/PhpstanCeilingIsVersionedTest.php';
+        $this->writeFile($reader);
+
+        foreach ([[$record, $reader], [$reader, $record]] as $order) {
+            $plan = $this->planner()->plan(array_map(
+                static fn (string $path): ChangedFile => new ChangedFile($path, str_ends_with($path, '.php') ? ChangedFile::KIND_TEST : ChangedFile::KIND_NON_PHP),
+                $order,
+            ), VerificationPlan::SCOPE_STANDARD);
+
+            $phpunit = $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT);
+            $this->assertCount(1, $phpunit);
+            $this->assertSame('phpunit:PhpstanCeilingIsVersionedTest', $phpunit[0]->id);
+            $this->assertSame($reader, $phpunit[0]->filePath);
+            $this->assertContains($record, $phpunit[0]->triggeredBy);
+        }
+    }
+
+    public function test_a_record_with_no_reader_plans_no_test_and_stays_unread(): void
+    {
+        $this->writeFile('packages/semitexa-dev/tests/Unit/Structure/SemanticRuleCountsRecordTest.php');
+        $this->writeFile('packages/semitexa-dev/tests/Unit/Structure/PhpstanCeilingIsVersionedTest.php');
+
+        $unread = [
+            'another record of the same directory' => new ChangedFile('packages/semitexa-dev/resources/phpstan/other-record.json', ChangedFile::KIND_NON_PHP),
+            'a record outside resources/phpstan' => new ChangedFile('packages/semitexa-dev/resources/quality/semantic-rule-counts.json', ChangedFile::KIND_NON_PHP),
+            'the same path in another package' => new ChangedFile('packages/semitexa-core/resources/phpstan/semantic-rule-counts.json', ChangedFile::KIND_NON_PHP),
+            'a deleted record' => new ChangedFile('packages/semitexa-dev/resources/phpstan/semantic-rule-counts.json', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_DELETED),
+            // Installed without the package's tests: nothing there to run.
+            'a record whose test is not installed' => new ChangedFile('vendor/semitexa/dev/resources/phpstan/semantic-rule-counts.json', ChangedFile::KIND_NON_PHP),
+        ];
+        foreach ($unread as $case => $file) {
+            $plan = $this->planner()->plan([$file], VerificationPlan::SCOPE_STANDARD);
+            $this->assertSame([], $this->targetsOfType($plan, VerificationTarget::TYPE_PHPUNIT), $case);
+        }
+    }
+
+    private function writeFile(string $relative): void
+    {
+        $path = $this->root . '/' . $relative;
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0755, true);
+        }
+        file_put_contents($path, "<?php\n");
+    }
+
     private function planner(?ContractMoveResolver $contractMoveResolver = null): VerificationPlanner
     {
         return new VerificationPlanner(
@@ -775,10 +848,10 @@ class VerificationPlannerTest extends TestCase
      */
     private function lintCommandNames(VerificationPlan $plan): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn(VerificationTarget $t) => (string) $t->commandName,
             $this->targetsOfType($plan, VerificationTarget::TYPE_LINT),
-        ));
+        );
     }
 
     /**
@@ -802,7 +875,9 @@ class VerificationPlannerTest extends TestCase
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($items as $item) {
-            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+            if ($item instanceof \SplFileInfo) {
+                $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+            }
         }
         rmdir($dir);
     }
