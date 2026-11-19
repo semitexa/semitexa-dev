@@ -13,6 +13,15 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  */
 final readonly class JavaScriptSyntaxCheck
 {
+    /**
+     * What puts node back. The image Semitexa ships has carried it since
+     * 2026-09-02, but `bin/semitexa update` never replaces a Dockerfile the
+     * project edited, so an older one stays without it. The gate does not bend
+     * for that runtime (a file nobody read is not a pass, and no reason closes
+     * past it), so the line that refuses has to say how to get out.
+     */
+    public const NODE_FIX = 'Add the scaffold\'s node layer, `RUN apk add --no-cache nodejs`, to the project\'s Dockerfile after the Swoole build, and rebuild the image with `bin/semitexa server:restart`.';
+
     public function __construct(
         private ProcessRunner $processRunner,
         private string $projectRoot,
@@ -42,7 +51,7 @@ final readonly class JavaScriptSyntaxCheck
     {
         $node = $this->resolveNodeBinary();
         if ($node === null) {
-            return self::notChecked($target, "node is not available in this runtime, so the JavaScript syntax of {$rel} was NOT checked");
+            return self::notChecked($target, "node is not available in this runtime, so the JavaScript syntax of {$rel} was NOT checked. " . self::NODE_FIX);
         }
 
         $script = null;
@@ -155,8 +164,14 @@ final readonly class JavaScriptSyntaxCheck
 
     public function resolveNodeBinary(): ?string
     {
-        if ($this->nodeBinary !== null) {
-            return is_file($this->nodeBinary) && is_executable($this->nodeBinary) ? $this->nodeBinary : null;
+        return self::findNode($this->nodeBinary);
+    }
+
+    /** The node this runtime would run: the given path, or the first on PATH; null when there is none. */
+    public static function findNode(?string $binary = null): ?string
+    {
+        if ($binary !== null) {
+            return is_file($binary) && is_executable($binary) ? $binary : null;
         }
 
         $path = getenv('PATH');

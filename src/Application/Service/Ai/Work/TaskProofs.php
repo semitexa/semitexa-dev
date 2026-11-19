@@ -124,6 +124,14 @@ final readonly class TaskProofs
         if ($failing !== null) {
             $run = is_string($failing['id'] ?? null) ? " ({$failing['id']})" : '';
 
+            $unrun = self::unrunTargets($failing);
+            if ($unrun !== []) {
+                // Nothing here was found wrong, so "fix what it found" sends the
+                // agent looking for a defect that is not there (Apartspace, 19.11:
+                // an image with no node). The check's own line says what it lacks.
+                return "task '{$task->id}' " . self::NO_PROOF . ": its latest ai:verify run{$run} never ran " . implode(', ', $unrun) . ", and neither a proof nor a reason closes past a check that never ran. Run `bin/semitexa ai:verify --trace={$task->traceId} --files={$files}`: the line of that check says what it lacks (a tool this runtime does not have, a timeout). Put that right until the run passes, and close again.";
+            }
+
             return "task '{$task->id}' " . self::NO_PROOF . ": its latest ai:verify run{$run} failed, and neither a proof nor a reason closes past a failing run. Fix what it found, run `bin/semitexa ai:verify --trace={$task->traceId} --files={$files}` until it passes, and close again.";
         }
         if ($because !== null) {
@@ -262,6 +270,24 @@ final readonly class TaskProofs
         }
 
         return true;
+    }
+
+    /**
+     * The checks of an incomplete run that never ran, by id; none for a run that failed.
+     *
+     * @param array<string, mixed> $run
+     * @return list<string>
+     */
+    private static function unrunTargets(array $run): array
+    {
+        $unrun = [];
+        foreach (($run['verdict'] ?? null) === 'incomplete' && is_array($run['targets'] ?? null) ? $run['targets'] : [] as $target) {
+            if (is_array($target) && is_string($target['id'] ?? null) && !in_array($target['status'] ?? null, ['pass', 'fail'], true)) {
+                $unrun[] = $target['id'];
+            }
+        }
+
+        return $unrun;
     }
 
     /**
