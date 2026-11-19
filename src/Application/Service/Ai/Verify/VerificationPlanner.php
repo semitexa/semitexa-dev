@@ -685,11 +685,11 @@ final class VerificationPlanner
             if ($className === null) {
                 return;
             }
-            $phpunitTargets[$className] ??= new VerificationTarget(
+            $phpunitTargets[$className] = new VerificationTarget( // planned already for a file it reads: it reads this one too
                 type: VerificationTarget::TYPE_PHPUNIT,
                 id: "phpunit:{$className}",
-                reason: 'test file changed — running it directly',
-                triggeredBy: [$file->path],
+                reason: $phpunitTargets[$className]->reason ?? 'test file changed — running it directly',
+                triggeredBy: array_values(array_unique([...($phpunitTargets[$className]->triggeredBy ?? []), $file->path])),
                 filePath: $file->path,
                 testFilter: $className,
             );

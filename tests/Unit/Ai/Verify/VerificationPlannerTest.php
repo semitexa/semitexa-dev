@@ -782,7 +782,7 @@ class VerificationPlannerTest extends TestCase
             $this->assertCount(1, $phpunit);
             $this->assertSame('phpunit:PhpstanCeilingIsVersionedTest', $phpunit[0]->id);
             $this->assertSame($reader, $phpunit[0]->filePath);
-            $this->assertContains($record, $phpunit[0]->triggeredBy);
+            $this->assertEqualsCanonicalizing([$record, $reader], $phpunit[0]->triggeredBy, 'both changed files are read by the one target, in either order');
         }
     }
 
