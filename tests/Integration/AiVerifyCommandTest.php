@@ -292,6 +292,10 @@ class AiVerifyCommandTest extends TestCase
             'Application/Endpoint/Bogus', // not in Application allowlist
         ]);
 
+        // A consumer project: the docs page is the installed package's, not a workspace checkout's.
+        mkdir($this->tmpRoot . '/vendor/semitexa/docs/docs', 0755, true);
+        file_put_contents($this->tmpRoot . '/vendor/semitexa/docs/docs/MODULE_STRUCTURE.md', "# spec\n");
+
         $tester = $this->newTester();
         $exit = $tester->execute([
             '--files' => 'src/modules/SomeApp/src/Application/Handler/PayloadHandler/IndexHandler.php',
@@ -315,9 +319,9 @@ class AiVerifyCommandTest extends TestCase
         $types = array_unique(array_column($payload['targets'], 'type'));
         $this->assertContains('module_structure', $types);
 
-        // next_command should point at the spec when structure failed.
-        $nextCmds = array_column($payload['next_command'], 'cmd');
-        $this->assertContains('cat', $nextCmds);
+        // next_command points at the spec where this project has it (tk-verify-doc-ref-points-at-the-workspace-path).
+        $cat = array_values(array_filter($payload['next_command'], static fn (array $c): bool => $c['cmd'] === 'cat'));
+        $this->assertSame([['vendor/semitexa/docs/docs/MODULE_STRUCTURE.md']], array_column($cat, 'args'));
     }
 
     public function test_module_structure_check_passes_for_canonical_layout(): void
