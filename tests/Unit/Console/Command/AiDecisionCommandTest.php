@@ -252,13 +252,19 @@ final class AiDecisionCommandTest extends TestCase
     #[Test]
     public function a_charter_that_does_not_read_leaves_the_decisions_listed(): void
     {
-        mkdir($this->root . '/var/ai-work', 0775, true);
+        [$status] = $this->decision('record', ['--id' => 'data-as-patches', '--words' => 'дані мігрувати лише патчами', '--means' => 'data migrations are #[AsDataPatch]', '--applies-to' => 'data', '--scope' => 'standing']);
+        self::assertSame(0, $status);
+        if (!is_dir($this->root . '/var/ai-work')) {
+            mkdir($this->root . '/var/ai-work', 0775, true);
+        }
         file_put_contents($this->root . '/' . CharterStore::PATH, '{"schema_version":"nope"}');
 
         [$status, $out] = $this->decision('list', []);
 
         self::assertSame(0, $status);
-        self::assertSame(0, $out['count']);
+        self::assertSame(1, $out['count']);
+        self::assertIsArray($out['decisions']);
+        self::assertSame(['data-as-patches'], array_column($out['decisions'], 'id'));
         self::assertNull($out['owner_decides']);
         self::assertIsString($out['charter_error']);
         self::assertStringContainsString(CharterStore::PATH, $out['charter_error']);

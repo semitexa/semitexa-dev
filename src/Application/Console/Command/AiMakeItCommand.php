@@ -118,7 +118,7 @@ final class AiMakeItCommand extends BaseCommand
         $line = BacklogProgress::of($tasks, $withFramework, $audits)->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
-            return $this->print($output, $plan, $line, $steps, $interview, $warning);
+            return $this->print($output, $plan, $line, $steps, $interview, $warning, $questions['error'], $decisions['error'] ?? null);
         }
 
         $output->writeln(json_encode([
@@ -132,6 +132,8 @@ final class AiMakeItCommand extends BaseCommand
             'interview' => $interview,
             'steps' => $steps,
             'owner_decides' => $ownerDecides,
+            // Beside approved work no interview says it, and owner_decides is null without a reason.
+            'charter_error' => $questions['error'],
             'decisions' => $decisions,
             'warning' => $warning,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
@@ -141,7 +143,7 @@ final class AiMakeItCommand extends BaseCommand
 
     /**
      * What the agent asks the architect about; null when the charter cannot
-     * be read, which the interview already says.
+     * be read, which charter_error says.
      *
      * @return list<string>|null
      */
@@ -229,11 +231,17 @@ final class AiMakeItCommand extends BaseCommand
      * @param list<string> $steps
      * @param array<string, mixed>|null $interview
      */
-    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview, ?string $warning): int
+    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview, ?string $warning, ?string $charterError, ?string $decisionsError): int
     {
         $text = [$plan->say(), $line];
         if ($warning !== null) {
             $text[] = 'Warning: ' . $warning;
+        }
+        if ($charterError !== null) {
+            $text[] = 'Charter cannot be read: ' . $charterError;
+        }
+        if ($decisionsError !== null) {
+            $text[] = 'Decisions cannot be read: ' . $decisionsError;
         }
         $next = $interview['next'] ?? null;
         if (is_array($next) && is_string($next['question'] ?? null) && is_string($next['record'] ?? null)) {

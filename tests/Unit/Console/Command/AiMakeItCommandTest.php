@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Console\Command\AiMakeItCommand;
 use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterInterview;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
+use Semitexa\Dev\Application\Service\Ai\Charter\OwnerQuestions;
 use Semitexa\Dev\Application\Service\Ai\Charter\SuccessSign;
 use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope;
@@ -407,5 +408,56 @@ final class AiMakeItCommandTest extends TestCase
         self::assertStringContainsString('broken.json', $result['decisions']['error']);
         self::assertIsArray($result['steps']);
         self::assertStringContainsString('ai:decision list --applies-to=<tag>. An active decision answers it', implode("\n", $result['steps']));
+    }
+
+    public function test_a_person_sees_that_the_decisions_do_not_read(): void
+    {
+        mkdir($this->root . '/' . DecisionStore::SUBDIR, 0775, true);
+        file_put_contents($this->root . '/' . DecisionStore::SUBDIR . '/broken.json', '{"schema_version":');
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+        $decisions = $this->run_()['decisions'];
+        self::assertIsArray($decisions);
+        $error = $decisions['error'] ?? null;
+        self::assertIsString($error);
+        self::assertStringContainsString('broken.json', $error);
+        $tester = $this->tester(new AiMakeItCommand());
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        $lines = array_map('trim', explode("\n", $tester->getDisplay()));
+        self::assertContains('Decisions cannot be read: ' . $error, $lines);
+        self::assertContains('state: work, go_on: true', $lines);
+    }
+
+    public function test_a_charter_that_does_not_read_is_said_beside_approved_work(): void
+    {
+        mkdir($this->root . '/var/ai-work', 0775, true);
+        file_put_contents($this->root . '/' . CharterStore::PATH, '{"schema_version":"nope"}');
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+        $error = OwnerQuestions::of(new CharterStore())['error'];
+        self::assertIsString($error);
+        self::assertStringContainsString(CharterStore::PATH, $error);
+
+        $result = $this->run_();
+
+        self::assertSame('work', $result['state'], 'approved work stays available');
+        self::assertSame($error, $result['charter_error']);
+        self::assertNull($result['owner_decides']);
+
+        $tester = $this->tester(new AiMakeItCommand());
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+        $lines = array_map('trim', explode("\n", $tester->getDisplay()));
+        self::assertContains('Charter cannot be read: ' . $error, $lines);
+        self::assertContains('state: work, go_on: true', $lines);
+    }
+
+    public function test_a_charter_that_reads_reports_no_error(): void
+    {
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+
+        $result = $this->run_();
+
+        self::assertArrayHasKey('charter_error', $result);
+        self::assertNull($result['charter_error']);
     }
 }
