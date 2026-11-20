@@ -110,22 +110,27 @@ final class AiWorkIntakeCommand extends BaseCommand
             'over_limit' => $result['over_limit'],
             'epic_created' => $result['epic_created'],
             'skipped_environment' => $read['environment'],
-            'next_command' => self::next($write, $result['new'] !== [] || $result['seen_again'] !== [], $result['over_limit'], $epicId),
+            'next_command' => self::next($write, $result['new'] !== [] || $result['seen_again'] !== [], $result['over_limit'], $epicId, (int) $limit),
         ]);
     }
 
-    /** @return list<array{cmd: string, args: list<string>, why: string}> */
-    private static function next(bool $write, bool $changes, int $overLimit, string $epicId): array
+    /**
+     * A follow-up runs what was asked for: the same epic and the same limit.
+     *
+     * @return list<array{cmd: string, args: list<string>, why: string}>
+     */
+    private static function next(bool $write, bool $changes, int $overLimit, string $epicId, int $limit): array
     {
+        $again = ['--write', '--epic=' . $epicId, '--limit=' . $limit, '--json'];
         if (!$write) {
-            return $changes ? [['cmd' => 'ai:work:intake', 'args' => ['--write', '--json'], 'why' => 'file the new signals as ideas and update the counts']] : [];
+            return $changes ? [['cmd' => 'ai:work:intake', 'args' => $again, 'why' => 'file the new signals as ideas and update the counts']] : [];
         }
         $next = [];
         if ($changes) {
             $next[] = ['cmd' => 'ai:work', 'args' => ['list', '--epic=' . $epicId, '--json'], 'why' => 'show the owner the ideas: approve the defects (ai:work:approve --id=<id>), discard the environment'];
         }
         if ($overLimit > 0) {
-            $next[] = ['cmd' => 'ai:work:intake', 'args' => ['--write', '--json'], 'why' => "{$overLimit} more signals wait past --limit"];
+            $next[] = ['cmd' => 'ai:work:intake', 'args' => $again, 'why' => "{$overLimit} more signals wait past --limit"];
         }
 
         return $next;

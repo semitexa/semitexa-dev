@@ -23,10 +23,19 @@ final class SignalFingerprint
     public const MAX_MESSAGE = 500;
 
     /** Applied in order: the wider shapes first, bare digits last. */
-    private const NORMALISE = [
+    private const WIDE = [
         '~\b[a-z][a-z0-9+.-]*://\S+~i' => 'URL',
         '~[\w.+-]+@[\w-]+(?:\.[\w-]+)+~' => 'EMAIL',
         '~"[^"]*"|\'[^\']*\'~' => 'Q',
+    ];
+
+    /** A quote the cut left open: its value ran past the head, so all that is left of it goes. */
+    private const CUT_QUOTE = '~["\'].*\z~s';
+
+    /** A word the cut fell inside is the head of a key or an address no pattern knows any more. */
+    private const CUT_WORD = '~\s+\S*\z~';
+
+    private const NORMALISE = [
         '~\b([A-Za-z_][\w-]*)=\S+~' => '$1=V',
         // A credential after its name, written with a colon or a space: "Bearer <token>", "password: <it>".
         '~\b(bearer|basic|token|secret|password|passwd|pwd|api[_-]?key|authorization|cookie)(\s*:\s*|\s+)(?!V\b)\S+~i' => '$1 V',
@@ -48,7 +57,16 @@ final class SignalFingerprint
 
     public static function normalise(string $text): string
     {
+        $cut = strlen($text) > self::MAX_MESSAGE;
         $text = mb_strcut($text, 0, self::MAX_MESSAGE, 'UTF-8');
+        if ($cut) {
+            $text = (string) preg_replace(self::CUT_WORD, '', $text);
+        }
+        $text = (string) preg_replace(array_keys(self::WIDE), array_values(self::WIDE), $text);
+        if ($cut) {
+            // After the closed quotes, before the patterns that would take only its first word.
+            $text = (string) preg_replace(self::CUT_QUOTE, 'Q', $text);
+        }
         $text = (string) preg_replace(array_keys(self::NORMALISE), array_values(self::NORMALISE), $text);
 
         return trim((string) preg_replace('/\s+/', ' ', $text));

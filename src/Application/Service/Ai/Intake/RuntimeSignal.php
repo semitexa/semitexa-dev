@@ -13,8 +13,11 @@ final readonly class RuntimeSignal
 {
     public const ID_PREFIX = 'tk-rt-';
 
-    /** How a next step the intake wrote begins; one that does not is someone's note. */
+    /** How a next step the intake wrote begins. */
     public const NEXT_STEP_PREFIX = 'Runtime signal, not confirmed yet:';
+
+    /** The whole next step the intake writes: prefix, count, "time(s)", log, first seen, last seen, last seen, grep, id, id. */
+    private const NEXT_STEP = '%s seen %s %s in %s, from %s to %s. Read it: bin/semitexa logs:app --around=%s%s. A defect: approve it (bin/semitexa ai:work:approve --id=%s --words="<the owner\'s words>"); the environment or a test: bin/semitexa ai:work update --id=%s --status=discarded.';
 
     /**
      * @param string $message the logger's message, normalised
@@ -74,9 +77,9 @@ final readonly class RuntimeSignal
         $grep = $this->exception !== null ? ' --grep=' . self::shortClass($this->exception) : '';
 
         return sprintf(
-            '%s seen %d %s in %s, from %s to %s. Read it: bin/semitexa logs:app --around=%s%s. A defect: approve it (bin/semitexa ai:work:approve --id=%s --words="<the owner\'s words>"); the environment or a test: bin/semitexa ai:work update --id=%s --status=discarded.',
+            self::NEXT_STEP,
             self::NEXT_STEP_PREFIX,
-            $this->count,
+            (string) $this->count,
             $this->count === 1 ? 'time' : 'times',
             $log,
             $this->firstSeen,
@@ -86,6 +89,33 @@ final readonly class RuntimeSignal
             $this->taskId(),
             $this->taskId(),
         );
+    }
+
+    /**
+     * Whether a task's next step is the intake's own from its first byte to
+     * its last: only the count, the log and the times may differ. A word
+     * added before it, after it or inside it makes it someone's note.
+     */
+    public static function wroteNextStep(string $taskId, ?string $nextStep): bool
+    {
+        $id = preg_quote($taskId, '~');
+        // A time is the log's own text: empty when the entry had none, and some loggers put a space in it.
+        $time = '\S*(?: \S+)?';
+        $pattern = sprintf(
+            preg_quote(self::NEXT_STEP, '~'),
+            preg_quote(self::NEXT_STEP_PREFIX, '~'),
+            '\d+',
+            'times?',
+            '\S+',
+            $time,
+            $time,
+            $time,
+            '(?: --grep=\S+)?',
+            $id,
+            $id,
+        );
+
+        return $nextStep !== null && preg_match('~\A' . $pattern . '\z~', $nextStep) === 1;
     }
 
     private static function shortClass(string $class): string

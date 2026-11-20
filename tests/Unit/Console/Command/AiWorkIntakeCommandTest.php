@@ -12,6 +12,8 @@ use Semitexa\Dev\Application\Service\Ai\Intake\RuntimeIntake;
 use Semitexa\Dev\Application\Service\Ai\Intake\RuntimeSignal;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
+use Semitexa\Dev\Application\Service\Ai\Work\Epic;
+use Semitexa\Dev\Application\Service\Ai\Work\EpicStatus;
 use Semitexa\Dev\Application\Service\Ai\Work\EpicStore;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskApproval;
@@ -244,6 +246,69 @@ final class AiWorkIntakeCommandTest extends TestCase
         self::assertSame('owner', $store->get($approved)->approval?->by);
         self::assertStringContainsString('seen 1 time ', (string) $store->get($approved)->nextStep, 'an approved task is the owner\'s now');
         self::assertSame('Root cause: the price cache; fix in Price::of', $store->get($noted)->nextStep);
+    }
+
+    public function test_an_idea_the_owner_wrote_into_keeps_every_word(): void
+    {
+        $classes = ['Shop\\Appended', 'Shop\\Prepended', 'Shop\\Reworded'];
+        foreach ($classes as $class) {
+            $this->log($this->unhandled(class: $class));
+        }
+        $out = $this->written();
+        self::assertIsArray($out['new']);
+        self::assertCount(3, $out['new']);
+        $store = new TaskStore();
+        $edited = [];
+        foreach (array_column($out['new'], 'id', 'title') as $title => $id) {
+            self::assertIsString($id);
+            $generated = (string) $store->get($id)->nextStep;
+            self::assertStringStartsWith(RuntimeSignal::NEXT_STEP_PREFIX, $generated);
+            $edited[$id] = match (true) {
+                str_contains((string) $title, 'Appended') => $generated . "\n\nSeen it: the cart is empty when the stock sync lags.",
+                str_contains((string) $title, 'Prepended') => 'Checked with the shop owner. ' . $generated,
+                default => str_replace('A defect:', 'Most likely a defect:', $generated),
+            };
+            self::assertNotSame($generated, $edited[$id]);
+            $next = $edited[$id];
+            $store->change($id, static fn (Task $t): Task => $t->with(nextStep: $next));
+        }
+        foreach ($classes as $class) {
+            $this->log($this->unhandled(class: $class, at: '2026-11-20T16:00:00+00:00'));
+        }
+
+        $again = $this->written();
+
+        self::assertSame([], $again['seen_again']);
+        self::assertIsArray($again['kept']);
+        $kept = array_column($again['kept'], 'id');
+        sort($kept);
+        $ids = array_keys($edited);
+        sort($ids);
+        self::assertSame($ids, $kept);
+        foreach ($edited as $id => $nextStep) {
+            self::assertSame($nextStep, $store->get($id)->nextStep);
+        }
+    }
+
+    public function test_the_follow_up_keeps_the_epic_and_the_limit(): void
+    {
+        $tasks = new TaskStore();
+        $epics = new EpicStore();
+        PropertyInjector::inject($epics, new ArrayContainer([TaskStore::class => $tasks]));
+        $epics->save(new Epic('ep-shop', 'Shop', 'The shop works', EpicStatus::NEW, '2026-11-20T00:00:00+00:00', '2026-11-20T00:00:00+00:00'));
+        $this->log($this->unhandled(class: 'Shop\\One'), $this->unhandled(class: 'Shop\\Two'), $this->unhandled(class: 'Shop\\Three'));
+        $intake = ['cmd' => 'ai:work:intake', 'args' => ['--write', '--epic=ep-shop', '--limit=1', '--json']];
+
+        [, $dry] = $this->intake(['--epic' => 'ep-shop', '--limit' => '1']);
+
+        self::assertSame([$intake + ['why' => 'file the new signals as ideas and update the counts']], $dry['next_command']);
+
+        $out = $this->written(['--epic' => 'ep-shop', '--limit' => '1']);
+
+        self::assertSame([
+            ['cmd' => 'ai:work', 'args' => ['list', '--epic=ep-shop', '--json'], 'why' => 'show the owner the ideas: approve the defects (ai:work:approve --id=<id>), discard the environment'],
+            $intake + ['why' => '2 more signals wait past --limit'],
+        ], $out['next_command']);
     }
 
     public function test_a_closed_signal_is_not_filed_again(): void

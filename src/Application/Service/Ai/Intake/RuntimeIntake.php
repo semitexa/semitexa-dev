@@ -97,12 +97,12 @@ final class RuntimeIntake
         return $result;
     }
 
-    /** An idea as the intake filed it: unapproved, not taken, its next step still the intake's. */
+    /** An idea as the intake filed it: unapproved, not taken, its next step the intake's to the last word. */
     private static function untouched(Task $task): bool
     {
         return $task->approval === null
             && $task->status === TaskStatus::NEW
-            && str_starts_with((string) $task->nextStep, RuntimeSignal::NEXT_STEP_PREFIX);
+            && RuntimeSignal::wroteNextStep($task->id, $task->nextStep);
     }
 
     private function ensureEpic(string $epicId, string $now): bool

@@ -50,6 +50,29 @@ final class SignalFingerprintTest extends TestCase
         self::assertSame(SignalFingerprint::normalise(substr($long, 0, SignalFingerprint::MAX_MESSAGE)), $normalised);
     }
 
+    public function test_a_quoted_value_the_cut_falls_inside_is_normalised_away(): void
+    {
+        $phrase = str_repeat('correct horse battery staple ', 30);
+
+        self::assertSame('Login failed password=V', SignalFingerprint::normalise('Login failed password="' . $phrase . '"'));
+        self::assertSame('Login failed, password V', SignalFingerprint::normalise('Login failed, password: \'' . $phrase . '\''));
+        self::assertSame('Q said Q', SignalFingerprint::normalise('"bob" said "' . $phrase . '"'), 'a closed quote before it is still its own');
+    }
+
+    public function test_a_word_the_cut_falls_inside_is_dropped(): void
+    {
+        $words = str_repeat('word ', 97);
+
+        self::assertSame(trim($words) . ' key', SignalFingerprint::normalise($words . 'key ' . 'api_key_0a1B2c3D4e5F6g7H8i9J'), 'the head of a key is not shown');
+        self::assertSame(trim($words), SignalFingerprint::normalise($words . 'alice.smith@example.com wrote'), 'nor the head of an address');
+        self::assertSame(trim($words) . ' token=V', SignalFingerprint::normalise($words . 'token=abc ' . str_repeat('x', 40)));
+    }
+
+    public function test_a_short_message_keeps_its_apostrophe(): void
+    {
+        self::assertSame('Can\'t open the cart', SignalFingerprint::normalise('Can\'t open the cart'));
+    }
+
     public function test_with_a_class_and_a_file_the_message_does_not_split_one_defect(): void
     {
         self::assertSame(
