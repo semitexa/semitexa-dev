@@ -26,25 +26,34 @@ final class ScheduledJobDeclaration
         }
 
         try {
-            $tokens = \PhpToken::tokenize($source);
+            $tokens = array_values(\PhpToken::tokenize($source));
         } catch (\Throwable) {
             return false;
         }
 
         $count = count($tokens);
+        $attributeNames = self::namesOf($tokens, self::ATTRIBUTE);
+        $contractNames  = self::namesOf($tokens, self::CONTRACT);
         for ($i = 0; $i < $count; $i++) {
             $token = $tokens[$i];
 
             if ($token->id === \T_ATTRIBUTE) {
-                // Up to the bracket that closes the attribute group.
+                // Up to the bracket that closes the attribute group. Only a name
+                // at the group's own level is an attribute: inside parentheses
+                // it is an argument (#[Handles(AsScheduledJob::class)]).
                 $depth = 1;
+                $parens = 0;
                 for ($j = $i + 1; $j < $count && $depth > 0; $j++) {
                     $text = $tokens[$j]->text;
                     if ($text === '[' || $tokens[$j]->id === \T_ATTRIBUTE) {
                         $depth++;
                     } elseif ($text === ']') {
                         $depth--;
-                    } elseif (self::names($tokens[$j], self::ATTRIBUTE)) {
+                    } elseif ($text === '(') {
+                        $parens++;
+                    } elseif ($text === ')') {
+                        $parens--;
+                    } elseif ($parens === 0 && $depth === 1 && self::names($tokens[$j], $attributeNames)) {
                         return true;
                     }
                 }
@@ -53,7 +62,7 @@ final class ScheduledJobDeclaration
 
             if ($token->id === \T_IMPLEMENTS) {
                 for ($j = $i + 1; $j < $count && $tokens[$j]->text !== '{'; $j++) {
-                    if (self::names($tokens[$j], self::CONTRACT)) {
+                    if (self::names($tokens[$j], $contractNames)) {
                         return true;
                     }
                 }
@@ -63,13 +72,48 @@ final class ScheduledJobDeclaration
         return false;
     }
 
-    private static function names(\PhpToken $token, string $shortName): bool
+    /**
+     * The short name itself, plus every alias a `use ... as Alias` gives it.
+     *
+     * @param list<\PhpToken> $tokens
+     *
+     * @return list<string>
+     */
+    private static function namesOf(array $tokens, string $shortName): array
+    {
+        $names = [$shortName];
+        $count = count($tokens);
+        for ($i = 0; $i < $count; $i++) {
+            if ($tokens[$i]->id !== \T_USE) {
+                continue;
+            }
+            // The statement without its whitespace: `<name> as <Alias>` is then three tokens in a row.
+            $statement = [];
+            for ($i++; $i < $count && $tokens[$i]->text !== ';'; $i++) {
+                if (!$tokens[$i]->is([\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT])) {
+                    $statement[] = $tokens[$i];
+                }
+            }
+            for ($k = 0; $k + 2 < count($statement); $k++) {
+                if (self::names($statement[$k], [$shortName]) && $statement[$k + 1]->id === \T_AS && $statement[$k + 2]->id === \T_STRING) {
+                    $names[] = $statement[$k + 2]->text;
+                }
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param list<string> $shortNames
+     */
+    private static function names(\PhpToken $token, array $shortNames): bool
     {
         if (!$token->is([\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED])) {
             return false;
         }
         $pos = strrpos($token->text, '\\');
 
-        return ($pos === false ? $token->text : substr($token->text, $pos + 1)) === $shortName;
+        return in_array($pos === false ? $token->text : substr($token->text, $pos + 1), $shortNames, true);
     }
 }

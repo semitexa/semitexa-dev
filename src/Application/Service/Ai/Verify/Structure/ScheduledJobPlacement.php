@@ -47,7 +47,20 @@ final class ScheduledJobPlacement
         $violations = [];
         foreach ($this->phpFilesOutsideJobPath($codeRoot) as $inside) {
             $source = @file_get_contents($codeRoot . '/' . $inside);
-            if ($source === false || !ScheduledJobDeclaration::in($source)) {
+            if ($source === false) {
+                // A file that cannot be read was not checked: say so, never pass it.
+                $violations[] = new ModuleStructureViolation(
+                    code: ModuleStructureViolation::CODE_JOB_WRONG_LOCATION,
+                    module: $module->relativePath,
+                    path: $codeRootRel . '/' . $inside,
+                    message: sprintf("'%s' cannot be read, so whether it is a scheduled job outside %s/ is unknown.", basename($inside), self::JOB_PATH),
+                    expected: 'a readable PHP file',
+                    actual: 'unreadable (permissions, or a link to nothing)',
+                    suggestedFix: 'Make the file readable or remove it, then verify again.',
+                );
+                continue;
+            }
+            if (!ScheduledJobDeclaration::in($source)) {
                 continue;
             }
 
@@ -91,7 +104,8 @@ final class ScheduledJobPlacement
             new \RecursiveDirectoryIterator($codeRoot, \FilesystemIterator::SKIP_DOTS),
         );
         foreach ($iterator as $file) {
-            if (!$file instanceof \SplFileInfo || !$file->isFile() || $file->getExtension() !== 'php') {
+            // Not isFile(): a link to nothing is a candidate too, and is reported as unreadable.
+            if (!$file instanceof \SplFileInfo || $file->isDir() || $file->getExtension() !== 'php') {
                 continue;
             }
             $inside = substr($file->getPathname(), strlen($codeRoot) + 1);

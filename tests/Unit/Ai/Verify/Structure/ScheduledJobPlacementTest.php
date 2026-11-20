@@ -134,6 +134,38 @@ final class ScheduledJobPlacementTest extends TestCase
         $this->assertFalse(ScheduledJobDeclaration::in("<?php\n#[Attribute]\nfinal class AsScheduledJob {}\n"));
     }
 
+    public function test_a_name_in_an_attribute_argument_is_no_declaration(): void
+    {
+        // Review dev#299: #[Handles(AsScheduledJob::class)] names the attribute as an argument.
+        $this->assertFalse(ScheduledJobDeclaration::in("<?php\n#[Handles(AsScheduledJob::class)]\nfinal class A {}\n"));
+        $this->assertFalse(ScheduledJobDeclaration::in("<?php\n#[Tagged(of: [\\Semitexa\\Scheduler\\Attribute\\AsScheduledJob::class])]\nfinal class A {}\n"));
+        $this->assertTrue(ScheduledJobDeclaration::in("<?php\n#[Handles(Other::class), AsScheduledJob(key: 'a')]\nfinal class A {}\n"));
+    }
+
+    public function test_an_aliased_import_is_still_a_job(): void
+    {
+        // Review dev#299: PHP resolves the alias, so the check does too.
+        $this->assertTrue(ScheduledJobDeclaration::in("<?php\nuse Semitexa\\Scheduler\\Attribute\\AsScheduledJob as Scheduled;\n#[Scheduled(key: 'a')]\nfinal class A {}\n"));
+        $this->assertTrue(ScheduledJobDeclaration::in("<?php\nuse Semitexa\\Scheduler\\Attribute\\{AsScheduledJob as Scheduled};\n#[Scheduled(key: 'a')]\nfinal class A {}\n"));
+        $this->assertTrue(ScheduledJobDeclaration::in("<?php\nuse Semitexa\\Scheduler\\Domain\\Contract\\ScheduledJobInterface as Job;\nfinal class A implements Job {}\n"));
+        $this->assertFalse(ScheduledJobDeclaration::in("<?php\nuse Semitexa\\Scheduler\\Attribute\\AsScheduledJob as Scheduled;\n#[Other(key: 'a')]\nfinal class A {}\n"));
+    }
+
+    public function test_a_file_that_cannot_be_read_is_reported_not_passed(): void
+    {
+        // Review dev#299. A link to nothing: unreadable for every user, root included.
+        $path = 'src/modules/Hello/src/Application/Service/Gone.php';
+        mkdir(dirname($this->root . '/' . $path), 0755, true);
+        symlink($this->root . '/nowhere.php', $this->root . '/' . $path);
+
+        $violations = $this->validate();
+
+        $this->assertCount(1, $violations);
+        $this->assertTrue($violations[0]->isError());
+        $this->assertSame($path, $violations[0]->path);
+        $this->assertStringContainsString('cannot be read', $violations[0]->message);
+    }
+
     public function test_verify_passes_with_a_warning_on_an_existing_job_and_fails_on_a_new_one(): void
     {
         $this->write(self::IN_SERVICE, self::JOB);
