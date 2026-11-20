@@ -15,6 +15,9 @@ use PHPUnit\Framework\TestCase;
  * Built on real tags; roave itself is stood in for by a script printing its
  * JSON (its real output, checked by hand on 2026-10-30: "Method Probe\Clock#old()
  * was removed", exit 3), so the test needs neither bcmath nor intl.
+ *
+ * One test is the exception and says so: what roave can read at a tag is
+ * roave's own behaviour, which no stand-in has.
  */
 final class BcGateTest extends TestCase
 {
@@ -120,6 +123,153 @@ final class BcGateTest extends TestCase
         [$status, $out] = $this->gate([self::BREAKS[0]], args: ' --package=semitexa-croe');
         self::assertSame(1, $status);
         self::assertStringContainsString('--package semitexa-croe: no such package repository', implode("\n", $out));
+    }
+
+    /**
+     * 20.11: roave reads the old side through composer.json's autoload, and a tag cannot change. It is
+     * given the tag's tree with src/ as a classmap, in a commit no ref points to; everything else, and
+     * every message, stays the tag's.
+     */
+    #[Test]
+    public function roave_is_given_the_tag_with_src_as_a_classmap_and_no_ref_moves(): void
+    {
+        $this->released(composer: '{"name":"semitexa/core","require":{},"autoload":{"psr-4":{"Semitexa\\\\Core\\\\":"src/"}}}');
+        $dir = $this->root . '/packages/semitexa-core';
+        // No identity to commit with, as in a fresh clone or a CI runner: the gate brings its own.
+        $this->git($dir, ['config --unset user.email', 'config --unset user.name']);
+        $state = fn (): string => $this->read($dir, 'for-each-ref') . "\n" . $this->read($dir, 'rev-parse HEAD') . "\n" . $this->read($dir, 'status --porcelain') . "\n" . $this->read($dir, 'write-tree');
+        $before = $state();
+
+        [$status, $out] = $this->gate([self::BREAKS[0]], env: 'HOME=' . escapeshellarg($this->root) . ' GIT_CONFIG_NOSYSTEM=1 ');
+
+        self::assertSame([1, ['[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated']], [$status, $out], 'the message names the tag');
+        self::assertSame(1, preg_match('/--from=([0-9a-f]{40,64}) --to=HEAD /', (string) file_get_contents($this->root . '/roave.args'), $m), 'roave is given a commit, not the tag');
+        $from = $m[1];
+        self::assertSame($before, $state(), 'no ref, HEAD, index or working tree moved');
+        self::assertSame($this->read($dir, 'rev-parse 2026.07.01.0900^{commit}'), $this->read($dir, "rev-parse {$from}^"), 'it is a child of the tag');
+        self::assertSame("M\tcomposer.json", $this->read($dir, "diff --name-status 2026.07.01.0900 {$from}"), 'only composer.json differs from the tag');
+        $composer = json_decode($this->read($dir, "show {$from}:composer.json"));
+        self::assertInstanceOf(\stdClass::class, $composer);
+        self::assertEquals(
+            (object) ['name' => 'semitexa/core', 'require' => new \stdClass(), 'autoload' => (object) ['psr-4' => (object) ['Semitexa\\Core\\' => 'src/'], 'classmap' => ['src/']]],
+            $composer,
+            'the classmap is added, and nothing else is rewritten (an empty object stays one)',
+        );
+
+        // The same tag gives the same commit: nothing piles up in the repository run after run.
+        $this->gate([self::BREAKS[0]]);
+        self::assertStringEndsWith("--from={$from} --to=HEAD --format=json\n", (string) file_get_contents($this->root . '/roave.args'));
+    }
+
+    /** A tag whose autoload already reads src as a classmap needs nothing: roave is given the tag. */
+    #[Test]
+    public function a_tag_that_already_has_the_classmap_is_given_as_it_is(): void
+    {
+        $this->released(composer: '{"name":"semitexa/core","autoload":{"classmap":["src/"]}}');
+
+        [$status] = $this->gate([self::BREAKS[0]]);
+
+        self::assertSame(1, $status);
+        self::assertStringContainsString('--from=2026.07.01.0900 --to=HEAD ', (string) file_get_contents($this->root . '/roave.args'));
+    }
+
+    /** A gate that cannot check must not pass, and must not ask roave about the bare tag instead. */
+    #[Test]
+    public function a_tag_that_cannot_be_made_readable_fails_the_gate_without_asking_roave(): void
+    {
+        $this->released(composer: 'not json');
+        self::assertSame(
+            [1, ['[UNCHECKED] semitexa-core: 2026.07.01.0900 could not be made readable for roave: its composer.json is not a JSON object']],
+            $this->gate([]),
+        );
+        self::assertFileDoesNotExist($this->root . '/roave.args', 'roave was not run');
+    }
+
+    /** As above when git cannot write the commit: the step and what git said are in the message. */
+    #[Test]
+    public function a_commit_git_cannot_write_fails_the_gate_without_asking_roave(): void
+    {
+        $this->released();
+        // A git that does everything but write the commit, the last step (a full disk, a read-only store).
+        $real = trim((string) shell_exec('command -v git'));
+        self::assertNotSame('', $real);
+        mkdir($this->root . '/bin');
+        file_put_contents($this->root . '/bin/git', "#!/bin/sh\ncase \"\$*\" in *commit-tree*) echo 'unable to write the commit' >&2; exit 128 ;; esac\nexec " . escapeshellarg($real) . " \"\$@\"\n");
+        chmod($this->root . '/bin/git', 0o755);
+
+        self::assertSame(
+            [1, ['[UNCHECKED] semitexa-core: 2026.07.01.0900 could not be made readable for roave: git commit-tree failed (unable to write the commit)']],
+            $this->gate([], env: 'PATH=' . escapeshellarg($this->root . '/bin:' . getenv('PATH')) . ' '),
+        );
+        self::assertFileDoesNotExist($this->root . '/roave.args', 'roave was not run');
+    }
+
+    /**
+     * The real roave, on the case that stopped project-graph (tag 2026.11.19.0527): a tag that declares
+     * a second class in another class's file. Three things only roave itself can show:
+     *  - the fixture is that case: asked about the bare tag, roave gives no verdict;
+     *  - through the gate it does, and an @api break since the tag is still a [BREAK];
+     *  - the new side is read as it is: an @api class moved into another class's file reads as deleted.
+     *
+     * Roave is the one ai:verify uses, in var/tools/roave of the project (BcGateCheck::TOOL_DIR), which
+     * BcGateCheck installs on first use and this test does not: where it is absent (a package tested
+     * alone, a runner without bcmath/intl) the test is skipped, and then NOTHING here is proven. The
+     * stand-in tests above still show the gate passes the classmap commit; that roave reads it is
+     * shown only where this test runs.
+     */
+    #[Test]
+    public function the_real_roave_reads_a_tag_with_two_classes_in_one_file_and_still_reports_an_api_break(): void
+    {
+        $loader = (new \ReflectionClass(\Composer\Autoload\ClassLoader::class))->getFileName();
+        self::assertIsString($loader);
+        $roave = dirname($loader, 3) . '/var/tools/roave/vendor/bin/roave-backward-compatibility-check';
+        if (!is_file($roave)) {
+            self::markTestSkipped("No roave at {$roave}: nothing about what the real roave reads is proven in this run.");
+        }
+        $check = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($roave);
+        $dir = $this->root . '/packages/semitexa-probe';
+        mkdir($dir . '/src', 0777, true);
+        file_put_contents($dir . '/composer.json', '{"name":"semitexa/probe","autoload":{"psr-4":{"Probe\\\\":"src/"}}}');
+        // Tick is the class PSR-4 cannot find: it lives in Clock.php.
+        file_put_contents($dir . '/src/Clock.php', "<?php\nnamespace Probe;\n/** @api */\nfinal class Clock\n{\n    public function now(): int { return 0; }\n    public function old(): int { return 1; }\n}\nfinal class Tick\n{\n    public function tock(): void {}\n}\n");
+        file_put_contents($dir . '/src/Moved.php', "<?php\nnamespace Probe;\n/** @api */\nfinal class Moved\n{\n    public function stay(): void {}\n}\n");
+        $this->git($dir, ['init -q', 'config user.email t@example.test', 'config user.name T', 'add -A', 'commit -q -m released']);
+        $this->git($dir, ['tag -a -m cut 2026.07.01.0900'], '2026-07-01T09:00:00Z');
+        // Since the tag: Clock::old() is gone, and Moved is declared in Clock.php, where PSR-4 does not look.
+        file_put_contents($dir . '/src/Clock.php', "<?php\nnamespace Probe;\n/** @api */\nfinal class Clock\n{\n    public function now(): int { return 0; }\n}\nfinal class Tick\n{\n    public function tock(): void {}\n}\n/** @api */\nfinal class Moved\n{\n    public function stay(): void {}\n}\n");
+        unlink($dir . '/src/Moved.php');
+        $this->git($dir, ['add -A', 'commit -q -m after']);
+
+        exec('cd ' . escapeshellarg($dir) . ' && ' . $check . ' --from=2026.07.01.0900 --to=HEAD --format=json 2>&1', $bare, $bareStatus);
+        // 1 is roave stopping on an exception; 0 and 3 would be a verdict.
+        self::assertSame(1, $bareStatus, 'the fixture is not the case: roave reads the bare tag. ' . implode("\n", $bare));
+        self::assertStringContainsString('Tick', implode("\n", $bare), 'roave stops on something other than the class in another class\'s file');
+
+        [$status, $out] = $this->gate(null, check: $check, args: ' --package=semitexa-probe');
+
+        self::assertSame([1, [
+            '[BREAK] semitexa-probe (since 2026.07.01.0900): Class Probe\\Moved has been deleted — @api and never deprecated',
+            '[BREAK] semitexa-probe (since 2026.07.01.0900): Method Probe\\Clock#old() was removed — @api and never deprecated',
+        ]], [$status, $this->sorted($out)], implode("\n", $out));
+    }
+
+    /**
+     * @param list<string> $lines
+     * @return list<string>
+     */
+    private function sorted(array $lines): array
+    {
+        sort($lines);
+
+        return $lines;
+    }
+
+    private function read(string $dir, string $command): string
+    {
+        exec(sprintf('git -C %s %s 2>&1', escapeshellarg($dir), $command), $out, $exit);
+        self::assertSame(0, $exit, "git {$command}: " . implode("\n", $out));
+
+        return implode("\n", $out);
     }
 
     /**
@@ -536,16 +686,17 @@ final class BcGateTest extends TestCase
      * Inner and Port; with $deprecatedLater the deprecation is added after that
      * tag and shipped in 2026.10.20.0900 instead; $laterMethod is a method added
      * in that later release; with $changedSince false nothing under src or in
-     * composer.json's autoload moves after the last tag.
+     * composer.json's autoload moves after the last tag; $composer is the
+     * composer.json of every tag.
      *
      * @param array<string, string> $extra more files at the first tag
      */
-    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = '', string $classDoc = '', bool $changedSince = true): void
+    private function released(string $oldDoc = '', bool $api = true, bool $deprecatedLater = false, array $extra = [], string $laterMethod = '', string $classDoc = '', bool $changedSince = true, string $composer = '{"name":"semitexa/core"}'): void
     {
         $dir = $this->root . '/packages/semitexa-core';
         $mark = $api ? ($classDoc !== '' ? "/**\n * @api\n * {$classDoc}\n */" : '/** @api */') : '';
         $clock = static fn (string $doc): string => "<?php\nnamespace Semitexa\\Core;\n{$mark}\nfinal class Clock\n{\n    public function now(): int { return 0; }\n    {$doc}\n    public function old(): int { return 1; }\n}\n";
-        file_put_contents($dir . '/composer.json', '{"name":"semitexa/core"}');
+        file_put_contents($dir . '/composer.json', $composer);
         file_put_contents($dir . '/src/Clock.php', $clock($deprecatedLater ? '' : $oldDoc));
         file_put_contents($dir . '/src/Inner.php', "<?php\nnamespace Semitexa\\Core;\nfinal class Inner { public function gone(): void {} }\n");
         file_put_contents($dir . '/src/Port.php', "<?php\nnamespace Semitexa\\Core;\n{$mark}\ninterface Port { public function a(): void; }\n");
@@ -585,9 +736,10 @@ final class BcGateTest extends TestCase
      * @param int $exit the stand-in's exit code when it reports nothing ($breaks and $report null)
      * @param string $stderr what it prints to stderr then
      * @param array<string, array<string, mixed>>|string $exemptions the operator's (a string: the file as written), none by default (not the gate's real file)
+     * @param string|null $check the command run as roave in place of the stand-in
      * @return array{int, list<string>}
      */
-    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = '', string $env = '', string $args = ''): array
+    private function gate(?array $breaks, ?array $report = null, string $before = '', array|string $exemptions = [], int $exit = 2, string $stderr = '', string $env = '', string $args = '', ?string $check = null): array
     {
         $exemptionsFile = $this->root . '/exemptions.json';
         file_put_contents($exemptionsFile, is_string($exemptions) ? $exemptions : ($exemptions === [] ? '{}' : (string) json_encode($exemptions)));
@@ -604,7 +756,7 @@ final class BcGateTest extends TestCase
             $env,
             escapeshellarg($this->root),
             escapeshellarg(dirname($loader, 2) . '/autoload.php'),
-            escapeshellarg($fake),
+            escapeshellarg($check ?? $fake),
             escapeshellarg($exemptionsFile),
             escapeshellarg($script),
             $args,

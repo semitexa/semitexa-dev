@@ -29,10 +29,20 @@ declare(strict_types=1);
  * RELEASE_ROOT selects the tree; SEMITEXA_AUTOLOAD the autoloader with
  * nikic/php-parser (default RELEASE_ROOT/vendor/autoload.php); SEMITEXA_BC_CHECK
  * the command that runs roave inside a package directory, given
- * `--from=<tag> --to=HEAD --format=json` (default
+ * `--from=<the tag, readable> --to=HEAD --format=json` (default
  * `vendor/bin/roave-backward-compatibility-check` of RELEASE_ROOT). Prints each
  * break it keeps; exit 1 when one is not allowed, or when a package, a tag or
  * roave's answer could not be read — a gate that cannot check must not pass.
+ *
+ * Roave finds the old side's classes through composer.json's autoload alone,
+ * and through PSR-4 a class declared in another class's file does not exist:
+ * one such class at a tag stopped the whole package, @api or not, and a tag
+ * cannot change (project-graph 2026.11.19.0527, 20.11). So `--from` is not the
+ * tag but a commit of the tag's tree with `"classmap": ["src/"]` added to that
+ * autoload (readableFrom()): an object in the package's repository that no ref
+ * points to. Only roave reads it; the surface, the comparison, the exemptions
+ * and every message are the tag's. `--to` is given as it is, so a class the
+ * new side declares outside its PSR-4 file still reads as removed.
  *
  * The one way past an unreadable tag is an exemption the operator decided,
  * declared in release-bc-gate-exemptions.json next to this script
@@ -118,8 +128,12 @@ foreach ($packageDirs as $packageDir) {
         $unchanged[] = basename($packageDir) . ": no source change since {$tag}";
         continue;
     }
+    $from = readableFrom($packageDir, $tag, $problems);
+    if ($from === null) {
+        continue; // recorded: roave is not asked about a side it would misread
+    }
     $unchecked = null;
-    $descriptions = breaks($packageDir, $tag, $check, $problems, $unchecked, $to);
+    $descriptions = breaks($packageDir, $from, $check, $problems, $unchecked, $to);
     if ($descriptions === null) {
         $exemption = $exemptions[basename($packageDir)][$tag] ?? null;
         // Compared without whitespace: the console wraps roave's message at
@@ -206,6 +220,135 @@ function git(string $dir, array $arguments, ?int &$status = null): string
     exec('git -C ' . escapeshellarg($dir) . ' -c core.quotePath=false ' . implode(' ', array_map('escapeshellarg', $arguments)) . ' 2>/dev/null', $output, $status);
 
     return implode("\n", $output);
+}
+
+/**
+ * git with an environment and standard input, which the plumbing of
+ * readableFrom() needs and git() cannot give. $said is what it printed to stderr.
+ *
+ * @param list<string> $arguments
+ * @param array<string, string> $env added to this process's own
+ * @param-out int $status
+ * @param-out string $said
+ */
+function gitWith(string $dir, array $arguments, array $env, string $stdin, ?int &$status = null, ?string &$said = null): string
+{
+    $status = 1;
+    $said = '';
+    $process = proc_open(
+        ['git', '-C', $dir, '-c', 'core.quotePath=false', ...$arguments],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+        null,
+        $env + getenv(),
+    );
+    if (!is_resource($process)) {
+        $said = 'git could not be started';
+
+        return '';
+    }
+    // Small on both sides (a composer.json in, an object name out): no pipe fills.
+    fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    $output = (string) stream_get_contents($pipes[1]);
+    $said = trim((string) stream_get_contents($pipes[2]));
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $status = proc_close($process);
+
+    return trim($output);
+}
+
+/**
+ * What roave is given as `--from` for $tag: a commit of the tag's tree whose
+ * composer.json autoload also has `"classmap": ["src/"]`, so that every class
+ * the tag declares under src is found, whatever file it is in. The tag itself
+ * when its autoload already says so.
+ *
+ * Built with plumbing that moves no ref and touches neither the index nor the
+ * working tree: the commit is an unreferenced object in the package's own
+ * repository, which is where roave clones from, also when it runs in a
+ * container that sees the repository through a mount. Its author, committer
+ * and dates are fixed: it works where no git user is configured, and the same
+ * tag gives the same commit every time.
+ *
+ * Null when it could not be built, and then recorded: roave is not run on the
+ * bare tag instead, because what it fails on there is not about the package.
+ *
+ * @param list<string> $problems
+ */
+function readableFrom(string $packageDir, string $tag, array &$problems): ?string
+{
+    $cannot = basename($packageDir) . ": {$tag} could not be made readable for roave";
+    $raw = git($packageDir, ['show', $tag . ':composer.json'], $shown);
+    // As objects: read as arrays, an empty `{}` would be written back as `[]`.
+    $composer = $shown === 0 ? json_decode($raw) : null;
+    if (!$composer instanceof \stdClass) {
+        $problems[] = "{$cannot}: its composer.json is not a JSON object";
+
+        return null;
+    }
+    $autoload = $composer->autoload ?? new \stdClass();
+    if ($autoload === []) {
+        $autoload = new \stdClass();
+    }
+    $classmap = $autoload instanceof \stdClass ? ($autoload->classmap ?? []) : null;
+    if (!$autoload instanceof \stdClass || !is_array($classmap)) {
+        $problems[] = "{$cannot}: the autoload of its composer.json is not what composer reads";
+
+        return null;
+    }
+    if (in_array('src/', $classmap, true) || in_array('src', $classmap, true)) {
+        return $tag;
+    }
+    $autoload->classmap = [...array_values($classmap), 'src/'];
+    $composer->autoload = $autoload;
+    $json = json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $index = tempnam(sys_get_temp_dir(), 'semitexa-bc-index-');
+    if ($json === false || $index === false) {
+        $problems[] = "{$cannot}: " . ($json === false ? 'its composer.json could not be written again' : 'no temporary file for a git index');
+
+        return null;
+    }
+    // git reads an empty file as a broken index: it gets the name only.
+    @unlink($index);
+    $env = [
+        'GIT_INDEX_FILE' => $index,
+        'GIT_AUTHOR_NAME' => 'Semitexa BC gate',
+        'GIT_AUTHOR_EMAIL' => 'bc-gate@semitexa.invalid',
+        'GIT_AUTHOR_DATE' => '2000-01-01T00:00:00Z',
+        'GIT_COMMITTER_NAME' => 'Semitexa BC gate',
+        'GIT_COMMITTER_EMAIL' => 'bc-gate@semitexa.invalid',
+        'GIT_COMMITTER_DATE' => '2000-01-01T00:00:00Z',
+    ];
+    $object = '/^[0-9a-f]{40,64}$/';
+    $step = 'hash-object';
+    $commit = null;
+    $blob = gitWith($packageDir, ['hash-object', '-w', '--stdin'], $env, $json . "\n", $status, $said);
+    if ($status === 0 && preg_match($object, $blob) === 1) {
+        $step = 'read-tree';
+        gitWith($packageDir, ['read-tree', $tag], $env, '', $status, $said);
+    }
+    if ($status === 0 && $step === 'read-tree') {
+        $step = 'update-index';
+        gitWith($packageDir, ['update-index', '--add', '--cacheinfo', '100644,' . $blob . ',composer.json'], $env, '', $status, $said);
+    }
+    if ($status === 0 && $step === 'update-index') {
+        $step = 'write-tree';
+        $tree = gitWith($packageDir, ['write-tree'], $env, '', $status, $said);
+        if ($status === 0 && preg_match($object, $tree) === 1) {
+            $step = 'commit-tree';
+            $made = gitWith($packageDir, ['commit-tree', $tree, '-p', $tag . '^{commit}', '-m', "{$tag} with src/ as a classmap, for the BC gate to read"], $env, '', $status, $said);
+            $commit = $status === 0 && preg_match($object, $made) === 1 ? $made : null;
+        }
+    }
+    @unlink($index);
+    @unlink($index . '.lock');
+    if ($commit === null) {
+        $problems[] = "{$cannot}: git {$step} failed" . ($said === '' ? '' : " ({$said})");
+    }
+
+    return $commit;
 }
 
 /**
@@ -502,14 +645,15 @@ function exemptions(string $file): array
 }
 
 /**
- * Roave's breaks for one package since $tag, as their descriptions; null when
- * roave did not check it, and $unchecked says how (the caller decides whether
- * an exemption covers that).
+ * Roave's breaks for one package since $from (its previous tag as
+ * readableFrom() gives it), as their descriptions; null when roave did not
+ * check it, and $unchecked says how (the caller decides whether an exemption
+ * covers that).
  *
  * @param list<string> $problems
  * @return list<string>|null
  */
-function breaks(string $packageDir, string $tag, string $check, array &$problems, ?string &$unchecked = null, string $to = 'HEAD'): ?array
+function breaks(string $packageDir, string $from, string $check, array &$problems, ?string &$unchecked = null, string $to = 'HEAD'): ?array
 {
     $unchecked = null;
     // stderr kept apart, so its last line can say why roave stopped.
@@ -519,7 +663,7 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
 
         return [];
     }
-    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($tag) . ' --to=' . escapeshellarg($to) . ' --format=json 2>' . escapeshellarg($errors);
+    $command = 'cd ' . escapeshellarg($packageDir) . ' && ' . $check . ' --from=' . escapeshellarg($from) . ' --to=' . escapeshellarg($to) . ' --format=json 2>' . escapeshellarg($errors);
     $output = [];
     exec($command, $output, $status);
     $said = whatRoaveSaid(file($errors) ?: []);
@@ -572,7 +716,10 @@ function breaks(string $packageDir, string $tag, string $check, array &$problems
         $descriptions[] = $error['description'];
     }
 
-    return $descriptions;
+    // Once each: with src/ read through PSR-4 and through the classmap of
+    // readableFrom(), roave lists every class of the old side, and so every
+    // break, twice.
+    return array_values(array_unique($descriptions));
 }
 
 /**
