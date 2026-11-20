@@ -59,6 +59,8 @@ final class VerificationExecutor
         ?TestDatabase $testDatabase = null,
         // Null: no project graph can be opened here, and the UI flow warning says so.
         private readonly ?UiFlowCheck $uiFlow = null,
+        // Null: the pinned actionlint ({@see ActionlintTool}); a path, as tests give, is used as it is.
+        private readonly ?string $actionlintBinary = null,
     ) {
         $this->testDatabase = $testDatabase ?? new TestDatabase($application, $projectRoot, $this->processRunner);
         $this->specLoader = $specLoader ?? new ModuleStructureSpecLoader($projectRoot);
@@ -91,6 +93,7 @@ final class VerificationExecutor
                 VerificationTarget::TYPE_E2E               => E2eSpecResultCheck::fromEnvironment($this->projectRoot)->check($target),
                 VerificationTarget::TYPE_PAGE              => PageCheckResult::fromEnvironment($this->projectRoot)->check($target),
                 VerificationTarget::TYPE_BC_GATE           => (new BcGateCheck($this->projectRoot, $this->processRunner))->check($target),
+                VerificationTarget::TYPE_ACTIONLINT        => (new ActionlintCheck($this->projectRoot, $this->processRunner, new ActionlintTool($this->projectRoot, $this->processRunner, $this->actionlintBinary)))->check($target),
                 VerificationTarget::TYPE_DEV_SURFACE       => DevSurfaceAssets::check($target, $this->projectRoot),
                 VerificationTarget::TYPE_UI_FLOW           => UiFlowCheck::run($this->uiFlow, $target),
                 default                                   => $this->skipped($target, "unknown target type: {$target->type}"),

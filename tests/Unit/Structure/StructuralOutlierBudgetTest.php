@@ -588,7 +588,10 @@ final class StructuralOutlierBudgetTest extends TestCase
         // FIRST RECORDING, 2026-11-07 (tk-sees-page-in-browser): the page check's one
         // dispatch line took it to 700. Each target type is one match arm here; the
         // checks themselves live in their own classes (E2eSpecResultCheck, PageCheckResult).
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 700],
+        // 700 -> 703, 2026-11-20 (tk-verify-reads-no-github-workflow), recorded
+        // deliberately: the actionlint arm and the binary seam its tests use; the
+        // check and the tool live in ActionlintCheck and ActionlintTool.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 703],
         // 941 -> 943, 2026-11-07 (tk-sees-page-in-browser): the routes for the page targets.
         // 943 -> 946, same day (review dev#216): lint:css-tokens joins the cross-file and broad lists.
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 881],

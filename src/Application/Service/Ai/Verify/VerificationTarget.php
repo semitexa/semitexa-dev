@@ -22,6 +22,11 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  *                          diagnostic verbatim, preserving the PHPStan
  *                          identifier — single source of truth lives in
  *                          `packages/semitexa-core/src/PHPStan/Rules/`
+ *   - `actionlint`       → run the pinned actionlint on a changed GitHub
+ *                          workflow (`.github/workflows/*.yml|yaml` of a
+ *                          package or of the project); the binary is fetched
+ *                          into `var/tools/actionlint` on first use, and a
+ *                          workflow it could not read is `incomplete`
  */
 final readonly class VerificationTarget
 {
@@ -44,6 +49,8 @@ final readonly class VerificationTarget
     public const TYPE_BC_GATE          = 'bc_gate';
     /** A changed file only a dev surface shows: names the E2E specs that look at it ({@see DevSurfaceAssets}). */
     public const TYPE_DEV_SURFACE      = 'dev_surface';
+    /** actionlint on a changed GitHub workflow, .github/workflows/*.yml ({@see ActionlintTargets}). */
+    public const TYPE_ACTIONLINT       = 'actionlint';
     /** Where the UI flow does not close in the changed modules: a warning, never required ({@see UiFlowCheck}). */
     public const TYPE_UI_FLOW          = 'ui_flow';
 
