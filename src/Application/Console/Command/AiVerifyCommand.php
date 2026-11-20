@@ -624,17 +624,17 @@ final class AiVerifyCommand extends BaseCommand
             $out = [
                 ['cmd' => 'ai:work', 'args' => ['update', '--id=<task-id>', '--status=blocked', '--note="verify failed"'], 'why' => 'record the block before iterating (§9.3)'],
             ];
-            if ($hasStructureFailure) {
+            if ($hasStructureFailure && ($doc = \Semitexa\Dev\Application\Service\Ai\Verify\DocsPath::of($this->getProjectRoot(), 'MODULE_STRUCTURE.md')) !== null) {
                 $out[] = [
                     'cmd'  => 'cat',
-                    'args' => ['packages/semitexa-docs/docs/MODULE_STRUCTURE.md'],
+                    'args' => [$doc],
                     'why'  => 'module structure violations — re-read the rule table before moving files',
                 ];
             }
-            if ($hasDiFailure) {
+            if ($hasDiFailure && ($doc = \Semitexa\Dev\Application\Service\Ai\Verify\DocsPath::of($this->getProjectRoot(), 'AI_BEST_PRACTICES.md')) !== null) {
                 $out[] = [
                     'cmd'  => 'cat',
-                    'args' => ['packages/semitexa-docs/docs/AI_BEST_PRACTICES.md'],
+                    'args' => [$doc],
                     'why'  => 'DI violations — Semitexa is attribute-only DI; re-read before reshaping a class',
                 ];
             }

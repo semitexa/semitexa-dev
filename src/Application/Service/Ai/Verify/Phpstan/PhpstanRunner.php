@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify\Phpstan;
 
+use Semitexa\Dev\Application\Service\Ai\Verify\DocsPath;
 use Semitexa\Dev\Application\Service\Ai\Verify\ProcessRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\ShellProcessRunner;
 
@@ -329,7 +330,7 @@ final class PhpstanRunner
                         // its own errors (and on a remapped class.notFound) are help
                         // links, not history.
                         'rationale'     => str_starts_with($rawIdentifier, 'semitexa.') ? $tip : '',
-                        'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
+                        'doc_ref'       => DocsPath::of($this->projectRoot, 'AI_BEST_PRACTICES.md') ?? '',
                         'suggested_fix' => $this->suggestionFor($identifier),
                     ];
                 }
@@ -352,7 +353,7 @@ final class PhpstanRunner
                     'message'       => $err,
                     'tip'           => '',
                     'rationale'     => '',
-                    'doc_ref'       => 'packages/semitexa-docs/docs/AI_BEST_PRACTICES.md',
+                    'doc_ref'       => DocsPath::of($this->projectRoot, 'AI_BEST_PRACTICES.md') ?? '',
                     'suggested_fix' => 'Resolve the PHPStan configuration issue and re-run ai:verify.',
                 ];
             }
