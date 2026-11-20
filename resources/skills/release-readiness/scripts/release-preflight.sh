@@ -90,9 +90,18 @@ report_soft_failures() {
 on_exit() {
     local status=$?
     if [ "$status" -ne 0 ]; then
-        write_failure_report "$CURRENT_STAGE" "$(report_failure_reason)"
+        # Not fatal: under set -e a report that cannot be written (a full disk)
+        # would end this handler before the dev stack is restored (review, dev#296).
+        write_failure_report "$CURRENT_STAGE" "$(report_failure_reason)" || warn "Could not write the failure report"
         printf '\nRELEASE READINESS: FAIL\n'
+        # No finalize follows a failed preflight, and finalize is what starts the
+        # dev stack the stop stage took down (the two share host ports). A failed
+        # run left the workspace without its app until someone ran server:start
+        # (20.11). The script does nothing when dev was not running.
+        "$SCRIPT_DIR/release-restore-dev.sh" || warn "Could not restart the dev stack: run bin/semitexa server:start in the workspace"
     fi
+    # The run's own status, whatever the handler met on the way.
+    exit "$status"
 }
 
 trap on_exit EXIT
