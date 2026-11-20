@@ -45,6 +45,21 @@ final class FailedPreflightRestoresDevStackTest extends TestCase
         self::assertSame(['report sync-masters', 'restored'], $this->calls());
     }
 
+    /**
+     * Under set -e a report that cannot be written (a full disk) ended the
+     * handler before the restore (review, dev#296). The restore still runs, and
+     * the run keeps its own status.
+     */
+    #[Test]
+    public function a_report_that_cannot_be_written_does_not_stop_the_restore(): void
+    {
+        [$code, $output] = $this->runPreflightExit('false', reportFails: true);
+
+        self::assertSame(1, $code, $output);
+        self::assertStringContainsString('WARN Could not write the failure report', $output);
+        self::assertSame(['restored'], $this->calls());
+    }
+
     #[Test]
     public function a_passing_run_leaves_the_restore_to_finalize(): void
     {
@@ -55,14 +70,15 @@ final class FailedPreflightRestoresDevStackTest extends TestCase
     }
 
     /** @return array{int, string} */
-    private function runPreflightExit(string $lastCommand): array
+    private function runPreflightExit(string $lastCommand, bool $reportFails = false): array
     {
         $source = (string) file_get_contents(self::PREFLIGHT);
         self::assertSame(1, preg_match('/^on_exit\(\) \{\n.*?^\}\n/ms', $source, $m), 'release-preflight.sh defines on_exit()');
         $onExit = $m[0] ?? '';
         $log = escapeshellarg($this->dir . '/calls.log');
         $script = "set -euo pipefail\nSCRIPT_DIR=" . escapeshellarg($this->dir) . "\nCURRENT_STAGE=sync-masters\n"
-            . "write_failure_report() { echo \"report \$1\" >> {$log}; }\nreport_failure_reason() { echo reason; }\nwarn() { echo \"WARN \$*\"; }\n"
+            . ($reportFails ? "write_failure_report() { return 1; }\n" : "write_failure_report() { echo \"report \$1\" >> {$log}; }\n")
+            . "report_failure_reason() { echo reason; }\nwarn() { echo \"WARN \$*\"; }\n"
             . $onExit . "trap on_exit EXIT\n{$lastCommand}\n";
         file_put_contents($this->dir . '/harness.sh', $script);
         exec('bash ' . escapeshellarg($this->dir . '/harness.sh') . ' 2>&1', $lines, $code);
