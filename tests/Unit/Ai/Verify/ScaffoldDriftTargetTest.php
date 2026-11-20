@@ -35,6 +35,8 @@ final class ScaffoldDriftTargetTest extends TestCase
     {
         return [
             'the source of truth' => ['packages/semitexa-installer/scaffold/docker-compose.test.yml'],
+            // update reads it from vendor/semitexa/installer from step 2 of one source for bin/semitexa.
+            'the installer manifest' => ['packages/semitexa-installer/resources/scaffold-manifest.json'],
             'the update mirror'   => ['packages/semitexa-update/resources/scaffold/Dockerfile'],
             'the update manifest' => ['packages/semitexa-update/resources/scaffold-manifest.json'],
             'the ultimate copy'   => ['packages/semitexa-ultimate/composer.json'],

@@ -147,8 +147,10 @@ run_soft_stage "upgrade-notes" php "$SCRIPT_DIR/release-upgrade-notes.php" --ver
 # that has silently rotted teaches a confidently shrinking subset of the
 # framework, which is worse than shipping none at all.
 run_soft_stage "capability-index-freshness" "$SCRIPT_DIR/release-capability-index-check.sh"
-# semitexa/installer's own scaffold manifest, derived from update's, stays in step
-# until update reads from it (one source for bin/semitexa, step 1 of 6).
+# semitexa/installer's own scaffold manifest, which update reads from vendor/ from
+# step 2 of one source for bin/semitexa: it describes scaffold/ in a form every
+# released update reads, keeps every hash of the installer's last tag, and, while
+# update still ships the runtime entries, says what update's says.
 run_soft_stage "installer-manifest-fresh" "$SCRIPT_DIR/release-installer-manifest-check.sh"
 # The sites that run on the framework boot on what we are about to ship. The
 # private semitexa.com packages were outside every gate until 2026-10-08, when a
