@@ -191,15 +191,23 @@ final class ScaffoldSyncCommand extends BaseCommand
     /**
      * Runs the installer's manifest checks, the history against its last release tag.
      *
+     * What cannot be read counts as drift with its reason, never as nothing to
+     * check: an unreadable update manifest, git failing on the installer's tags,
+     * a missing check tool (review, dev#291).
+     *
      * @return int the checks that did not pass
      */
     private function checkInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): int
     {
         $previous = tempnam(sys_get_temp_dir(), 'installer-manifest-');
+        if ($previous === false) {
+            $io->writeln('  <comment>DRIFT</comment> installer manifest: no file could be made for the manifest at the last tag');
+            return 1;
+        }
         $drift = 0;
         try {
-            $tag = is_string($previous) ? $tools->writeManifestAtLastTag($previous) : null;
-            foreach ($tools->commands(true, $tag !== null && is_string($previous) ? $previous : null) as $command) {
+            $tag = $tools->writeManifestAtLastTag($previous);
+            foreach ($tools->commands(true, $tag !== null ? $previous : null) as $command) {
                 [$exit, $text] = $tools->run($command['argv']);
                 $against = $tag !== null && $command['label'] === 'check-manifest.php' ? " (history against {$tag})" : '';
                 if ($exit === 0) {
@@ -210,10 +218,11 @@ final class ScaffoldSyncCommand extends BaseCommand
                 $io->writeln("  <comment>DRIFT</comment> installer manifest: {$command['label']}{$against} exited {$exit}");
                 $io->writeln(preg_replace('/^/m', '         ', rtrim($text)) ?? rtrim($text));
             }
+        } catch (\RuntimeException $e) {
+            $drift++;
+            $io->writeln("  <comment>DRIFT</comment> installer manifest: could not check: {$e->getMessage()}");
         } finally {
-            if (is_string($previous)) {
-                @unlink($previous);
-            }
+            @unlink($previous);
         }
 
         return $drift;
@@ -222,7 +231,13 @@ final class ScaffoldSyncCommand extends BaseCommand
     /** While update ships the runtime entries, copies them into the installer's manifest after update's rebuild. */
     private function writeInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): bool
     {
-        foreach ($tools->commands(false) as $command) {
+        try {
+            $commands = $tools->commands(false);
+        } catch (\RuntimeException $e) {
+            $io->error("installer manifest: {$e->getMessage()}");
+            return false;
+        }
+        foreach ($commands as $command) {
             [$exit, $text] = $tools->run($command['argv']);
             if ($exit !== 0) {
                 $io->error("installer manifest: {$command['label']} exited {$exit}:\n" . rtrim($text));

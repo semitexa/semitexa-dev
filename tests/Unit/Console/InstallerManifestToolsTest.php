@@ -28,6 +28,8 @@ final class InstallerManifestToolsTest extends TestCase
         mkdir($this->root . self::INSTALLER . '/resources', 0777, true);
         mkdir($this->root . '/packages/semitexa-update/resources', 0777, true);
         file_put_contents($this->root . self::INSTALLER . '/scaffold/bin/semitexa', "#!/usr/bin/env bash\n");
+        // After the switch by default: update's manifest lists the agent docs only.
+        $this->updateManifest(['AGENTS.md']);
     }
 
     protected function tearDown(): void
@@ -61,21 +63,68 @@ final class InstallerManifestToolsTest extends TestCase
         self::assertSame([], $tools->commands(false));
     }
 
+    /**
+     * Review on dev#291: an unreadable or malformed manifest read as one that
+     * ships nothing, and the derive check was left out without a word.
+     */
     #[Test]
-    public function an_unreadable_update_manifest_ships_nothing(): void
+    public function an_update_manifest_that_cannot_be_read_is_an_error(): void
     {
-        $this->tools('derive-manifest.php');
+        $this->tools('derive-manifest.php', 'check-manifest.php');
         file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [');
 
-        self::assertFalse((new InstallerManifestTools($this->root))->updateShipsInstallerFiles());
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("Cannot read semitexa/update's manifest");
+        (new InstallerManifestTools($this->root))->commands(true);
     }
 
     #[Test]
-    public function an_installer_without_the_tools_has_nothing_to_run(): void
+    public function an_entry_without_a_path_is_an_error(): void
     {
-        $this->updateManifest(['bin/semitexa']);
+        file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [{"current_sha256": "x"}]}');
 
-        self::assertSame([], (new InstallerManifestTools($this->root))->commands(true));
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('files[0]');
+        (new InstallerManifestTools($this->root))->updateShipsInstallerFiles();
+    }
+
+    #[Test]
+    public function without_an_update_package_there_is_nothing_to_derive_from(): void
+    {
+        exec('rm -rf ' . escapeshellarg($this->root . '/packages/semitexa-update'));
+        $this->tools('derive-manifest.php', 'check-manifest.php');
+
+        $tools = new InstallerManifestTools($this->root);
+
+        self::assertFalse($tools->updateShipsInstallerFiles());
+        self::assertSame(['check-manifest.php'], array_column($tools->commands(true), 'label'));
+    }
+
+    #[Test]
+    public function a_check_without_the_check_tool_cannot_run(): void
+    {
+        $this->tools('derive-manifest.php');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('check-manifest.php is missing');
+        (new InstallerManifestTools($this->root))->commands(true);
+    }
+
+    #[Test]
+    public function while_update_ships_the_runtime_entries_a_missing_derive_tool_is_an_error(): void
+    {
+        $this->tools('check-manifest.php');
+        $this->updateManifest(['AGENTS.md', 'bin/semitexa']);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('derive-manifest.php is missing');
+        (new InstallerManifestTools($this->root))->commands(false);
+    }
+
+    #[Test]
+    public function a_write_after_the_switch_runs_nothing(): void
+    {
+        self::assertSame([], (new InstallerManifestTools($this->root))->commands(false));
     }
 
     #[Test]
@@ -111,6 +160,32 @@ final class InstallerManifestToolsTest extends TestCase
 
         self::assertNull((new InstallerManifestTools($this->root))->writeManifestAtLastTag($file));
         self::assertFileDoesNotExist($file, 'nothing was written');
+    }
+
+    #[Test]
+    public function a_tag_from_before_the_installer_had_a_manifest_gives_no_earlier_manifest(): void
+    {
+        $this->git('init -q -b develop');
+        file_put_contents($this->root . self::INSTALLER . '/README.md', "# installer\n");
+        $this->git('add README.md');
+        $this->git('-c user.name=test -c user.email=test@example.invalid commit -q -m before');
+        $this->git('tag 2026.01.01.0000');
+        $file = $this->root . '/earlier.json';
+
+        self::assertNull((new InstallerManifestTools($this->root))->writeManifestAtLastTag($file));
+        self::assertFileDoesNotExist($file);
+    }
+
+    /**
+     * Review on dev#291: git failing (here: no repository) read as an installer
+     * without releases, and the history check ran without --previous.
+     */
+    #[Test]
+    public function tags_git_cannot_list_are_an_error_not_an_installer_without_releases(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('git could not list the release tags');
+        (new InstallerManifestTools($this->root))->writeManifestAtLastTag($this->root . '/earlier.json');
     }
 
     #[Test]

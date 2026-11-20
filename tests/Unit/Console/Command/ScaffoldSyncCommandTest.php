@@ -31,6 +31,9 @@ final class ScaffoldSyncCommandTest extends TestCase
     private string $root = '';
     private ?string $originalCwd = null;
 
+    /** The root ProjectRoot held before this test, put back as it was (review, dev#291). */
+    private ?string $savedProjectRoot = null;
+
     /** @var list<string> how each sibling ran, e.g. "update:scaffold:rebuild --check" */
     private array $siblingRuns = [];
 
@@ -51,6 +54,11 @@ final class ScaffoldSyncCommandTest extends TestCase
         // After the switch: update's own copy holds only the agent docs.
         $this->write('packages/semitexa-update/resources/scaffold/AGENTS.md', "# agents\n");
         $this->updateManifest(['AGENTS.md']);
+        // A repository with no release tag yet: an answer, unlike git failing.
+        exec('git -C ' . escapeshellarg($this->root . '/packages/semitexa-installer') . ' init -q -b develop 2>&1', $gitOutput, $gitStatus);
+        self::assertSame(0, $gitStatus, implode("\n", $gitOutput));
+        $saved = (new \ReflectionProperty(ProjectRoot::class, 'root'))->getValue();
+        $this->savedProjectRoot = is_string($saved) ? $saved : null;
         $this->originalCwd = getcwd() ?: null;
         chdir($this->root);
         ProjectRoot::reset();
@@ -62,7 +70,7 @@ final class ScaffoldSyncCommandTest extends TestCase
         if ($this->originalCwd !== null) {
             chdir($this->originalCwd);
         }
-        ProjectRoot::reset();
+        (new \ReflectionProperty(ProjectRoot::class, 'root'))->setValue(null, $this->savedProjectRoot);
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
@@ -74,7 +82,9 @@ final class ScaffoldSyncCommandTest extends TestCase
 
         self::assertSame(0, $status, $display);
         self::assertStringNotContainsString('semitexa-update mirror', $display);
-        self::assertContains('update:scaffold:rebuild --check', $this->siblingRuns, 'the check asks update whether its copy and manifest are current');
+        // Both siblings in check mode, and nothing else: a docs run without
+        // --check would write in a check (review, dev#291).
+        self::assertSame(['scaffold:sync-docs --check', 'update:scaffold:rebuild --check'], $this->siblingRuns);
         self::assertStringContainsString('ok     installer manifest: check-manifest.php', $display);
         self::assertStringNotContainsString('derive-manifest', $display, 'nothing to derive once update lists none of the installer files');
     }
@@ -88,6 +98,42 @@ final class ScaffoldSyncCommandTest extends TestCase
         self::assertSame(1, $status, $display);
         self::assertStringContainsString('DRIFT installer manifest: check-manifest.php exited 1', $display);
         self::assertStringContainsString('bin/semitexa: the file hashes to 1111', $display);
+    }
+
+    /**
+     * Review on dev#291: what cannot be read is drift with its reason, never
+     * nothing to check.
+     */
+    public function test_an_update_manifest_that_cannot_be_read_is_drift_not_a_skipped_derive(): void
+    {
+        $this->tool('check-manifest.php', 0, 'describes scaffold/');
+        $this->tool('derive-manifest.php', 0, 'is current');
+        $this->write('packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [');
+
+        [$status, $display] = $this->sync(['--check' => true]);
+
+        self::assertSame(1, $status, $display);
+        self::assertStringContainsString("DRIFT installer manifest: could not check: Cannot read semitexa/update's manifest", $display);
+    }
+
+    public function test_tags_git_cannot_list_are_drift_not_an_installer_without_releases(): void
+    {
+        $this->tool('check-manifest.php', 0, 'describes scaffold/');
+        exec('rm -rf ' . escapeshellarg($this->root . '/packages/semitexa-installer/.git'));
+
+        [$status, $display] = $this->sync(['--check' => true]);
+
+        self::assertSame(1, $status, $display);
+        self::assertStringContainsString('DRIFT installer manifest: could not check: git could not list the release tags', $display);
+        self::assertFileDoesNotExist($this->root . '/tool-runs.log', 'the check ran without the history it could not read');
+    }
+
+    public function test_a_check_without_the_installer_check_tool_is_drift(): void
+    {
+        [$status, $display] = $this->sync(['--check' => true]);
+
+        self::assertSame(1, $status, $display);
+        self::assertStringContainsString('check-manifest.php is missing', $display);
     }
 
     public function test_an_update_copy_the_rebuild_check_refuses_is_drift(): void

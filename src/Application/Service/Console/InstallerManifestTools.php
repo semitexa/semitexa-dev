@@ -27,7 +27,7 @@ namespace Semitexa\Dev\Application\Service\Console;
 final class InstallerManifestTools
 {
     private const INSTALLER = 'packages/semitexa-installer';
-    private const UPDATE_MANIFEST = 'packages/semitexa-update/resources/scaffold-manifest.json';
+    private const UPDATE = 'packages/semitexa-update';
 
     public function __construct(private readonly string $root)
     {
@@ -36,20 +36,31 @@ final class InstallerManifestTools
     /**
      * What to run: in check mode both checks, in write mode the derive tool.
      *
+     * Whatever cannot be read throws: the check tool missing, update's manifest
+     * unreadable. A gate that cannot read what it checks must fail, not skip it
+     * (review, dev#291).
+     *
      * @param ?string $previous an earlier manifest to check the history against (check mode)
      * @return list<array{label: string, argv: list<string>}>
+     * @throws \RuntimeException when a tool or update's manifest cannot be read
      */
     public function commands(bool $check, ?string $previous = null): array
     {
         $commands = [];
-        $derive = $this->tool('derive-manifest.php');
-        if ($derive !== null && $this->updateShipsInstallerFiles()) {
+        if ($this->updateShipsInstallerFiles()) {
+            $derive = $this->tool('derive-manifest.php');
+            if ($derive === null) {
+                throw new \RuntimeException('semitexa/update still ships the runtime entries, and ' . self::INSTALLER . '/tools/derive-manifest.php is missing.');
+            }
             $commands[] = $check
                 ? ['label' => 'derive-manifest.php --check', 'argv' => [$derive, '--check']]
                 : ['label' => 'derive-manifest.php', 'argv' => [$derive]];
         }
-        $checkTool = $this->tool('check-manifest.php');
-        if ($check && $checkTool !== null) {
+        if ($check) {
+            $checkTool = $this->tool('check-manifest.php');
+            if ($checkTool === null) {
+                throw new \RuntimeException(self::INSTALLER . '/tools/check-manifest.php is missing: the manifest semitexa/update reads cannot be checked.');
+            }
             $commands[] = [
                 'label' => 'check-manifest.php',
                 'argv' => $previous !== null ? [$checkTool, '--previous=' . $previous] : [$checkTool],
@@ -59,18 +70,29 @@ final class InstallerManifestTools
         return $commands;
     }
 
-    /** True while semitexa/update's own manifest still lists a file of the installer's scaffold. */
+    /**
+     * True while semitexa/update's own manifest still lists a file of the
+     * installer's scaffold; false when it lists none, or there is no update
+     * package to compare with.
+     *
+     * @throws \RuntimeException when update's manifest cannot be read as one
+     */
     public function updateShipsInstallerFiles(): bool
     {
-        $raw = @file_get_contents($this->root . '/' . self::UPDATE_MANIFEST);
-        $manifest = is_string($raw) ? json_decode($raw, true) : null;
-        if (!is_array($manifest) || !is_array($manifest['files'] ?? null)) {
+        if (!is_dir($this->root . '/' . self::UPDATE)) {
             return false;
         }
-        foreach ($manifest['files'] as $entry) {
-            if (is_array($entry) && is_string($entry['path'] ?? null) && $entry['path'] !== ''
-                && is_file($this->root . '/' . self::INSTALLER . '/scaffold/' . $entry['path'])
-            ) {
+        $path = $this->root . '/' . self::UPDATE . '/resources/scaffold-manifest.json';
+        $raw = is_file($path) ? file_get_contents($path) : false;
+        $manifest = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($manifest) || !is_array($manifest['files'] ?? null)) {
+            throw new \RuntimeException("Cannot read semitexa/update's manifest as a scaffold manifest: {$path}");
+        }
+        foreach ($manifest['files'] as $index => $entry) {
+            if (!is_array($entry) || !is_string($entry['path'] ?? null) || $entry['path'] === '') {
+                throw new \RuntimeException("files[{$index}] of {$path} has no path.");
+            }
+            if (is_file($this->root . '/' . self::INSTALLER . '/scaffold/' . $entry['path'])) {
                 return true;
             }
         }
@@ -82,21 +104,37 @@ final class InstallerManifestTools
      * Writes the manifest at the installer's newest release tag to $file.
      *
      * Tags sit on master's merge commits, which develop does not contain, so the
-     * newest is found by version, not by `git describe`.
+     * newest is found by version, not by `git describe`. No release tag, or a tag
+     * from before the installer had a manifest, is an answer; git failing to
+     * answer is not.
      *
      * @return ?string the tag, or null when there is none or it holds no manifest
+     * @throws \RuntimeException when git cannot answer, or the manifest cannot be written
      */
     public function writeManifestAtLastTag(string $file): ?string
     {
         $dir = $this->root . '/' . self::INSTALLER;
         [$exit, $tags] = $this->process(['git', '-C', $dir, 'tag', '-l', '20*', '--sort=-version:refname']);
-        $tag = $exit === 0 ? trim(strtok($tags, "\n") ?: '') : '';
+        if ($exit !== 0) {
+            throw new \RuntimeException("git could not list the release tags of {$dir} (exit {$exit}): " . trim($tags));
+        }
+        $tag = trim(explode("\n", $tags)[0]);
         if ($tag === '') {
             return null;
         }
-        [$exit, $manifest] = $this->process(['git', '-C', $dir, 'show', $tag . ':resources/scaffold-manifest.json'], mergeErrors: false);
-        if ($exit !== 0 || file_put_contents($file, $manifest) === false) {
+        [$exit, $listed] = $this->process(['git', '-C', $dir, 'ls-tree', '--name-only', $tag, '--', 'resources/scaffold-manifest.json']);
+        if ($exit !== 0) {
+            throw new \RuntimeException("git could not read tag {$tag} of {$dir} (exit {$exit}): " . trim($listed));
+        }
+        if (trim($listed) === '') {
             return null;
+        }
+        [$exit, $manifest] = $this->process(['git', '-C', $dir, 'show', $tag . ':resources/scaffold-manifest.json'], mergeErrors: false);
+        if ($exit !== 0) {
+            throw new \RuntimeException("git could not read the manifest at {$tag} (exit {$exit}).");
+        }
+        if (file_put_contents($file, $manifest) === false) {
+            throw new \RuntimeException("Cannot write the manifest at {$tag} to {$file}.");
         }
 
         return $tag;
