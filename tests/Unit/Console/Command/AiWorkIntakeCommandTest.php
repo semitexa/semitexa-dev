@@ -351,7 +351,7 @@ final class AiWorkIntakeCommandTest extends TestCase
 
         self::assertIsArray($out['new']);
         self::assertCount(2, $out['new']);
-        self::assertContains('Runtime error: Login failed for user=V password=V (auth)', array_column($out['new'], 'title'));
+        self::assertContains('Runtime error: Login failed for… (auth)', array_column($out['new'], 'title'));
         $written = '';
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root . '/var/ai-work', \FilesystemIterator::SKIP_DOTS)) as $file) {
             self::assertInstanceOf(\SplFileInfo::class, $file);

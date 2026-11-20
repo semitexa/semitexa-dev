@@ -46,6 +46,19 @@ final class RuntimeSignalTest extends TestCase
         }
     }
 
+    public function test_a_title_shows_only_the_plain_words_a_message_starts_with(): void
+    {
+        $title = static fn (string $message, ?string $class = null): string => (new RuntimeSignal(str_repeat('b', 40), 'files', $message, $class, null, [], 1, '', ''))->title();
+
+        self::assertSame('Runtime error: Dashboard widget failed (files)', $title('Dashboard widget failed'));
+        self::assertSame('Runtime error: Login failed for… (files)', $title('Login failed for user=V password=V'));
+        self::assertSame('Runtime error: Не вдалося зберегти файл (files)', $title('Не вдалося зберегти файл'));
+        foreach (["Can't open '/home/john smith/cv.pdf'", "Doesn't match ' bob smith '", "Couldn't decode '{\"user\": \"bob smith\"}' here"] as $message) {
+            self::assertSame('Runtime error: a logged error (files)', $title($message), $message);
+        }
+        self::assertSame('Runtime error: Reader: Could not read… (files)', $title('Could not read sk_live_abcdefghijklmnop now', 'App\\Reader'), 'with a class and no file, the plain head is the detail');
+    }
+
     public function test_another_log_is_not_this_runs_text(): void
     {
         $signal = self::signal();

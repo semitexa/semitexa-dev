@@ -27,9 +27,9 @@ final class SignalFingerprint
         // A URL ends at a quote too: "http://a/b" must leave its closing quote to the quote rule.
         '~\b[a-z][a-z0-9+.-]*://[^\s"\']+~i' => 'URL',
         '~[\w.+-]+@[\w-]+(?:\.[\w-]+)+~' => 'EMAIL',
-        // A single-quoted value ends where no word goes on: an apostrophe inside a word ("don't") then
-        // pairs with nothing, and a prefixed quote (b'...') is still a quote.
-        '~"[^"]*"|\'[^\']*\'(?!\w)~' => 'Q',
+        // Grouping only (a title never shows the message past its plain words): an apostrophe after two
+        // letters ("don't", "users'") opens no quote; a prefixed quote (b'...') still does.
+        '~"[^"]*"|(?<![A-Za-z]{2})\'[^\']*\'~' => 'Q',
     ];
 
     /** A quote the cut left open: its value ran past the head, so all that is left of it goes. */

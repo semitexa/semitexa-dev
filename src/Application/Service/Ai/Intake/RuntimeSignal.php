@@ -43,10 +43,16 @@ final readonly class RuntimeSignal
     /** Made of the class, the file, the channel and the route: never the exception's message or the request. */
     public function title(): string
     {
-        $what = $this->exception !== null ? self::shortClass($this->exception) : self::cut($this->message, 100);
+        $head = self::plainHead($this->message);
+        $what = match (true) {
+            $this->exception !== null => self::shortClass($this->exception),
+            $head !== '' => self::cut($head, 100),
+            $this->message !== '' => 'a logged error',
+            default => '',
+        };
         $where = match (true) {
             $this->site !== null => ' in ' . $this->site,
-            $this->exception !== null && $this->message !== '' => ': ' . self::cut($this->message, 80),
+            $this->exception !== null && $head !== '' => ': ' . self::cut($head, 80),
             default => '',
         };
         $around = array_values(array_filter([
@@ -125,6 +131,27 @@ final readonly class RuntimeSignal
         $at = strrpos($class, '\\');
 
         return $at === false ? $class : substr($class, $at + 1);
+    }
+
+    /**
+     * What of the logger's message a title may show: its leading plain words —
+     * letters and light punctuation, no quote, digit, '=', ':', '@' or '/' — up
+     * to the first word that is anything else. The rest stays in the log on
+     * this machine: whatever a message carries after a contraction, a quote or
+     * a key cannot reach a task, however the normalising guessed. The
+     * normalised message still groups signals; it is a hash, never shown.
+     */
+    private static function plainHead(string $message): string
+    {
+        $words = [];
+        foreach (preg_split('/\s+/u', trim($message)) ?: [] as $word) {
+            if (preg_match('/^\p{L}[\p{L},.;()\-]*$/u', $word) !== 1) {
+                return $words === [] ? '' : implode(' ', $words) . '…';
+            }
+            $words[] = $word;
+        }
+
+        return implode(' ', $words);
     }
 
     private static function cut(string $text, int $length): string
