@@ -168,6 +168,83 @@ final class RequiredSettingsReportTest extends TestCase
     }
 
     /**
+     * Review of dev#297: packages/ could be entered and not listed, glob() gave
+     * an empty list for it, and the stage wrote "none" and passed with no
+     * package looked at.
+     */
+    #[Test]
+    public function a_packages_directory_that_cannot_be_listed_fails_the_stage(): void
+    {
+        $this->revision(['src/FooTokenDoctorCheck.php' => self::TOKEN_CHECK]);
+        chmod($this->root . '/packages', 0311);
+
+        try {
+            $result = $this->stage();
+        } finally {
+            chmod($this->root . '/packages', 0755);
+        }
+
+        if (posix_geteuid() === 0) {
+            self::assertSame(1, $result[0], 'no mode stops root: it listed the package and found FOO_TOKEN unannounced');
+
+            return;
+        }
+        self::assertSame([1, ['Cannot list the packages in ' . $this->root . '/packages.']], $result);
+    }
+
+    #[Test]
+    public function an_empty_packages_directory_is_a_release_with_nothing_new(): void
+    {
+        exec('rm -rf ' . escapeshellarg($this->package));
+
+        self::assertSame([0, ['## New required settings', '', 'none', '', '## New doctor checks', '', 'none']], $this->stage());
+    }
+
+    /**
+     * Review of dev#297: a package directory the operator cannot enter has no
+     * visible .git, so it was skipped as "not a package" and its new setting
+     * never reached the gate.
+     *
+     * @param int $mode the package directory's mode: nothing, and listing without entering
+     */
+    #[Test]
+    #[\PHPUnit\Framework\Attributes\TestWith([0000])]
+    #[\PHPUnit\Framework\Attributes\TestWith([0444])]
+    public function a_package_that_cannot_be_entered_fails_the_stage_and_is_named(int $mode): void
+    {
+        $this->revision(['src/FooTokenDoctorCheck.php' => self::TOKEN_CHECK, 'CHANGELOG.md' => "FOO_TOKEN\n"]);
+        mkdir($this->root . '/packages/notes');
+        file_put_contents($this->root . '/packages/README.md', "not a package\n");
+        chmod($this->package, $mode);
+
+        try {
+            $result = $this->stage();
+        } finally {
+            chmod($this->package, 0755);
+        }
+
+        if (posix_geteuid() === 0) {
+            self::assertSame(0, $result[0], 'no mode stops root: it read the package');
+
+            return;
+        }
+        self::assertSame(
+            [1, [
+                '## New required settings',
+                '',
+                'none',
+                '',
+                '## New doctor checks',
+                '',
+                'none',
+                'Not read, so not in the notes: ' . $this->package . ' (cannot be entered)',
+            ]],
+            $result,
+            'the directory without a .git and the file beside it are still no packages, and are not named',
+        );
+    }
+
+    /**
      * Writes the files (paths from the package root) and commits them: the
      * release clone tags committed master heads.
      *

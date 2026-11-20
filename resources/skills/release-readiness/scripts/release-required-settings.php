@@ -65,7 +65,8 @@ if (!class_exists(ParserFactory::class)) {
 }
 
 $packagesDir = $releaseRoot . '/packages';
-$packageDirs = is_dir($packagesDir) ? glob($packagesDir . '/*') : false;
+// GLOB_ERR: a directory that can be entered and not listed is an error, not an empty one.
+$packageDirs = is_dir($packagesDir) ? glob($packagesDir . '/*', GLOB_ERR) : false;
 if ($packageDirs === false) {
     fail("Cannot list the packages in {$packagesDir}.");
 }
@@ -79,6 +80,12 @@ $unread = [];
 /** @var list<string> $unannounced */
 $unannounced = [];
 foreach ($packageDirs as $packageDir) {
+    // An entry that cannot be looked into is not known to be no package: without the right to
+    // enter it, the two tests below answer "no" for a package as for anything else.
+    if (@lstat($packageDir) === false || (is_dir($packageDir) && @lstat($packageDir . '/.') === false)) {
+        $unread[] = $packageDir . ' (cannot be entered)';
+        continue;
+    }
     // No manifest at all: not a package. One that is there and cannot be read is recorded later.
     $manifest = $packageDir . '/composer.json';
     if (!is_dir($packageDir . '/.git') || (!file_exists($manifest) && !is_link($manifest))) {
