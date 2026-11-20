@@ -100,7 +100,8 @@ final class RawQueryOutsideTransactionRatchetTest extends TestCase
 
         $seen = 0;
         foreach (array_keys(self::KNOWN) as $path) {
-            self::assertArrayHasKey($path, $files, "a known site is no longer scanned: {$path}");
+            // verify:accept-test-change the same question about the same array with the same message: isset, not assertArrayHasKey, because PHPUnit exports the whole 16 MB array on every passing assertArrayHasKey, 2.6 s per run (tk-ratchet-test-exports-a-16mb-array); it still fails when the scan misses a known path
+            self::assertTrue(isset($files[$path]), "a known site is no longer scanned: {$path}");
             $seen += self::sites($files[$path]);
         }
         self::assertGreaterThan(0, $seen, 'no known site matches, so the pattern is not matching');
