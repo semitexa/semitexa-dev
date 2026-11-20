@@ -235,8 +235,16 @@ final class PackageDependencyDirectionTest extends TestCase
             // removed on 2026-09-16.
             'semitexa/core' => [],
             // Lifecycle: it owns #[AsDataPatch] and os, tasks and
-            // platform-settings require IT. Foundation and persistence only.
-            'semitexa/update' => ['semitexa/core', 'semitexa/orm'],
+            // platform-settings require IT. Foundation and persistence only,
+            // and the scaffold it applies: since step 2 of one source for
+            // bin/semitexa (dec-one-source-for-bin-semitexa, 2026-11-19) it reads
+            // bin/semitexa, the Dockerfile and the Compose files from
+            // semitexa/installer, a leaf pinned below.
+            'semitexa/update' => ['semitexa/core', 'semitexa/orm', 'semitexa/installer'],
+            // The project scaffold and its manifest: files, not features. It
+            // requires no semitexa package, which is what keeps update's edge to
+            // it pointing inward; one require here and that edge points outward.
+            'semitexa/installer' => [],
             // Lifecycle too — rule 1 names it explicitly: prompt followed the
             // same shape for #[AsUpdateAdvisory], so it may reach update and no
             // further outward.
