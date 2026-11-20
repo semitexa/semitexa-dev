@@ -26,6 +26,9 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  */
 final readonly class MakeItPlan
 {
+    /** How an answer of the architect's is written down, the same in every state. */
+    private const RECORD = 'bin/semitexa ai:decision record --words="<their words>" --means="<what it means for the work>" --applies-to=<tag> --scope=standing|once';
+
     public const EMPTY = 'empty';
     public const WORK = 'work';
     public const WAITING = 'waiting';
@@ -155,9 +158,11 @@ final readonly class MakeItPlan
 
     /**
      * @param string $command how this agent runs ai:make-it again
+     * @param list<string>|null $ownerDecides what the charter keeps for the architect; null when it cannot be read
+     * @param list<string>|null $decidedOn what an active decision of the architect's speaks for (its applies-to); null when unknown
      * @return list<string>
      */
-    public function steps(string $command): array
+    public function steps(string $command, ?array $ownerDecides = null, ?array $decidedOn = null): array
     {
         return match ($this->state) {
             self::EMPTY => $this->charterError !== null ? ["The project charter cannot be read ({$this->charterError}). Show the architect and fix or remove it, then run {$command} again."] : [
@@ -168,19 +173,59 @@ final readonly class MakeItPlan
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',
             ],
-            self::WORK => self::stepsFor($this->tasks[0]['id'], $command),
-            self::WAITING => ['Commit var/ai-work if it changed. Name each task and what it waits for, then stop: a question for the architect is in its next step.'],
+            self::WORK => self::stepsFor($this->tasks[0]['id'], $command, $ownerDecides, $decidedOn),
+            self::WAITING => ['Commit var/ai-work if it changed. Name each task and what it waits for, then stop: a question for the architect is in its next step. When they answer, record it before you act on it: ' . self::RECORD . '.'],
             self::IDEAS => ['Commit var/ai-work if it changed. Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
             default => [$this->only !== null ? 'Commit var/ai-work if it changed, then stop here, or find what this phase owes and file it.' : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
         };
     }
 
-    /** @return list<string> */
-    private static function stepsFor(string $id, string $command): array
+    /**
+     * The line between what the agent decides and what it asks, as the
+     * charter draws it (tk-authority-boundary).
+     *
+     * @param list<string>|null $ownerDecides
+     * @return list<string>
+     */
+    private static function authority(?array $ownerDecides): array
+    {
+        return match (true) {
+            $ownerDecides === null => [],
+            $ownerDecides === [] => ['Every decision is yours: the charter leaves the architect none (owner_decides). Make each and say what you chose.'],
+            default => ['Ask the architect before you decide any of these, the charter keeps them (owner_decides): ' . implode('; ', $ownerDecides) . '. Every other choice, the technical ones above all, is yours: make it and say what you chose.'],
+        };
+    }
+
+    /**
+     * The architect's word given before is looked up, and a new one written
+     * down, so no agent asks them the same thing twice
+     * (tk-make-it-through-decisions).
+     *
+     * @param list<string>|null $decidedOn
+     */
+    private static function decisions(?array $decidedOn): string
+    {
+        $active = match (true) {
+            $decidedOn === null => '',
+            $decidedOn === [] => ' (none is active yet)',
+            default => ' (active now on: ' . implode(', ', $decidedOn) . ')',
+        };
+
+        return 'Before you ask the architect anything, look for their word already given: bin/semitexa ai:decision list --applies-to=<tag>' . $active . '. An active decision answers it; a once decision is spent by the act it allows: bin/semitexa ai:decision consume --id=<id> --act="<what you did>". Record each new answer: ' . self::RECORD . '.';
+    }
+
+    /**
+     * @param list<string>|null $ownerDecides
+     * @param list<string>|null $decidedOn
+     * @return list<string>
+     */
+    private static function stepsFor(string $id, string $command, ?array $ownerDecides, ?array $decidedOn): array
     {
         return [
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
+            ...self::authority($ownerDecides),
+            self::decisions($decidedOn),
             'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
             'If it shows on a page, open that page in a browser and look at it, in light and dark, with a screenshot if you cannot: a passing test does not see what a person sees. If it looks broken, fix it, or block the task, before going on.',
             "Run bin/semitexa ai:verify --trace={$id} and wait for its verdict in this turn: with end-to-end tests it takes minutes, so run it in the foreground with the longest timeout your shell tool allows, not in the background (tk-make-it-stops-after-one-task). Go on only on a pass: never close a task on a fail. A failure you think this change did not cause is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"waits for <the new id>\"), say both in the report, and go to the last step. A verdict that is neither (incomplete, skipped, nothing_to_verify): name the task's files with --files=<paths> and verify again. Three verdicts in a row that are not a pass, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",

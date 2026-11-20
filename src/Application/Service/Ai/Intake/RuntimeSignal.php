@@ -1,0 +1,133 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Semitexa\Dev\Application\Service\Ai\Intake;
+
+/**
+ * One error the running project logged, however many times: what the backlog
+ * files as an idea. Its task id is its fingerprint, so the same signal is the
+ * same task on every run and nothing else has to remember it.
+ */
+final readonly class RuntimeSignal
+{
+    public const ID_PREFIX = 'tk-rt-';
+
+    /** How a next step the intake wrote begins. */
+    public const NEXT_STEP_PREFIX = 'Runtime signal, not confirmed yet:';
+
+    /** The whole next step the intake writes: prefix, count, "time(s)", log, first seen, last seen, last seen, grep, id, id. */
+    private const NEXT_STEP = '%s seen %s %s in %s, from %s to %s. Read it: bin/semitexa logs:app --around=%s%s. A defect: approve it (bin/semitexa ai:work:approve --id=%s --words="<the owner\'s words>"); the environment or a test: bin/semitexa ai:work update --id=%s --status=discarded.';
+
+    /**
+     * @param string $message the logger's message, normalised
+     * @param list<string> $routes the routes it was seen on, sorted
+     */
+    public function __construct(
+        public string $fingerprint,
+        public string $channel,
+        public string $message,
+        public ?string $exception,
+        public ?string $site,
+        public array $routes,
+        public int $count,
+        public string $firstSeen,
+        public string $lastSeen,
+    ) {}
+
+    public function taskId(): string
+    {
+        return self::ID_PREFIX . substr($this->fingerprint, 0, 12);
+    }
+
+    /**
+     * Made of what the code names: the exception's class, the file, the
+     * channel, the route. Never a word of the logger's message: four rounds of
+     * review found a shape of message text (a quoted value, a cut, a digit
+     * hidden by normalising, a name in plain words) that reached a committed
+     * title, so the message stays in the log, one command away in the next
+     * step. A signal with no class and no file is named by its channel and its
+     * id.
+     */
+    public function title(): string
+    {
+        $what = $this->exception !== null ? self::shortClass($this->exception) : 'a logged error';
+        $where = $this->site !== null ? ' in ' . $this->site : ($this->exception === null ? ' ' . substr($this->fingerprint, 0, 8) : '');
+        $around = array_values(array_filter([
+            $this->channel !== '' ? $this->channel : null,
+            match (count($this->routes)) {
+                0 => null,
+                1 => 'route ' . $this->routes[0],
+                default => count($this->routes) . ' routes',
+            },
+        ]));
+
+        return 'Runtime error: ' . $what . $where . ($around !== [] ? ' (' . implode(', ', $around) . ')' : '');
+    }
+
+    /** @return list<string> */
+    public function contextRefs(): array
+    {
+        return match (true) {
+            $this->site !== null => [$this->site],
+            $this->exception !== null => [$this->exception],
+            default => [],
+        };
+    }
+
+    /** @param string $log the log it was read from, relative to the project */
+    public function nextStep(string $log): string
+    {
+        $grep = $this->exception !== null ? ' --grep=' . self::shortClass($this->exception) : '';
+
+        return sprintf(
+            self::NEXT_STEP,
+            self::NEXT_STEP_PREFIX,
+            (string) $this->count,
+            $this->count === 1 ? 'time' : 'times',
+            $log,
+            $this->firstSeen,
+            $this->lastSeen,
+            $this->lastSeen,
+            $grep,
+            $this->taskId(),
+            $this->taskId(),
+        );
+    }
+
+    /**
+     * Whether a task's next step is the intake's own from its first byte to
+     * its last: only the count, the log and the times may differ. A word
+     * added before it, after it or inside it makes it someone's note.
+     */
+    public static function wroteNextStep(string $taskId, ?string $nextStep, string $log): bool
+    {
+        $id = preg_quote($taskId, '~');
+        // A time as loggers write it (ISO 8601, a space for the T allowed), or none: no free word fits in.
+        $time = '(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?';
+        $pattern = sprintf(
+            preg_quote(self::NEXT_STEP, '~'),
+            preg_quote(self::NEXT_STEP_PREFIX, '~'),
+            '\d+',
+            'times?',
+            // The log this run reads, exactly: a note written into that field is no longer the intake's.
+            preg_quote($log, '~'),
+            $time,
+            $time,
+            $time,
+            // The grep is an exception's short class name, nothing more.
+            '(?: --grep=[A-Za-z_][A-Za-z0-9_]*)?',
+            $id,
+            $id,
+        );
+
+        return $nextStep !== null && preg_match('~\A' . $pattern . '\z~', $nextStep) === 1;
+    }
+
+    private static function shortClass(string $class): string
+    {
+        $at = strrpos($class, '\\');
+
+        return $at === false ? $class : substr($class, $at + 1);
+    }
+}

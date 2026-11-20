@@ -287,4 +287,48 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id=tk-a --status=blocked', $steps);
         self::assertStringNotContainsString('and go on', $steps);
     }
+
+    public function test_the_steps_say_what_the_architect_keeps(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('x', ['spending money', 'anything public']));
+
+        self::assertStringContainsString('Ask the architect before you decide any of these, the charter keeps them (owner_decides): spending money; anything public.', $steps);
+        self::assertStringContainsString('the technical ones above all, is yours', $steps);
+    }
+
+    public function test_an_owner_who_keeps_nothing_leaves_every_decision_to_the_agent(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('x', []));
+
+        self::assertStringContainsString('Every decision is yours', $steps);
+        self::assertStringNotContainsString('Ask the architect before', $steps);
+    }
+
+    public function test_an_unread_charter_draws_no_line(): void
+    {
+        $steps = $this->plan([$this->task('tk-a')])->steps('x');
+
+        self::assertNotSame([], $steps);
+        self::assertSame([], array_values(array_filter($steps, static fn (string $s): bool => str_contains($s, 'owner_decides'))));
+    }
+
+    public function test_work_looks_up_the_architects_word_before_asking_and_records_the_new(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('x', ['spending money'], ['docs', 'release']));
+
+        self::assertStringContainsString('look for their word already given: bin/semitexa ai:decision list --applies-to=<tag> (active now on: docs, release).', $steps);
+        self::assertStringContainsString('bin/semitexa ai:decision consume --id=<id>', $steps);
+        self::assertStringContainsString('Record each new answer: bin/semitexa ai:decision record --words=', $steps);
+        self::assertStringContainsString('(none is active yet)', implode("\n", $this->plan([$this->task('tk-a')])->steps('x', [], [])));
+        $unknown = implode("\n", $this->plan([$this->task('tk-a')])->steps('x'));
+        self::assertStringContainsString('ai:decision list --applies-to=<tag>. An active decision answers it', $unknown, 'no store to read: the lookup is still the step');
+    }
+
+    public function test_waiting_on_the_architect_records_their_answer(): void
+    {
+        $plan = $this->plan([$this->task('tk-a', status: TaskStatus::BLOCKED)]);
+
+        self::assertSame(MakeItPlan::WAITING, $plan->state);
+        self::assertStringContainsString('When they answer, record it before you act on it: bin/semitexa ai:decision record', implode("\n", $plan->steps('x')));
+    }
 }

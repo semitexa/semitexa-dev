@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiDecisionCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Tests\Support\ArrayContainer;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -224,7 +226,7 @@ final class AiDecisionCommandTest extends TestCase
     private function decision(string $action, array $options): array
     {
         $command = new AiDecisionCommand();
-        PropertyInjector::inject($command, new ArrayContainer([DecisionStore::class => new DecisionStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([DecisionStore::class => new DecisionStore(), CharterStore::class => new CharterStore()]));
         $tester = new CommandTester($command);
         $status = $tester->execute(['action' => $action] + $options, ['interactive' => false]);
         $decoded = json_decode($tester->getDisplay(), true);
@@ -232,5 +234,39 @@ final class AiDecisionCommandTest extends TestCase
 
         /** @var array<string, mixed> $decoded */
         return [$status, $decoded];
+    }
+
+    #[Test]
+    public function list_says_what_the_owner_keeps_for_themselves(): void
+    {
+        [$status, $out] = $this->decision('list', []);
+        self::assertSame(0, $status);
+        self::assertSame(Charter::DEFAULT_OWNER_DECIDES, $out['owner_decides'], 'nobody asked yet: the defaults');
+
+        (new CharterStore())->save(new Charter(ownerDecides: []));
+        [, $out] = $this->decision('list', []);
+        self::assertSame([], $out['owner_decides'], 'the owner said none: everything is the agent\'s');
+        self::assertArrayNotHasKey('charter_error', $out);
+    }
+
+    #[Test]
+    public function a_charter_that_does_not_read_leaves_the_decisions_listed(): void
+    {
+        [$status] = $this->decision('record', ['--id' => 'data-as-patches', '--words' => 'дані мігрувати лише патчами', '--means' => 'data migrations are #[AsDataPatch]', '--applies-to' => 'data', '--scope' => 'standing']);
+        self::assertSame(0, $status);
+        if (!is_dir($this->root . '/var/ai-work')) {
+            mkdir($this->root . '/var/ai-work', 0775, true);
+        }
+        file_put_contents($this->root . '/' . CharterStore::PATH, '{"schema_version":"nope"}');
+
+        [$status, $out] = $this->decision('list', []);
+
+        self::assertSame(0, $status);
+        self::assertSame(1, $out['count']);
+        self::assertIsArray($out['decisions']);
+        self::assertSame(['data-as-patches'], array_column($out['decisions'], 'id'));
+        self::assertNull($out['owner_decides']);
+        self::assertIsString($out['charter_error']);
+        self::assertStringContainsString(CharterStore::PATH, $out['charter_error']);
     }
 }

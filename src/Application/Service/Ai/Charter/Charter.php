@@ -74,6 +74,18 @@ final readonly class Charter
         );
     }
 
+    /**
+     * What an agent asks the owner about before deciding: the owner's own
+     * list, the defaults while nobody was asked, nothing when they said none.
+     * Every other choice is the agent's to make and say.
+     *
+     * @return list<string>
+     */
+    public function ownerKeeps(): array
+    {
+        return $this->ownerDecides ?? self::DEFAULT_OWNER_DECIDES;
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {

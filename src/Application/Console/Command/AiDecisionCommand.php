@@ -7,6 +7,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStatus;
@@ -21,7 +22,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * The owner's decisions (ep-project-charter), kept as project data instead of
  * in one agent's memory: any agent reads them before asking the owner, and
- * records the answer after.
+ * records the answer after. `list` also says what the owner keeps for
+ * themselves (the charter's owner_decides): a matter there with no decision
+ * here is a question to ask, one outside it is the agent's to decide.
  *
  *   bin/semitexa ai:decision record --words="Так, випускай" --means="one stable release" --applies-to=release --scope=once
  *   bin/semitexa ai:decision list [--applies-to=release] [--all]
@@ -35,6 +38,9 @@ final class AiDecisionCommand extends BaseCommand
 
     #[InjectAsReadonly]
     protected DecisionStore $decisionStore;
+
+    #[InjectAsReadonly]
+    protected CharterStore $charterStore;
 
     public function __construct()
     {
@@ -124,11 +130,20 @@ final class AiDecisionCommand extends BaseCommand
                 && ($all || $d->status($now) === DecisionStatus::ACTIVE),
         ));
 
-        return $this->emit($output, [
+        $payload = [
             'filter' => ['applies_to' => $appliesTo !== '' ? $appliesTo : null, 'status' => $all ? 'all' : 'active'],
             'count' => count($decisions),
             'decisions' => array_map(static fn (Decision $d): array => $d->toArray($now), $decisions),
-        ]);
+            'owner_decides' => null,
+        ];
+        // A charter that does not read leaves the decisions readable; it is said.
+        try {
+            $payload['owner_decides'] = $this->charterStore->get()->ownerKeeps();
+        } catch (\RuntimeException $e) {
+            $payload['charter_error'] = $e->getMessage();
+        }
+
+        return $this->emit($output, $payload);
     }
 
     private function consume(InputInterface $input, OutputInterface $output, \DateTimeImmutable $now): int

@@ -10,6 +10,9 @@ use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Service\Ai\Charter\OwnerQuestions;
+use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStatus;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
@@ -52,6 +55,9 @@ final class AiMakeItCommand extends BaseCommand
 
     #[InjectAsReadonly]
     protected CharterStore $charterStore;
+
+    #[InjectAsReadonly]
+    protected DecisionStore $decisionStore;
 
     public function __construct()
     {
@@ -100,17 +106,19 @@ final class AiMakeItCommand extends BaseCommand
             $phase,
         );
         $interview = $plan->state === MakeItPlan::EMPTY ? self::runnable($questions) : null;
+        $ownerDecides = $this->ownerDecides();
+        $decisions = $this->decisions();
         $steps = $plan->steps(implode(' ', array_filter([
             'bin/semitexa ai:make-it',
             $withFramework ? '--with-framework' : null,
             $phase !== null ? '--phase=' . $phase->value : null,
             ...array_map(static fn (string $id): string => '--except=' . $id, $except),
-        ])));
+        ])), $ownerDecides, $decisions['applies_to'] ?? null);
         [$audits, $warning] = $this->audits();
         $line = BacklogProgress::of($tasks, $withFramework, $audits)->line();
 
         if ($input->isInteractive() && !(bool) $input->getOption('json')) {
-            return $this->print($output, $plan, $line, $steps, $interview, $warning);
+            return $this->print($output, $plan, $line, $steps, $interview, $warning, $questions['error'], $decisions['error'] ?? null);
         }
 
         $output->writeln(json_encode([
@@ -123,10 +131,51 @@ final class AiMakeItCommand extends BaseCommand
             'total' => $plan->total,
             'interview' => $interview,
             'steps' => $steps,
+            'owner_decides' => $ownerDecides,
+            // Beside approved work no interview says it, and owner_decides is null without a reason.
+            'charter_error' => $questions['error'],
+            'decisions' => $decisions,
             'warning' => $warning,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * What the agent asks the architect about; null when the charter cannot
+     * be read, which charter_error says.
+     *
+     * @return list<string>|null
+     */
+    private function ownerDecides(): ?array
+    {
+        try {
+            return $this->charterStore->get()->ownerKeeps();
+        } catch (\RuntimeException) {
+            return null;
+        }
+    }
+
+    /**
+     * What the architect has already decided, by what it speaks for: the
+     * decisions themselves are one ai:decision list away, and listing them all
+     * here would grow every agent's context by the whole log.
+     *
+     * @return array{active: int, applies_to: list<string>}|array{error: string}
+     */
+    private function decisions(): array
+    {
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        try {
+            $active = array_values(array_filter($this->decisionStore->list(), static fn (Decision $d): bool => $d->status($now) === DecisionStatus::ACTIVE));
+        } catch (\RuntimeException $e) {
+            // Said, never read as "the architect decided nothing".
+            return ['error' => $e->getMessage()];
+        }
+        $tags = array_values(array_unique(array_map(static fn (Decision $d): string => mb_strtolower($d->appliesTo), $active)));
+        sort($tags);
+
+        return ['active' => count($active), 'applies_to' => $tags];
     }
 
     /**
@@ -182,11 +231,17 @@ final class AiMakeItCommand extends BaseCommand
      * @param list<string> $steps
      * @param array<string, mixed>|null $interview
      */
-    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview, ?string $warning): int
+    private function print(OutputInterface $output, MakeItPlan $plan, string $line, array $steps, ?array $interview, ?string $warning, ?string $charterError, ?string $decisionsError): int
     {
         $text = [$plan->say(), $line];
         if ($warning !== null) {
             $text[] = 'Warning: ' . $warning;
+        }
+        if ($charterError !== null) {
+            $text[] = 'Charter cannot be read: ' . $charterError;
+        }
+        if ($decisionsError !== null) {
+            $text[] = 'Decisions cannot be read: ' . $decisionsError;
         }
         $next = $interview['next'] ?? null;
         if (is_array($next) && is_string($next['question'] ?? null) && is_string($next['record'] ?? null)) {
