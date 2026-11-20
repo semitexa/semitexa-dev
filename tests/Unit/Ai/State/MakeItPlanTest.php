@@ -287,4 +287,28 @@ final class MakeItPlanTest extends TestCase
         self::assertStringContainsString('is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id=tk-a --status=blocked', $steps);
         self::assertStringNotContainsString('and go on', $steps);
     }
+
+    public function test_the_steps_say_what_the_architect_keeps(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('x', ['spending money', 'anything public']));
+
+        self::assertStringContainsString('Ask the architect before you decide any of these, the charter keeps them (owner_decides): spending money; anything public.', $steps);
+        self::assertStringContainsString('the technical ones above all, is yours', $steps);
+    }
+
+    public function test_an_owner_who_keeps_nothing_leaves_every_decision_to_the_agent(): void
+    {
+        $steps = implode("\n", $this->plan([$this->task('tk-a')])->steps('x', []));
+
+        self::assertStringContainsString('Every decision is yours', $steps);
+        self::assertStringNotContainsString('Ask the architect before', $steps);
+    }
+
+    public function test_an_unread_charter_draws_no_line(): void
+    {
+        $steps = $this->plan([$this->task('tk-a')])->steps('x');
+
+        self::assertNotSame([], $steps);
+        self::assertSame([], array_values(array_filter($steps, static fn (string $s): bool => str_contains($s, 'owner_decides'))));
+    }
 }

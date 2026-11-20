@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiMakeItCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterInterview;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Service\Ai\Charter\SuccessSign;
@@ -349,5 +350,27 @@ final class AiMakeItCommandTest extends TestCase
         $result = $this->run_(['--with-framework' => true]);
         self::assertSame('work', $result['state']);
         self::assertStringContainsString('ai:make-it --with-framework again', implode("\n", $result['steps']));
+    }
+
+    public function test_work_names_what_the_architect_keeps_from_the_default_list(): void
+    {
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+
+        $result = $this->run_();
+
+        self::assertSame('work', $result['state']);
+        self::assertSame(Charter::DEFAULT_OWNER_DECIDES, $result['owner_decides']);
+        self::assertStringContainsString('owner_decides): ' . implode('; ', Charter::DEFAULT_OWNER_DECIDES) . '.', implode("\n", $result['steps']));
+    }
+
+    public function test_work_names_the_owners_own_list(): void
+    {
+        (new CharterStore())->save(new Charter(ownerDecides: ['the price list']));
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+
+        $result = $this->run_();
+
+        self::assertSame(['the price list'], $result['owner_decides']);
+        self::assertStringContainsString('owner_decides): the price list.', implode("\n", $result['steps']));
     }
 }

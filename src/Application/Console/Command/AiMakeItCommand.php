@@ -100,12 +100,13 @@ final class AiMakeItCommand extends BaseCommand
             $phase,
         );
         $interview = $plan->state === MakeItPlan::EMPTY ? self::runnable($questions) : null;
+        $ownerDecides = $this->ownerDecides();
         $steps = $plan->steps(implode(' ', array_filter([
             'bin/semitexa ai:make-it',
             $withFramework ? '--with-framework' : null,
             $phase !== null ? '--phase=' . $phase->value : null,
             ...array_map(static fn (string $id): string => '--except=' . $id, $except),
-        ])));
+        ])), $ownerDecides);
         [$audits, $warning] = $this->audits();
         $line = BacklogProgress::of($tasks, $withFramework, $audits)->line();
 
@@ -123,10 +124,26 @@ final class AiMakeItCommand extends BaseCommand
             'total' => $plan->total,
             'interview' => $interview,
             'steps' => $steps,
+            'owner_decides' => $ownerDecides,
             'warning' => $warning,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * What the agent asks the architect about; null when the charter cannot
+     * be read, which the interview already says.
+     *
+     * @return list<string>|null
+     */
+    private function ownerDecides(): ?array
+    {
+        try {
+            return $this->charterStore->get()->ownerKeeps();
+        } catch (\RuntimeException) {
+            return null;
+        }
     }
 
     /**
