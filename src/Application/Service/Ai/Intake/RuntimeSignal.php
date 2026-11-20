@@ -106,7 +106,8 @@ final readonly class RuntimeSignal
             preg_quote(self::NEXT_STEP_PREFIX, '~'),
             '\d+',
             'times?',
-            '\S+',
+            // The log is LOG_FILE as configured, spaces and all; ", from " still ends it.
+            '.+?',
             $time,
             $time,
             $time,

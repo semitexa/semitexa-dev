@@ -224,6 +224,20 @@ final class AiWorkIntakeCommandTest extends TestCase
         self::assertNull($task->approval);
     }
 
+    public function test_a_log_path_with_a_space_still_reads_as_the_intakes_own(): void
+    {
+        putenv('LOG_FILE=var/log/app errors.log');
+        $spaced = $this->root . '/var/log/app errors.log';
+        file_put_contents($spaced, $this->unhandled(at: '2026-11-20T10:00:00+00:00'));
+        $id = $this->onlyId($this->written());
+        file_put_contents($spaced, $this->unhandled(at: '2026-11-20T12:00:00+00:00'), FILE_APPEND);
+
+        $again = $this->written();
+
+        self::assertSame($id, $this->onlyId($again, 'seen_again'), 'the generated next step is still recognised, so the count moves');
+        self::assertStringContainsString('seen 2 times in var/log/app errors.log, from 2026-11-20T10:00:00+00:00 to 2026-11-20T12:00:00+00:00.', (string) (new TaskStore())->get($id)->nextStep);
+    }
+
     public function test_a_task_someone_approved_or_wrote_on_is_left_as_it_is(): void
     {
         $this->log($this->unhandled(), $this->unhandled(class: 'Shop\\NoPrice', file: 'src/modules/Shop/Price.php:9'));
