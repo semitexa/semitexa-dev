@@ -12,6 +12,9 @@ use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterInterview;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Service\Ai\Charter\SuccessSign;
+use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
@@ -68,7 +71,7 @@ final class AiMakeItCommandTest extends TestCase
 
     private function tester(AiMakeItCommand $command): CommandTester
     {
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), EpicStore::class => $this->epics(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), EpicStore::class => $this->epics(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore(), DecisionStore::class => new DecisionStore()]));
 
         return new CommandTester($command);
     }
@@ -372,5 +375,37 @@ final class AiMakeItCommandTest extends TestCase
 
         self::assertSame(['the price list'], $result['owner_decides']);
         self::assertStringContainsString('owner_decides): the price list.', implode("\n", $result['steps']));
+    }
+
+    public function test_work_says_what_the_architect_has_already_decided(): void
+    {
+        $store = new DecisionStore();
+        $store->save(new Decision('ship-weekly', 'Так, щотижня', 'one release a week', 'Release', DecisionScope::STANDING, '2026-11-01T00:00:00+00:00'));
+        $store->save(new Decision('no-blog', 'Ні', 'no blog posts', 'docs', DecisionScope::STANDING, '2026-11-01T00:00:00+00:00', revoked: true));
+        $store->save(new Decision('old-freeze', 'Так', 'a freeze', 'git', DecisionScope::STANDING, '2026-11-01T00:00:00+00:00', expiresAt: '2026-11-02T00:00:00+00:00'));
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+
+        $result = $this->run_();
+
+        self::assertSame(['active' => 1, 'applies_to' => ['release']], $result['decisions'], 'a revoked or expired decision answers nothing');
+        self::assertIsArray($result['steps']);
+        self::assertStringContainsString('(active now on: release)', implode("\n", $result['steps']));
+    }
+
+    public function test_a_decision_store_that_does_not_read_is_said_and_the_loop_goes_on(): void
+    {
+        mkdir($this->root . '/' . DecisionStore::SUBDIR, 0775, true);
+        file_put_contents($this->root . '/' . DecisionStore::SUBDIR . '/broken.json', '{"schema_version":');
+        $this->file('tk-a', ['src/modules/Shop/X.php']);
+
+        $result = $this->run_();
+
+        self::assertSame('work', $result['state']);
+        self::assertIsArray($result['decisions']);
+        self::assertSame(['error'], array_keys($result['decisions']), 'only why: never an empty list that reads as no decisions');
+        self::assertIsString($result['decisions']['error']);
+        self::assertStringContainsString('broken.json', $result['decisions']['error']);
+        self::assertIsArray($result['steps']);
+        self::assertStringContainsString('ai:decision list --applies-to=<tag>. An active decision answers it', implode("\n", $result['steps']));
     }
 }
