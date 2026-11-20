@@ -69,6 +69,12 @@ Default assumptions:
   (`upgrade-notes-removed` writes them again after `bc-gate`, adding what the gate allowed — `@api`
   parts removed after their 90-day deprecation — under "Removed after the deprecation window";
   the release report links the file)
+- **the `required-settings` stage writes what the release newly requires** into the same file,
+  under "New required settings" and "New doctor checks" ("none" when there are none): the
+  `#[AsDoctorCheck]` names and `settings` a package declares now and did not at its previous tag.
+  A gate: it fails when a newly named setting is not in that package's `CHANGELOG.md`, or when
+  something could not be read (`required-settings-notes` writes the sections again after
+  `upgrade-notes-removed`, which rewrites the file)
 - **the `bc-gate` stage holds the stability contract** (docs: get-started/stability). Per package
   it runs roave/backward-compatibility-check against the package's previous tag, inside the
   clone's app container (roave needs bcmath and intl, which the image carries since 2026-10-30;

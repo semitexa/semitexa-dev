@@ -150,6 +150,12 @@ run_soft_stage "new-public-api" php "$SCRIPT_DIR/release-new-public-api.php"
 # stability contract promises a deprecated @api part 90 days of warning, and a
 # @deprecated tag in a vendor file warns only whoever opens that file.
 run_soft_stage "upgrade-notes" php "$SCRIPT_DIR/release-upgrade-notes.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md"
+# The settings and doctor checks this release newly requires, appended to the
+# same notes; a newly named setting that its package's CHANGELOG does not
+# mention stops the cut. On 2026-11-20 a consumer's prod returned 500 for a
+# missing APP_SECRET that no CHANGELOG had named for three weeks
+# (tk-new-required-setting-reaches-prod-silently).
+run_soft_stage "required-settings" php "$SCRIPT_DIR/release-required-settings.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md"
 # The shipped capability index is generated in the monorepo and travels inside
 # semitexa/dev. Without this stage a package that gained a capability could be
 # released while the index still described the previous shape — and an index
@@ -193,6 +199,8 @@ run_stage "bc-gate" env SEMITEXA_BC_CHECK="$SCRIPT_DIR/release-bc-check-in-clone
 # The notes again, now with what the gate allowed: an @api part removed after
 # its 90-day deprecation is the one change a user must act on (tk-stab-upgrade-notes).
 run_stage "upgrade-notes-removed" php "$SCRIPT_DIR/release-upgrade-notes.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md" --removed="$RELEASE_STATE_DIR/bc-gate.log"
+# upgrade-notes-removed rewrote the file: the two sections go back under it.
+run_stage "required-settings-notes" php "$SCRIPT_DIR/release-required-settings.php" --version="$RELEASE_VERSION" --write="$REPORT_DIR/UPGRADE-${RELEASE_VERSION}.md"
 # A release run must not accept a skipped check. With this set, a missing node
 # fails RenderParityTest instead of skipping it, so the clone can never again
 # report parity it did not measure. docker-compose.test.yml passes it through to
