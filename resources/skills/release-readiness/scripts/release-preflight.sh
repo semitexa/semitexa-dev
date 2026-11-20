@@ -92,6 +92,11 @@ on_exit() {
     if [ "$status" -ne 0 ]; then
         write_failure_report "$CURRENT_STAGE" "$(report_failure_reason)"
         printf '\nRELEASE READINESS: FAIL\n'
+        # No finalize follows a failed preflight, and finalize is what starts the
+        # dev stack the stop stage took down (the two share host ports). A failed
+        # run left the workspace without its app until someone ran server:start
+        # (20.11). The script does nothing when dev was not running.
+        "$SCRIPT_DIR/release-restore-dev.sh" || warn "Could not restart the dev stack: run bin/semitexa server:start in the workspace"
     fi
 }
 
