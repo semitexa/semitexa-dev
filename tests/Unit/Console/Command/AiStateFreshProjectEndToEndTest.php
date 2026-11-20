@@ -10,6 +10,7 @@ use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiAuditCommand;
 use Semitexa\Dev\Application\Console\Command\AiStateCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Console\Command\AiWorkApproveCommand;
 use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
@@ -149,14 +150,14 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
     private function audit(array $input): void
     {
         $command = new AiAuditCommand();
-        PropertyInjector::inject($command, new ArrayContainer([AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $this->runCommand($command, $input);
     }
 
     private function line(): string
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $result = json_decode($this->runCommand($command, []), true);
         self::assertIsArray($result);
 

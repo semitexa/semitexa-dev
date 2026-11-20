@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiStateCommand;
+use Semitexa\Dev\Application\Service\Ai\Charter\Charter;
+use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
+use Semitexa\Dev\Application\Service\Ai\Charter\SuccessSign;
 use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
@@ -54,7 +57,7 @@ final class AiStateBacklogTest extends TestCase
     private function show(array $input = []): array
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $tester = new CommandTester($command);
         self::assertSame(0, $tester->execute($input, ['interactive' => false]));
         $result = json_decode($tester->getDisplay(), true);
@@ -104,12 +107,78 @@ final class AiStateBacklogTest extends TestCase
     public function test_a_person_gets_the_line_alone(): void
     {
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $tester = new CommandTester($command);
 
         $tester->execute([], ['interactive' => true, 'decorated' => false]);
 
         self::assertSame('work not measured · right not measured · fast not measured', trim($tester->getDisplay()));
+    }
+
+    private function charter(SuccessSign ...$signs): void
+    {
+        (new CharterStore())->save(new Charter(goal: 'a shop', signs: array_values($signs)));
+    }
+
+    public function test_the_charter_signs_stand_beside_the_numbers_and_leave_the_percent_alone(): void
+    {
+        $this->file('tk-project', ['src/modules/Shop/X.php'], TaskStatus::DONE);
+        $this->file('tk-open', ['src/modules/Shop/Y.php']);
+        $before = $this->show();
+        $this->charter(new SuccessSign('s1', 'a buyer pays in under a minute'), new SuccessSign('s2', 'p95 under 50 ms', 'requests.p95'));
+
+        $result = $this->show();
+
+        self::assertSame($before['line'], $result['line'], 'signs never enter the percent');
+        self::assertSame($before['backlog'], $result['backlog']);
+        self::assertSame([
+            ['id' => 's1', 'text' => 'a buyer pays in under a minute', 'kind' => 'judged', 'source' => null],
+            ['id' => 's2', 'text' => 'p95 under 50 ms', 'kind' => 'computed', 'source' => 'requests.p95'],
+        ], $result['signs']);
+        self::assertArrayNotHasKey('charter_error', $result);
+    }
+
+    public function test_no_charter_is_no_signs(): void
+    {
+        $result = $this->show();
+
+        self::assertSame('work not measured · right not measured · fast not measured', $result['line']);
+        self::assertArrayHasKey('signs', $result, 'no charter still answers, with no signs');
+        self::assertSame([], $result['signs']);
+        self::assertArrayNotHasKey('charter_error', $result);
+    }
+
+    public function test_a_person_reads_the_signs_under_the_line(): void
+    {
+        $this->charter(new SuccessSign('s1', 'a buyer pays in under a minute'), new SuccessSign('s2', 'p95 under 50 ms', 'requests.p95'));
+        $command = new AiStateCommand();
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => new TaskStore(), AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
+        $tester = new CommandTester($command);
+
+        $tester->execute([], ['interactive' => true, 'decorated' => false]);
+
+        self::assertSame(
+            "work not measured · right not measured · fast not measured\n"
+            . "signs of success (the charter's; not in the percent):\n"
+            . "  s1 a buyer pays in under a minute (judged)\n"
+            . '  s2 p95 under 50 ms (computed from requests.p95)',
+            trim($tester->getDisplay()),
+        );
+    }
+
+    public function test_a_charter_that_does_not_read_is_said_and_the_numbers_stand(): void
+    {
+        $this->file('tk-project', ['src/modules/Shop/X.php'], TaskStatus::DONE);
+        is_dir($this->root . '/var/ai-work') || mkdir($this->root . '/var/ai-work', 0775, true);
+        file_put_contents($this->root . '/' . CharterStore::PATH, '{"schema_version":"nope"}');
+
+        $result = $this->show();
+
+        self::assertIsString($result['line']);
+        self::assertStringStartsWith('work 100% (1/1)', $result['line']);
+        self::assertSame([], $result['signs']);
+        self::assertIsString($result['charter_error']);
+        self::assertStringContainsString(CharterStore::PATH, $result['charter_error']);
     }
 
     public function test_a_task_file_that_does_not_read_is_an_error_not_a_number(): void
@@ -118,7 +187,7 @@ final class AiStateBacklogTest extends TestCase
         $this->file('tk-a', []);
         file_put_contents($store->pathFor('tk-b'), (string) json_encode(['id' => 'tk-b', 'status' => 'bogus']));
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $tester = new CommandTester($command);
 
         self::assertSame(1, $tester->execute([], ['interactive' => false]));
@@ -131,7 +200,7 @@ final class AiStateBacklogTest extends TestCase
         $this->file('tk-a', []);
         file_put_contents($store->pathFor('tk-b'), '{"id":"tk-b"');
         $command = new AiStateCommand();
-        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore()]));
+        PropertyInjector::inject($command, new ArrayContainer([TaskStore::class => $store, AuditStore::class => new AuditStore(), CharterStore::class => new CharterStore()]));
         $tester = new CommandTester($command);
 
         self::assertSame(1, $tester->execute([], ['interactive' => false]));
