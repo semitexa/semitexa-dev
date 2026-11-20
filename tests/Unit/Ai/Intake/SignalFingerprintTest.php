@@ -86,6 +86,12 @@ final class SignalFingerprintTest extends TestCase
         );
     }
 
+    public function test_an_apostrophe_in_a_word_does_not_hide_a_quoted_value(): void
+    {
+        self::assertSame("don't use password=V here", SignalFingerprint::normalise("don't use password='my secret' here"));
+        self::assertSame("it's Q again", SignalFingerprint::normalise("it's 'alice' again"));
+    }
+
     public function test_the_site_is_the_file_inside_the_project_without_its_line(): void
     {
         self::assertSame('src/modules/Shop/Handler.php', SignalFingerprint::site('/app/src/modules/Shop/Handler.php:42', '/app'));

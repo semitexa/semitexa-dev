@@ -26,7 +26,8 @@ final class SignalFingerprint
     private const WIDE = [
         '~\b[a-z][a-z0-9+.-]*://\S+~i' => 'URL',
         '~[\w.+-]+@[\w-]+(?:\.[\w-]+)+~' => 'EMAIL',
-        '~"[^"]*"|\'[^\']*\'~' => 'Q',
+        // An apostrophe inside a word ("don't") opens no quote: it would pair with the next one and leave a quoted value out.
+        '~"[^"]*"|(?<!\w)\'[^\']*\'~' => 'Q',
     ];
 
     /** A quote the cut left open: its value ran past the head, so all that is left of it goes. */
