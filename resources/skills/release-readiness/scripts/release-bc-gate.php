@@ -240,7 +240,7 @@ function gitWith(string $dir, array $arguments, array $env, string $stdin, ?int 
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
         null,
-        $env + getenv(),
+        $env + withoutRepositoryLocation(getenv()),
     );
     if (!is_resource($process)) {
         $said = 'git could not be started';
@@ -257,6 +257,24 @@ function gitWith(string $dir, array $arguments, array $env, string $stdin, ?int 
     $status = proc_close($process);
 
     return trim($output);
+}
+
+/**
+ * This process's environment without git's repository-location variables. Set
+ * by a hook or a caller's own git, GIT_DIR or GIT_OBJECT_DIRECTORY sends
+ * `git -C <package>` to another repository or object store: the commit is
+ * written where roave, cloning the package, never finds it (review, dev#292).
+ *
+ * @param array<string, string> $env
+ * @return array<string, string>
+ */
+function withoutRepositoryLocation(array $env): array
+{
+    foreach (['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE', 'GIT_CEILING_DIRECTORIES', 'GIT_DISCOVERY_ACROSS_FILESYSTEM'] as $name) {
+        unset($env[$name]);
+    }
+
+    return $env;
 }
 
 /**

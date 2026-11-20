@@ -157,8 +157,32 @@ final class BcGateTest extends TestCase
         );
 
         // The same tag gives the same commit: nothing piles up in the repository run after run.
-        $this->gate([self::BREAKS[0]]);
-        self::assertStringEndsWith("--from={$from} --to=HEAD --format=json\n", (string) file_get_contents($this->root . '/roave.args'));
+        // A fresh record, so a second run that never reached roave cannot pass on the first's (review, dev#292).
+        unlink($this->root . '/roave.args');
+        [$again] = $this->gate([self::BREAKS[0]]);
+        self::assertSame(1, $again);
+        self::assertSame("--from={$from} --to=HEAD --format=json\n", (string) file_get_contents($this->root . '/roave.args'));
+    }
+
+    /**
+     * Review on dev#292: an inherited GIT_OBJECT_DIRECTORY, with the package's
+     * own objects as an alternate, lets every read succeed and sends the write
+     * elsewhere; roave, cloning the package, would get a commit it cannot find.
+     */
+    #[Test]
+    public function an_inherited_object_store_does_not_take_the_commit_out_of_the_package(): void
+    {
+        $this->released();
+        $dir = $this->root . '/packages/semitexa-core';
+        $elsewhere = $this->root . '/elsewhere-objects';
+        mkdir($elsewhere, 0777, true);
+
+        [$status] = $this->gate([self::BREAKS[0]], env: 'GIT_OBJECT_DIRECTORY=' . escapeshellarg($elsewhere) . ' GIT_ALTERNATE_OBJECT_DIRECTORIES=' . escapeshellarg($dir . '/.git/objects') . ' ');
+
+        self::assertSame(1, $status);
+        self::assertSame(1, preg_match('/--from=([0-9a-f]{40,64}) /', (string) file_get_contents($this->root . '/roave.args'), $m));
+        exec('git -C ' . escapeshellarg($dir) . ' cat-file -e ' . escapeshellarg($m[1] . '^{commit}') . ' 2>&1', $out, $found);
+        self::assertSame(0, $found, 'the commit is in the package repository: ' . implode("\n", $out));
     }
 
     /** A tag whose autoload already reads src as a classmap needs nothing: roave is given the tag. */
