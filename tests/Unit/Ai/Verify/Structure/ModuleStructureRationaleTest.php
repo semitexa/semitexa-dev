@@ -27,7 +27,7 @@ final class ModuleStructureRationaleTest extends TestCase
                 $codes[] = $value;
             }
         }
-        self::assertCount(13, $codes, 'a code was added or removed: give it a rationale and update this count');
+        self::assertCount(14, $codes, 'a code was added or removed: give it a rationale and update this count');
 
         $wrong = [];
         foreach ($codes as $code) {

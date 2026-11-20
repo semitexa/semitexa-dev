@@ -15,6 +15,8 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\Structure;
 final readonly class ModuleStructureViolation
 {
     public const SEVERITY_ERROR = 'error';
+    /** Reported, never fails the run: the rule is announced one release before it becomes an error. */
+    public const SEVERITY_WARNING = 'warning';
 
     public const CODE_UNKNOWN_DIRECTORY            = 'module_structure.unknown_directory';
     public const CODE_INVALID_LAYER                = 'module_structure.invalid_layer';
@@ -22,6 +24,8 @@ final readonly class ModuleStructureViolation
     public const CODE_INVALID_NAMESPACE            = 'module_structure.invalid_namespace';
     public const CODE_UNDECLARED_PATH              = 'module_structure.undeclared_path';
     public const CODE_COMMAND_WRONG_LOCATION       = 'module_structure.command_wrong_location';
+    /** A scheduled job (#[AsScheduledJob] / ScheduledJobInterface) outside Application/Job/. A warning for a job that already exists, an error for a file the change adds. */
+    public const CODE_JOB_WRONG_LOCATION           = 'module_structure.job_wrong_location';
     public const CODE_INVALID_ROOT_FILE            = 'module_structure.invalid_root_file';
     public const CODE_MISSING_REQUIRED_PATH        = 'module_structure.missing_required_path';
     /** Demo / sandbox / playground / example / fake / experimental folder appears inside a production package. */
@@ -50,6 +54,7 @@ final readonly class ModuleStructureViolation
         self::CODE_INVALID_NAMESPACE => 'Why: a namespace that does not match the path breaks PSR-4 autoloading of the class, which shows up only when something first references it. Policy since 2026-04-30; no incident on record.',
         self::CODE_UNDECLARED_PATH => 'Why: a path with no rule would be skipped, and a skipped path is validated by nothing while looking validated. Policy since 2026-04-30 (no implicit allow); no incident on record.',
         self::CODE_COMMAND_WRONG_LOCATION => 'Why: #[AsCommand] classes are application orchestration and live under Application/Console/Command/ in packages and modules alike. Learned 2026-04-30: an attempt to move them to bare src/Console/Command/ was rejected by the operator; one location, one mental model.',
+        self::CODE_JOB_WRONG_LOCATION => 'Why: a scheduled job is an entry point the scheduler worker calls, not a service other code calls, so it lives under Application/Job/<Feature>/ where a reader looks for what runs on a schedule. Learned 2026-11-16: every framework job sat under Application/Service/ and agents kept copying that; the operator approved one home, a warning for existing jobs first, an error for new files at once.',
         self::CODE_INVALID_ROOT_FILE => 'Why: the package and code roots hold only the files the envelope declares; anything else at the root is a file with no layer and no owner. Policy since 2026-04-30; no incident on record.',
         self::CODE_MISSING_REQUIRED_PATH => 'Why: composer.json and src/ are what makes a directory a package; without them the installer and the autoloader do not see it. Policy since 2026-04-30; no incident on record.',
         self::CODE_PRODUCTION_PACKAGE_POLLUTION => 'Why: a production package ships to every consumer, so Demo, Sandbox, Fake or Experimental code inside it is installed and discovered in their applications too. Local demos belong under src/modules/. Policy since 2026-04-30; no incident on record.',
@@ -97,6 +102,11 @@ final readonly class ModuleStructureViolation
     public function rationale(): string
     {
         return self::RATIONALES[$this->code] ?? '';
+    }
+
+    public function isError(): bool
+    {
+        return $this->severity !== self::SEVERITY_WARNING;
     }
 
     /** The rationale as the tail of a one-line signal, or nothing. */

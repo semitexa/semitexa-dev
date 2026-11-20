@@ -10,8 +10,6 @@ use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunner;
 use Semitexa\Dev\Application\Service\Ai\Verify\Phpstan\PhpstanRunResult;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\DetectedModule;
 use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureSpecLoader;
-use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureValidator;
-use Semitexa\Dev\Application\Service\Ai\Verify\Structure\ModuleStructureViolation;
 use Semitexa\Dev\Application\Service\Capability\CapabilityIndex;
 use Semitexa\Dev\Application\Service\Capability\FrameworkCapabilityCatalog;
 use Symfony\Component\Console\Application;
@@ -242,29 +240,7 @@ final class VerificationExecutor
             return $this->skipped($target, 'module_structure spec load failed: ' . SignalText::compress($e->getMessage()));
         }
 
-        $validator = new ModuleStructureValidator($this->projectRoot, $spec);
-        $violations = $validator->validate($module);
-
-        $diagnostics = array_map(
-            static fn(ModuleStructureViolation $v) => $v->toArray(),
-            $violations,
-        );
-
-        $errorCount = count($violations);
-        if ($errorCount === 0) {
-            $signal = "module_structure {$rel} → 0 violations";
-        } else {
-            $first = $violations[0];
-            $signal = "module_structure {$rel} → {$errorCount} error(s); first: {$first->code} {$first->path}" . $first->whyClause();
-        }
-
-        return new VerificationResult(
-            target:      $target,
-            status:      $errorCount === 0 ? VerificationResult::STATUS_PASS : VerificationResult::STATUS_FAIL,
-            exitCode:    $errorCount === 0 ? 0 : 1,
-            signal:      $signal,
-            diagnostics: $diagnostics,
-        );
+        return (new ModuleStructureCheck($this->projectRoot))->run($target, $module, $spec);
     }
 
     private function runLiveTenancy(VerificationTarget $target): VerificationResult

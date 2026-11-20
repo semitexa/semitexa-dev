@@ -19,7 +19,7 @@ final class RuleCatalogTest extends TestCase
         $families = array_count_values((new RuleCatalog($root))->rules());
 
         self::assertGreaterThanOrEqual(28, $families['phpstan'] ?? 0);
-        self::assertSame(13, $families['module_structure'] ?? 0);
+        self::assertSame(14, $families['module_structure'] ?? 0); // 14th: job_wrong_location (2026-11-20)
         self::assertSame(2, $families['live_tenancy'] ?? 0);
         self::assertSame(9, $families['ratchets'] ?? 0); // 6th: JsonOutputIsRawTest (2026-10-07); 7th: RawQueryOutsideTransactionRatchetTest (2026-11-11); 8th: VerifyLintSetIsDeclaredTest (2026-11-14); 9th: SemanticRuleCountsRecordTest (2026-11-19)
         foreach (['lint:di', 'lint:test-integrity', 'lint:var-artifacts', 'docs:instructions', 'docs:claims'] as $gate) {

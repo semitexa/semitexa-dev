@@ -130,10 +130,11 @@ class ModuleStructureValidatorTest extends TestCase
         $this->assertEmpty($violations, $this->renderViolations($violations));
     }
 
-    public function test_scheduled_job_under_application_service_still_passes(): void
+    public function test_a_job_named_file_under_application_service_that_is_no_scheduled_job_passes(): void
     {
-        // Application/Job is additive: the older home under Application/Service
-        // (feature grouping) carries no violation.
+        // job_wrong_location reads what the class declares, not the basename:
+        // a *Job.php that is no #[AsScheduledJob] / ScheduledJobInterface class
+        // stays where it is. The scheduled-job cases: ScheduledJobPlacementTest.
         $this->scaffoldModule('Hello', [
             'Application/Service/Job',
         ]);
