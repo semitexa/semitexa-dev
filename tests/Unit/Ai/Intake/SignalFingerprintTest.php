@@ -30,6 +30,39 @@ final class SignalFingerprintTest extends TestCase
         self::assertNotSame($one, SignalFingerprint::of('queue', 'Job 7 failed', 'Shop\\OutOfStock', 'src/modules/Shop/Handler.php'));
     }
 
+    public function test_a_credential_after_its_name_or_a_long_key_is_normalised_away(): void
+    {
+        self::assertSame('Bearer V rejected', SignalFingerprint::normalise('Bearer abcdefghijklmnopqrstuv rejected'));
+        self::assertSame('password V', SignalFingerprint::normalise('password: hunter2'));
+        self::assertSame('key T refused', SignalFingerprint::normalise('key sk_live_abcdefghijklmnop refused'));
+        self::assertSame('Login failed for user=V password=V', SignalFingerprint::normalise('Login failed for user=bob password=hunter2'));
+        self::assertSame('ConstraintViolationException thrown', SignalFingerprint::normalise('ConstraintViolationException thrown'), 'a class name is not a key');
+    }
+
+    public function test_only_the_head_of_a_long_message_is_read(): void
+    {
+        $long = str_repeat('ab-', 70000);
+
+        $normalised = SignalFingerprint::normalise($long);
+
+        self::assertNotSame('', $normalised);
+        self::assertLessThanOrEqual(SignalFingerprint::MAX_MESSAGE, strlen($normalised));
+        self::assertSame(SignalFingerprint::normalise(substr($long, 0, SignalFingerprint::MAX_MESSAGE)), $normalised);
+    }
+
+    public function test_with_a_class_and_a_file_the_message_does_not_split_one_defect(): void
+    {
+        self::assertSame(
+            SignalFingerprint::of('pipeline', 'User john not found', 'App\\UserMissing', 'src/modules/Users/Find.php'),
+            SignalFingerprint::of('pipeline', 'User mary not found', 'App\\UserMissing', 'src/modules/Users/Find.php'),
+        );
+        self::assertNotSame(
+            SignalFingerprint::of('ui', 'Dashboard widget failed', null, null),
+            SignalFingerprint::of('ui', 'Command palette source failed', null, null),
+            'without a class and a file the message is all there is to tell them apart',
+        );
+    }
+
     public function test_the_site_is_the_file_inside_the_project_without_its_line(): void
     {
         self::assertSame('src/modules/Shop/Handler.php', SignalFingerprint::site('/app/src/modules/Shop/Handler.php:42', '/app'));

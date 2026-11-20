@@ -13,30 +13,42 @@ namespace Semitexa\Dev\Application\Service\Ai\Intake;
  * checkout and after the line it sits on moves.
  *
  * The exception's own message is left out on purpose: it is where a request's
- * values, and so its secrets, end up.
+ * values, and so its secrets, end up. So is the logger's message once the
+ * class and the file say where the error is: a logger that writes
+ * $e->getMessage() there would split one defect into one idea per user.
  */
 final class SignalFingerprint
 {
+    /** Only the head of a message is read: the title shows less, and a long one made the patterns slow. */
+    public const MAX_MESSAGE = 500;
+
     /** Applied in order: the wider shapes first, bare digits last. */
     private const NORMALISE = [
         '~\b[a-z][a-z0-9+.-]*://\S+~i' => 'URL',
         '~[\w.+-]+@[\w-]+(?:\.[\w-]+)+~' => 'EMAIL',
         '~"[^"]*"|\'[^\']*\'~' => 'Q',
         '~\b([A-Za-z_][\w-]*)=\S+~' => '$1=V',
+        // A credential after its name, written with a colon or a space: "Bearer <token>", "password: <it>".
+        '~\b(bearer|basic|token|secret|password|passwd|pwd|api[_-]?key|authorization|cookie)(\s*:\s*|\s+)(?!V\b)\S+~i' => '$1 V',
         '~\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b~i' => 'ID',
         '~\b(?:[a-z0-9-]+\.)*[a-z0-9-]+:\d{2,5}\b~i' => 'HOST',
         '~\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}\b~' => 'T',
+        // A long key with no digit in it, joined by underscores or hyphens: sk_live_..., session ids.
+        '~\b(?=[A-Za-z0-9_-]*[_-])[A-Za-z0-9_-]{24,}\b~' => 'T',
         '~\b[0-9a-f]{8,}\b~i' => 'H',
         '~\d+~' => 'N',
     ];
 
     public static function of(string $channel, string $message, ?string $exception, ?string $site): string
     {
-        return sha1(implode("\n", [$channel, self::normalise($message), $exception ?? '', $site ?? '']));
+        $message = $exception !== null && $site !== null ? '' : self::normalise($message);
+
+        return sha1(implode("\n", [$channel, $message, $exception ?? '', $site ?? '']));
     }
 
     public static function normalise(string $text): string
     {
+        $text = mb_strcut($text, 0, self::MAX_MESSAGE, 'UTF-8');
         $text = (string) preg_replace(array_keys(self::NORMALISE), array_values(self::NORMALISE), $text);
 
         return trim((string) preg_replace('/\s+/', ' ', $text));
