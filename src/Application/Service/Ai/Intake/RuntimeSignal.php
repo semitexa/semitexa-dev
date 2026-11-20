@@ -96,22 +96,23 @@ final readonly class RuntimeSignal
      * its last: only the count, the log and the times may differ. A word
      * added before it, after it or inside it makes it someone's note.
      */
-    public static function wroteNextStep(string $taskId, ?string $nextStep): bool
+    public static function wroteNextStep(string $taskId, ?string $nextStep, string $log): bool
     {
         $id = preg_quote($taskId, '~');
-        // A time is the log's own text: empty when the entry had none, and some loggers put a space in it.
-        $time = '\S*(?: \S+)?';
+        // A time as loggers write it (ISO 8601, a space for the T allowed), or none: no free word fits in.
+        $time = '(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?';
         $pattern = sprintf(
             preg_quote(self::NEXT_STEP, '~'),
             preg_quote(self::NEXT_STEP_PREFIX, '~'),
             '\d+',
             'times?',
-            // The log is LOG_FILE as configured, spaces and all; ", from " still ends it.
-            '.+?',
+            // The log this run reads, exactly: a note written into that field is no longer the intake's.
+            preg_quote($log, '~'),
             $time,
             $time,
             $time,
-            '(?: --grep=\S+)?',
+            // The grep is an exception's short class name, nothing more.
+            '(?: --grep=[A-Za-z_][A-Za-z0-9_]*)?',
             $id,
             $id,
         );

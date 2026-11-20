@@ -92,6 +92,12 @@ final class SignalFingerprintTest extends TestCase
         self::assertSame("it's Q again", SignalFingerprint::normalise("it's 'alice' again"));
     }
 
+    public function test_a_url_in_quotes_leaves_the_next_quoted_value_to_the_quote_rule(): void
+    {
+        self::assertSame('Failed Q for user Q', SignalFingerprint::normalise('Failed "http://a/b" for user "bob smith"'));
+        self::assertSame('Row bQ rejected', SignalFingerprint::normalise("Row b'bob smith' rejected"));
+    }
+
     public function test_the_site_is_the_file_inside_the_project_without_its_line(): void
     {
         self::assertSame('src/modules/Shop/Handler.php', SignalFingerprint::site('/app/src/modules/Shop/Handler.php:42', '/app'));

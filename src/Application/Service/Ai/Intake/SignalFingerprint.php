@@ -24,10 +24,12 @@ final class SignalFingerprint
 
     /** Applied in order: the wider shapes first, bare digits last. */
     private const WIDE = [
-        '~\b[a-z][a-z0-9+.-]*://\S+~i' => 'URL',
+        // A URL ends at a quote too: "http://a/b" must leave its closing quote to the quote rule.
+        '~\b[a-z][a-z0-9+.-]*://[^\s"\']+~i' => 'URL',
         '~[\w.+-]+@[\w-]+(?:\.[\w-]+)+~' => 'EMAIL',
-        // An apostrophe inside a word ("don't") opens no quote: it would pair with the next one and leave a quoted value out.
-        '~"[^"]*"|(?<!\w)\'[^\']*\'~' => 'Q',
+        // A single-quoted value ends where no word goes on: an apostrophe inside a word ("don't") then
+        // pairs with nothing, and a prefixed quote (b'...') is still a quote.
+        '~"[^"]*"|\'[^\']*\'(?!\w)~' => 'Q',
     ];
 
     /** A quote the cut left open: its value ran past the head, so all that is left of it goes. */

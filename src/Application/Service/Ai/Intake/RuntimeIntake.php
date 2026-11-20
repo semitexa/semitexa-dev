@@ -78,7 +78,7 @@ final class RuntimeIntake
                 $result['closed'][] = $row + ['status' => $task->status->value];
                 continue;
             }
-            if (!self::untouched($task)) {
+            if (!self::untouched($task, $log)) {
                 $result['kept'][] = $row + ['status' => $task->status->value, 'approved' => $task->isApproved()];
                 continue;
             }
@@ -90,7 +90,7 @@ final class RuntimeIntake
             $result['seen_again'][] = $row;
             if ($write) {
                 // Checked again under the lock: an approval may land between the read and the write.
-                $this->taskStore->change($id, static fn (Task $current): Task => self::untouched($current) ? $current->with(nextStep: $nextStep, updatedAt: $now) : $current);
+                $this->taskStore->change($id, static fn (Task $current): Task => self::untouched($current, $log) ? $current->with(nextStep: $nextStep, updatedAt: $now) : $current);
             }
         }
 
@@ -98,11 +98,11 @@ final class RuntimeIntake
     }
 
     /** An idea as the intake filed it: unapproved, not taken, its next step the intake's to the last word. */
-    private static function untouched(Task $task): bool
+    private static function untouched(Task $task, string $log): bool
     {
         return $task->approval === null
             && $task->status === TaskStatus::NEW
-            && RuntimeSignal::wroteNextStep($task->id, $task->nextStep);
+            && RuntimeSignal::wroteNextStep($task->id, $task->nextStep, $log);
     }
 
     private function ensureEpic(string $epicId, string $now): bool
