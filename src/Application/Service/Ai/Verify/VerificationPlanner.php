@@ -287,6 +287,7 @@ final class VerificationPlanner
             // that happens to start with the word — a file dragged into a rule
             // it has nothing to do with.
             if (str_starts_with($path, 'packages/semitexa-installer/scaffold/')
+                || $path === 'packages/semitexa-installer/resources/scaffold-manifest.json'
                 || str_starts_with($path, 'packages/semitexa-update/resources/scaffold/')
                 || $path === 'packages/semitexa-update/resources/scaffold-manifest.json'
                 || str_starts_with($path, 'packages/semitexa-ultimate/')

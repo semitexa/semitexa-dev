@@ -6,6 +6,7 @@ namespace Semitexa\Dev\Application\Console\Command;
 
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Dev\Application\Service\Console\InstallerManifestTools;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -31,6 +32,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   3. root *.md guidance → ultimate                     (via scaffold:sync-docs)
  *   4. installer scaffold → semitexa-update resources/scaffold + manifest
  *      (via update:scaffold:rebuild)
+ *   5. semitexa/installer's own manifest, which update reads from vendor/ from
+ *      step 2 of one source for bin/semitexa: checked by the installer's tools,
+ *      and derived from update's while update still ships the runtime entries
+ *      ({@see InstallerManifestTools})
  *
  * `--check` performs no writes and exits 1 on any drift — usable as a CI /
  * ai:verify gate. Only meaningful in the framework authoring workspace where
@@ -125,17 +130,17 @@ final class ScaffoldSyncCommand extends BaseCommand
             $io->writeln("  <info>synced</info> {$label}");
         }
 
-        // 3 + 4. Delegate docs mirror and update-package mirror + manifest.
+        // 3 + 4. Delegate the docs mirror, and update's copy with its manifest.
+        // In check mode update:scaffold:rebuild --check compares update's copy and
+        // manifest with what a rebuild would write. That replaced a hash diff of
+        // every installer file against update's copy: from step 2 of one source
+        // for bin/semitexa update keeps only the agent docs, and the diff would
+        // have called every runtime file missing.
         $manifestRegenerated = false;
         foreach ([
             ['scaffold:sync-docs', $check ? ['--check' => true] : []],
-            ['update:scaffold:rebuild', $check ? null : []],
+            ['update:scaffold:rebuild', $check ? ['--check' => true] : []],
         ] as [$name, $args]) {
-            if ($args === null) {
-                // update:scaffold:rebuild has no check mode; drift for its copy
-                // is covered by the file diff below.
-                continue;
-            }
             $exit = $this->runSibling($name, $args, $output, $io);
             if ($exit === null) {
                 continue;
@@ -148,22 +153,17 @@ final class ScaffoldSyncCommand extends BaseCommand
                 $drift++;
                 continue;
             }
-            if ($name === 'update:scaffold:rebuild') {
+            if (!$check && $name === 'update:scaffold:rebuild') {
                 $manifestRegenerated = true;
             }
         }
 
-        // Compare the update package's scaffold mirror by hash — only when the
-        // update package is actually present (mirrors runSibling() behavior).
-        $updateScaffold = $root . '/packages/semitexa-update/resources/scaffold';
-        if ($check && is_dir($updateScaffold)) {
-            foreach ($this->listFiles($scaffold) as $rel) {
-                $mirror = $updateScaffold . '/' . $rel;
-                if (!is_file($mirror) || hash_file('sha256', $scaffold . '/' . $rel) !== hash_file('sha256', $mirror)) {
-                    $io->writeln("  <comment>DRIFT</comment> {$rel} → semitexa-update mirror (run scaffold:sync)");
-                    $drift++;
-                }
-            }
+        // 5. semitexa/installer's own manifest, which update reads from vendor/.
+        $installerManifest = new InstallerManifestTools($root);
+        if ($check) {
+            $drift += $this->checkInstallerManifest($installerManifest, $io);
+        } elseif (!$this->writeInstallerManifest($installerManifest, $io)) {
+            return Command::FAILURE;
         }
 
         if ($check) {
@@ -189,6 +189,52 @@ final class ScaffoldSyncCommand extends BaseCommand
     }
 
     /**
+     * Runs the installer's manifest checks, the history against its last release tag.
+     *
+     * @return int the checks that did not pass
+     */
+    private function checkInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): int
+    {
+        $previous = tempnam(sys_get_temp_dir(), 'installer-manifest-');
+        $drift = 0;
+        try {
+            $tag = is_string($previous) ? $tools->writeManifestAtLastTag($previous) : null;
+            foreach ($tools->commands(true, $tag !== null && is_string($previous) ? $previous : null) as $command) {
+                [$exit, $text] = $tools->run($command['argv']);
+                $against = $tag !== null && $command['label'] === 'check-manifest.php' ? " (history against {$tag})" : '';
+                if ($exit === 0) {
+                    $io->writeln("  <info>ok</info>     installer manifest: {$command['label']}{$against}");
+                    continue;
+                }
+                $drift++;
+                $io->writeln("  <comment>DRIFT</comment> installer manifest: {$command['label']}{$against} exited {$exit}");
+                $io->writeln(preg_replace('/^/m', '         ', rtrim($text)) ?? rtrim($text));
+            }
+        } finally {
+            if (is_string($previous)) {
+                @unlink($previous);
+            }
+        }
+
+        return $drift;
+    }
+
+    /** While update ships the runtime entries, copies them into the installer's manifest after update's rebuild. */
+    private function writeInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): bool
+    {
+        foreach ($tools->commands(false) as $command) {
+            [$exit, $text] = $tools->run($command['argv']);
+            if ($exit !== 0) {
+                $io->error("installer manifest: {$command['label']} exited {$exit}:\n" . rtrim($text));
+                return false;
+            }
+            $io->writeln("  <info>synced</info> installer manifest ({$command['label']})");
+        }
+
+        return true;
+    }
+
+    /**
      * @param array<string, mixed> $args
      * @return int|null null when the sibling command is unavailable (package not installed)
      */
@@ -207,25 +253,5 @@ final class ScaffoldSyncCommand extends BaseCommand
         $io->section($name);
 
         return $command->run(new ArrayInput($args), $output);
-    }
-
-    /**
-     * @return list<string> scaffold-relative file paths
-     */
-    private function listFiles(string $dir): array
-    {
-        $files = [];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-        );
-        /** @var \SplFileInfo $entry */
-        foreach ($iterator as $entry) {
-            if ($entry->isFile()) {
-                $files[] = substr($entry->getPathname(), strlen($dir) + 1);
-            }
-        }
-        sort($files);
-
-        return $files;
     }
 }
