@@ -3,7 +3,10 @@
 # run inside the release clone's app container: the image carries the bcmath
 # and intl it needs (2026-10-30), the host's PHP may not. release-bc-gate.php
 # calls it per package, as `cd <package> && release-bc-check-in-clone.sh
-# --from=<tag> --to=HEAD --format=json`, and only for a package that had @api
+# --from=<ref> --to=HEAD --format=json`, where <ref> is the previous tag made
+# readable (readableFrom(): an unreferenced commit of the tag's tree with
+# src/ as a classmap, in the package's own .git, which the container sees
+# through the mount), and only for a package that had @api
 # at its previous tag, so roave is installed (into var/tools/roave of the clone)
 # the first time one does.
 set -euo pipefail
