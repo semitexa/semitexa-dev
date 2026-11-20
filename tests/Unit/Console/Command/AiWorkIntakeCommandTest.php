@@ -144,6 +144,17 @@ final class AiWorkIntakeCommandTest extends TestCase
         return $out[$key][0];
     }
 
+    /**
+     * Titles with the signal id of a class-less error masked: it is the fingerprint's head.
+     *
+     * @param array<mixed> $titles
+     * @return list<string>
+     */
+    private static function masked(array $titles): array
+    {
+        return array_values(array_map(static fn (mixed $t): string => (string) preg_replace('/a logged error [0-9a-f]{8}/', 'a logged error H', is_string($t) ? $t : ''), $titles));
+    }
+
     /** @return list<string> */
     private function taskFiles(): array
     {
@@ -351,7 +362,7 @@ final class AiWorkIntakeCommandTest extends TestCase
 
         self::assertIsArray($out['new']);
         self::assertCount(2, $out['new']);
-        self::assertContains('Runtime error: Login failed for… (auth)', array_column($out['new'], 'title'));
+        self::assertContains('Runtime error: a logged error H (auth)', self::masked(array_column($out['new'], 'title')));
         $written = '';
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root . '/var/ai-work', \FilesystemIterator::SKIP_DOTS)) as $file) {
             self::assertInstanceOf(\SplFileInfo::class, $file);
@@ -393,11 +404,11 @@ final class AiWorkIntakeCommandTest extends TestCase
         [, $out] = $this->intake();
 
         self::assertIsArray($out['new']);
-        $refs = array_column($out['new'], 'context_refs', 'title');
+        $refs = array_combine(self::masked(array_column($out['new'], 'title')), array_column($out['new'], 'context_refs'));
         $expected = [
             'Runtime error: Lost in packages/semitexa-orm/src/Adapter.php (pipeline, route ShopPayload)' => ['packages/semitexa-orm/src/Adapter.php'],
-            'Runtime error: ConstraintViolationException: Collaborative form event failed (platform-ui)' => ['Semitexa\\Orm\\Exception\\ConstraintViolationException'],
-            'Runtime error: Dashboard widget failed (platform-ui)' => [],
+            'Runtime error: ConstraintViolationException (platform-ui)' => ['Semitexa\\Orm\\Exception\\ConstraintViolationException'],
+            'Runtime error: a logged error H (platform-ui)' => [],
         ];
         ksort($refs);
         ksort($expected);

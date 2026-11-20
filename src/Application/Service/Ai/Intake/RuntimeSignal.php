@@ -40,21 +40,19 @@ final readonly class RuntimeSignal
         return self::ID_PREFIX . substr($this->fingerprint, 0, 12);
     }
 
-    /** Made of the class, the file, the channel and the route: never the exception's message or the request. */
+    /**
+     * Made of what the code names: the exception's class, the file, the
+     * channel, the route. Never a word of the logger's message: four rounds of
+     * review found a shape of message text (a quoted value, a cut, a digit
+     * hidden by normalising, a name in plain words) that reached a committed
+     * title, so the message stays in the log, one command away in the next
+     * step. A signal with no class and no file is named by its channel and its
+     * id.
+     */
     public function title(): string
     {
-        $head = self::plainHead($this->message);
-        $what = match (true) {
-            $this->exception !== null => self::shortClass($this->exception),
-            $head !== '' => self::cut($head, 100),
-            $this->message !== '' => 'a logged error',
-            default => '',
-        };
-        $where = match (true) {
-            $this->site !== null => ' in ' . $this->site,
-            $this->exception !== null && $head !== '' => ': ' . self::cut($head, 80),
-            default => '',
-        };
+        $what = $this->exception !== null ? self::shortClass($this->exception) : 'a logged error';
+        $where = $this->site !== null ? ' in ' . $this->site : ($this->exception === null ? ' ' . substr($this->fingerprint, 0, 8) : '');
         $around = array_values(array_filter([
             $this->channel !== '' ? $this->channel : null,
             match (count($this->routes)) {
@@ -64,7 +62,7 @@ final readonly class RuntimeSignal
             },
         ]));
 
-        return 'Runtime error: ' . ($what !== '' ? $what : 'an error with no message') . $where . ($around !== [] ? ' (' . implode(', ', $around) . ')' : '');
+        return 'Runtime error: ' . $what . $where . ($around !== [] ? ' (' . implode(', ', $around) . ')' : '');
     }
 
     /** @return list<string> */
@@ -131,31 +129,5 @@ final readonly class RuntimeSignal
         $at = strrpos($class, '\\');
 
         return $at === false ? $class : substr($class, $at + 1);
-    }
-
-    /**
-     * What of the logger's message a title may show: its leading plain words —
-     * letters and light punctuation, no quote, digit, '=', ':', '@' or '/' — up
-     * to the first word that is anything else. The rest stays in the log on
-     * this machine: whatever a message carries after a contraction, a quote or
-     * a key cannot reach a task, however the normalising guessed. The
-     * normalised message still groups signals; it is a hash, never shown.
-     */
-    private static function plainHead(string $message): string
-    {
-        $words = [];
-        foreach (preg_split('/\s+/u', trim($message)) ?: [] as $word) {
-            if (preg_match('/^\p{L}[\p{L},.;()\-]*$/u', $word) !== 1) {
-                return $words === [] ? '' : implode(' ', $words) . '…';
-            }
-            $words[] = $word;
-        }
-
-        return implode(' ', $words);
-    }
-
-    private static function cut(string $text, int $length): string
-    {
-        return mb_strlen($text) > $length ? rtrim(mb_substr($text, 0, $length - 1)) . '…' : $text;
     }
 }

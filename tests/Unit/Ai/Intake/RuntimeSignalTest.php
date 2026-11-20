@@ -11,6 +11,7 @@ use Semitexa\Dev\Application\Service\Ai\Intake\RuntimeSignal;
  * The intake rewrites an idea's next step only while it is still the intake's
  * own, word for word: a note an owner wrote anywhere into it keeps the task.
  */
+// verify:accept-test-change test_a_title_shows_only_the_plain_words_a_message_starts_with is replaced by test_a_title_carries_no_word_of_the_logged_message: titles no longer show any word of the logged message (scope cut after four review rounds on leaks)
 final class RuntimeSignalTest extends TestCase
 {
     private const LOG = 'var/log/app.log';
@@ -46,17 +47,15 @@ final class RuntimeSignalTest extends TestCase
         }
     }
 
-    public function test_a_title_shows_only_the_plain_words_a_message_starts_with(): void
+    public function test_a_title_carries_no_word_of_the_logged_message(): void
     {
-        $title = static fn (string $message, ?string $class = null): string => (new RuntimeSignal(str_repeat('b', 40), 'files', $message, $class, null, [], 1, '', ''))->title();
+        $title = static fn (string $message, ?string $class = null, ?string $site = null): string => (new RuntimeSignal(str_repeat('b', 40), 'files', $message, $class, $site, [], 1, '', ''))->title();
 
-        self::assertSame('Runtime error: Dashboard widget failed (files)', $title('Dashboard widget failed'));
-        self::assertSame('Runtime error: Login failed for… (files)', $title('Login failed for user=V password=V'));
-        self::assertSame('Runtime error: Не вдалося зберегти файл (files)', $title('Не вдалося зберегти файл'));
-        foreach (["Can't open '/home/john smith/cv.pdf'", "Doesn't match ' bob smith '", "Couldn't decode '{\"user\": \"bob smith\"}' here"] as $message) {
-            self::assertSame('Runtime error: a logged error (files)', $title($message), $message);
+        foreach (['Dashboard widget failed', 'Value hunter2 bad', 'Login failed for user bob smith', "Can't open '/home/john smith/cv.pdf'", 'Session abcdefghijklmnopqrstuvwxyzabcd expired'] as $message) {
+            self::assertSame('Runtime error: a logged error bbbbbbbb (files)', $title($message), $message);
         }
-        self::assertSame('Runtime error: Reader: Could not read… (files)', $title('Could not read sk_live_abcdefghijklmnop now', 'App\\Reader'), 'with a class and no file, the plain head is the detail');
+        self::assertSame('Runtime error: Reader (files)', $title('Could not read sk_live_abcdefghijklmnop now', 'App\\Reader'));
+        self::assertSame('Runtime error: Reader in src/modules/Files/Reader.php (files)', $title('anything at all', 'App\\Reader', 'src/modules/Files/Reader.php'));
     }
 
     public function test_another_log_is_not_this_runs_text(): void
