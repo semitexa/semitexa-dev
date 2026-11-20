@@ -27,9 +27,24 @@ final class RatchetRecordTargets
         'resources/phpstan/semantic-rule-counts.json' => 'tests/Unit/Structure/SemanticRuleCountsRecordTest.php',
     ];
 
+    /**
+     * A package's share of the quality ledger, which `ai:quality` writes into the
+     * package it counts, whichever package the change was in: an accept recorded
+     * for semitexa-dev wrote semitexa-update's share too (20.11), and a commit of
+     * that share alone could not be pushed. The ledger gate reads every share and
+     * compares it with the counts it records.
+     */
+    private const LEDGER_SHARE = '#^packages/semitexa-[a-z0-9-]+/resources/quality\.json$#';
+
+    /** The test that reads the ledger shares: the workspace has it; a project does not edit a package's share. */
+    public const LEDGER_READER = 'packages/semitexa-dev/tests/Unit/Structure/QualityLedgerGateTest.php';
+
     /** The project-relative path of the test that reads this record, or null when none does or it is not there. */
     public static function readerOf(string $path, string $projectRoot): ?string
     {
+        if (preg_match(self::LEDGER_SHARE, $path) === 1) {
+            return is_file(rtrim($projectRoot, '/') . '/' . self::LEDGER_READER) ? self::LEDGER_READER : null;
+        }
         if (preg_match('#^(packages/semitexa-dev|vendor/semitexa/dev)/(.+)$#', $path, $m) !== 1 || !isset(self::READERS[$m[2]])) {
             return null;
         }

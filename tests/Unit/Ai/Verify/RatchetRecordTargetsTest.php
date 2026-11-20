@@ -45,4 +45,26 @@ final class RatchetRecordTargetsTest extends TestCase
 
         self::assertSame(array_keys(RatchetRecordTargets::READERS), $records, 'a new record needs a test that reads it, named in RatchetRecordTargets::READERS, or a commit changing only it cannot be pushed');
     }
+
+    /**
+     * A package's ledger share is read by the ledger gate, wherever `ai:quality`
+     * wrote it: a commit of semitexa-update's share alone verified `incomplete`
+     * on 20.11, with nothing planned for it.
+     */
+    #[Test]
+    public function a_package_ledger_share_is_read_by_the_ledger_gate(): void
+    {
+        $workspace = realpath(self::PACKAGE . '/../..');
+        self::assertIsString($workspace);
+        self::assertFileExists($workspace . '/' . RatchetRecordTargets::LEDGER_READER);
+        self::assertStringContainsString('QualityLedger', (string) file_get_contents($workspace . '/' . RatchetRecordTargets::LEDGER_READER), 'the reader named reads the ledger');
+
+        foreach (['packages/semitexa-update/resources/quality.json', 'packages/semitexa-dev/resources/quality.json'] as $share) {
+            self::assertSame(RatchetRecordTargets::LEDGER_READER, RatchetRecordTargets::readerOf($share, $workspace), $share);
+        }
+        foreach (['packages/semitexa-update/resources/other.json', 'packages/semitexa-update/src/quality.json', 'vendor/semitexa/update/resources/quality.json'] as $notAShare) {
+            self::assertNull(RatchetRecordTargets::readerOf($notAShare, $workspace), $notAShare);
+        }
+        self::assertNull(RatchetRecordTargets::readerOf('packages/semitexa-update/resources/quality.json', sys_get_temp_dir()), 'no reader where the gate is not installed');
+    }
 }
