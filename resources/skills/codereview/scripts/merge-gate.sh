@@ -71,7 +71,11 @@ merge_verdict() {
 # "LGTM!" match none of it. No Critical was among them: it is read by the same
 # rule, on the word. The pattern looks from the heading to the first such line
 # and not for where the section ends: what can follow it with a Major on an
-# entry line is a section counted anyway. "[^\x00]" is any character, a line
+# entry line is a section counted anyway, or "Nitpick comments: <n>", so the
+# body is read in the pieces between those headings and a Major nitpick after
+# a Minor additional entry is in another piece (review of semitexa-dev#303;
+# gh's jq has no way to say "up to that heading" inside the pattern).
+# "[^\x00]" is any character, a line
 # break too: jq 1.7 fails on "[\s\S]" under the "i" flag, and gh's own jq
 # knows no lookahead, so the pattern keeps to what both and PCRE read alike.
 # Not counted: "Nitpick comments" (CodeRabbit's own word for optional; none of
@@ -81,7 +85,7 @@ merge_verdict() {
 outside_unanswered() {
     local slug=$1 number=$2 reviews answered
     reviews="$(gh api --paginate "repos/$slug/pulls/$number/reviews?per_page=100" \
-        --jq '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]|Additional comments:? \\(?[0-9][^\\x00]*?\\n`[0-9]+(-[0-9]+)?`: (\\*\\*[^*\\n]+\\*\\* [^*\\n]{1,3} ){0,3}\\*\\*[^*\\n]* (Major|Critical)\\*\\*"; "i"))) | .id')" || return 1
+        --jq '.[] | select(.user.login == "coderabbitai[bot]" and any((.body // "") | split("Nitpick comments:? \\(?[0-9]"; "i")[]; test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]|Additional comments:? \\(?[0-9][^\\x00]*?\\n`[0-9]+(-[0-9]+)?`: (\\*\\*[^*\\n]+\\*\\* [^*\\n]{1,3} ){0,3}\\*\\*[^*\\n]* (Major|Critical)\\*\\*"; "i"))) | .id')" || return 1
     answered="$(gh api --paginate "repos/$slug/issues/$number/comments?per_page=100" \
         --jq '.[] | select(.user.login != "coderabbitai[bot]") | (.body // "") | scan("[0-9]{6,}")')" || return 1
     outside_count "$reviews" "$answered"

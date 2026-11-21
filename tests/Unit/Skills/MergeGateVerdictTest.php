@@ -99,7 +99,7 @@ final class MergeGateVerdictTest extends TestCase
         $this->outside(reviews: [[]], comments: [[]]);
 
         self::assertSame(
-            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]|Additional comments:? \\\\(?[0-9][^\\\\x00]*?\\\\n`[0-9]+(-[0-9]+)?`: (\\\\*\\\\*[^*\\\\n]+\\\\*\\\\* [^*\\\\n]{1,3} ){0,3}\\\\*\\\\*[^*\\\\n]* (Major|Critical)\\\\*\\\\*"; "i"))) | .id',
+            '.[] | select(.user.login == "coderabbitai[bot]" and any((.body // "") | split("Nitpick comments:? \\\\(?[0-9]"; "i")[]; test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]|Additional comments:? \\\\(?[0-9][^\\\\x00]*?\\\\n`[0-9]+(-[0-9]+)?`: (\\\\*\\\\*[^*\\\\n]+\\\\*\\\\* [^*\\\\n]{1,3} ){0,3}\\\\*\\\\*[^*\\\\n]* (Major|Critical)\\\\*\\\\*"; "i"))) | .id',
             (string) file_get_contents($this->dir . '/reviews-filter'),
         );
     }
@@ -239,13 +239,37 @@ final class MergeGateVerdictTest extends TestCase
         self::assertSame([0, ['READY']], $this->recordedReviews('core-242', edit: $edit));
     }
 
+    /**
+     * The section ends where the next one begins: a Minor additional entry
+     * followed by a Major under "Nitpick comments: <n>" is neither (review of
+     * semitexa-dev#303: the pattern ran on from the heading into the nitpicks).
+     * The recorded section of semitexa-core#242 with its entry made Minor and
+     * the same section after it, as nitpicks, with a Major.
+     */
+    #[Test]
+    public function a_major_nitpick_after_an_additional_comments_section_is_not_its_entry(): void
+    {
+        $edit = static function (string $body): string {
+            $from = (int) strpos($body, '<details>');
+            $section = substr($body, $from, (int) strpos($body, '<h6>') - $from);
+            self::assertStringContainsString('Additional comments: 1', $section);
+            self::assertSame(1, preg_match('/^`215-215`: \*\*<picture>[^\n]* Major\*\*/m', $section));
+            $minor = str_replace(['major-16.svg', ' Major**'], ['amber-16.svg', ' Minor**'], $section);
+            $nitpick = str_replace(['Additional comments: 1', '`215-215`: '], ['Nitpick comments: 1', '`2-2`: '], $section);
+
+            return substr($body, 0, $from) . $minor . $nitpick . substr($body, $from + strlen($section));
+        };
+
+        self::assertSame([0, ['READY']], $this->recordedReviews('core-242', edit: $edit));
+    }
+
     /** pr-review.sh lists the same reviews as kind=review: its pattern is the gate's, to the letter. */
     #[Test]
     public function the_review_queue_reads_review_bodies_by_the_gates_pattern(): void
     {
         $scripts = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/';
         $pattern = static function (string $script) use ($scripts): string {
-            self::assertSame(1, preg_match('/test\("(Outside diff range.*)"; "i"\)/', (string) file_get_contents($scripts . $script), $m), $script);
+            self::assertSame(1, preg_match('/any\([^|]*\| (split\(.*\)\[\]; test\("Outside diff range.*"; "i"\))/', (string) file_get_contents($scripts . $script), $m), $script);
 
             return $m[1];
         };
@@ -267,7 +291,7 @@ final class MergeGateVerdictTest extends TestCase
      * number apart. The fake gh serves that pull request alone and fails any
      * other request; it answers as gh does after --jq, with the pattern
      * taken from the filter it was given: the ids of CodeRabbit's reviews
-     * whose body matches it, and the ids named in other people's comments.
+     * whose body matches it (in one of the pieces the filter splits it into), and the ids named in other people's comments.
      * $withComment is one more comment of the author, $edit rewrites each
      * recorded review body.
      *
@@ -304,8 +328,15 @@ final class MergeGateVerdictTest extends TestCase
             if (str_contains($path, '/reviews')) {
                 preg_match('/test\("(.*)"; "i"\)/', $filter, $m) || exit(1);
                 $pattern = '~' . json_decode('"' . $m[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i';
+                $between = preg_match('/split\("(.*?)"; "i"\)\[\]; test\(/', $filter, $s) === 1 ? '~' . json_decode('"' . $s[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i' : null;
                 foreach (json_decode((string) file_get_contents('{reviews}'), true, flags: JSON_THROW_ON_ERROR) as $review) {
-                    $found = preg_match($pattern, (string) $review['body']);
+                    $found = 0;
+                    foreach ($between === null ? [(string) $review['body']] : (array) preg_split($between, (string) $review['body']) as $piece) {
+                        $found = preg_match($pattern, (string) $piece);
+                        if ($found !== 0) {
+                            break;
+                        }
+                    }
                     if ($found === false) {
                         fwrite(STDERR, 'the pattern failed: ' . preg_last_error_msg() . "\n");
                         exit(1);
