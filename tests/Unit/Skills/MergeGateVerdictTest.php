@@ -14,6 +14,9 @@ use PHPUnit\Framework\TestCase;
  * merges were decided by hand; and it counted unresolved threads only, so
  * "Outside diff range" findings in a review body — eight of them on
  * 2026-10-28 — passed as clean.
+ *
+ * @phpstan-type Comment array{databaseId: int, author: array{__typename: string, login: string}, replyTo: array{databaseId: int}|null, body: string}
+ * @phpstan-type Thread array{id: string, isResolved: bool, resolvedBy: array{login: string}|null, comments: array{totalCount: int, nodes: list<Comment>}}
  */
 final class MergeGateVerdictTest extends TestCase
 {
@@ -30,6 +33,10 @@ final class MergeGateVerdictTest extends TestCase
         yield 'the old commit status still counts' => [['0', '0', 'completed', 'success', 'Review completed', 'CLEAN'], 'READY'];
         yield 'reviewed but blocked' => [['0', '0', 'completed', 'success', 'Finished', 'UNSTABLE'], 'WAIT:merge-state-UNSTABLE'];
         yield 'a review that failed is no pass' => [['0', '0', 'completed', 'failure', 'Finished', 'CLEAN'], 'WAIT:coderabbit-failure'];
+        // ... and, last, the threads CodeRabbit's last reply calls not addressed
+        yield 'a thread the bot calls not addressed' => [['0', '0', 'completed', 'success', 'Finished', 'CLEAN', '1'], 'FIX:bot-unaddressed-1'];
+        yield 'no such thread' => [['0', '0', 'completed', 'success', 'Finished', 'CLEAN', '0'], 'READY'];
+        yield 'an open thread is named first' => [['2', '0', 'completed', 'success', 'Finished', 'CLEAN', '1'], 'FIX:2'];
     }
 
     /** @param list<string> $args */
@@ -92,9 +99,280 @@ final class MergeGateVerdictTest extends TestCase
         $this->outside(reviews: [[]], comments: [[]]);
 
         self::assertSame(
-            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)"; "i"))) | .id',
+            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]"; "i"))) | .id',
             (string) file_get_contents($this->dir . '/reviews-filter'),
         );
+    }
+
+    /**
+     * CodeRabbit also writes findings in a review body under "Minor comments:
+     * <n>" (and Major, Critical), in no thread: semitexa-ssr#192 was merged on
+     * 2026-11-21 with the Minor of review 6002171521 never answered. Such a
+     * review counts until a comment of someone else names its id. The reviews
+     * and comments are the ones GitHub recorded for these pull requests.
+     */
+    #[Test]
+    public function a_finding_in_a_severity_section_of_a_review_body_nobody_answered_is_counted(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('ssr-192'));
+    }
+
+    /** semitexa-ssr#193: review 6002907626 holds a Minor, comment 7057583054 names it. */
+    #[Test]
+    public function the_same_finding_counts_until_a_comment_names_the_review(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('ssr-193', withoutComment: 7057583054));
+        self::assertSame([0, ['READY']], $this->recordedReviews('ssr-193'));
+    }
+
+    /**
+     * "Nitpick comments" is CodeRabbit's word for optional, and none of the
+     * five reviews of November holding only those was answered before the
+     * merge: semitexa-ssr#178's review 5794092128 is one, and it holds no gate.
+     */
+    #[Test]
+    public function a_review_body_with_nitpicks_only_is_no_finding(): void
+    {
+        self::assertSame([0, ['READY']], $this->recordedReviews('ssr-178'));
+    }
+
+    /** The harness itself: a request for another pull request, or a malformed one, gets no fixture. */
+    #[Test]
+    public function the_recorded_reviews_answer_their_own_pull_request_only(): void
+    {
+        self::assertSame(1, $this->recordedReviews('ssr-192', asked: 'semitexa/semitexa-ssr 999')[0]);
+        self::assertSame(1, $this->recordedReviews('ssr-192', asked: 'semitexa/semitexa-ssr-192')[0]);
+    }
+
+    /**
+     * The verdict over the recorded reviews and issue comments of a pull
+     * request (<repository>-<number>), asked for as the sweep asks: slug and
+     * number apart. The fake gh serves that pull request alone and fails any
+     * other request; it answers as gh does after --jq, with the pattern
+     * taken from the filter it was given: the ids of CodeRabbit's reviews
+     * whose body matches it, and the ids named in other people's comments.
+     *
+     * @return array{int, list<string>}
+     */
+    private function recordedReviews(string $pr, int $withoutComment = 0, ?string $asked = null): array
+    {
+        [$repo, $number] = explode('-', $pr);
+        $slug = 'semitexa/semitexa-' . $repo;
+        if ($this->dir !== '') {
+            exec('rm -rf ' . escapeshellarg($this->dir));
+        }
+        $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
+        mkdir($this->dir . '/bin', 0o755, true);
+        file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
+            [, , , $path, , $filter] = $argv;
+            $bot = static fn(array $row): bool => $row['user']['login'] === 'coderabbitai[bot]';
+            if ($path !== 'repos/{slug}/pulls/{number}/reviews?per_page=100' && $path !== 'repos/{slug}/issues/{number}/comments?per_page=100') {
+                fwrite(STDERR, "unexpected request: $path\n");
+                exit(1);
+            }
+            if (str_contains($path, '/reviews')) {
+                preg_match('/test\("(.*)"; "i"\)/', $filter, $m) || exit(1);
+                $pattern = '~' . json_decode('"' . $m[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i';
+                foreach (json_decode((string) file_get_contents('{fixtures}-reviews.json'), true, flags: JSON_THROW_ON_ERROR) as $review) {
+                    if ($bot($review) && preg_match($pattern, (string) $review['body']) === 1) {
+                        echo $review['id'], "\n";
+                    }
+                }
+                exit(0);
+            }
+            foreach (json_decode((string) file_get_contents('{fixtures}-issue-comments.json'), true, flags: JSON_THROW_ON_ERROR) as $comment) {
+                if (!$bot($comment) && $comment['id'] !== {without} && preg_match_all('/[0-9]{6,}/', (string) $comment['body'], $ids) > 0) {
+                    echo implode("\n", $ids[0]), "\n";
+                }
+            }
+            PHP, [
+                '{fixtures}' => dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr,
+                '{without}' => (string) $withoutComment,
+                '{slug}' => $slug,
+                '{number}' => $number,
+            ]));
+        chmod($this->dir . '/bin/gh', 0o755);
+
+        $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
+        exec(sprintf(
+            'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
+            escapeshellarg($this->dir . '/bin'),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && n="$(outside_unanswered ' . ($asked ?? $slug . ' ' . $number) . ')" && merge_verdict 0 "$n" completed success Finished CLEAN 0'),
+        ), $out, $status);
+
+        return [$status, $out];
+    }
+
+    /**
+     * Review threads as GitHub recorded them (the gate's own query, the
+     * response cut down to the one thread named). semitexa-ssr#192 was merged
+     * on READY on 2026-11-21 with a Major open: the author had replied on
+     * thread 4649964866 and CodeRabbit had resolved it, as it does when the
+     * commented lines change, while its last reply there said "I'm not marking
+     * the finding as addressed yet".
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function recordedThreads(): iterable
+    {
+        yield 'resolved by the bot, its last reply says not addressed' => ['ssr-192-resolved-by-bot-not-addressed', 'FIX:bot-unaddressed-1'];
+        yield 'not resolved, its last reply says one case remains' => ['ssr-190-unresolved-not-addressed', 'FIX:bot-unaddressed-1'];
+        yield 'resolved, its last reply withdraws the finding' => ['platform-ui-85-resolved-withdrawn', 'READY'];
+        yield 'resolved by a human, the bot never replied' => ['platform-ui-93-resolved-by-human-no-bot-reply', 'READY'];
+    }
+
+    #[Test]
+    #[DataProvider('recordedThreads')]
+    public function what_the_bot_last_said_on_a_thread_decides(string $payload, string $verdict): void
+    {
+        [$status, $out] = $this->threads(
+            $payload,
+            'n="$(bot_unaddressed semitexa/semitexa-ssr 192)" && merge_verdict 0 0 completed success Finished CLEAN "$n"',
+        );
+
+        self::assertSame([0, [$verdict]], [$status, $out]);
+    }
+
+    /** "No such thread" read from a failed request would merge past the finding. */
+    #[Test]
+    public function a_failed_read_of_the_threads_fails_instead_of_counting_none(): void
+    {
+        [$status, $out] = $this->threads(null, 'bot_unaddressed semitexa/semitexa-ssr 192');
+
+        self::assertSame([1, []], [$status, $out]);
+    }
+
+    /**
+     * One request a page of a hundred threads, ten comments from the end of
+     * each, every page: the whole conversation of every thread is not needed
+     * to know how it ended.
+     */
+    #[Test]
+    public function the_threads_are_read_to_the_end_ten_comments_each(): void
+    {
+        [, , $calls] = $this->threads('ssr-192-resolved-by-bot-not-addressed', 'bot_unaddressed semitexa/semitexa-ssr 192');
+
+        self::assertCount(1, $calls);
+        self::assertStringStartsWith('api graphql --paginate -F owner=semitexa -F name=semitexa-ssr -F number=192 -f query=', $calls[0]);
+        self::assertStringContainsString('reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor }', $calls[0]);
+        self::assertStringContainsString('comments(last: 10) { totalCount nodes {', $calls[0]);
+        // The stand-in gh reshapes as this filter does; a change to it is a change to both.
+        self::assertSame(
+            '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\\\s+"; " "))] | @tsv',
+            (string) file_get_contents($this->dir . '/threads-filter'),
+        );
+    }
+
+    private const VERDICT = 'n="$(bot_unaddressed semitexa/semitexa-ssr 192)" && merge_verdict 0 0 completed success Finished CLEAN "$n"';
+
+    /**
+     * Ten comments from the end of a thread are read. When ten or more follow
+     * CodeRabbit's "not addressed", that reply is not among them: a thread
+     * longer than what was read, with no reply of CodeRabbit in it, is open.
+     */
+    #[Test]
+    public function a_long_thread_with_no_bot_reply_among_the_comments_read_is_open(): void
+    {
+        self::assertSame(
+            [0, ['FIX:bot-unaddressed-1']],
+            array_slice($this->threads('ssr-192-resolved-by-bot-not-addressed', self::VERDICT, self::tenRepliesOfThirteen(...)), 0, 2),
+        );
+    }
+
+    /** ... and a thread read whole, where the bot never replied, is not: nothing is hidden. */
+    #[Test]
+    public function a_thread_read_whole_with_no_bot_reply_is_not_open(): void
+    {
+        self::assertSame(
+            [0, ['READY']],
+            array_slice($this->threads('platform-ui-93-resolved-by-human-no-bot-reply', self::VERDICT, self::tenCommentsReadWhole(...)), 0, 2),
+        );
+    }
+
+    /**
+     * CodeRabbit is the Bot "coderabbitai", exactly. Somebody whose login
+     * begins the same way, or a user of that very login, saying "this
+     * addresses the finding" after the bot's "not addressed" settles nothing.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function lookAlikes(): iterable
+    {
+        yield 'a login that begins the same way' => ['Bot', 'coderabbitai-helper'];
+        yield 'a user of the same login' => ['User', 'coderabbitai'];
+    }
+
+    #[Test]
+    #[DataProvider('lookAlikes')]
+    public function only_the_bot_itself_speaks_for_the_bot(string $type, string $login): void
+    {
+        self::assertSame(
+            [0, ['FIX:bot-unaddressed-1']],
+            array_slice($this->threads('ssr-192-resolved-by-bot-not-addressed', self::VERDICT, static fn (array $thread): array => self::confirmedBy($thread, $type, $login)), 0, 2),
+        );
+    }
+
+    /**
+     * CodeRabbit's own sentences, from its replies on Semitexa pull requests.
+     *
+     * @return iterable<string, array{string, int}>
+     */
+    public static function replies(): iterable
+    {
+        yield 'not marking, yet' => ['Please add a regression test for it. I’m not marking the finding as addressed yet.', 1];
+        yield 'not marking, plain apostrophe' => ["I'm not marking the finding as addressed.", 1];
+        yield 'am not marking' => ['I am not marking the finding as addressed.', 1];
+        yield 'not fully addressed' => ['The shared-set race is fixed, but the finding is not fully addressed.', 1];
+        yield 'cannot confirm it closed' => ['The usage example is fixed, but I can’t confirm that the Major is closed yet.', 1];
+        yield 'not yet been' => ['The finding has not yet been addressed.', 1];
+        yield 'not been fully' => ['The reported race has not been fully addressed.', 1];
+        yield 'not yet been completely' => ['This has not yet been completely addressed.', 1];
+        yield 'is not, with a contraction' => ['The second case isn’t addressed by `b2dbedf`.', 1];
+        yield 'not, across a file name' => ['I am not marking the Sweep.php finding as addressed.', 1];
+        yield 'unaddressed' => ['That leaves the takeover race unaddressed.', 1];
+        yield 'a block inside a block hides all of it' => ['<details><summary>Analysis chain</summary> cat notes.txt <details><summary>Script</summary> grep -n marking </details> I’m not marking the finding as addressed yet. </details> This addresses the finding.', 0];
+        yield 'what follows the blocks is the reply' => ['<details> one <details> two </details> three </details> One case remains: the mark is not restored.', 1];
+        yield 'a block never closed hides nothing' => ['<details> I’m not marking the finding as addressed yet.', 1];
+        yield 'remains open' => ['Until then, the finding remains open.', 1];
+        yield 'two remain open' => ['Two findings in this thread remain open: the validation guidance does not list them.', 1];
+        yield 'left open' => ['I’ll leave this finding open because it is not fixed in this PR.', 1];
+        yield 'one case remains' => ['Thanks for the update. One case remains: if `develop` has no upstream, nothing is reported.', 1];
+        yield 'a part remains' => ['The usage text now describes the fallback. One part of the Major remains: props can still appear.', 1];
+        yield 'a path remains' => ['The fix covers the reported `join()` path. A related data-loss path remains: the record is replaced.', 1];
+        yield 'the risk remains' => ['The risk remains for this PR: two workers can submit the same token.', 1];
+        yield 'one remaining case' => ['I found one remaining failure case in ef57e3c.', 1];
+        yield 'inconclusive' => ['Verification is inconclusive: the revision I checked still calls only `router_stale_projects`.', 1];
+        yield 'both kinds in one reply count' => ['I withdraw the first finding. The version check remains open.', 1];
+        yield 'one per thread' => ["I’m not marking the finding as addressed.\nThis addresses the finding.\nOne gap remains.", 2];
+
+        yield 'addresses' => ['The exact argv assertions address the finding. This addresses the finding.', 0];
+        yield 'withdrawn' => ['My example did not describe the current code, so I withdraw the finding. ✅ Review thread resolved.', 0];
+        yield 'marking as addressed' => ['You’re right: my earlier advice should have said to recreate the container. I’m marking the finding as addressed.', 0];
+        yield 'confirmed' => ['Confirmed by source inspection at `81db236`: this addresses the Major finding. I did not run the tests.', 0];
+        yield 'not, in another sentence' => ['The mark is not restored there. This addresses the finding.', 0];
+        yield 'not a negation' => ['The content addressed here is the cache key; this addresses the finding.', 0];
+        yield 'another pull request is still open' => ['I withdraw the finding. `#214` is still open. Please confirm that both changes ship together.', 0];
+        yield 'remains withdrawn' => ['I accept the source-only check. The rolling-deployment finding remains withdrawn for the deployment model you described.', 0];
+        yield 'nothing left' => ['Your reported level-max result shows no remaining errors for the file.', 0];
+        yield 'no reply at all' => ['', 0];
+    }
+
+    #[Test]
+    #[DataProvider('replies')]
+    public function the_replies_that_say_not_addressed_are_counted(string $replies, int $count): void
+    {
+        // Each reply is the bot's last on a thread of its own, read whole.
+        $rows = '';
+        foreach ($replies === '' ? [] : explode("\n", $replies) as $i => $reply) {
+            $rows .= "T{$i}\t2\t2\treply\tBot/coderabbitai\t{$reply}\n";
+        }
+        $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
+        exec(sprintf(
+            'env -i PATH=/usr/bin:/bin bash -c %s 2>&1',
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && unaddressed_threads ' . escapeshellarg($rows)),
+        ), $out, $status);
+
+        self::assertSame([0, [(string) $count]], [$status, $out]);
     }
 
     private string $dir = '';
@@ -128,6 +406,110 @@ final class MergeGateVerdictTest extends TestCase
             'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
             escapeshellarg($this->dir . '/bin'),
             escapeshellarg('. ' . escapeshellarg($lib) . ' && outside_unanswered semitexa/semitexa-dev 163'),
+        ), $out, $status);
+        $calls = is_file($this->dir . '/calls') ? file($this->dir . '/calls', FILE_IGNORE_NEW_LINES) : [];
+
+        return [$status, $out, $calls ?: []];
+    }
+
+    /**
+     * The human reply ten times over, of thirteen comments: the bot's are not among those read.
+     *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function tenRepliesOfThirteen(array $thread): array
+    {
+        $thread['comments'] = ['totalCount' => 13, 'nodes' => array_fill(0, 10, $thread['comments']['nodes'][1])];
+
+        return $thread;
+    }
+
+    /**
+     * The finding and nine human replies, all ten read.
+     *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function tenCommentsReadWhole(array $thread): array
+    {
+        $thread['comments'] = [
+            'totalCount' => 10,
+            'nodes' => [$thread['comments']['nodes'][0], ...array_fill(0, 9, $thread['comments']['nodes'][1])],
+        ];
+
+        return $thread;
+    }
+
+    /**
+     * One more reply after the bot's last, confirming, by somebody else.
+     *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function confirmedBy(array $thread, string $type, string $login): array
+    {
+        $reply = $thread['comments']['nodes'][2];
+        $reply['author'] = ['__typename' => $type, 'login' => $login];
+        $reply['body'] = 'This addresses the finding. I withdraw it.';
+        $thread['comments']['nodes'][] = $reply;
+        $thread['comments']['totalCount'] = 4;
+
+        return $thread;
+    }
+
+    /**
+     * A command of merge-gate.sh against a fake gh that answers the review
+     * threads request from a recorded response, reshaped as gh does after
+     * --jq: a tab-separated row per comment (thread, comments in it, comments
+     * read, root or reply, author, text on one line without HTML comments).
+     * It decides nothing: which thread is open is the script's.
+     * $edit changes the one recorded thread first; the filter gh was given is
+     * kept in threads-filter. null fails the request.
+     *
+     * @param (\Closure(Thread): Thread)|null $edit
+     * @return array{int, list<string>, list<string>}
+     */
+    private function threads(?string $payload, string $command, ?\Closure $edit = null): array
+    {
+        $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
+        mkdir($this->dir . '/bin', 0o755, true);
+        if ($payload !== null) {
+            /** @var array{data: array{repository: array{pullRequest: array{reviewThreads: array{nodes: list<Thread>}}}}} $response */
+            $response = json_decode((string) file_get_contents(dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $payload . '.json'), true, flags: JSON_THROW_ON_ERROR);
+            if ($edit !== null) {
+                $response['data']['repository']['pullRequest']['reviewThreads']['nodes'][0] = $edit($response['data']['repository']['pullRequest']['reviewThreads']['nodes'][0]);
+            }
+            file_put_contents($this->dir . '/payload.json', json_encode($response, JSON_THROW_ON_ERROR));
+        }
+        file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
+            $args = array_slice($argv, 1);
+            file_put_contents('{dir}/calls', implode(' ', array_slice($args, 0, -2)) . "\n", FILE_APPEND);
+            file_put_contents('{dir}/threads-filter', (string) end($args));
+            if (!is_file('{dir}/payload.json') || ($args[1] ?? '') !== 'graphql') {
+                exit(1);
+            }
+            $response = json_decode((string) file_get_contents('{dir}/payload.json'), true, flags: JSON_THROW_ON_ERROR);
+            foreach ($response['data']['repository']['pullRequest']['reviewThreads']['nodes'] as $thread) {
+                foreach ($thread['comments']['nodes'] as $comment) {
+                    echo implode("\t", [
+                        $thread['id'],
+                        $thread['comments']['totalCount'],
+                        count($thread['comments']['nodes']),
+                        $comment['replyTo'] === null ? 'root' : 'reply',
+                        $comment['author']['__typename'] . '/' . $comment['author']['login'],
+                        preg_replace(['~<!--.*?-->~s', '~\s+~'], ' ', $comment['body']),
+                    ]), "\n";
+                }
+            }
+            PHP, ['{dir}' => $this->dir]));
+        chmod($this->dir . '/bin/gh', 0o755);
+
+        $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
+        exec(sprintf(
+            'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
+            escapeshellarg($this->dir . '/bin'),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && ' . $command),
         ), $out, $status);
         $calls = is_file($this->dir . '/calls') ? file($this->dir . '/calls', FILE_IGNORE_NEW_LINES) : [];
 
