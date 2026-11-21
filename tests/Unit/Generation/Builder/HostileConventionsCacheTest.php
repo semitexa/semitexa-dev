@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Dev\Application\Service\Ai\Convention\ConventionMiner;
 use Semitexa\Dev\Application\Service\Ai\Convention\ConventionStore;
+use Semitexa\Dev\Application\Service\Ai\Convention\ModuleConventions;
 use Semitexa\Dev\Application\Service\Generation\Builder\HandlerPlanBuilder;
 use Semitexa\Dev\Application\Service\Generation\Support\NameInflector;
 use Semitexa\Dev\Application\Service\Generation\Support\TemplateRenderer;
@@ -115,6 +116,43 @@ final class HostileConventionsCacheTest extends TestCase
         }
 
         self::fail('make:handler read injections keyed by the file\'s own text');
+    }
+
+    /** Payload attributes keyed by the file's own text are refused the same way (review semitexa-dev#305). */
+    #[Test]
+    public function payload_attributes_keyed_by_the_files_own_text_are_refused_on_one_line(): void
+    {
+        file_put_contents($this->root . '/var/cache/ai/conventions.json', json_encode([
+            'schema' => 'semitexa.ai-conventions/v1',
+            'modules' => ['Demo' => ['handlers_sampled' => 9, 'handler_injections' => [self::PLAIN], 'payload_attributes' => ["bad\n\e[31m" => false]]],
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            $this->generate();
+        } catch (\InvalidArgumentException $refusal) {
+            self::assertStringContainsString('modules.Demo.payload_attributes is array, and it must be a list of names', $refusal->getMessage());
+            self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F]/', $refusal->getMessage(), 'a refusal prints no control character the file held');
+
+            return;
+        }
+
+        self::fail('make:handler read payload attributes keyed by the file\'s own text');
+    }
+
+    /** Every part of a refused field's path is the file's own text when readAll() passes a module name: none reaches the terminal raw. */
+    #[Test]
+    public function a_module_name_from_the_file_is_printed_without_its_control_characters(): void
+    {
+        try {
+            ModuleConventions::fromArray(['module' => "Demo\n\e[31mFAKE", 'handler_injections' => 'none']);
+        } catch (\InvalidArgumentException $refusal) {
+            self::assertStringContainsString('modules.Demo  [31mFAKE.handler_injections is "none", and it must be a list of injections', $refusal->getMessage());
+            self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F]/', $refusal->getMessage());
+
+            return;
+        }
+
+        self::fail('a module whose injections are a string was read');
     }
 
     /** A module name in the cache that is not a map is quoted back as a value, on one line. */

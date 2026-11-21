@@ -124,7 +124,7 @@ final readonly class ModuleConventions
         }
 
         $payloadAttributes = $data['payload_attributes'] ?? [];
-        if (!is_array($payloadAttributes)) {
+        if (!is_array($payloadAttributes) || !array_is_list($payloadAttributes)) {
             throw self::refused("modules.{$module}.payload_attributes", $payloadAttributes, 'a list of names');
         }
         $names = [];
@@ -170,6 +170,9 @@ final readonly class ModuleConventions
     private static function refused(string $field, mixed $value, string $mustBe): \InvalidArgumentException
     {
         $shown = is_string($value) ? GenerationInput::shown($value) : get_debug_type($value);
+        // The path is built from the file's own text too (a module name read by
+        // readAll(), a key): one line, and no control character reaches the terminal.
+        $field = (string) preg_replace('/[\x00-\x1F\x7F]/', ' ', $field);
 
         return new \InvalidArgumentException(sprintf(
             'The conventions cache (%s) is refused: %s is %s, and it must be %s. Rebuild it with `bin/semitexa dev:graph:mine-conventions`.',
