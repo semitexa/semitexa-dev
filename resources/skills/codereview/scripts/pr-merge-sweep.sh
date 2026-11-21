@@ -15,7 +15,8 @@
 # (pr-review.sh's own count), no thread whose last CodeRabbit reply says the
 # finding is not addressed (FIX:bot-unaddressed-<n>, whoever resolved the
 # thread), no "Outside diff range", "Follow-up" or "Minor / Major / Critical
-# comments" finding left unanswered
+# comments" finding, and no Major or Critical entry of an "Additional
+# comments" section, left unanswered
 # in a CodeRabbit review body, CodeRabbit finished on the CURRENT head ("Review
 # rate limited" is a skipped review, not a pass), and mergeStateStatus CLEAN;
 # the comment count is taken again once everything else has passed. Greptile

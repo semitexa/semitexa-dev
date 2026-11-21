@@ -99,7 +99,7 @@ final class MergeGateVerdictTest extends TestCase
         $this->outside(reviews: [[]], comments: [[]]);
 
         self::assertSame(
-            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]"; "i"))) | .id',
+            '.[] | select(.user.login == "coderabbitai[bot]" and any((.body // "") | split("Nitpick comments:? \\\\(?[0-9]"; "i")[]; test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]|Additional comments:? \\\\(?[0-9][^\\\\x00]*?\\\\n`[0-9]+(-[0-9]+)?`: (\\\\*\\\\*[^*\\\\n]+\\\\*\\\\* [^*\\\\n]{1,3} ){0,3}\\\\*\\\\*[^*\\\\n]* (Major|Critical)\\\\*\\\\*"; "i"))) | .id',
             (string) file_get_contents($this->dir . '/reviews-filter'),
         );
     }
@@ -136,6 +136,147 @@ final class MergeGateVerdictTest extends TestCase
         self::assertSame([0, ['READY']], $this->recordedReviews('ssr-178'));
     }
 
+    /**
+     * An "Additional comments" section holds what CodeRabbit could not verify,
+     * in no thread, and its Major entries were merged past unanswered: review
+     * 5931344628 of semitexa-core#242 holds one ("`215-215`: **<picture>...
+     * major-16.svg ...</picture> Major** · **Stability & Availability**"),
+     * and nobody answered it. Such an entry holds the gate as a "Major
+     * comments" section does.
+     */
+    #[Test]
+    public function a_major_entry_of_an_additional_comments_section_nobody_answered_is_counted(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('core-242'));
+    }
+
+    /** The answer is the one every review-body finding gets: a comment that names the review, as pr-reply.sh --kind=review writes it. */
+    #[Test]
+    public function the_major_entry_counts_until_a_comment_names_the_review(): void
+    {
+        $reply = "> Re: review summary [#5931344628](https://github.com/semitexa/semitexa-core/pull/242#pullrequestreview-5931344628)\n\nEvery admitted read makes its fresh-client attempt.";
+
+        self::assertSame([0, ['READY']], $this->recordedReviews('core-242', withComment: $reply));
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('core-242', withComment: 'Looked at the review.'), 'a comment that names no review answers none');
+    }
+
+    /**
+     * The older form of the same badge, after the category: review 5446603198
+     * of semitexa-orm#85 holds "`84-84`: **🗄️ Data Integrity & Integration** |
+     * **🟠 Major** | **⚡ Quick win**" beside an "LGTM!". Review 5445682910 of
+     * the same pull request holds an entry with a category and no severity,
+     * and is not counted: one review, not two.
+     */
+    #[Test]
+    public function the_older_major_badge_is_read_and_an_entry_with_no_severity_is_not(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('orm-85'));
+    }
+
+    /**
+     * Minor and unbadged entries hold no gate (the operator's choice of
+     * 2026-11-21): review 5779084532 of semitexa-ssr#175 holds one Minor
+     * ("...amber-16.svg...</picture> Minor**"), review 5562477629 of
+     * semitexa-orm#88 three "LGTM!" and a "**🟡 Minor**".
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function minorOnly(): iterable
+    {
+        yield 'a Minor entry' => ['ssr-175'];
+        yield 'entries with no badge and an older Minor one' => ['orm-88'];
+    }
+
+    #[Test]
+    #[DataProvider('minorOnly')]
+    public function an_additional_comments_section_without_a_major_entry_is_no_finding(string $pr): void
+    {
+        self::assertStringContainsString('Additional comments', (string) file_get_contents(dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr . '-reviews.json'));
+        self::assertSame([0, ['READY']], $this->recordedReviews($pr));
+    }
+
+    /**
+     * A severity word alone is no badge: only an entry line of an "Additional
+     * comments" section counts, and only for Major or Critical. The section
+     * is the recorded one of semitexa-core#242 with its entry line rewritten.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function entryLines(): iterable
+    {
+        $icon = static fn(string $name): string => '<picture><img src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/' . $name . '-16.svg" width="16" height="16" align="absmiddle" alt=""></picture>';
+
+        yield 'Critical, as Major is written' => ['`215-215`: **' . $icon('critical') . ' Critical** · **Security & Privacy** · **Quick win**', 'FIX:outside-1'];
+        yield 'the older Critical' => ['`215-215`: **🔒 Security & Privacy** | **🔴 Critical** | **⚡ Quick win**', 'FIX:outside-1'];
+        yield 'a single line, not a range' => ['`215`: **' . $icon('major') . ' Major** · **Stability & Availability**', 'FIX:outside-1'];
+        yield 'Minor' => ['`215-215`: **' . $icon('amber') . ' Minor** · **Stability & Availability** · **Heavy lift**', 'READY'];
+        yield 'Trivial' => ['`215-215`: **' . $icon('neutral') . ' Trivial** · **Maintainability & Code Quality**', 'READY'];
+        yield 'a category and no severity' => ['`215-215`: **Stability & Availability**', 'READY'];
+        yield 'no badge' => ['`215-215`: LGTM!', 'READY'];
+        yield 'a Minor whose title speaks of a Major' => ['`215-215`: **' . $icon('amber') . " Minor** · **Stability & Availability**\n\n**This is not the Major reported before.** A Major risk remains.", 'READY'];
+    }
+
+    #[Test]
+    #[DataProvider('entryLines')]
+    public function only_a_major_or_critical_badge_on_the_entry_line_counts(string $line, string $verdict): void
+    {
+        $edit = static function (string $body) use ($line): string {
+            $edited = preg_replace('/^`215-215`: [^\n]*$/m', $line, $body, 1, $count);
+            self::assertSame(1, $count, 'the recorded entry line');
+
+            return (string) $edited;
+        };
+
+        self::assertSame([0, [$verdict]], $this->recordedReviews('core-242', edit: $edit));
+    }
+
+    /** A Major badge under "Nitpick comments" alone is still a nitpick: the section decides, then the badge. */
+    #[Test]
+    public function a_major_badge_outside_an_additional_comments_section_is_not_read(): void
+    {
+        $edit = static fn(string $body): string => str_replace('Additional comments: 1', 'Nitpick comments: 1', $body);
+
+        self::assertSame([0, ['READY']], $this->recordedReviews('core-242', edit: $edit));
+    }
+
+    /**
+     * The section ends where the next one begins: a Minor additional entry
+     * followed by a Major under "Nitpick comments: <n>" is neither (review of
+     * semitexa-dev#303: the pattern ran on from the heading into the nitpicks).
+     * The recorded section of semitexa-core#242 with its entry made Minor and
+     * the same section after it, as nitpicks, with a Major.
+     */
+    #[Test]
+    public function a_major_nitpick_after_an_additional_comments_section_is_not_its_entry(): void
+    {
+        $edit = static function (string $body): string {
+            $from = (int) strpos($body, '<details>');
+            $section = substr($body, $from, (int) strpos($body, '<h6>') - $from);
+            self::assertStringContainsString('Additional comments: 1', $section);
+            self::assertSame(1, preg_match('/^`215-215`: \*\*<picture>[^\n]* Major\*\*/m', $section));
+            $minor = str_replace(['major-16.svg', ' Major**'], ['amber-16.svg', ' Minor**'], $section);
+            $nitpick = str_replace(['Additional comments: 1', '`215-215`: '], ['Nitpick comments: 1', '`2-2`: '], $section);
+
+            return substr($body, 0, $from) . $minor . $nitpick . substr($body, $from + strlen($section));
+        };
+
+        self::assertSame([0, ['READY']], $this->recordedReviews('core-242', edit: $edit));
+    }
+
+    /** pr-review.sh lists the same reviews as kind=review: its pattern is the gate's, to the letter. */
+    #[Test]
+    public function the_review_queue_reads_review_bodies_by_the_gates_pattern(): void
+    {
+        $scripts = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/';
+        $pattern = static function (string $script) use ($scripts): string {
+            self::assertSame(1, preg_match('/any\([^|]*\| (split\(.*\)\[\]; test\("Outside diff range.*"; "i"\))/', (string) file_get_contents($scripts . $script), $m), $script);
+
+            return $m[1];
+        };
+
+        self::assertSame($pattern('merge-gate.sh'), $pattern('pr-review.sh'));
+    }
+
     /** The harness itself: a request for another pull request, or a malformed one, gets no fixture. */
     #[Test]
     public function the_recorded_reviews_answer_their_own_pull_request_only(): void
@@ -150,11 +291,14 @@ final class MergeGateVerdictTest extends TestCase
      * number apart. The fake gh serves that pull request alone and fails any
      * other request; it answers as gh does after --jq, with the pattern
      * taken from the filter it was given: the ids of CodeRabbit's reviews
-     * whose body matches it, and the ids named in other people's comments.
+     * whose body matches it (in one of the pieces the filter splits it into), and the ids named in other people's comments.
+     * $withComment is one more comment of the author, $edit rewrites each
+     * recorded review body.
      *
+     * @param (\Closure(string): string)|null $edit
      * @return array{int, list<string>}
      */
-    private function recordedReviews(string $pr, int $withoutComment = 0, ?string $asked = null): array
+    private function recordedReviews(string $pr, int $withoutComment = 0, ?string $asked = null, ?string $withComment = null, ?\Closure $edit = null): array
     {
         [$repo, $number] = explode('-', $pr);
         $slug = 'semitexa/semitexa-' . $repo;
@@ -163,6 +307,17 @@ final class MergeGateVerdictTest extends TestCase
         }
         $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
         mkdir($this->dir . '/bin', 0o755, true);
+        $fixtures = dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr;
+        $reviews = $fixtures . '-reviews.json';
+        if ($edit !== null) {
+            /** @var list<array{id: int, user: array{login: string}, commit_id: string, body: string}> $recorded */
+            $recorded = json_decode((string) file_get_contents($reviews), true, flags: JSON_THROW_ON_ERROR);
+            foreach ($recorded as $i => $review) {
+                $recorded[$i]['body'] = $edit($review['body']);
+            }
+            $reviews = $this->dir . '/reviews.json';
+            file_put_contents($reviews, json_encode($recorded, JSON_THROW_ON_ERROR));
+        }
         file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
             [, , , $path, , $filter] = $argv;
             $bot = static fn(array $row): bool => $row['user']['login'] === 'coderabbitai[bot]';
@@ -173,20 +328,38 @@ final class MergeGateVerdictTest extends TestCase
             if (str_contains($path, '/reviews')) {
                 preg_match('/test\("(.*)"; "i"\)/', $filter, $m) || exit(1);
                 $pattern = '~' . json_decode('"' . $m[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i';
-                foreach (json_decode((string) file_get_contents('{fixtures}-reviews.json'), true, flags: JSON_THROW_ON_ERROR) as $review) {
-                    if ($bot($review) && preg_match($pattern, (string) $review['body']) === 1) {
+                $between = preg_match('/split\("(.*?)"; "i"\)\[\]; test\(/', $filter, $s) === 1 ? '~' . json_decode('"' . $s[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i' : null;
+                foreach (json_decode((string) file_get_contents('{reviews}'), true, flags: JSON_THROW_ON_ERROR) as $review) {
+                    $found = 0;
+                    foreach ($between === null ? [(string) $review['body']] : (array) preg_split($between, (string) $review['body']) as $piece) {
+                        $found = preg_match($pattern, (string) $piece);
+                        if ($found !== 0) {
+                            break;
+                        }
+                    }
+                    if ($found === false) {
+                        fwrite(STDERR, 'the pattern failed: ' . preg_last_error_msg() . "\n");
+                        exit(1);
+                    }
+                    if ($bot($review) && $found === 1) {
                         echo $review['id'], "\n";
                     }
                 }
                 exit(0);
             }
-            foreach (json_decode((string) file_get_contents('{fixtures}-issue-comments.json'), true, flags: JSON_THROW_ON_ERROR) as $comment) {
+            $comments = json_decode((string) file_get_contents('{fixtures}-issue-comments.json'), true, flags: JSON_THROW_ON_ERROR);
+            if ({with} !== null) {
+                $comments[] = ['id' => 1, 'user' => ['login' => 'syntaxwanderer'], 'body' => {with}];
+            }
+            foreach ($comments as $comment) {
                 if (!$bot($comment) && $comment['id'] !== {without} && preg_match_all('/[0-9]{6,}/', (string) $comment['body'], $ids) > 0) {
                     echo implode("\n", $ids[0]), "\n";
                 }
             }
             PHP, [
-                '{fixtures}' => dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr,
+                '{fixtures}' => $fixtures,
+                '{reviews}' => $reviews,
+                '{with}' => var_export($withComment, true),
                 '{without}' => (string) $withoutComment,
                 '{slug}' => $slug,
                 '{number}' => $number,

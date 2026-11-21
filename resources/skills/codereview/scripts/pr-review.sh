@@ -325,14 +325,17 @@ for dir in "$PACKAGES_DIR"/*/; do
             # what gets fixed and answered.
             # A CodeRabbit review whose body holds findings of its own: the
             # sections outside_unanswered in merge-gate.sh counts (the same
-            # pattern; change both). Such a body also says "Review status" and
+            # pattern; change both, MergeGateVerdictTest compares them): an
+            # "Additional comments" section counts for its Major and Critical
+            # entries alone, read between the "Nitpick comments" headings as
+            # the gate reads it. Such a body also says "Review status" and
             # is superseded by the next review, so the tests below dropped it:
             # the "Minor comments: 1" of semitexa-ssr#192 and #193 never
             # reached the queue. No apostrophe here: this is inside a quoted jq program. It is answered the way the gate reads it: a comment
             # of someone else names the review id (pr-reply.sh --kind=review).
             def body_finding:
                 .user == "coderabbitai[bot]"
-                and (text | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]"; "i"));
+                and any(text | split("Nitpick comments:? \\(?[0-9]"; "i")[]; test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]|Additional comments:? \\(?[0-9][^\\x00]*?\\n`[0-9]+(-[0-9]+)?`: (\\*\\*[^*\\n]+\\*\\* [^*\\n]{1,3} ){0,3}\\*\\*[^*\\n]* (Major|Critical)\\*\\*"; "i"));
             def noise_comment:
                 hard_noise
                 or ((text | test("<!-- This is an auto-generated (comment|reply)"; "i")) and (review_signal | not))

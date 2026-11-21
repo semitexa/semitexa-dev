@@ -128,9 +128,10 @@ their own language (merged / fixed / waiting, with SHAs), not questions.
    finding is not addressed (`FIX:bot-unaddressed-<n>`: CodeRabbit resolves its
    own thread when the lines change, so "resolved" is not its yes; read the
    reply, fix or answer, and let it reply again), no finding left unanswered in a
-   CodeRabbit review body ("Outside diff range", "Follow-up", or a "Minor /
-   Major / Critical comments: <n>" section; "Nitpick comments" and the
-   unverified "Additional comments" are not counted; `FIX:outside-<n>`), CodeRabbit finished on the current head, mergeState
+   CodeRabbit review body ("Outside diff range", "Follow-up", a "Minor /
+   Major / Critical comments: <n>" section, or an entry of an "Additional
+   comments" section with a Major or Critical badge; its Minor and unbadged
+   entries and "Nitpick comments" are not counted; `FIX:outside-<n>`), CodeRabbit finished on the current head, mergeState
    CLEAN. **CodeRabbit is the reviewer**; Greptile stopped reviewing on
    2026-10-14 and is no longer waited for. "Review rate limited" is a skipped
    review, not a pass. A review-body finding is answered once with
