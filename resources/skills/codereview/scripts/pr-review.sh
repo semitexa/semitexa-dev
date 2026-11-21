@@ -323,6 +323,16 @@ for dir in "$PACKAGES_DIR"/*/; do
             # The Greptile summary is posted as a conversation comment and repeats
             # the findings it also posts line by line; the line comments are
             # what gets fixed and answered.
+            # A CodeRabbit review whose body holds findings of its own: the
+            # sections outside_unanswered in merge-gate.sh counts (the same
+            # pattern; change both). Such a body also says "Review status" and
+            # is superseded by the next review, so the tests below dropped it:
+            # the "Minor comments: 1" of semitexa-ssr#192 and #193 never
+            # reached the queue. No apostrophe here: this is inside a quoted jq program. It is answered the way the gate reads it: a comment
+            # of someone else names the review id (pr-reply.sh --kind=review).
+            def body_finding:
+                .user == "coderabbitai[bot]"
+                and (text | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]"; "i"));
             def noise_comment:
                 hard_noise
                 or ((text | test("<!-- This is an auto-generated (comment|reply)"; "i")) and (review_signal | not))
@@ -352,6 +362,7 @@ for dir in "$PACKAGES_DIR"/*/; do
             # by the author triggers a fresh bot review). If a review exists
             # with a later submittedAt against a different commit, the
             # earlier review target commit was superseded by an author push.
+            | ([(.issueComments // [])[] | select(.user != "coderabbitai[bot]") | (.body // "") | scan("[0-9]{6,}")]) as $namedIds
             | ([(.reviews // [])[] | select(.user != $author and (.commitId // "") != "")
                 | {commitId, submittedAt}]) as $nonAuthorReviewCommits
             | .actionableLineComments = (
@@ -388,8 +399,7 @@ for dir in "$PACKAGES_DIR"/*/; do
                     | select(.user != $author)
                     | select(.state != "PENDING")
                     | select((.body // "") != "")
-                    | select(noise_comment | not)
-                    | select(has_critique_marker)
+                    | select(body_finding or ((noise_comment | not) and has_critique_marker))
                     | . as $r
                     | ($r.commitId // "") as $rcommit
                     | (if $rcommit == "" then "" else $rcommit[0:7] end) as $rshort
@@ -416,7 +426,9 @@ for dir in "$PACKAGES_DIR"/*/; do
                         htmlUrl: $r.htmlUrl,
                         commitId: $rcommit,
                         replies: [],
-                        repliedByAuthor: ($supersededByLaterReview or $referencedByAuthor)
+                        repliedByAuthor: (if ($r | body_finding)
+                            then ($namedIds | index($r.id | tostring)) != null
+                            else ($supersededByLaterReview or $referencedByAuthor) end)
                     }
                 ]
             )

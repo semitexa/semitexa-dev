@@ -14,7 +14,8 @@
 # READY is merge-gate.sh's merge_verdict(): no unresolved actionable comment
 # (pr-review.sh's own count), no thread whose last CodeRabbit reply says the
 # finding is not addressed (FIX:bot-unaddressed-<n>, whoever resolved the
-# thread), no "Outside diff range" or "Follow-up" finding left unanswered
+# thread), no "Outside diff range", "Follow-up" or "Minor / Major / Critical
+# comments" finding left unanswered
 # in a CodeRabbit review body, CodeRabbit finished on the CURRENT head ("Review
 # rate limited" is a skipped review, not a pass), and mergeStateStatus CLEAN;
 # the comment count is taken again once everything else has passed. Greptile
@@ -41,7 +42,7 @@ fi
 case "${1:-}" in
     --merge) MERGE=1 ;;
     '') ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
 esac
 

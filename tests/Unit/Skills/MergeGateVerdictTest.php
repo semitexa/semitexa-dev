@@ -96,9 +96,90 @@ final class MergeGateVerdictTest extends TestCase
         $this->outside(reviews: [[]], comments: [[]]);
 
         self::assertSame(
-            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)"; "i"))) | .id',
+            '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\\\(?[0-9]"; "i"))) | .id',
             (string) file_get_contents($this->dir . '/reviews-filter'),
         );
+    }
+
+    /**
+     * CodeRabbit also writes findings in a review body under "Minor comments:
+     * <n>" (and Major, Critical), in no thread: semitexa-ssr#192 was merged on
+     * 2026-11-21 with the Minor of review 6002171521 never answered. Such a
+     * review counts until a comment of someone else names its id. The reviews
+     * and comments are the ones GitHub recorded for these pull requests.
+     */
+    #[Test]
+    public function a_finding_in_a_severity_section_of_a_review_body_nobody_answered_is_counted(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('ssr-192'));
+    }
+
+    /** semitexa-ssr#193: review 6002907626 holds a Minor, comment 7057583054 names it. */
+    #[Test]
+    public function the_same_finding_counts_until_a_comment_names_the_review(): void
+    {
+        self::assertSame([0, ['FIX:outside-1']], $this->recordedReviews('ssr-193', withoutComment: 7057583054));
+        self::assertSame([0, ['READY']], $this->recordedReviews('ssr-193'));
+    }
+
+    /**
+     * "Nitpick comments" is CodeRabbit's word for optional, and none of the
+     * five reviews of November holding only those was answered before the
+     * merge: semitexa-ssr#178's review 5794092128 is one, and it holds no gate.
+     */
+    #[Test]
+    public function a_review_body_with_nitpicks_only_is_no_finding(): void
+    {
+        self::assertSame([0, ['READY']], $this->recordedReviews('ssr-178'));
+    }
+
+    /**
+     * The verdict over the recorded reviews and issue comments of a pull
+     * request. The fake gh answers as gh does after --jq, with the pattern
+     * taken from the filter it was given: the ids of CodeRabbit's reviews
+     * whose body matches it, and the ids named in other people's comments.
+     *
+     * @return array{int, list<string>}
+     */
+    private function recordedReviews(string $pr, int $withoutComment = 0): array
+    {
+        if ($this->dir !== '') {
+            exec('rm -rf ' . escapeshellarg($this->dir));
+        }
+        $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
+        mkdir($this->dir . '/bin', 0o755, true);
+        file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
+            [, , , $path, , $filter] = $argv;
+            $bot = static fn(array $row): bool => $row['user']['login'] === 'coderabbitai[bot]';
+            if (str_contains($path, '/reviews')) {
+                preg_match('/test\("(.*)"; "i"\)/', $filter, $m) || exit(1);
+                $pattern = '~' . json_decode('"' . $m[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i';
+                foreach (json_decode((string) file_get_contents('{fixtures}-reviews.json'), true, flags: JSON_THROW_ON_ERROR) as $review) {
+                    if ($bot($review) && preg_match($pattern, (string) $review['body']) === 1) {
+                        echo $review['id'], "\n";
+                    }
+                }
+                exit(0);
+            }
+            foreach (json_decode((string) file_get_contents('{fixtures}-issue-comments.json'), true, flags: JSON_THROW_ON_ERROR) as $comment) {
+                if (!$bot($comment) && $comment['id'] !== {without} && preg_match_all('/[0-9]{6,}/', (string) $comment['body'], $ids) > 0) {
+                    echo implode("\n", $ids[0]), "\n";
+                }
+            }
+            PHP, [
+                '{fixtures}' => dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr,
+                '{without}' => (string) $withoutComment,
+            ]));
+        chmod($this->dir . '/bin/gh', 0o755);
+
+        $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
+        exec(sprintf(
+            'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
+            escapeshellarg($this->dir . '/bin'),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && n="$(outside_unanswered semitexa/semitexa-' . $pr . ')" && merge_verdict 0 "$n" completed success Finished CLEAN 0'),
+        ), $out, $status);
+
+        return [$status, $out];
     }
 
     /**
