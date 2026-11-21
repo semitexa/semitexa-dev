@@ -1,6 +1,6 @@
 {
     "artifact": "semitexa.dev.capability-index/v1",
-    "generated_at": "2026-11-20T20:36:52+00:00",
+    "generated_at": "2026-11-21T10:18:21+00:00",
     "source_version": "dev-master@d41ebd1",
     "count": 84,
     "packages": [
@@ -54,7 +54,7 @@
     "not_packages": {
         "semitexa-companion": "browser extension"
     },
-    "content_hash": "7f7dd6c1d33ba99a432a96b901548b62a5dc147dec985c39e0b16bde879f28ae",
+    "content_hash": "9ca41b4ef016eb65fd0a05bd72d57123d880366dc76e2c0d14418db3bb3ccddb",
     "capabilities": [
         {
             "id": "api.external",
@@ -1383,7 +1383,7 @@
                 "a status column plus if-statements scattered across handlers",
                 "a hand-rolled transition table with no history and no guard on illegal moves"
             ],
-            "usage": "#[AsWorkflowDefinition]\nfinal class OrderWorkflow implements WorkflowDefinitionInterface\n{\n    public static function key(): string { return 'order'; }\n    public function initialState(): string { return 'paid'; }\n    public function states(): array { return ['paid', 'shipped']; }\n    public function terminalStates(): array { return ['shipped']; }\n    public function transitions(): array { return [new TransitionDefinition('ship', ['paid'], 'shipped', guards: [StockReserved::class])]; }\n}\n\n#[AsService]   // a guard, and a side effect (sideEffects:), come from the container\nfinal class StockReserved implements WorkflowGuardInterface\n{\n    #[InjectAsReadonly]\n    protected StockStore $stock;\n\n    public function evaluate(WorkflowSubjectReferenceInterface $subject, WorkflowInstance $instance, TransitionDefinition $transition, array $context): GuardResult\n    {\n        // From your own store: $context is whatever the caller passed.\n        return $this->stock->isReserved($subject->workflowSubjectId()) ? GuardResult::pass() : GuardResult::deny('no_stock', 'Reserve it first.');\n    }\n}\n\n// After bin/semitexa orm:sync, in a handler with #[InjectAsReadonly] protected WorkflowEngineInterface $workflows:\n$subject = new WorkflowSubjectRef('order', $orderId, $tenantId);   // the resolved tenant, not the request's word\n$instance = $this->workflows->start(new StartWorkflowCommand('order', $subject));   // later: findBySubject('order', $subject)\n$result = $this->workflows->apply(new ApplyTransitionCommand('order', $instance->getId(), 'ship'));\n// Silent: a refusal is not thrown. Unless $result->isApplied(), this call moved nothing: read $result->failureCode.\n// After a conflict another call may have moved it: read the instance again before deciding.\n// get() and apply() see every tenant's instances: take the id from findBySubject(), never from a request.",
+            "usage": "#[AsWorkflowDefinition]\nfinal class OrderWorkflow implements WorkflowDefinitionInterface\n{\n    public static function key(): string { return 'order'; }\n    public function initialState(): string { return 'paid'; }\n    public function states(): array { return ['paid', 'shipped']; }\n    public function terminalStates(): array { return ['shipped']; }\n    public function transitions(): array { return [new TransitionDefinition('ship', ['paid'], 'shipped', guards: [StockReserved::class])]; }\n}\n\n#[AsService]   // a guard, and a side effect (sideEffects:), come from the container\nfinal class StockReserved implements WorkflowGuardInterface\n{\n    #[InjectAsReadonly]\n    protected StockStore $stock;\n\n    public function evaluate(WorkflowSubjectReferenceInterface $subject, WorkflowInstance $instance, TransitionDefinition $transition, array $context): GuardResult\n    {\n        // From your own store: $context is whatever the caller passed.\n        return $this->stock->isReserved($subject->workflowSubjectId()) ? GuardResult::pass() : GuardResult::deny('no_stock', 'Reserve it first.');\n    }\n}\n\n// After bin/semitexa orm:sync, in a handler with #[InjectAsReadonly] protected WorkflowEngineInterface $workflows:\n$subject = new WorkflowSubjectRef('order', $orderId, $tenantId);   // the resolved tenant, not the request's word\n$instance = $this->workflows->start(new StartWorkflowCommand('order', $subject));   // later: findBySubject('order', $subject)\n$result = $this->workflows->apply(new ApplyTransitionCommand('order', $instance->getId(), 'ship'));\n// Silent: a refusal is not thrown. Unless $result->isApplied(), this call moved nothing: read $result->failureCode.\n// After a conflict another call may have moved it: read the instance again before deciding.\n// Under a current tenant get() and apply() answer another tenant's instance as not found (null, WorkflowInstanceNotFoundException).\n// The subject's tenant must be that resolved tenant: started with null under a tenant, an instance is reachable by every tenant.",
             "see_also": "",
             "kind": "package",
             "declared_by": "Semitexa\\Workflow\\Capabilities",
