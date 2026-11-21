@@ -95,9 +95,8 @@ bot_unaddressed() {
 
 # The last ten comments of every review thread, one per line, tab-separated:
 # thread id, comments in the thread, comments read, "root" (the finding that
-# opens the thread) or "reply", author as <type>/<login>, and the text without
-# the <details> blocks (the "Analysis chain": script output and file contents,
-# which may hold any phrase) and the HTML comments. Every page of threads; ten
+# opens the thread) or "reply", author as <type>/<login>, and the text on one
+# line without the HTML comments. Every page of threads; ten
 # comments rather than the whole thread, because a hundred threads of fifty
 # cost fifty rate-limit points a pull request. gh only reshapes here: what the
 # rows mean is decided in unaddressed_threads.
@@ -106,7 +105,7 @@ thread_comments() {
     # shellcheck disable=SC2016  # $owner, $name ... are GraphQL variables
     gh api graphql --paginate -F owner="${slug%%/*}" -F name="${slug#*/}" -F number="$number" \
         -f query='query($owner: String!, $name: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { id isResolved resolvedBy { login } comments(last: 10) { totalCount nodes { databaseId author { __typename login } replyTo { databaseId } body } } } } } } }' \
-        --jq '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\s+"; " "))] | @tsv'
+        --jq '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\s+"; " "))] | @tsv'
 }
 
 # How many threads in those rows are not addressed by CodeRabbit's own word:
@@ -128,17 +127,42 @@ unaddressed_threads() {
         fi
         if [[ "$kind" == reply && "$author" == "Bot/coderabbitai" ]]; then
             state=done
-            grep -qiE -- "$UNADDRESSED_REPLY" <<<"$body" && state=open
+            without_details "$body"
+            grep -qiE -- "$UNADDRESSED_REPLY" <<<"$PLAIN" && state=open
         fi
     done <<<"$rows"
     [[ "$state" == open ]] && count=$((count + 1))
     echo "$count"
 }
 
+# PLAIN: the text without its <details> blocks. CodeRabbit folds its "Analysis
+# chain" into them, script output and file contents that may hold any phrase,
+# and nests them. Each closing tag takes the nearest opening one before it, so
+# whole blocks go innermost first until none is left; a non-greedy cut ended
+# an outer block at the inner closing tag and left the rest to be read as the
+# reply. A closing tag with no opening one is dropped; an opening one never
+# closed stays with its text (what follows may be the answer itself).
+without_details() {
+    local text=$1 before after
+    while [[ "$text" == *'</details>'* ]]; do
+        before=${text%%'</details>'*}
+        after=${text#*'</details>'}
+        if [[ "$before" == *'<details'* ]]; then
+            before=${before%'<details'*}
+        fi
+        text="$before $after"
+    done
+    PLAIN=$text
+}
+
 # The wording CodeRabbit uses for "not addressed", read from its 584 replies
-# on the last 300 review comments of nine Semitexa repositories (2026-11-21):
-#   "I'm not marking the finding as addressed yet." / "... as addressed." /
-#   "I am not marking ..." (59 replies), "the finding is not fully addressed",
+# on the last 300 review comments of nine Semitexa repositories (2026-11-21).
+# The first family is a rule, not a list of sentences: "not", "cannot" or a
+# "...n't" followed by "addressed" within seven words of the same sentence:
+#   "I'm not marking the finding as addressed yet." / "I am not marking ..."
+#   (59 replies), "the finding is not fully addressed", "has not yet been
+#   addressed", "isn't addressed"; also "unaddressed", "yet to be addressed".
+# The others are its remaining ways of saying so:
 #   "I can't confirm that the Major is closed yet",
 #   "This finding remains open." / "Two findings remain open" / "The version
 #   check remains open" / "I'll leave this finding open",
@@ -151,8 +175,10 @@ unaddressed_threads() {
 # none of it, and neither do "The finding remains withdrawn" or "#214 is still
 # open" (a pull request). A false FIX costs a look at the thread and a false
 # READY merges a defect, so a reply holding both kinds counts as not addressed.
-# ".{0,3}" is the apostrophe, typographic or plain, in any locale.
-UNADDRESSED_REPLY='(not|n.{1,3}t) (been )?(yet |fully |completely |entirely )?(marking |considering |treating )?((the|this|these|it|them) )?((major|critical|minor|trivial|original|reported|broader) )?((finding|thread|issue|concern)s? )?(as )?(fully |yet |completely )?addressed'
+# "[^a-z ]{1,3}" and ".{0,3}" are the apostrophe, typographic or plain, in any
+# locale.
+UNADDRESSED_REPLY='(^|[^a-z])(not|cannot|[a-z]+n[^a-z ]{1,3}t)( [^ ]*[^ .!?;:]){0,7} addressed'
+UNADDRESSED_REPLY+='|(^|[^a-z])unaddressed|yet to be addressed'
 UNADDRESSED_REPLY+='|(can.{0,3}t|cannot|can not|could not|couldn.{1,3}t|unable to) (yet )?confirm (that|the fix|this fix|the finding)'
 UNADDRESSED_REPLY+='|(remains?|stays?) (open|unaddressed|unresolved|unfixed|unverified)'
 UNADDRESSED_REPLY+='|(finding|thread|major|critical|issue|concern)s? (in this thread )?(is|are) still (open|unaddressed|unresolved|unfixed)'

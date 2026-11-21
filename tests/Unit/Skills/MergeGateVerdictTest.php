@@ -258,7 +258,7 @@ final class MergeGateVerdictTest extends TestCase
         self::assertStringContainsString('comments(last: 10) { totalCount nodes {', $calls[0]);
         // The stand-in gh reshapes as this filter does; a change to it is a change to both.
         self::assertSame(
-            '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\\\s+"; " "))] | @tsv',
+            '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\\\s+"; " "))] | @tsv',
             (string) file_get_contents($this->dir . '/threads-filter'),
         );
     }
@@ -324,6 +324,15 @@ final class MergeGateVerdictTest extends TestCase
         yield 'am not marking' => ['I am not marking the finding as addressed.', 1];
         yield 'not fully addressed' => ['The shared-set race is fixed, but the finding is not fully addressed.', 1];
         yield 'cannot confirm it closed' => ['The usage example is fixed, but I can’t confirm that the Major is closed yet.', 1];
+        yield 'not yet been' => ['The finding has not yet been addressed.', 1];
+        yield 'not been fully' => ['The reported race has not been fully addressed.', 1];
+        yield 'not yet been completely' => ['This has not yet been completely addressed.', 1];
+        yield 'is not, with a contraction' => ['The second case isn’t addressed by `b2dbedf`.', 1];
+        yield 'not, across a file name' => ['I am not marking the Sweep.php finding as addressed.', 1];
+        yield 'unaddressed' => ['That leaves the takeover race unaddressed.', 1];
+        yield 'a block inside a block hides all of it' => ['<details><summary>Analysis chain</summary> cat notes.txt <details><summary>Script</summary> grep -n marking </details> I’m not marking the finding as addressed yet. </details> This addresses the finding.', 0];
+        yield 'what follows the blocks is the reply' => ['<details> one <details> two </details> three </details> One case remains: the mark is not restored.', 1];
+        yield 'a block never closed hides nothing' => ['<details> I’m not marking the finding as addressed yet.', 1];
         yield 'remains open' => ['Until then, the finding remains open.', 1];
         yield 'two remain open' => ['Two findings in this thread remain open: the validation guidance does not list them.', 1];
         yield 'left open' => ['I’ll leave this finding open because it is not fixed in this PR.', 1];
@@ -340,6 +349,8 @@ final class MergeGateVerdictTest extends TestCase
         yield 'withdrawn' => ['My example did not describe the current code, so I withdraw the finding. ✅ Review thread resolved.', 0];
         yield 'marking as addressed' => ['You’re right: my earlier advice should have said to recreate the container. I’m marking the finding as addressed.', 0];
         yield 'confirmed' => ['Confirmed by source inspection at `81db236`: this addresses the Major finding. I did not run the tests.', 0];
+        yield 'not, in another sentence' => ['The mark is not restored there. This addresses the finding.', 0];
+        yield 'not a negation' => ['The content addressed here is the cache key; this addresses the finding.', 0];
         yield 'another pull request is still open' => ['I withdraw the finding. `#214` is still open. Please confirm that both changes ship together.', 0];
         yield 'remains withdrawn' => ['I accept the source-only check. The rolling-deployment finding remains withdrawn for the deployment model you described.', 0];
         yield 'nothing left' => ['Your reported level-max result shows no remaining errors for the file.', 0];
@@ -451,8 +462,8 @@ final class MergeGateVerdictTest extends TestCase
      * A command of merge-gate.sh against a fake gh that answers the review
      * threads request from a recorded response, reshaped as gh does after
      * --jq: a tab-separated row per comment (thread, comments in it, comments
-     * read, root or reply, author, text without details blocks and HTML
-     * comments). It decides nothing: which thread is open is the script's.
+     * read, root or reply, author, text on one line without HTML comments).
+     * It decides nothing: which thread is open is the script's.
      * $edit changes the one recorded thread first; the filter gh was given is
      * kept in threads-filter. null fails the request.
      *
@@ -487,7 +498,7 @@ final class MergeGateVerdictTest extends TestCase
                         count($thread['comments']['nodes']),
                         $comment['replyTo'] === null ? 'root' : 'reply',
                         $comment['author']['__typename'] . '/' . $comment['author']['login'],
-                        preg_replace(['~<details>.*?</details>~s', '~<!--.*?-->~s', '~\s+~'], ' ', $comment['body']),
+                        preg_replace(['~<!--.*?-->~s', '~\s+~'], ' ', $comment['body']),
                     ]), "\n";
                 }
             }
