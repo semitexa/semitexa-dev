@@ -105,15 +105,19 @@ final class ScheduledJobDeclaration
     }
 
     /**
-     * @param list<string> $shortNames
+     * @param list<string> $shortNames the short name first, then its import aliases
      */
     private static function names(\PhpToken $token, array $shortNames): bool
     {
-        if (!$token->is([\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED])) {
+        if ($token->id === \T_STRING) {
+            return in_array($token->text, $shortNames, true);
+        }
+        if (!$token->is([\T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED])) {
             return false;
         }
-        $pos = strrpos($token->text, '\\');
 
-        return in_array($pos === false ? $token->text : substr($token->text, $pos + 1), $shortNames, true);
+        // An import never applies to a qualified name: `\Vendor\Queue\Job` is not
+        // the alias `Job`. Only the short name itself is matched by its last segment.
+        return substr($token->text, (int) strrpos($token->text, '\\') + 1) === ($shortNames[0] ?? null);
     }
 }

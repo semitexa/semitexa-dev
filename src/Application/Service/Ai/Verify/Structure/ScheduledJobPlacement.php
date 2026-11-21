@@ -46,7 +46,8 @@ final class ScheduledJobPlacement
 
         $violations = [];
         foreach ($this->phpFilesOutsideJobPath($codeRoot) as $inside) {
-            $source = @file_get_contents($codeRoot . '/' . $inside);
+            // Only a regular file is read: a link to a device (/dev/zero) never ends.
+            $source = is_file($codeRoot . '/' . $inside) ? @file_get_contents($codeRoot . '/' . $inside) : false;
             if ($source === false) {
                 // A file that cannot be read was not checked: say so, never pass it.
                 $violations[] = new ModuleStructureViolation(
@@ -55,7 +56,7 @@ final class ScheduledJobPlacement
                     path: $codeRootRel . '/' . $inside,
                     message: sprintf("'%s' cannot be read, so whether it is a scheduled job outside %s/ is unknown.", basename($inside), self::JOB_PATH),
                     expected: 'a readable PHP file',
-                    actual: 'unreadable (permissions, or a link to nothing)',
+                    actual: 'unreadable (permissions, or a link to nothing or to no regular file)',
                     suggestedFix: 'Make the file readable or remove it, then verify again.',
                 );
                 continue;

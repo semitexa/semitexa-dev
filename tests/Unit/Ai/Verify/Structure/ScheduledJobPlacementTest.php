@@ -166,6 +166,31 @@ final class ScheduledJobPlacementTest extends TestCase
         $this->assertStringContainsString('cannot be read', $violations[0]->message);
     }
 
+    public function test_an_alias_is_not_matched_against_a_qualified_name(): void
+    {
+        // Review dev#299 round 2: PHP applies no import to a qualified name.
+        $use = "<?php\nuse Semitexa\\Scheduler\\Domain\\Contract\\ScheduledJobInterface as Job;\nuse Semitexa\\Scheduler\\Attribute\\AsScheduledJob as Scheduled;\n";
+        $this->assertFalse(ScheduledJobDeclaration::in($use . "final class A implements \\Vendor\\Queue\\Job {}\n"));
+        $this->assertFalse(ScheduledJobDeclaration::in($use . "#[\\Vendor\\Cron\\Scheduled]\nfinal class A implements Queue\\Job {}\n"));
+        $this->assertTrue(ScheduledJobDeclaration::in($use . "final class A implements Job {}\n"));
+        $this->assertTrue(ScheduledJobDeclaration::in("<?php\nfinal class A implements \\Semitexa\\Scheduler\\Domain\\Contract\\ScheduledJobInterface {}\n"));
+    }
+
+    public function test_a_link_to_no_regular_file_is_reported_and_never_read(): void
+    {
+        // Review dev#299 round 2: reading /dev/zero never ends.
+        $path = 'src/modules/Hello/src/Application/Service/Endless.php';
+        mkdir(dirname($this->root . '/' . $path), 0755, true);
+        symlink('/dev/zero', $this->root . '/' . $path);
+
+        $violations = $this->validate();
+
+        $this->assertCount(1, $violations);
+        $this->assertTrue($violations[0]->isError());
+        $this->assertSame($path, $violations[0]->path);
+        $this->assertStringContainsString('cannot be read', $violations[0]->message);
+    }
+
     public function test_verify_passes_with_a_warning_on_an_existing_job_and_fails_on_a_new_one(): void
     {
         $this->write(self::IN_SERVICE, self::JOB);
