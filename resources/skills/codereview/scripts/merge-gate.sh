@@ -88,22 +88,51 @@ outside_count() {
 # What the reply says decides, whoever resolved the thread and whether it is
 # resolved at all. A failed read fails the caller.
 bot_unaddressed() {
-    local slug=$1 number=$2 replies
-    replies="$(bot_last_replies "$slug" "$number")" || return 1
-    unaddressed_count "$replies"
+    local slug=$1 number=$2 rows
+    rows="$(thread_comments "$slug" "$number")" || return 1
+    unaddressed_threads "$rows"
 }
 
-# One line per review thread CodeRabbit replied on: its last reply there (the
-# finding that opens the thread is no reply), without the <details> blocks
-# (the "Analysis chain": script output and file contents, which may hold any
-# phrase) and the HTML comments. Ten comments from the end of a thread are
-# read; every page of threads.
-bot_last_replies() {
+# The last ten comments of every review thread, one per line, tab-separated:
+# thread id, comments in the thread, comments read, "root" (the finding that
+# opens the thread) or "reply", author as <type>/<login>, and the text without
+# the <details> blocks (the "Analysis chain": script output and file contents,
+# which may hold any phrase) and the HTML comments. Every page of threads; ten
+# comments rather than the whole thread, because a hundred threads of fifty
+# cost fifty rate-limit points a pull request. gh only reshapes here: what the
+# rows mean is decided in unaddressed_threads.
+thread_comments() {
     local slug=$1 number=$2
     # shellcheck disable=SC2016  # $owner, $name ... are GraphQL variables
     gh api graphql --paginate -F owner="${slug%%/*}" -F name="${slug#*/}" -F number="$number" \
-        -f query='query($owner: String!, $name: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { isResolved resolvedBy { login } comments(last: 10) { nodes { databaseId author { login } replyTo { databaseId } body } } } } } } }' \
-        --jq '.data.repository.pullRequest.reviewThreads.nodes[] | [.comments.nodes[] | select(.replyTo != null and ((.author.login // "") | test("^coderabbitai")))] | last | select(. != null) | (.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\s+"; " ")'
+        -f query='query($owner: String!, $name: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { id isResolved resolvedBy { login } comments(last: 10) { totalCount nodes { databaseId author { __typename login } replyTo { databaseId } body } } } } } } }' \
+        --jq '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\s+"; " "))] | @tsv'
+}
+
+# How many threads in those rows are not addressed by CodeRabbit's own word:
+# its last reply read on the thread matches UNADDRESSED_REPLY. CodeRabbit is
+# the Bot whose GraphQL login is "coderabbitai" (REST calls it
+# "coderabbitai[bot]"), exactly: "coderabbitai-helper" is somebody else, and
+# their "this addresses it" after the bot's "not addressed" settles nothing.
+# A thread longer than what was read, with no CodeRabbit reply among the
+# comments read, may hold a "not addressed" before them, so it counts too.
+unaddressed_threads() {
+    local rows=$1 thread total seen kind author body current='' state='' count=0
+    while IFS=$'\t' read -r thread total seen kind author body; do
+        [[ -z "$thread" ]] && continue
+        if [[ "$thread" != "$current" ]]; then
+            [[ "$state" == open ]] && count=$((count + 1))
+            current=$thread
+            state=done
+            (( total > seen )) && state=open
+        fi
+        if [[ "$kind" == reply && "$author" == "Bot/coderabbitai" ]]; then
+            state=done
+            grep -qiE -- "$UNADDRESSED_REPLY" <<<"$body" && state=open
+        fi
+    done <<<"$rows"
+    [[ "$state" == open ]] && count=$((count + 1))
+    echo "$count"
 }
 
 # The wording CodeRabbit uses for "not addressed", read from its 584 replies
@@ -132,13 +161,3 @@ UNADDRESSED_REPLY+='|(case|gap|scenario|race|finding|problem|risk|issue|path|par
 UNADDRESSED_REPLY+='|(one|two|three|a|another) (remaining|related|more|further|narrower) [^.]{0,40}(case|gap|scenario|race|failure|problem|path)'
 UNADDRESSED_REPLY+='|remaining (risk|case|gap|scenario|race|failure)'
 UNADDRESSED_REPLY+='|inconclusive|still pending'
-
-# How many of the replies (one per line) say the finding is not addressed.
-unaddressed_count() {
-    local replies=$1 reply count=0
-    while IFS= read -r reply; do
-        [[ -z "$reply" ]] && continue
-        grep -qiE -- "$UNADDRESSED_REPLY" <<<"$reply" && count=$((count + 1))
-    done <<<"$replies"
-    echo "$count"
-}

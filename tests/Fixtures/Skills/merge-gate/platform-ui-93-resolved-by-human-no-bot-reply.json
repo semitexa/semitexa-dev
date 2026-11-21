@@ -9,15 +9,18 @@
           },
           "nodes": [
             {
+              "id": "PRRT_kwDOSfCabc65py7-",
               "isResolved": true,
               "resolvedBy": {
                 "login": "syntaxwanderer"
               },
               "comments": {
+                "totalCount": 2,
                 "nodes": [
                   {
                     "databaseId": 4633359959,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": null,
@@ -26,6 +29,7 @@
                   {
                     "databaseId": 4633660114,
                     "author": {
+                      "__typename": "User",
                       "login": "syntaxwanderer"
                     },
                     "replyTo": {

@@ -9,15 +9,18 @@
           },
           "nodes": [
             {
+              "id": "PRRT_kwDOQvjfls66QT5p",
               "isResolved": true,
               "resolvedBy": {
                 "login": "coderabbitai[bot]"
               },
               "comments": {
+                "totalCount": 3,
                 "nodes": [
                   {
                     "databaseId": 4649964866,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": null,
@@ -26,6 +29,7 @@
                   {
                     "databaseId": 4650048360,
                     "author": {
+                      "__typename": "User",
                       "login": "syntaxwanderer"
                     },
                     "replyTo": {
@@ -36,6 +40,7 @@
                   {
                     "databaseId": 4650059419,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": {

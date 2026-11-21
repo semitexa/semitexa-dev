@@ -14,6 +14,9 @@ use PHPUnit\Framework\TestCase;
  * merges were decided by hand; and it counted unresolved threads only, so
  * "Outside diff range" findings in a review body — eight of them on
  * 2026-10-28 — passed as clean.
+ *
+ * @phpstan-type Comment array{databaseId: int, author: array{__typename: string, login: string}, replyTo: array{databaseId: int}|null, body: string}
+ * @phpstan-type Thread array{id: string, isResolved: bool, resolvedBy: array{login: string}|null, comments: array{totalCount: int, nodes: list<Comment>}}
  */
 final class MergeGateVerdictTest extends TestCase
 {
@@ -133,16 +136,28 @@ final class MergeGateVerdictTest extends TestCase
         self::assertSame([0, ['READY']], $this->recordedReviews('ssr-178'));
     }
 
+    /** The harness itself: a request for another pull request, or a malformed one, gets no fixture. */
+    #[Test]
+    public function the_recorded_reviews_answer_their_own_pull_request_only(): void
+    {
+        self::assertSame(1, $this->recordedReviews('ssr-192', asked: 'semitexa/semitexa-ssr 999')[0]);
+        self::assertSame(1, $this->recordedReviews('ssr-192', asked: 'semitexa/semitexa-ssr-192')[0]);
+    }
+
     /**
      * The verdict over the recorded reviews and issue comments of a pull
-     * request. The fake gh answers as gh does after --jq, with the pattern
+     * request (<repository>-<number>), asked for as the sweep asks: slug and
+     * number apart. The fake gh serves that pull request alone and fails any
+     * other request; it answers as gh does after --jq, with the pattern
      * taken from the filter it was given: the ids of CodeRabbit's reviews
      * whose body matches it, and the ids named in other people's comments.
      *
      * @return array{int, list<string>}
      */
-    private function recordedReviews(string $pr, int $withoutComment = 0): array
+    private function recordedReviews(string $pr, int $withoutComment = 0, ?string $asked = null): array
     {
+        [$repo, $number] = explode('-', $pr);
+        $slug = 'semitexa/semitexa-' . $repo;
         if ($this->dir !== '') {
             exec('rm -rf ' . escapeshellarg($this->dir));
         }
@@ -151,6 +166,10 @@ final class MergeGateVerdictTest extends TestCase
         file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
             [, , , $path, , $filter] = $argv;
             $bot = static fn(array $row): bool => $row['user']['login'] === 'coderabbitai[bot]';
+            if ($path !== 'repos/{slug}/pulls/{number}/reviews?per_page=100' && $path !== 'repos/{slug}/issues/{number}/comments?per_page=100') {
+                fwrite(STDERR, "unexpected request: $path\n");
+                exit(1);
+            }
             if (str_contains($path, '/reviews')) {
                 preg_match('/test\("(.*)"; "i"\)/', $filter, $m) || exit(1);
                 $pattern = '~' . json_decode('"' . $m[1] . '"', flags: JSON_THROW_ON_ERROR) . '~i';
@@ -169,6 +188,8 @@ final class MergeGateVerdictTest extends TestCase
             PHP, [
                 '{fixtures}' => dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $pr,
                 '{without}' => (string) $withoutComment,
+                '{slug}' => $slug,
+                '{number}' => $number,
             ]));
         chmod($this->dir . '/bin/gh', 0o755);
 
@@ -176,7 +197,7 @@ final class MergeGateVerdictTest extends TestCase
         exec(sprintf(
             'env -i PATH=%s:/usr/bin:/bin bash -c %s 2>&1',
             escapeshellarg($this->dir . '/bin'),
-            escapeshellarg('. ' . escapeshellarg($lib) . ' && n="$(outside_unanswered semitexa/semitexa-' . $pr . ')" && merge_verdict 0 "$n" completed success Finished CLEAN 0'),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && n="$(outside_unanswered ' . ($asked ?? $slug . ' ' . $number) . ')" && merge_verdict 0 "$n" completed success Finished CLEAN 0'),
         ), $out, $status);
 
         return [$status, $out];
@@ -234,11 +255,60 @@ final class MergeGateVerdictTest extends TestCase
         self::assertCount(1, $calls);
         self::assertStringStartsWith('api graphql --paginate -F owner=semitexa -F name=semitexa-ssr -F number=192 -f query=', $calls[0]);
         self::assertStringContainsString('reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor }', $calls[0]);
-        self::assertStringContainsString('comments(last: 10)', $calls[0]);
-        // The stand-in gh answers as this filter does; a change to it is a change to both.
+        self::assertStringContainsString('comments(last: 10) { totalCount nodes {', $calls[0]);
+        // The stand-in gh reshapes as this filter does; a change to it is a change to both.
         self::assertSame(
-            '.data.repository.pullRequest.reviewThreads.nodes[] | [.comments.nodes[] | select(.replyTo != null and ((.author.login // "") | test("^coderabbitai")))] | last | select(. != null) | (.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\\\s+"; " ")',
+            '.data.repository.pullRequest.reviewThreads.nodes[] | .id as $thread | .comments as $c | $c.nodes[] | [$thread, $c.totalCount, ($c.nodes | length), (if .replyTo == null then "root" else "reply" end), "\(.author.__typename)/\(.author.login)", ((.body // "") | gsub("(?s)<details>.*?</details>"; " ") | gsub("(?s)<!--.*?-->"; " ") | gsub("\\\\s+"; " "))] | @tsv',
             (string) file_get_contents($this->dir . '/threads-filter'),
+        );
+    }
+
+    private const VERDICT = 'n="$(bot_unaddressed semitexa/semitexa-ssr 192)" && merge_verdict 0 0 completed success Finished CLEAN "$n"';
+
+    /**
+     * Ten comments from the end of a thread are read. When ten or more follow
+     * CodeRabbit's "not addressed", that reply is not among them: a thread
+     * longer than what was read, with no reply of CodeRabbit in it, is open.
+     */
+    #[Test]
+    public function a_long_thread_with_no_bot_reply_among_the_comments_read_is_open(): void
+    {
+        self::assertSame(
+            [0, ['FIX:bot-unaddressed-1']],
+            array_slice($this->threads('ssr-192-resolved-by-bot-not-addressed', self::VERDICT, self::tenRepliesOfThirteen(...)), 0, 2),
+        );
+    }
+
+    /** ... and a thread read whole, where the bot never replied, is not: nothing is hidden. */
+    #[Test]
+    public function a_thread_read_whole_with_no_bot_reply_is_not_open(): void
+    {
+        self::assertSame(
+            [0, ['READY']],
+            array_slice($this->threads('platform-ui-93-resolved-by-human-no-bot-reply', self::VERDICT, self::tenCommentsReadWhole(...)), 0, 2),
+        );
+    }
+
+    /**
+     * CodeRabbit is the Bot "coderabbitai", exactly. Somebody whose login
+     * begins the same way, or a user of that very login, saying "this
+     * addresses the finding" after the bot's "not addressed" settles nothing.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function lookAlikes(): iterable
+    {
+        yield 'a login that begins the same way' => ['Bot', 'coderabbitai-helper'];
+        yield 'a user of the same login' => ['User', 'coderabbitai'];
+    }
+
+    #[Test]
+    #[DataProvider('lookAlikes')]
+    public function only_the_bot_itself_speaks_for_the_bot(string $type, string $login): void
+    {
+        self::assertSame(
+            [0, ['FIX:bot-unaddressed-1']],
+            array_slice($this->threads('ssr-192-resolved-by-bot-not-addressed', self::VERDICT, static fn (array $thread): array => self::confirmedBy($thread, $type, $login)), 0, 2),
         );
     }
 
@@ -280,10 +350,15 @@ final class MergeGateVerdictTest extends TestCase
     #[DataProvider('replies')]
     public function the_replies_that_say_not_addressed_are_counted(string $replies, int $count): void
     {
+        // Each reply is the bot's last on a thread of its own, read whole.
+        $rows = '';
+        foreach ($replies === '' ? [] : explode("\n", $replies) as $i => $reply) {
+            $rows .= "T{$i}\t2\t2\treply\tBot/coderabbitai\t{$reply}\n";
+        }
         $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';
         exec(sprintf(
             'env -i PATH=/usr/bin:/bin bash -c %s 2>&1',
-            escapeshellarg('. ' . escapeshellarg($lib) . ' && unaddressed_count ' . escapeshellarg($replies)),
+            escapeshellarg('. ' . escapeshellarg($lib) . ' && unaddressed_threads ' . escapeshellarg($rows)),
         ), $out, $status);
 
         self::assertSame([0, [(string) $count]], [$status, $out]);
@@ -327,39 +402,96 @@ final class MergeGateVerdictTest extends TestCase
     }
 
     /**
-     * A command of merge-gate.sh against a fake gh that answers the review
-     * threads request from a recorded response, as gh does after --jq: a line
-     * per thread the bot replied on, its last reply without the details blocks
-     * and HTML comments. The filter gh was given is kept in threads-filter.
-     * null fails the request.
+     * The human reply ten times over, of thirteen comments: the bot's are not among those read.
      *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function tenRepliesOfThirteen(array $thread): array
+    {
+        $thread['comments'] = ['totalCount' => 13, 'nodes' => array_fill(0, 10, $thread['comments']['nodes'][1])];
+
+        return $thread;
+    }
+
+    /**
+     * The finding and nine human replies, all ten read.
+     *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function tenCommentsReadWhole(array $thread): array
+    {
+        $thread['comments'] = [
+            'totalCount' => 10,
+            'nodes' => [$thread['comments']['nodes'][0], ...array_fill(0, 9, $thread['comments']['nodes'][1])],
+        ];
+
+        return $thread;
+    }
+
+    /**
+     * One more reply after the bot's last, confirming, by somebody else.
+     *
+     * @param Thread $thread
+     * @return Thread
+     */
+    private static function confirmedBy(array $thread, string $type, string $login): array
+    {
+        $reply = $thread['comments']['nodes'][2];
+        $reply['author'] = ['__typename' => $type, 'login' => $login];
+        $reply['body'] = 'This addresses the finding. I withdraw it.';
+        $thread['comments']['nodes'][] = $reply;
+        $thread['comments']['totalCount'] = 4;
+
+        return $thread;
+    }
+
+    /**
+     * A command of merge-gate.sh against a fake gh that answers the review
+     * threads request from a recorded response, reshaped as gh does after
+     * --jq: a tab-separated row per comment (thread, comments in it, comments
+     * read, root or reply, author, text without details blocks and HTML
+     * comments). It decides nothing: which thread is open is the script's.
+     * $edit changes the one recorded thread first; the filter gh was given is
+     * kept in threads-filter. null fails the request.
+     *
+     * @param (\Closure(Thread): Thread)|null $edit
      * @return array{int, list<string>, list<string>}
      */
-    private function threads(?string $payload, string $command): array
+    private function threads(?string $payload, string $command, ?\Closure $edit = null): array
     {
         $this->dir = sys_get_temp_dir() . '/merge-gate-' . bin2hex(random_bytes(4));
         mkdir($this->dir . '/bin', 0o755, true);
-        $fixture = dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $payload . '.json';
+        if ($payload !== null) {
+            /** @var array{data: array{repository: array{pullRequest: array{reviewThreads: array{nodes: list<Thread>}}}}} $response */
+            $response = json_decode((string) file_get_contents(dirname(__DIR__, 2) . '/Fixtures/Skills/merge-gate/' . $payload . '.json'), true, flags: JSON_THROW_ON_ERROR);
+            if ($edit !== null) {
+                $response['data']['repository']['pullRequest']['reviewThreads']['nodes'][0] = $edit($response['data']['repository']['pullRequest']['reviewThreads']['nodes'][0]);
+            }
+            file_put_contents($this->dir . '/payload.json', json_encode($response, JSON_THROW_ON_ERROR));
+        }
         file_put_contents($this->dir . '/bin/gh', '#!' . PHP_BINARY . "\n<?php\n" . strtr(<<<'PHP'
             $args = array_slice($argv, 1);
             file_put_contents('{dir}/calls', implode(' ', array_slice($args, 0, -2)) . "\n", FILE_APPEND);
             file_put_contents('{dir}/threads-filter', (string) end($args));
-            if ('{payload}' === '' || ($args[1] ?? '') !== 'graphql') {
+            if (!is_file('{dir}/payload.json') || ($args[1] ?? '') !== 'graphql') {
                 exit(1);
             }
-            $response = json_decode((string) file_get_contents('{fixture}'), true, flags: JSON_THROW_ON_ERROR);
+            $response = json_decode((string) file_get_contents('{dir}/payload.json'), true, flags: JSON_THROW_ON_ERROR);
             foreach ($response['data']['repository']['pullRequest']['reviewThreads']['nodes'] as $thread) {
-                $last = null;
                 foreach ($thread['comments']['nodes'] as $comment) {
-                    if ($comment['replyTo'] !== null && str_starts_with($comment['author']['login'] ?? '', 'coderabbitai')) {
-                        $last = $comment;
-                    }
-                }
-                if ($last !== null) {
-                    echo preg_replace(['~<details>.*?</details>~s', '~<!--.*?-->~s', '~\s+~'], ' ', $last['body']), "\n";
+                    echo implode("\t", [
+                        $thread['id'],
+                        $thread['comments']['totalCount'],
+                        count($thread['comments']['nodes']),
+                        $comment['replyTo'] === null ? 'root' : 'reply',
+                        $comment['author']['__typename'] . '/' . $comment['author']['login'],
+                        preg_replace(['~<details>.*?</details>~s', '~<!--.*?-->~s', '~\s+~'], ' ', $comment['body']),
+                    ]), "\n";
                 }
             }
-            PHP, ['{dir}' => $this->dir, '{payload}' => (string) $payload, '{fixture}' => $fixture]));
+            PHP, ['{dir}' => $this->dir]));
         chmod($this->dir . '/bin/gh', 0o755);
 
         $lib = dirname(__DIR__, 3) . '/resources/skills/codereview/scripts/merge-gate.sh';

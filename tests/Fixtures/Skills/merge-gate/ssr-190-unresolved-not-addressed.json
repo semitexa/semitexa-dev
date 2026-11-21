@@ -9,13 +9,16 @@
           },
           "nodes": [
             {
+              "id": "PRRT_kwDOQvjfls66JRPZ",
               "isResolved": false,
               "resolvedBy": null,
               "comments": {
+                "totalCount": 3,
                 "nodes": [
                   {
                     "databaseId": 4646908383,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": null,
@@ -24,6 +27,7 @@
                   {
                     "databaseId": 4647144476,
                     "author": {
+                      "__typename": "User",
                       "login": "syntaxwanderer"
                     },
                     "replyTo": {
@@ -34,6 +38,7 @@
                   {
                     "databaseId": 4647162292,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": {

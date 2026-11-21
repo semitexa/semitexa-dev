@@ -9,15 +9,18 @@
           },
           "nodes": [
             {
+              "id": "PRRT_kwDOSfCabc600i7U",
               "isResolved": true,
               "resolvedBy": {
                 "login": "coderabbitai[bot]"
               },
               "comments": {
+                "totalCount": 3,
                 "nodes": [
                   {
                     "databaseId": 4501110052,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": null,
@@ -26,6 +29,7 @@
                   {
                     "databaseId": 4501137432,
                     "author": {
+                      "__typename": "User",
                       "login": "syntaxwanderer"
                     },
                     "replyTo": {
@@ -36,6 +40,7 @@
                   {
                     "databaseId": 4501138873,
                     "author": {
+                      "__typename": "Bot",
                       "login": "coderabbitai"
                     },
                     "replyTo": {
