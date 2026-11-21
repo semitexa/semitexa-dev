@@ -591,7 +591,9 @@ final class StructuralOutlierBudgetTest extends TestCase
         // 700 -> 703, 2026-11-20 (tk-verify-reads-no-github-workflow), recorded
         // deliberately: the actionlint arm and the binary seam its tests use; the
         // check and the tool live in ActionlintCheck and ActionlintTool.
-        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 703],
+        // 703 -> 679, 2026-11-20 (idea-application-job-folder): the module_structure
+        // result moved to ModuleStructureCheck, which also splits warnings from errors.
+        'semitexa-dev/src/Application/Service/Ai/Verify/VerificationExecutor.php' => [19, 679],
         // 941 -> 943, 2026-11-07 (tk-sees-page-in-browser): the routes for the page targets.
         // 943 -> 946, same day (review dev#216): lint:css-tokens joins the cross-file and broad lists.
         'semitexa-dev/src/Application/Service/Ai/Verify/VerificationPlanner.php' => [19, 881],

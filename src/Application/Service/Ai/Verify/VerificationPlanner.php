@@ -343,11 +343,15 @@ final class VerificationPlanner
         $targets = [];
         foreach ($modules as $module) {
             $triggeredBy = [];
+            $added = [];
             foreach ($files as $f) {
                 if (str_starts_with('/' . ltrim($f->path, '/'), '/' . $module->relativePath . '/')
                     || ltrim($f->path, '/') === $module->relativePath
                 ) {
                     $triggeredBy[] = $f->path;
+                    if ($f->status === ChangedFile::STATUS_ADDED) {
+                        $added[] = ltrim($f->path, '/');
+                    }
                 }
             }
             $targets[] = new VerificationTarget(
@@ -355,6 +359,8 @@ final class VerificationPlanner
                 id: "module_structure:{$module->relativePath}",
                 reason: "validate module structure of {$module->relativePath} against MODULE_STRUCTURE.md",
                 triggeredBy: array_values(array_unique($triggeredBy)),
+                // What the change adds: job_wrong_location only warns about a file that already exists.
+                commandInput: $added === [] ? [] : [VerificationTarget::INPUT_ADDED_FILES => array_values(array_unique($added))],
                 filePath: $module->relativePath,
             );
         }

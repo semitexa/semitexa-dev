@@ -55,6 +55,13 @@ final readonly class VerificationTarget
     public const TYPE_UI_FLOW          = 'ui_flow';
 
     /**
+     * `commandInput` key of a `module_structure` target: the project-relative
+     * paths, inside that module, that the change being verified adds. A rule
+     * that only warns about what already exists is an error for these.
+     */
+    public const INPUT_ADDED_FILES = 'added_files';
+
+    /**
      * @param list<string> $triggeredBy relative paths of changed files that caused this target to be scheduled
      */
     public function __construct(

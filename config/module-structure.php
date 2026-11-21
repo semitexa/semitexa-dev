@@ -162,13 +162,15 @@ $codeRoot = [
 
     // Application/Job — #[AsScheduledJob] classes. A scheduled job is an entry
     // point the scheduler worker calls, not a service other code calls, so it
-    // gets its own home the same way a #[AsPrompt] class does. Additive:
-    // a job under Application/Service/ (feature grouping) stays valid.
+    // gets its own home the same way a #[AsPrompt] class does. ScheduledJobPlacement
+    // reports a job anywhere else as module_structure.job_wrong_location: a
+    // warning for a job that already exists (its class name is stored in the
+    // schedule rows), an error for a file the verified change adds.
     $rule(
         path: 'Application/Job',
         allowFeatureGrouping: true,
         allowAnyFile: true,
-        rationale: 'Scheduled jobs (#[AsScheduledJob]): entry points run by the scheduler worker. Feature grouping allowed. Jobs under Application/Service/ remain valid.',
+        rationale: 'Scheduled jobs (#[AsScheduledJob] / ScheduledJobInterface): entry points run by the scheduler worker, at Application/Job/<Feature>/<Name>Job.php. A job anywhere else is module_structure.job_wrong_location: a warning for an existing job for one release, an error for a new file.',
     ),
 
     // Application/DataProvider — SSR DataProvider implementations.
