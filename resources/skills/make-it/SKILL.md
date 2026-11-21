@@ -68,6 +68,9 @@ re-arms. Each tick, in this order:
      read>" --with-framework`, since this skill reads the framework too), and ask
      again. Under `work`,
      new work waits for the operator: end the tick and say so.
+     **In the stabilization mode** (the answer's `stabilization` is set, and `say`
+     names it and when it ends) do none of that: do not look at the source and
+     file nothing more. Stop and report.
    - `empty`: the operator's turn. `interview.error` set: show it, the charter comes
      first. Otherwise ask the question under `interview`, or what must work first,
      and record the answer as the steps say; end the tick.
@@ -85,7 +88,12 @@ re-arms. Each tick, in this order:
 6. **Count.** A finding — in this phase or another — is a ticket filed at once:
    `--recipe=fix_bug`, `--phase=right` or `--phase=fast` count from then on, so a
    bug found while making it fast lowers `work` by itself. New work under
-   `--phase=work` waits for the operator's yes.
+   `--phase=work` waits for the operator's yes. **In the stabilization mode** a
+   finding is an idea: `ai:work start` with `--evidence="<command> => <its
+   output>"`, no recipe and no phase. Only a blocker counts at once
+   (`--recipe=fix_bug --blocker=<class> --evidence=...`; `ai:work` refuses a bug
+   without them and names the classes). One class of finding is one ticket, and
+   the report ends with Done / Quarantined (the idea ids).
 7. **Release, often.** After every few merges (default 5) or once a day, run the
    release-readiness skill — small releases, not one at the end. See the release
    rule below for when a release may start.
@@ -117,8 +125,8 @@ measured · …`, with what moved since the last report): then merged, opened, w
   that commit has to fast-forward `master`. A repository with a `next` floor
   therefore needs no unmerged commit at release time. Start a release only when
   no such repository has an open PR or unmerged work.
-- **Stop** when the profile's source has nothing left, or when the operator says
-  so. Give a final report: the `ai:state --with-framework` line, what moved
+- **Stop** when the profile's source has nothing left, when the operator says
+  so, or, in the stabilization mode, as soon as `ai:make-it` answers `done`. Give a final report: the `ai:state --with-framework` line, what moved
   during the run and why, what merged, what was rejected and why, what was found
   beyond the plan, and what is knowingly left open.
 

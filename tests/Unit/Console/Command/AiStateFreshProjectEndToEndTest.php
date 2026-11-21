@@ -13,6 +13,7 @@ use Semitexa\Dev\Application\Console\Command\AiStateCommand;
 use Semitexa\Dev\Application\Service\Ai\Charter\CharterStore;
 use Semitexa\Dev\Application\Console\Command\AiWorkApproveCommand;
 use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
@@ -135,6 +136,7 @@ final class AiStateFreshProjectEndToEndTest extends TestCase
             TraceStore::class => $this->traces,
             ResumeService::class => $resume,
             BacklogHygiene::class => $hygiene,
+            DecisionStore::class => new DecisionStore(),
         ]));
         $this->runCommand($command, $input + ['--json' => true], $refused ? 1 : 0);
     }

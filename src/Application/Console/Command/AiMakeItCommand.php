@@ -13,6 +13,7 @@ use Semitexa\Dev\Application\Service\Ai\Charter\OwnerQuestions;
 use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStatus;
 use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
+use Semitexa\Dev\Application\Service\Ai\Decision\Stabilization;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\State\AuditRecord;
 use Semitexa\Dev\Application\Service\Ai\State\AuditStore;
@@ -96,6 +97,12 @@ final class AiMakeItCommand extends BaseCommand
         $registry = new AgentRegistry(ProjectRoot::get());
         $self = $registry->current();
         $questions = OwnerQuestions::of($this->charterStore);
+        try {
+            $mode = Stabilization::of($this->decisionStore, new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
+        } catch (\RuntimeException) {
+            // decisions.error in the answer says so; the order falls back to the usual one.
+            $mode = null;
+        }
         $plan = MakeItPlan::of(
             $tasks,
             $withFramework,
@@ -104,6 +111,7 @@ final class AiMakeItCommand extends BaseCommand
             $questions['open'],
             $questions['error'],
             $phase,
+            $mode,
         );
         $interview = $plan->state === MakeItPlan::EMPTY ? self::runnable($questions) : null;
         $ownerDecides = $this->ownerDecides();
@@ -135,6 +143,7 @@ final class AiMakeItCommand extends BaseCommand
             // Beside approved work no interview says it, and owner_decides is null without a reason.
             'charter_error' => $questions['error'],
             'decisions' => $decisions,
+            'stabilization' => $mode?->toArray(),
             'warning' => $warning,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '{}', OutputInterface::OUTPUT_RAW);
 

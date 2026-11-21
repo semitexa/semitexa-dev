@@ -460,4 +460,18 @@ final class AiMakeItCommandTest extends TestCase
         self::assertArrayHasKey('charter_error', $result);
         self::assertNull($result['charter_error']);
     }
+
+    public function test_the_stabilization_mode_is_in_the_answer_while_its_decision_is_active(): void
+    {
+        $this->file('tk-a');
+        self::assertNull($this->run_()['stabilization']);
+
+        $until = gmdate(DATE_ATOM, time() + 3600);
+        (new DecisionStore())->save(new Decision('stabilization-2026-11', 'Ок даю згоду', 'only blockers count', 'process', DecisionScope::STANDING, '2026-11-20T00:00:00+00:00', expiresAt: $until));
+        $result = $this->run_();
+
+        self::assertSame(['id' => 'stabilization-2026-11', 'expires_at' => $until], $result['stabilization']);
+        self::assertStringContainsString("Stabilization mode until {$until} (ai:decision stabilization-2026-11)", (string) $result['say']);
+        self::assertStringContainsString('file it as an idea', implode("\n", (array) $result['steps']));
+    }
 }

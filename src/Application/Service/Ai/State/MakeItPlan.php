@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\State;
 
+use Semitexa\Dev\Application\Service\Ai\Decision\Stabilization;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskFiling;
 use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
@@ -23,6 +24,9 @@ use Semitexa\Dev\Application\Service\Ai\Work\TaskStatus;
  *   done     everything is closed: say so and ask for new ideas
  *
  * Only `work` tells an agent to come back, so a loop ends by itself.
+ *
+ * In the stabilization mode blockers go first, `say` names the mode and when
+ * it ends, and a finding off the path is filed as an idea, never looked for.
  */
 final readonly class MakeItPlan
 {
@@ -48,6 +52,7 @@ final readonly class MakeItPlan
         private ?string $charterError = null,
         private bool $hasTasks = false,
         private ?Phase $only = null,
+        private ?Stabilization $mode = null,
     ) {}
 
     /**
@@ -57,8 +62,20 @@ final readonly class MakeItPlan
      * @param int $openQuestions what the charter still needs from the architect
      * @param string|null $charterError why the charter cannot be read, which is no complete charter
      * @param Phase|null $only narrows the question to one phase: what is not in it is not this run's
+     * @param Stabilization|null $mode the stabilization mode, when it is on
      */
-    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions = 0, ?string $charterError = null, ?Phase $only = null): self
+    public static function of(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions = 0, ?string $charterError = null, ?Phase $only = null, ?Stabilization $mode = null): self
+    {
+        $plan = self::decide($tasks, $withFramework, $heldByAnother, $mine, $openQuestions, $charterError, $only, $mode !== null);
+
+        return $mode === null ? $plan : new self($plan->state, $plan->tasks, $plan->total, $plan->openQuestions, $plan->charterError, $plan->hasTasks, $plan->only, $mode);
+    }
+
+    /**
+     * @param list<Task> $tasks
+     * @param callable(string): bool $heldByAnother
+     */
+    private static function decide(array $tasks, bool $withFramework, callable $heldByAnother, ?string $mine, int $openQuestions, ?string $charterError, ?Phase $only, bool $blockersFirst): self
     {
         $inScope = array_values(array_filter($tasks, static fn (Task $t): bool => $t->status !== TaskStatus::DISCARDED && BacklogProgress::inScope($t, $withFramework)));
         if ($inScope === []) {
@@ -68,7 +85,7 @@ final readonly class MakeItPlan
 
         $open = array_values(array_filter($inScope, static fn (Task $t): bool => $t->status !== TaskStatus::DONE));
         $approved = array_values(array_filter($open, static fn (Task $t): bool => BacklogProgress::counts($t) && ($only === null || $t->id === $mine || TaskFiling::phaseOf($t->phase, $t->recipe) === $only)));
-        usort($approved, static fn (Task $a, Task $b): int => [self::rank($a, $mine), $a->createdAt, $a->id] <=> [self::rank($b, $mine), $b->createdAt, $b->id]);
+        usort($approved, static fn (Task $a, Task $b): int => [self::rank($a, $mine, $blockersFirst), $a->createdAt, $a->id] <=> [self::rank($b, $mine, $blockersFirst), $b->createdAt, $b->id]);
         foreach ($approved as $task) {
             if ($task->status !== TaskStatus::BLOCKED && !$heldByAnother($task->id)) {
                 return new self(self::WORK, [self::row($task)], count($approved));
@@ -97,16 +114,20 @@ final readonly class MakeItPlan
         return new self(self::IDEAS, $listed->tasks, $listed->total, hasTasks: array_filter($inScope, static fn (Task $t): bool => $t->isApproved()) !== []);
     }
 
-    /** Bugs first, then work, right, fast; a task with no phase last. What this session already holds comes before all of them. */
-    private static function rank(Task $task, ?string $mine): int
+    /**
+     * Bugs first, then work, right, fast; a task with no phase last. What this session already holds comes before all of them.
+     * In the stabilization mode a blocker comes before every bug that is none.
+     */
+    private static function rank(Task $task, ?string $mine, bool $blockersFirst = false): int
     {
         return match (true) {
             $task->id === $mine => 0,
-            TaskFiling::isBug($task->recipe) => 1,
-            $task->phase === Phase::WORK => 2,
-            $task->phase === Phase::RIGHT => 3,
-            $task->phase === Phase::FAST => 4,
-            default => 5,
+            $blockersFirst && TaskFiling::blockerOf($task) !== null => 1,
+            TaskFiling::isBug($task->recipe) => 2,
+            $task->phase === Phase::WORK => 3,
+            $task->phase === Phase::RIGHT => 4,
+            $task->phase === Phase::FAST => 5,
+            default => 6,
         };
     }
 
@@ -139,6 +160,11 @@ final readonly class MakeItPlan
 
     /** What to tell the architect, for the agent to put in their language. */
     public function say(): string
+    {
+        return $this->said() . ($this->mode !== null ? ' ' . $this->mode->label() . ': blockers first; any other finding is filed as an idea.' : '');
+    }
+
+    private function said(): string
     {
         return match ($this->state) {
             self::EMPTY => match (true) {
@@ -173,10 +199,10 @@ final readonly class MakeItPlan
                 'Show the architect the list. On their yes: bin/semitexa ai:work:approve --epic=<id> --words="<what they said>".',
                 'Run ' . $command . ' again.',
             ],
-            self::WORK => self::stepsFor($this->tasks[0]['id'], $command, $ownerDecides, $decidedOn),
+            self::WORK => self::stepsFor($this->tasks[0]['id'], $command, $ownerDecides, $decidedOn, $this->mode),
             self::WAITING => ['Commit var/ai-work if it changed. Name each task and what it waits for, then stop: a question for the architect is in its next step. When they answer, record it before you act on it: ' . self::RECORD . '.'],
             self::IDEAS => ['Commit var/ai-work if it changed. Offer them and take none. On a yes: bin/semitexa ai:work:approve --id=<id> --words="<what they said>", then run ' . $command . ' again.'],
-            default => [$this->only !== null ? 'Commit var/ai-work if it changed, then stop here, or find what this phase owes and file it.' : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
+            default => [$this->only !== null ? ($this->mode !== null ? 'Commit var/ai-work if it changed, then stop here and report: in the stabilization mode nothing more is looked for under a phase.' : 'Commit var/ai-work if it changed, then stop here, or find what this phase owes and file it.') : 'Commit var/ai-work if it changed, then stop here. A new idea goes in with ai:work start; on a yes, approve it and run ' . $command . ' again.'],
         };
     }
 
@@ -219,14 +245,18 @@ final readonly class MakeItPlan
      * @param list<string>|null $decidedOn
      * @return list<string>
      */
-    private static function stepsFor(string $id, string $command, ?array $ownerDecides, ?array $decidedOn): array
+    private static function stepsFor(string $id, string $command, ?array $ownerDecides, ?array $decidedOn, ?Stabilization $mode = null): array
     {
+        $found = $mode === null
+            ? 'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.'
+            : 'Found a bug or debt off your path? ' . $mode->label() . ': file it as an idea and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> --evidence="<command> => <its output>", with no recipe and no phase. Only a blocker counts at once: add --recipe=fix_bug --blocker=<' . implode('|', TaskFiling::BLOCKERS) . '>. One class of finding is one ticket; end your report with Done / Quarantined (the idea ids). Do not go looking for more.';
+
         return [
             "Claim it: bin/semitexa ai:work update --id={$id} --status=in_progress.",
             'Do it, with a test: a task counts as done only when a test proves it. Docs and config need none.',
             ...self::authority($ownerDecides),
             self::decisions($decidedOn),
-            'Found a bug or debt off your path? File it and carry on: bin/semitexa ai:work start --id=<id> --epic=<epic> --title="<what>" --context-ref=<path> with --recipe=fix_bug, or --phase=right, or --phase=fast. File what this task showed you; do not go looking for more.',
+            $found,
             'If it shows on a page, open that page in a browser and look at it, in light and dark, with a screenshot if you cannot: a passing test does not see what a person sees. If it looks broken, fix it, or block the task, before going on.',
             "Run bin/semitexa ai:verify --trace={$id} and wait for its verdict in this turn: with end-to-end tests it takes minutes, so run it in the foreground with the longest timeout your shell tool allows, not in the background (tk-make-it-stops-after-one-task). Go on only on a pass: never close a task on a fail. A failure you think this change did not cause is still not a pass: file it as a task of its own, block this one on it (bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"waits for <the new id>\"), say both in the report, and go to the last step. A verdict that is neither (incomplete, skipped, nothing_to_verify): name the task's files with --files=<paths> and verify again. Three verdicts in a row that are not a pass, or a decision that is the architect's: bin/semitexa ai:work update --id={$id} --status=blocked --next-step=\"<what it needs>\", and go to the last step.",
             "Commit this task alone, with a line Task: {$id}. Do not push unless the project's charter says to.",

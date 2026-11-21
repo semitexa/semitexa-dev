@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Tests\Unit\Ai\State;
 
 use PHPUnit\Framework\TestCase;
+use Semitexa\Dev\Application\Service\Ai\Decision\Stabilization;
 use Semitexa\Dev\Application\Service\Ai\State\MakeItPlan;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Work\Task;
@@ -330,5 +331,53 @@ final class MakeItPlanTest extends TestCase
 
         self::assertSame(MakeItPlan::WAITING, $plan->state);
         self::assertStringContainsString('When they answer, record it before you act on it: bin/semitexa ai:decision record', implode("\n", $plan->steps('x')));
+    }
+
+    private function blocker(string $id, string $created): Task
+    {
+        return new Task($id, 'ep-a', 't', TaskStatus::NEW, 'fix_bug', 'low', [], null, $id, $created, $created, new TaskApproval('rule', 'blocker leak: phpunit => FAILURES!', self::NOW), Phase::WORK);
+    }
+
+    public function test_in_the_stabilization_mode_blockers_go_first_and_the_mode_is_said(): void
+    {
+        $tasks = [$this->task('tk-bug', recipe: 'fix_bug', created: '2026-11-01T00:00:00+00:00'), $this->blocker('tk-blocker', '2026-11-05T00:00:00+00:00')];
+        $mode = new Stabilization('stabilization-2026-11', '2026-11-27T00:00:00+00:00');
+
+        $plan = MakeItPlan::of($tasks, false, static fn (): bool => false, null, mode: $mode);
+
+        self::assertSame('tk-blocker', $plan->tasks[0]['id']);
+        self::assertStringContainsString('Stabilization mode until 2026-11-27T00:00:00+00:00 (ai:decision stabilization-2026-11)', $plan->say());
+        $steps = implode("\n", $plan->steps('x'));
+        self::assertStringContainsString('file it as an idea', $steps);
+        self::assertStringContainsString('--blocker=<crash|leak|security|verify-failure|docs-contradicted|bench-budget>', $steps);
+        self::assertStringNotContainsString('or --phase=right, or --phase=fast', $steps);
+    }
+
+    public function test_outside_the_mode_a_blocker_is_a_bug_like_any_other(): void
+    {
+        $plan = $this->plan([$this->task('tk-bug', recipe: 'fix_bug', created: '2026-11-01T00:00:00+00:00'), $this->blocker('tk-blocker', '2026-11-05T00:00:00+00:00')]);
+
+        self::assertSame('tk-bug', $plan->tasks[0]['id']);
+        self::assertStringStartsWith('Taking tk-bug', $plan->say());
+        self::assertStringNotContainsString('Stabilization', $plan->say());
+        self::assertStringContainsString('or --phase=right, or --phase=fast', implode("\n", $plan->steps('x')));
+    }
+
+    public function test_in_the_mode_what_this_session_holds_still_comes_before_a_blocker(): void
+    {
+        $plan = MakeItPlan::of([$this->blocker('tk-blocker', self::NOW), $this->task('tk-mine', Phase::FAST, TaskStatus::IN_PROGRESS)], false, static fn (): bool => false, 'tk-mine', mode: new Stabilization('stabilization-x', null));
+
+        self::assertSame('tk-mine', $plan->tasks[0]['id']);
+        self::assertStringContainsString('until revoked', $plan->say());
+    }
+
+    public function test_in_the_mode_a_finished_phase_stops_and_reports_instead_of_looking_for_more(): void
+    {
+        $done = [$this->task('tk-a', Phase::RIGHT, TaskStatus::DONE)];
+
+        self::assertStringContainsString('find what this phase owes', MakeItPlan::of($done, false, static fn (): bool => false, null, only: Phase::RIGHT)->steps('x')[0]);
+        $steps = MakeItPlan::of($done, false, static fn (): bool => false, null, only: Phase::RIGHT, mode: new Stabilization('stabilization-x', null))->steps('x');
+        self::assertStringContainsString('stop here and report', $steps[0]);
+        self::assertStringNotContainsString('find what this phase owes', $steps[0]);
     }
 }

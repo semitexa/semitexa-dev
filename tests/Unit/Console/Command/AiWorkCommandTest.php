@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceEventKind;
 use Semitexa\Dev\Application\Service\Ai\Work\BacklogHygiene;
@@ -66,6 +67,7 @@ class AiWorkCommandTest extends TestCase
             TraceStore::class     => $traces,
             ResumeService::class  => $resume,
             BacklogHygiene::class => $this->newHygiene($epics, $tasks),
+            DecisionStore::class => new DecisionStore(),
         ]);
         $command = new AiWorkCommand();
         PropertyInjector::inject($command, $container);
