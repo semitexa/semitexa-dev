@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Convention;
 
+use Semitexa\Dev\Application\Service\Generation\Support\GenerationInput;
+
 /**
  * Persists module conventions as JSON in `var/cache/ai/conventions.json`.
  *
@@ -109,7 +111,7 @@ final class ConventionStore
         $out = [];
         foreach ($modules as $name => $row) {
             if (!is_array($row)) {
-                throw new \InvalidArgumentException(sprintf('The conventions cache (%s) is refused: modules.%s is %s, and it must be a map of conventions. Rebuild it with `bin/semitexa dev:graph:mine-conventions`.', self::RELATIVE_PATH, $name, get_debug_type($row)));
+                throw new \InvalidArgumentException(sprintf('The conventions cache (%s) is refused: modules[%s] is %s, and it must be a map of conventions. Rebuild it with `bin/semitexa dev:graph:mine-conventions`.', self::RELATIVE_PATH, GenerationInput::shown((string) $name), get_debug_type($row)));
             }
             $out[(string) $name] = $row;
         }

@@ -88,7 +88,9 @@ final readonly class ModuleConventions
         }
 
         $rows = $data['handler_injections'] ?? [];
-        if (!is_array($rows)) {
+        // A list, as the miner writes it: a map's keys are text of the file's own,
+        // and a refusal would quote them back into the terminal.
+        if (!is_array($rows) || !array_is_list($rows)) {
             throw self::refused("modules.{$module}.handler_injections", $rows, 'a list of injections');
         }
 

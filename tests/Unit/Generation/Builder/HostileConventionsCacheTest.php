@@ -99,6 +99,45 @@ final class HostileConventionsCacheTest extends TestCase
         ));
     }
 
+    /** The cache's own keys are text too: a map where the miner writes a list is refused without quoting them. */
+    #[Test]
+    public function injections_keyed_by_the_files_own_text_are_refused_on_one_line(): void
+    {
+        $this->writeCache(["x\n\e[31mFAKE" => self::PLAIN]);
+
+        try {
+            $this->generate();
+        } catch (\InvalidArgumentException $refusal) {
+            self::assertStringContainsString('modules.Demo.handler_injections is array, and it must be a list of injections', $refusal->getMessage());
+            self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F]/', $refusal->getMessage(), 'a refusal prints no control character the file held');
+
+            return;
+        }
+
+        self::fail('make:handler read injections keyed by the file\'s own text');
+    }
+
+    /** A module name in the cache that is not a map is quoted back as a value, on one line. */
+    #[Test]
+    public function a_hostile_module_name_is_quoted_back_on_one_line(): void
+    {
+        file_put_contents($this->root . '/var/cache/ai/conventions.json', json_encode([
+            'schema' => 'semitexa.ai-conventions/v1',
+            'modules' => ['Demo' => ['handlers_sampled' => 9, 'handler_injections' => [self::PLAIN]], "x\n\e[31mFAKE" => 'no'],
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            $this->generate();
+        } catch (\InvalidArgumentException $refusal) {
+            self::assertStringContainsString('modules["x  [31mFAKE"] is string, and it must be a map of conventions', $refusal->getMessage());
+            self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F]/', $refusal->getMessage(), 'a refusal prints no control character the file held');
+
+            return;
+        }
+
+        self::fail('make:handler read a cache with a module that is not a map');
+    }
+
     #[Test]
     public function a_row_that_is_not_a_map_is_refused(): void
     {
@@ -140,7 +179,7 @@ final class HostileConventionsCacheTest extends TestCase
         self::assertSame([], self::calledFunctions($content));
     }
 
-    /** @param list<mixed> $injections */
+    /** @param array<array-key, mixed> $injections */
     private function writeCache(array $injections): void
     {
         file_put_contents($this->root . '/var/cache/ai/conventions.json', json_encode([
