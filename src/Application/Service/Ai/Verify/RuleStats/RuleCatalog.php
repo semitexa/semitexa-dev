@@ -66,15 +66,33 @@ final class RuleCatalog
         }
         $identifiers = ['semitexa.brokenFqcn'];
         foreach ($classes[1] as $class) {
-            if (!class_exists($class)) {
-                throw new \RuntimeException("{$class} is registered in {$neon} but cannot be loaded");
+            $file = $this->fileOf($class);
+            if ($file === null) {
+                throw new \RuntimeException("{$class} is registered in {$neon} but cannot be found");
             }
-            $source = $this->read((new \ReflectionClass($class))->getFileName(), $class);
+            $source = $this->read($file, $class);
             preg_match_all("/->identifier\\('(semitexa\\.[A-Za-z0-9]+)'\\)/", $source, $found);
             array_push($identifiers, ...$found[1]);
         }
 
         return array_values(array_unique($identifiers));
+    }
+
+    /**
+     * Where the autoloader would load the class from, without loading it: a
+     * rule implements PHPStan's interfaces, and a project without PHPStan
+     * dies on "Interface not found" the moment the class is declared.
+     */
+    private function fileOf(string $class): ?string
+    {
+        foreach (\Composer\Autoload\ClassLoader::getRegisteredLoaders() as $loader) {
+            $file = $loader->findFile($class);
+            if (is_string($file)) {
+                return $file;
+            }
+        }
+
+        return null;
     }
 
     /** @return list<string> lint and docs commands ai:verify plans, as their targets name them */
