@@ -16,8 +16,9 @@
 # CodeRabbit reply says the finding is not addressed (bot_unaddressed below),
 # no finding left unanswered
 # in a review body ("Outside diff range", the "Follow-up findings" /
-# "Follow-up Comments" blocks CodeRabbit writes since 2026-10-29, or a "Minor /
-# Major / Critical comments: <n>" section) (those live outside the threads and
+# "Follow-up Comments" blocks CodeRabbit writes since 2026-10-29, a "Minor /
+# Major / Critical comments: <n>" section, or a Major or Critical entry of an
+# "Additional comments" section) (those live outside the threads and
 # passed as clean when only threads were counted), a finished review, and a
 # CLEAN merge state. "Review rate limited" is a skipped review, never a pass.
 merge_verdict() {
@@ -54,16 +55,33 @@ merge_verdict() {
 # <n>", "Major comments: <n>" or "Critical comments: <n>" section, findings
 # CodeRabbit writes in the body and nowhere else: semitexa-ssr#192 was merged
 # on 2026-11-21 with review 6002171521's Minor (SsePendingSweep.php 94) never
-# answered, and #193 read READY over 6002907626. Not counted: "Nitpick
-# comments" (CodeRabbit's own word for optional; none of the five such reviews
-# of November was answered) and "Additional comments" (it marks them
-# "Unverified finding ... not a verified issue"). Both lists are read to the end: a PR
+# answered, and #193 read READY over 6002907626. An "Additional comments:
+# <n>" section counts for its Major and Critical entries alone (operator,
+# 2026-11-21): CodeRabbit marks what it puts there "Unverified finding ... not
+# a verified issue", and six of the 97 reviews with such a section read in
+# nine Semitexa repositories that day held a Major, none answered where looked
+# (semitexa-core#242's review 5931344628: a read refused by the breaker
+# another request opened).
+# An entry is the line that opens with its line range, and the severity is the
+# bold badge on that line, the icon and the word as CodeRabbit writes them now,
+# or the emoji form of its older reviews, after the category:
+#   `215-215`: **<picture><img src=".../major-16.svg" ...></picture> Major** · **Stability & Availability** · **Heavy lift**
+#   `84-84`: **🗄️ Data Integrity & Integration** | **🟠 Major** | **⚡ Quick win**
+# A Minor or Trivial badge, an entry with a category and no severity, and
+# "LGTM!" match none of it. No Critical was among them: it is read by the same
+# rule, on the word. The pattern looks from the heading to the first such line
+# and not for where the section ends: what can follow it with a Major on an
+# entry line is a section counted anyway. "[^\x00]" is any character, a line
+# break too: jq 1.7 fails on "[\s\S]" under the "i" flag, and gh's own jq
+# knows no lookahead, so the pattern keeps to what both and PCRE read alike.
+# Not counted: "Nitpick comments" (CodeRabbit's own word for optional; none of
+# the five such reviews of November was answered). Both lists are read to the end: a PR
 # with more reviews or comments than one page hid the later ones (40 reviews
 # and 100 comments before 2026-10-29). A failed read fails the caller.
 outside_unanswered() {
     local slug=$1 number=$2 reviews answered
     reviews="$(gh api --paginate "repos/$slug/pulls/$number/reviews?per_page=100" \
-        --jq '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]"; "i"))) | .id')" || return 1
+        --jq '.[] | select(.user.login == "coderabbitai[bot]" and ((.body // "") | test("Outside diff range|Follow-up (findings|comments)|(Minor|Major|Critical) comments:? \\(?[0-9]|Additional comments:? \\(?[0-9][^\\x00]*?\\n`[0-9]+(-[0-9]+)?`: (\\*\\*[^*\\n]+\\*\\* [^*\\n]{1,3} ){0,3}\\*\\*[^*\\n]* (Major|Critical)\\*\\*"; "i"))) | .id')" || return 1
     answered="$(gh api --paginate "repos/$slug/issues/$number/comments?per_page=100" \
         --jq '.[] | select(.user.login != "coderabbitai[bot]") | (.body // "") | scan("[0-9]{6,}")')" || return 1
     outside_count "$reviews" "$answered"
