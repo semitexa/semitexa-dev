@@ -168,4 +168,14 @@ final class TaskFilingTest extends TestCase
         self::assertNull(TaskFiling::refusalOfEdit($idea, 'add_feature', true));
         self::assertNull(TaskFiling::refusalOfEdit($this->filed('', null, new TaskApproval('owner', 'Так', self::NOW)), 'fix_bug', true));
     }
+
+    public function test_in_the_mode_an_edit_does_not_make_a_ticket_approved_by_rule_a_bug_unless_a_blocker(): void
+    {
+        $byRule = $this->filed('', Phase::RIGHT, TaskFiling::approvalOnFiling(Phase::RIGHT, '', self::NOW));
+        $blocker = $this->filed('', Phase::RIGHT, TaskFiling::approvalOnFiling(Phase::RIGHT, '', self::NOW, true, 'leak', self::EVIDENCE));
+
+        self::assertNotNull(TaskFiling::refusalOfEdit($byRule, 'fix_bug', true), 'the edit would drop the approval and leave a recipe that counts');
+        self::assertNull(TaskFiling::refusalOfEdit($blocker, 'fix_bug', true));
+        self::assertNull(TaskFiling::refusalOfEdit($byRule, 'fix_bug', false));
+    }
 }

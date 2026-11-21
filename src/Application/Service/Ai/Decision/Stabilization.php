@@ -18,6 +18,9 @@ final readonly class Stabilization
 {
     public const ID_PREFIX = 'stabilization-';
 
+    /** No decision's id: every real one starts with ID_PREFIX. */
+    private const UNREADABLE = 'unreadable';
+
     public function __construct(
         public string $id,
         public ?string $expiresAt,
@@ -44,6 +47,15 @@ final readonly class Stabilization
         return $mode;
     }
 
+    /**
+     * The mode to work under while the decisions cannot be read: an active
+     * one may be among them, so its rule is kept until they read again.
+     */
+    public static function unreadable(): self
+    {
+        return new self(self::UNREADABLE, null);
+    }
+
     /** @throws \RuntimeException when the decisions cannot be read */
     public static function isOn(DecisionStore $store): bool
     {
@@ -53,6 +65,10 @@ final readonly class Stabilization
     /** "Stabilization mode until 2026-11-27T00:00:00+00:00 (ai:decision stabilization-2026-11)" */
     public function label(): string
     {
+        if ($this->id === self::UNREADABLE) {
+            return 'Stabilization mode assumed, since the decisions cannot be read (repair ' . DecisionStore::SUBDIR . ')';
+        }
+
         return 'Stabilization mode ' . ($this->expiresAt !== null ? "until {$this->expiresAt}" : 'until revoked') . " (ai:decision {$this->id})";
     }
 

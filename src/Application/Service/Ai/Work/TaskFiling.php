@@ -120,13 +120,14 @@ final class TaskFiling
     }
 
     /**
-     * Why an edit is refused in the stabilization mode, or null: a task nobody
-     * approved does not become a bug by an edit, since a bug counts by its
-     * recipe alone.
+     * Why an edit is refused in the stabilization mode, or null: a task the
+     * owner did not approve, and no blocker, does not become a bug by an edit,
+     * since a bug counts by its recipe alone. An approval by rule that names
+     * no blocker is none here: the edit would drop it and leave the recipe.
      */
     public static function refusalOfEdit(Task $task, ?string $recipe, bool $stabilization): ?string
     {
-        if ($stabilization && $recipe !== null && self::isBug($recipe) && !self::isBug($task->recipe) && !$task->isApproved()) {
+        if ($stabilization && $recipe !== null && self::isBug($recipe) && !self::isBug($task->recipe) && !self::hasOwnersApproval($task) && self::blockerOf($task) === null) {
             return 'stabilization mode: an edit does not make a task a bug. File the bug with ai:work start --recipe=' . $recipe . ' --blocker=<class> --evidence="<command> => <its output>", or leave this one an idea.';
         }
 

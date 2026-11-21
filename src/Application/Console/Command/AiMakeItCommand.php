@@ -100,8 +100,8 @@ final class AiMakeItCommand extends BaseCommand
         try {
             $mode = Stabilization::of($this->decisionStore, new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
         } catch (\RuntimeException) {
-            // decisions.error in the answer says so; the order falls back to the usual one.
-            $mode = null;
+            // Off is never guessed: an active decision may be among those that do not read. decisions.error says why.
+            $mode = Stabilization::unreadable();
         }
         $plan = MakeItPlan::of(
             $tasks,
