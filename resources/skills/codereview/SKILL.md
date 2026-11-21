@@ -124,7 +124,10 @@ their own language (merged / fixed / waiting, with SHAs), not questions.
    root (same for phpunit in the app container).
 2. **Merge sweep.** `scripts/pr-merge-sweep.sh` lists every open PR with a
    verdict; `--merge` merges the READY ones. READY (`scripts/merge-gate.sh`):
-   no unresolved comment, no "Outside diff range" or "Follow-up" finding left unanswered in a
+   no unresolved comment, no thread whose last CodeRabbit reply says the
+   finding is not addressed (`FIX:bot-unaddressed-<n>`: CodeRabbit resolves its
+   own thread when the lines change, so "resolved" is not its yes; read the
+   reply, fix or answer, and let it reply again), no "Outside diff range" or "Follow-up" finding left unanswered in a
    CodeRabbit review body, CodeRabbit finished on the current head, mergeState
    CLEAN. **CodeRabbit is the reviewer**; Greptile stopped reviewing on
    2026-10-14 and is no longer waited for. "Review rate limited" is a skipped
