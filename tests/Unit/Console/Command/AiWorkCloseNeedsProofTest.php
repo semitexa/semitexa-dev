@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Work\BacklogHygiene;
 use Semitexa\Dev\Application\Service\Ai\Work\Epic;
@@ -52,6 +53,7 @@ final class AiWorkCloseNeedsProofTest extends TestCase
             TraceStore::class     => $traces,
             ResumeService::class  => $resume,
             BacklogHygiene::class => $hygiene,
+            DecisionStore::class => new DecisionStore(),
         ]));
         $this->tester = new CommandTester($command);
         // A bug counts from the moment it is filed, so its close is asked for proof.

@@ -8,6 +8,8 @@ use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
 use Semitexa\Core\Support\ProjectRoot;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
+use Semitexa\Dev\Application\Service\Ai\Decision\Stabilization;
 use Semitexa\Dev\Application\Service\Ai\Presence\AgentRegistry;
 use Semitexa\Dev\Application\Service\Ai\Presence\BacklogActivity;
 use Semitexa\Dev\Application\Service\Ai\Presence\TaskClaim;
@@ -34,7 +36,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Work item (task) CLI — the main surface for agent decomposition and resume.
  *
- *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--phase=work|right|fast] [--trace=...] [--context-ref=...]* [--next-step=...]
+ *   bin/semitexa ai:work start  --id=tk-fix-wm --epic=ep-wm --title="..." [--recipe=...] [--risk=...] [--phase=work|right|fast] [--trace=...] [--context-ref=...]* [--next-step=...] [--blocker=<class> --evidence="<command> => <its output>"]
  *   bin/semitexa ai:work list   [--epic=...] [--status=new|in_progress|blocked|done[,...]] [--json]
  *   bin/semitexa ai:work show   --id=tk-fix-wm [--json]
  *   bin/semitexa ai:work update --id=tk-fix-wm [--status=...] [--title=...] [--recipe=...] [--risk=...] [--phase=...] [--next-step=...] [--context-ref=...]* [--epic=...]
@@ -72,6 +74,9 @@ final class AiWorkCommand extends BaseCommand
     #[InjectAsReadonly]
     protected BacklogHygiene $hygiene;
 
+    #[InjectAsReadonly]
+    protected DecisionStore $decisionStore;
+
     public function __construct()
     {
         parent::__construct('ai:work');
@@ -86,7 +91,9 @@ final class AiWorkCommand extends BaseCommand
             ->addOption('title', null, InputOption::VALUE_REQUIRED, 'Task title')
             ->addOption('recipe', null, InputOption::VALUE_REQUIRED, 'Recipe id (see ai:task)')
             ->addOption('risk', null, InputOption::VALUE_REQUIRED, 'Risk: ' . implode('|', self::ALLOWED_RISK))
-            ->addOption('phase', null, InputOption::VALUE_REQUIRED, 'work | right | fast. Filed under right or fast, or under a bug recipe, it counts at once; other new work is an idea until ai:work:approve')
+            ->addOption('phase', null, InputOption::VALUE_REQUIRED, 'work | right | fast. Filed under right or fast, or under a bug recipe, it counts at once; other new work is an idea until ai:work:approve. In the stabilization mode (an active ai:decision ' . Stabilization::ID_PREFIX . '*) only a --blocker with --evidence counts at once')
+            ->addOption('blocker', null, InputOption::VALUE_REQUIRED, 'The failed release criterion a finding is (start): ' . implode('|', TaskFiling::BLOCKERS) . '; needs --evidence')
+            ->addOption('evidence', null, InputOption::VALUE_REQUIRED, 'The proof of a finding (start): "<command> => <its output>"; kept on the task\'s trace, and in its approval when it is a blocker')
             ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Status: ' . implode('|', TaskStatus::all()) . ' (list accepts a comma list)')
             ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'List filter: ' . implode('|', BacklogScope::all()) . ' (default: active)')
             ->addOption('take-over', null, InputOption::VALUE_NONE, 'Take an in_progress task another live agent holds (update)')
@@ -151,10 +158,15 @@ final class AiWorkCommand extends BaseCommand
         }
 
         $traceId = (string) ($input->getOption('trace') ?? $id);
+        $blocker = $this->optionalString($input, 'blocker');
+        $evidence = $this->optionalString($input, 'evidence');
         try {
             WorkId::assertValid($traceId, 'trace id');
             $phase = TaskFiling::phaseOf(TaskFiling::parsePhase($this->optionalString($input, 'phase')), $recipe);
-        } catch (\InvalidArgumentException $e) {
+            // The mode is read only when the answer turns on it; decisions that do not read refuse the filing.
+            $stabilization = TaskFiling::countsByRule($phase, $recipe) && Stabilization::isOn($this->decisionStore);
+            ($refused = TaskFiling::refusal($recipe, $stabilization, $blocker, $evidence)) === null || throw new \InvalidArgumentException($refused);
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
             return $this->error($output, $e->getMessage(), $jsonMode);
         }
         $this->traceStore->openOrCreate($traceId, topic: $title, recipe: $recipe !== '' ? $recipe : null);
@@ -173,7 +185,7 @@ final class AiWorkCommand extends BaseCommand
             traceId:      $traceId,
             createdAt:    $now,
             updatedAt:    $now,
-            approval:     TaskFiling::approvalOnFiling($phase, $recipe, $now),
+            approval:     TaskFiling::approvalOnFiling($phase, $recipe, $now, $stabilization, $blocker, $evidence),
             phase:        $phase,
         );
         $this->taskStore->save($task);
@@ -187,7 +199,7 @@ final class AiWorkCommand extends BaseCommand
             'phase'        => $phase?->value,
             'context_refs' => $refs,
             'next_step'    => $task->nextStep,
-        ]);
+        ] + array_filter(['blocker' => $blocker, 'evidence' => $evidence], static fn (?string $v): bool => $v !== null));
 
         return $this->emitTask($output, $task, 'task_started', $jsonMode);
     }
@@ -313,7 +325,9 @@ final class AiWorkCommand extends BaseCommand
         }
         try {
             $phase = TaskFiling::parsePhase($this->optionalString($input, 'phase'));
-        } catch (\InvalidArgumentException $e) {
+            $stabilization = ($recipe !== null || $phase !== null) && Stabilization::isOn($this->decisionStore);
+            ($refused = TaskFiling::refusalOfEdit($task, $recipe, $stabilization)) === null || throw new \InvalidArgumentException($refused);
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
             return $this->error($output, $e->getMessage(), $jsonMode);
         }
         $nextStep = $this->optionalString($input, 'next-step');
@@ -368,7 +382,7 @@ final class AiWorkCommand extends BaseCommand
             updatedAt:   date('c'),
             epicId:      $epicId,
             phase:       $phase,
-        ), date('c')), $status, $because));
+        ), date('c'), $stabilization && TaskFiling::isRefiled($current, $recipe, $phase)), $status, $because));
 
         $kind = $status !== null ? TraceEventKind::NEXT_STEP : TraceEventKind::NOTE;
         $summary = match (true) {

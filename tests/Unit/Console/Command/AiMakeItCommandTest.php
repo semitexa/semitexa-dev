@@ -410,6 +410,22 @@ final class AiMakeItCommandTest extends TestCase
         self::assertStringContainsString('ai:decision list --applies-to=<tag>. An active decision answers it', implode("\n", $result['steps']));
     }
 
+    public function test_decisions_that_do_not_read_never_turn_the_stabilization_mode_off(): void
+    {
+        (new DecisionStore())->save(new Decision('stabilization-2026-11', 'Ок даю згоду', 'only blockers count', 'process', DecisionScope::STANDING, '2026-11-20T00:00:00+00:00', expiresAt: gmdate(DATE_ATOM, time() + 3600)));
+        file_put_contents($this->root . '/' . DecisionStore::SUBDIR . '/broken.json', '{"schema_version":');
+        $this->file('tk-a', status: TaskStatus::DONE);
+
+        $work = $this->run_(['--phase' => 'work']);
+        $steps = implode("\n", (array) $work['steps']);
+
+        self::assertSame('done', $work['state']);
+        self::assertStringContainsString('stop here and report', $steps);
+        self::assertStringNotContainsString('find what this phase owes', $steps);
+        self::assertStringContainsString('Stabilization mode assumed, since the decisions cannot be read', (string) $work['say']);
+        self::assertSame(['id' => 'unreadable', 'expires_at' => null], $work['stabilization']);
+    }
+
     public function test_a_person_sees_that_the_decisions_do_not_read(): void
     {
         mkdir($this->root . '/' . DecisionStore::SUBDIR, 0775, true);
@@ -459,5 +475,19 @@ final class AiMakeItCommandTest extends TestCase
 
         self::assertArrayHasKey('charter_error', $result);
         self::assertNull($result['charter_error']);
+    }
+
+    public function test_the_stabilization_mode_is_in_the_answer_while_its_decision_is_active(): void
+    {
+        $this->file('tk-a');
+        self::assertNull($this->run_()['stabilization']);
+
+        $until = gmdate(DATE_ATOM, time() + 3600);
+        (new DecisionStore())->save(new Decision('stabilization-2026-11', 'Ок даю згоду', 'only blockers count', 'process', DecisionScope::STANDING, '2026-11-20T00:00:00+00:00', expiresAt: $until));
+        $result = $this->run_();
+
+        self::assertSame(['id' => 'stabilization-2026-11', 'expires_at' => $until], $result['stabilization']);
+        self::assertStringContainsString("Stabilization mode until {$until} (ai:decision stabilization-2026-11)", (string) $result['say']);
+        self::assertStringContainsString('file it as an idea', implode("\n", (array) $result['steps']));
     }
 }

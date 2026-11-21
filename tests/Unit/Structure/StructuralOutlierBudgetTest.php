@@ -574,7 +574,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // recording lives in the stores and BacklogActivity, not here.
         // 707 -> 671 on 2026-11-06: what to run next moved to TaskNextCommands to make
         // room for --phase; the rules of filing live in TaskFiling.
-        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [20, 671],
+        // 671 -> 685 on 2026-11-21, deliberately: the stabilization mode
+        // (ai:decision stabilization-2026-11). What landed here is --blocker and
+        // --evidence, the injected DecisionStore and one call each in start and
+        // update; the rule is TaskFiling's, the mode Stabilization's. No new method.
+        'semitexa-dev/src/Application/Console/Command/AiWorkCommand.php' => [20, 685],
         // 933 -> 936 on 2026-10-07: lint:components joined the plan — one row
         // for the new component kind and one entry in each of the cross-file
         // and all-lints lists (the template row only grew a name). Data, not

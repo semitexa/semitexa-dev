@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Container\PropertyInjector;
 use Semitexa\Core\Support\ProjectRoot;
 use Semitexa\Dev\Application\Console\Command\AiWorkCommand;
+use Semitexa\Dev\Application\Service\Ai\Decision\Decision;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionScope;
+use Semitexa\Dev\Application\Service\Ai\Decision\DecisionStore;
 use Semitexa\Dev\Application\Service\Ai\State\Phase;
 use Semitexa\Dev\Application\Service\Ai\Trace\TraceStore;
 use Semitexa\Dev\Application\Service\Ai\Verify\Receipt\VerifyReceipts;
@@ -55,6 +58,7 @@ final class AiWorkPhaseTest extends TestCase
             TraceStore::class     => $traces,
             ResumeService::class  => $resume,
             BacklogHygiene::class => $hygiene,
+            DecisionStore::class => new DecisionStore(),
         ]));
         $this->tester = new CommandTester($command);
     }
@@ -224,5 +228,100 @@ final class AiWorkPhaseTest extends TestCase
 
         self::assertSame(1, $this->tester->getStatusCode());
         self::assertSame(Phase::WORK, $this->tasks->get('tk-a')->phase);
+    }
+
+    private const EVIDENCE = 'vendor/bin/phpunit --filter=Leak => FAILURES! Tests: 1, Failures: 1';
+
+    private function stabilize(?string $expiresAt = null, string $id = 'stabilization-2026-11'): void
+    {
+        (new DecisionStore())->save(new Decision($id, 'Ок даю згоду', 'only blockers count', 'process', DecisionScope::STANDING, '2026-11-20T00:00:00+00:00', expiresAt: $expiresAt ?? gmdate(DATE_ATOM, time() + 3600)));
+    }
+
+    private function error(): string
+    {
+        $answer = json_decode($this->tester->getDisplay(), true);
+        self::assertIsArray($answer);
+
+        return (string) ($answer['error'] ?? '');
+    }
+
+    public function test_in_the_stabilization_mode_a_bug_without_evidence_is_refused_and_nothing_is_filed(): void
+    {
+        $this->stabilize();
+
+        self::assertSame(1, $this->start('tk-a', ['--recipe' => 'fix_bug']));
+
+        self::assertFalse($this->tasks->exists('tk-a'));
+        self::assertFileDoesNotExist($this->root . '/var/ai-traces/tk-a.ndjson');
+        self::assertStringContainsString('stabilization mode', $this->error());
+        self::assertStringContainsString('file it without --recipe', $this->error());
+    }
+
+    public function test_in_the_stabilization_mode_a_blocker_with_evidence_is_approved_by_rule(): void
+    {
+        $this->stabilize();
+
+        self::assertSame(0, $this->start('tk-a', ['--recipe' => 'fix_bug', '--blocker' => 'leak', '--evidence' => self::EVIDENCE]));
+
+        $task = $this->tasks->get('tk-a');
+        self::assertSame('rule', $task->approval?->by);
+        self::assertSame('blocker leak: ' . self::EVIDENCE, $task->approval->words);
+        self::assertStringContainsString('"blocker":"leak"', (string) file_get_contents($this->root . '/var/ai-traces/tk-a.ndjson'));
+    }
+
+    public function test_in_the_stabilization_mode_a_right_or_fast_ticket_is_an_idea(): void
+    {
+        $this->stabilize();
+
+        self::assertSame(0, $this->start('tk-right', ['--phase' => 'right']));
+        self::assertSame(0, $this->start('tk-fast', ['--phase' => 'fast', '--evidence' => self::EVIDENCE]));
+        self::assertSame(0, $this->start('tk-budget', ['--phase' => 'fast', '--blocker' => 'bench-budget', '--evidence' => self::EVIDENCE]));
+
+        self::assertFalse($this->tasks->get('tk-right')->isApproved());
+        self::assertFalse($this->tasks->get('tk-fast')->isApproved());
+        self::assertTrue($this->tasks->get('tk-budget')->isApproved());
+    }
+
+    public function test_an_expired_or_otherwise_named_decision_is_no_stabilization_mode(): void
+    {
+        $this->stabilize('2026-11-19T00:00:00+00:00');
+        $this->stabilize(id: 'focus-week');
+
+        self::assertSame(0, $this->start('tk-a', ['--recipe' => 'fix_bug']));
+        self::assertSame(0, $this->start('tk-b', ['--phase' => 'right']));
+
+        self::assertSame('a bug counts from the moment it is filed: ai:decision project-progress-model', $this->tasks->get('tk-a')->approval?->words);
+        self::assertTrue($this->tasks->get('tk-b')->isApproved());
+    }
+
+    public function test_an_unknown_blocker_class_is_refused_in_any_mode(): void
+    {
+        self::assertSame(1, $this->start('tk-a', ['--recipe' => 'fix_bug', '--blocker' => 'annoying', '--evidence' => self::EVIDENCE]));
+        self::assertStringContainsString("invalid blocker 'annoying'", $this->error());
+        self::assertFalse($this->tasks->exists('tk-a'));
+    }
+
+    public function test_in_the_stabilization_mode_an_edit_does_not_turn_an_idea_into_a_bug(): void
+    {
+        $this->stabilize();
+        $this->start('tk-a');
+
+        $this->tester->execute(['action' => 'update', '--id' => 'tk-a', '--recipe' => 'fix_bug', '--json' => true]);
+
+        self::assertSame(1, $this->tester->getStatusCode());
+        self::assertSame('', $this->tasks->get('tk-a')->recipe);
+    }
+
+    public function test_in_the_stabilization_mode_claiming_a_bug_filed_before_it_keeps_its_approval(): void
+    {
+        $this->start('tk-a', ['--recipe' => 'fix_bug']);
+        $this->start('tk-b', ['--phase' => 'right']);
+        $this->stabilize();
+
+        $this->update('tk-a', ['--status' => 'in_progress']);
+        $this->update('tk-b', ['--phase' => 'fast']);
+
+        self::assertTrue($this->tasks->get('tk-a')->isApproved());
+        self::assertFalse($this->tasks->get('tk-b')->isApproved(), 'moved to another phase it is filed anew');
     }
 }
