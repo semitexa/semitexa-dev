@@ -26,10 +26,11 @@ final class ObservatoryPanelGateTest extends TestCase
     {
         foreach (self::ENV_KEYS as $key) {
             $this->envSnapshot[$key] = getenv($key);
-            // Each test starts with none set and sets what it needs: an
-            // inherited SEMITEXA_OBSERVATORY_TOKEN would change every
-            // tokenless answer (review semitexa-dev#307).
-            putenv($key);
+            // Each test starts with all three empty and sets what it needs.
+            // Empty, not unset: an unset key falls back to the project's .env
+            // (Environment::getEnvValue), so a developer's own token or mode
+            // would change the tokenless answers (review semitexa-dev#307).
+            putenv($key . '=');
         }
     }
 
@@ -100,7 +101,7 @@ final class ObservatoryPanelGateTest extends TestCase
         self::assertFalse($gate->allowsDevTools());
 
         putenv('APP_ENV=dev');
-        putenv('SEMITEXA_OBSERVATORY_MODE');
+        putenv('SEMITEXA_OBSERVATORY_MODE=');
         self::assertTrue($gate->allowsDevTools(), 'dev mode keeps the explorer');
     }
 
