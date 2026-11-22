@@ -26,6 +26,10 @@ final class ObservatoryPanelGateTest extends TestCase
     {
         foreach (self::ENV_KEYS as $key) {
             $this->envSnapshot[$key] = getenv($key);
+            // Each test starts with none set and sets what it needs: an
+            // inherited SEMITEXA_OBSERVATORY_TOKEN would change every
+            // tokenless answer (review semitexa-dev#307).
+            putenv($key);
         }
     }
 
