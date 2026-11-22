@@ -104,6 +104,7 @@ final class PrMergeSweepTest extends TestCase
         self::assertNotSame(0, $status);
         self::assertSame([self::MERGE], self::merges($calls));
         self::assertNotSame([], preg_grep('~semitexa/semitexa-dev#287~', $out), 'the refused PR is still reported, not lost with the output');
+        self::assertContains('unexpected end of JSON input', $out, "the merge's own refusal reaches the output");
         self::assertSame([], preg_grep('~merged semitexa~', $out));
     }
 
