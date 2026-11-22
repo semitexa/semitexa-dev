@@ -28,7 +28,12 @@
 # deleted.
 #
 # Fails closed: an error from gh or pr-review.sh exits non-zero rather than
-# reporting "nothing open".
+# reporting "nothing open". A read is tried PR_SWEEP_GH_ATTEMPTS times (3)
+# first: a verdict takes over a dozen requests a PR, and GitHub now and then
+# answers one with an empty body, which `gh api --jq` reports as a bare
+# "unexpected end of JSON input". That stopped the sweep before the row of
+# semitexa-dev#287 on 2026-11-19, a minute after it had read READY, and the PR
+# stayed open. The merge itself is asked once.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +51,50 @@ case "${1:-}" in
     -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
 esac
+
+# Every gh call of the sweep, of merge-gate.sh and of pr-review.sh below (the
+# function is exported to it) goes through here. A read that fails is asked
+# again after PR_SWEEP_GH_RETRY_SLEEP seconds (2), and only the answer of the
+# attempt that succeeded is printed, so a list that failed on its second page
+# is not counted twice. A read that keeps failing fails as before, with gh's
+# own message and the call it belongs to. `gh pr merge` is never repeated: it
+# is a write, and a refusal (the head moved) is an answer, not a failure to
+# read.
+gh() {
+    if [[ "${1:-} ${2:-}" == "pr merge" ]]; then
+        command gh "$@"
+        return
+    fi
+    local attempts=${PR_SWEEP_GH_ATTEMPTS:-3} attempt=1 out err status
+    out="$(mktemp)"
+    err="$(mktemp)"
+    while :; do
+        status=0
+        command gh "$@" >"$out" 2>"$err" || status=$?
+        if (( status == 0 )); then
+            cat "$err" >&2 || true
+            # An answer that cannot be read back is no answer: an empty list
+            # printed for it would count as "nothing unanswered" (review
+            # semitexa-dev#306). An empty answer read back is still valid.
+            if ! cat "$out"; then
+                printf 'pr-merge-sweep: gh %s answered, but its answer could not be read back\n' "$(cut -c1-160 <<<"${*:1:3}")" >&2
+                rm -f "$out" "$err"
+                return 1
+            fi
+            rm -f "$out" "$err"
+            return 0
+        fi
+        if (( attempt >= attempts )); then
+            cat "$err" >&2 || true
+            printf 'pr-merge-sweep: gh %s failed %d time(s)\n' "$(cut -c1-160 <<<"${*:1:3}")" "$attempt" >&2
+            rm -f "$out" "$err"
+            return "$status"
+        fi
+        attempt=$((attempt + 1))
+        sleep "${PR_SWEEP_GH_RETRY_SLEEP:-2}"
+    done
+}
+export -f gh
 
 queue="$("$SCRIPT_DIR/pr-review.sh" --compact --no-diff)"
 
