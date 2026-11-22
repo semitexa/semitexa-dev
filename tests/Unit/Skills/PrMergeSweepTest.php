@@ -84,6 +84,17 @@ final class PrMergeSweepTest extends TestCase
         self::assertSame([], preg_grep('~READY|merged~', $out));
     }
 
+    /** Review semitexa-dev#306: an answer gh gave that cannot be read back is no answer, not an empty list. */
+    #[Test]
+    public function an_answer_that_cannot_be_read_back_stops_the_sweep_rather_than_reading_as_empty(): void
+    {
+        [$status, $out, $calls] = $this->sweep('--merge', fail: ['nothing fails', 0], catFails: true);
+
+        self::assertNotSame(0, $status, implode("\n", $out));
+        self::assertNotSame([], preg_grep('~answered, but its answer could not be read back~', $out));
+        self::assertSame([], self::merges($calls), 'nothing merged on a list that was never read');
+    }
+
     /** --match-head-commit refuses a head pushed after the verdict; the refusal is not asked again. */
     #[Test]
     public function a_head_that_moved_is_refused_once_and_stays_unmerged(): void
@@ -92,6 +103,7 @@ final class PrMergeSweepTest extends TestCase
 
         self::assertNotSame(0, $status);
         self::assertSame([self::MERGE], self::merges($calls));
+        self::assertNotSame([], preg_grep('~semitexa/semitexa-dev#287~', $out), 'the refused PR is still reported, not lost with the output');
         self::assertSame([], preg_grep('~merged semitexa~', $out));
     }
 
@@ -116,7 +128,7 @@ final class PrMergeSweepTest extends TestCase
      * @param array{string, int} $fail
      * @return array{int, list<string>, list<string>}
      */
-    private function sweep(string $option, array $fail): array
+    private function sweep(string $option, array $fail, bool $catFails = false): array
     {
         $this->dir = sys_get_temp_dir() . '/pr-merge-sweep-' . bin2hex(random_bytes(4));
         mkdir($this->dir . '/bin', 0o755, true);
@@ -151,6 +163,20 @@ final class PrMergeSweepTest extends TestCase
                 default => exit(2),
             };
             PHP, ['{dir}' => $this->dir, '{head}' => self::HEAD]));
+        if ($catFails) {
+            // A cat that cannot read gh's buffered answers back (mktemp's tmp.* files).
+            file_put_contents($this->dir . '/bin/cat', '#!' . PHP_BINARY . "\n<?php\n" . <<<'PHP'
+                $files = array_slice($argv, 1);
+                if ($files !== [] && str_starts_with(basename($files[0]), 'tmp.')) {
+                    fwrite(STDERR, "cat: read error\n");
+                    exit(1);
+                }
+                foreach ($files === [] ? ['php://stdin'] : $files as $file) {
+                    readfile($file === '-' ? 'php://stdin' : $file);
+                }
+                PHP);
+            chmod($this->dir . '/bin/cat', 0o755);
+        }
         file_put_contents($this->dir . '/bin/jq', '#!' . PHP_BINARY . "\n<?php\n" . <<<'PHP'
             $program = (string) end($argv);
             /** @var array{repos: list<array{slug: string, prs: list<array{number: int, summary: array{unresolvedActionableComments?: int}}>}>} $queue */

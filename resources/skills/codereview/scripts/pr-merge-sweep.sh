@@ -72,13 +72,20 @@ gh() {
         status=0
         command gh "$@" >"$out" 2>"$err" || status=$?
         if (( status == 0 )); then
-            cat "$err" >&2
-            cat "$out"
+            cat "$err" >&2 || true
+            # An answer that cannot be read back is no answer: an empty list
+            # printed for it would count as "nothing unanswered" (review
+            # semitexa-dev#306). An empty answer read back is still valid.
+            if ! cat "$out"; then
+                printf 'pr-merge-sweep: gh %s answered, but its answer could not be read back\n' "$(cut -c1-160 <<<"${*:1:3}")" >&2
+                rm -f "$out" "$err"
+                return 1
+            fi
             rm -f "$out" "$err"
             return 0
         fi
         if (( attempt >= attempts )); then
-            cat "$err" >&2
+            cat "$err" >&2 || true
             printf 'pr-merge-sweep: gh %s failed %d time(s)\n' "$(cut -c1-160 <<<"${*:1:3}")" "$attempt" >&2
             rm -f "$out" "$err"
             return "$status"
