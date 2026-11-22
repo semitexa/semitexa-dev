@@ -26,6 +26,11 @@ final class ObservatoryPanelGateTest extends TestCase
     {
         foreach (self::ENV_KEYS as $key) {
             $this->envSnapshot[$key] = getenv($key);
+            // Each test starts with all three empty and sets what it needs.
+            // Empty, not unset: an unset key falls back to the project's .env
+            // (Environment::getEnvValue), so a developer's own token or mode
+            // would change the tokenless answers (review semitexa-dev#307).
+            putenv($key . '=');
         }
     }
 
@@ -39,10 +44,10 @@ final class ObservatoryPanelGateTest extends TestCase
     }
 
     /** @param array<string, string> $headers */
-    private function request(array $headers = [], string $remoteAddr = '127.0.0.1'): void
+    private function request(array $headers = [], string $remoteAddr = '127.0.0.1', string $method = 'GET'): void
     {
         CurrentRequestStore::set(new Request(
-            method: 'GET',
+            method: $method,
             uri: '/__observatory',
             headers: $headers,
             query: [],
@@ -96,7 +101,7 @@ final class ObservatoryPanelGateTest extends TestCase
         self::assertFalse($gate->allowsDevTools());
 
         putenv('APP_ENV=dev');
-        putenv('SEMITEXA_OBSERVATORY_MODE');
+        putenv('SEMITEXA_OBSERVATORY_MODE=');
         self::assertTrue($gate->allowsDevTools(), 'dev mode keeps the explorer');
     }
 
@@ -152,5 +157,83 @@ final class ObservatoryPanelGateTest extends TestCase
         self::assertTrue($gate->allowsDevTools(), 'the same token opens the dev tools');
         $this->request(['Host' => '192.168.100.2:9507', 'X-Observatory-Token' => 'wrong'], '192.168.100.7');
         self::assertFalse($gate->allows());
+    }
+
+    /**
+     * Measured 2026-11-22: a fetch() from https://evil.example to
+     * localhost:9507/__observatory/logs answered 200 with
+     * `Access-Control-Allow-Origin: *`. ThisMachine does not help: the browser
+     * that runs the foreign page IS this machine.
+     */
+    #[Test]
+    public function dev_refuses_a_page_on_another_site(): void
+    {
+        putenv('APP_ENV=dev');
+        $gate = new ObservatoryPanelGate();
+
+        $this->request(['Host' => 'localhost:9507', 'Origin' => 'https://evil.example', 'Sec-Fetch-Site' => 'cross-site', 'Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty']);
+        self::assertFalse($gate->allows(), 'a fetch from another site reads nothing');
+        self::assertFalse($gate->allowsDevTools());
+
+        $this->request(['Host' => 'localhost:9507', 'Sec-Fetch-Site' => 'same-site', 'Sec-Fetch-Mode' => 'no-cors', 'Sec-Fetch-Dest' => 'script']);
+        self::assertFalse($gate->allows(), 'another port of localhost is another origin');
+
+        // A browser without fetch metadata still names the caller in Origin.
+        $this->request(['Host' => 'localhost:9507', 'Origin' => 'https://evil.example']);
+        self::assertFalse($gate->allows(), 'a foreign Origin alone is enough');
+        $this->request(['Host' => 'localhost:9507', 'Origin' => 'null']);
+        self::assertFalse($gate->allows(), 'an opaque origin (sandboxed frame, file://) is foreign');
+
+        // The stage switch is a POST and #[CsrfExempt]: a form on another site
+        // submits it as a navigation, which is only harmless for a GET.
+        $this->request(['Host' => 'localhost:9507', 'Origin' => 'https://evil.example', 'Sec-Fetch-Site' => 'cross-site', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document'], '127.0.0.1', 'POST');
+        self::assertFalse($gate->allows(), 'a cross-site form POST is refused');
+    }
+
+    #[Test]
+    public function dev_keeps_the_developers_own_use(): void
+    {
+        putenv('APP_ENV=dev');
+        $gate = new ObservatoryPanelGate();
+
+        $this->request(['Host' => 'localhost:9507', 'Sec-Fetch-Site' => 'same-origin', 'Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty']);
+        self::assertTrue($gate->allows(), 'the panel polling its own feed');
+
+        $this->request(['Host' => 'localhost:9507', 'Origin' => 'http://localhost:9507', 'Sec-Fetch-Site' => 'same-origin', 'Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty'], '127.0.0.1', 'POST');
+        self::assertTrue($gate->allows(), 'the panel switching stage mode');
+
+        $this->request(['Host' => 'localhost:9507', 'Sec-Fetch-Site' => 'none', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document']);
+        self::assertTrue($gate->allows(), 'the address typed into the bar');
+
+        $this->request(['Host' => 'localhost:9507', 'Sec-Fetch-Site' => 'cross-site', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document']);
+        self::assertTrue($gate->allows(), 'a link followed from docs or chat opens the page; the other site cannot read it');
+
+        // No fetch metadata and no Origin: curl, ai:observe, an old browser on
+        // its own page. Same answer as allowsDevTools() and the Workbench gate.
+        $this->request(['Host' => 'localhost:9507']);
+        self::assertTrue($gate->allows(), 'curl from this machine');
+    }
+
+    #[Test]
+    public function monitor_refuses_another_site_through_the_tunnel_and_with_the_token(): void
+    {
+        putenv('APP_ENV=prod');
+        putenv('SEMITEXA_OBSERVATORY_MODE=monitor');
+        $gate = new ObservatoryPanelGate();
+        $foreign = ['Host' => 'localhost:9507', 'Origin' => 'https://evil.example', 'Sec-Fetch-Site' => 'cross-site', 'Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty'];
+
+        // The operator's browser at the far end of `ssh -L`: the tunnel makes
+        // every tab in it a direct loopback peer.
+        $this->request($foreign, '127.0.0.1');
+        self::assertFalse($gate->allows(), 'a foreign page must not ride the tunnel');
+
+        $this->request(['Host' => 'localhost:9507', 'Sec-Fetch-Site' => 'same-origin', 'Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty'], '127.0.0.1');
+        self::assertTrue($gate->allows(), 'the panel itself, through the tunnel');
+
+        putenv('SEMITEXA_OBSERVATORY_TOKEN=s3cret');
+        $this->request($foreign + ['X-Observatory-Token' => 's3cret'], '203.0.113.9');
+        self::assertFalse($gate->allows(), 'same rule as the dev tools: the token does not make a foreign page a reader');
+        $this->request(['Host' => 'ops.example', 'Sec-Fetch-Site' => 'same-origin', 'X-Observatory-Token' => 's3cret'], '203.0.113.9');
+        self::assertTrue($gate->allows());
     }
 }

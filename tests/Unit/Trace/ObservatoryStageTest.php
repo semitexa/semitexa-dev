@@ -107,9 +107,40 @@ final class ObservatoryStageTest extends TestCase
         return $handler->handle($payload, new ResourceResponse());
     }
 
-    private function request(string $method): void
+    /** @param array<string, string> $headers */
+    private function request(string $method, array $headers = []): void
     {
-        CurrentRequestStore::set(new Request($method, '/__observatory/stage', [], ['on' => '1'], [], [], []));
+        CurrentRequestStore::set(new Request($method, '/__observatory/stage', $headers, ['on' => '1'], [], [], []));
+    }
+
+    /**
+     * The route is #[CsrfExempt] and the app answers with
+     * `Access-Control-Allow-Origin: *`: until 2026-11-22 a page on any site
+     * open in the developer's browser could switch recording on, then read
+     * the feed it filled.
+     */
+    #[Test]
+    public function a_post_from_another_site_changes_nothing_and_learns_nothing(): void
+    {
+        $foreign = ['Host' => 'localhost:9507', 'Origin' => 'https://evil.example', 'Sec-Fetch-Site' => 'cross-site'];
+
+        $this->request('POST', $foreign + ['Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty']);
+        $response = $this->callStage('1');
+        self::assertSame(404, $response->getStatusCode(), 'fetch() from another site');
+        self::assertSame('Not Found', $response->getContent());
+        self::assertFalse(ObservatoryStage::isOn());
+
+        $this->request('POST', $foreign + ['Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document']);
+        self::assertSame(404, $this->callStage('1')->getStatusCode(), 'a form submitted from another site');
+        self::assertFalse(ObservatoryStage::isOn());
+
+        ObservatoryStage::set(true);
+        $this->request('POST', $foreign + ['Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty']);
+        self::assertSame(404, $this->callStage('0')->getStatusCode());
+        self::assertTrue(ObservatoryStage::isOn(), 'nor can it switch recording off');
+
+        $this->request('POST', ['Host' => 'localhost:9507', 'Origin' => 'http://localhost:9507', 'Sec-Fetch-Site' => 'same-origin']);
+        self::assertFalse(json_decode((string) $this->callStage('0')->getContent(), true)['stage'], 'the panel itself still switches it');
     }
 
     #[Test]

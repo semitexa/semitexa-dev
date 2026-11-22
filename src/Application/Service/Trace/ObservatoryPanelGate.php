@@ -34,6 +34,9 @@ use Semitexa\Core\Request;
  *   internet stays out while an operator's SSH tunnel straight to the app
  *   port walks in.
  *
+ * In every mode a request from a page on another site is refused first; see
+ * allows().
+ *
  * Denials render as the same 404 the off mode shows, upstream in the handlers:
  * a 403 would confirm to a stranger that the panel exists.
  */
@@ -51,14 +54,29 @@ final class ObservatoryPanelGate
      */
     public function allowsDevTools(): bool
     {
-        return ObservatoryMode::full() && $this->allows() && !CrossSiteRead::isCrossSiteRead(CurrentRequestStore::get());
+        return ObservatoryMode::full() && $this->allows();
     }
 
+    /**
+     * Refuses a request another site could read the answer to (CrossSiteRead),
+     * in every mode and with or without the token. The app answers every route
+     * with `Access-Control-Allow-Origin: *`, and the caller that passes the
+     * rules below is the developer's own browser (ThisMachine) or the
+     * operator's, at the far end of an SSH tunnel: until 2026-11-22 any site
+     * open in that browser fetched /__observatory/logs and /feed and read
+     * them, and could POST /__observatory/stage to switch recording on first.
+     * Only the Explorer family (allowsDevTools) carried this check. A request
+     * with no Sec-Fetch-Site and no Origin (curl, a CLI probe) is not a
+     * browser on another site and passes on to the rules below.
+     */
 
     public function allows(): bool
     {
         $mode = ObservatoryMode::resolve();
         $request = CurrentRequestStore::get();
+        if (CrossSiteRead::isCrossSiteRead($request)) {
+            return false;
+        }
         if ($mode === ObservatoryMode::DEV) {
             return ThisMachine::sent($request) || ($request !== null && $this->tokenMatches($request));
         }
