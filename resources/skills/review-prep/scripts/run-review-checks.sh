@@ -37,14 +37,21 @@ append_summary() {
     fi
 }
 
+# A check is recorded once it has run: [x] when it passed. One that fails, or
+# cannot run here (a stack that is not up), is recorded as failed with its exit
+# code, and the run stops there with that code: the summary goes into a PR body.
 run_check() {
     local label="$1"
     shift
-    append_summary "- [x] ${label}"
-    (
-        cd "$repo"
-        "$@"
-    )
+    local status=0
+    (cd "$repo" && "$@") || status=$?
+    if [ "$status" -eq 0 ]; then
+        append_summary "- [x] ${label}"
+        return 0
+    fi
+    append_summary "- [ ] ${label}: failed (exit ${status})"
+    printf 'Check failed: %s (exit %s)\n' "$label" "$status" >&2
+    exit "$status"
 }
 
 has_composer_script() {
