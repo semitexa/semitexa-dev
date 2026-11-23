@@ -102,6 +102,7 @@ final class RuleCatalogTest extends TestCase
             'semitexa.traitInjection',
             'semitexa.unannotatedServiceProperty',
             'semitexa.unquotedSqlIdentifier',
+            'semitexa.workerServiceCallerState',
             'semitexa.workerServiceConnectionHandle',
         ];
         $phpstan = array_keys((new RuleCatalog(dirname(__DIR__, 7)))->rules(), 'phpstan', true);
