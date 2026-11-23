@@ -185,6 +185,30 @@ final class BcGateTest extends TestCase
         self::assertSame(0, $found, 'the commit is in the package repository: ' . implode("\n", $out));
     }
 
+    /**
+     * Review on dev#292 (tk-bc-gate-tag-reads-inherit-git-dir): run from a
+     * hook, or under a caller's own git, the gate inherits GIT_DIR. Its tag and
+     * file reads went to that repository, so they found neither the package's
+     * tags nor its @api surface.
+     */
+    #[Test]
+    public function an_inherited_git_dir_does_not_send_the_tag_reads_to_another_repository(): void
+    {
+        $this->released();
+        $other = $this->root . '/other';
+        mkdir($other);
+        $this->git($other, ['init -q', 'config user.email t@example.test', 'config user.name T', 'commit -q --allow-empty -m other']);
+        $this->git($other, ['tag -a -m cut 2026.09.01.0900'], '2026-09-01T09:00:00Z');
+
+        [$status, $out] = $this->gate(self::BREAKS, env: 'GIT_DIR=' . escapeshellarg($other . '/.git') . ' ');
+
+        self::assertSame(1, $status, implode("\n", $out));
+        self::assertSame([
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method Semitexa\\Core\\Clock#old() was removed — @api and never deprecated',
+            '[BREAK] semitexa-core (since 2026.07.01.0900): Method b() was added to interface Semitexa\\Core\\Port — @api and never deprecated',
+        ], $out, 'the package\'s own tag and surface, as without GIT_DIR');
+    }
+
     /** A tag whose autoload already reads src as a classmap needs nothing: roave is given the tag. */
     #[Test]
     public function a_tag_that_already_has_the_classmap_is_given_as_it_is(): void
