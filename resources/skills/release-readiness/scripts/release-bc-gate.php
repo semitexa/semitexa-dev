@@ -211,15 +211,32 @@ function cutDate(string $version): ?\DateTimeImmutable
 }
 
 /**
+ * git in $dir, stderr dropped, with this process's environment less git's
+ * repository-location variables (see withoutRepositoryLocation()): run from a
+ * hook, an inherited GIT_DIR read the tags and files of another repository.
+ * The output as exec() gave it: lines without their trailing whitespace.
+ *
  * @param list<string> $arguments
  * @param-out int $status
  */
 function git(string $dir, array $arguments, ?int &$status = null): string
 {
-    $output = [];
-    exec('git -C ' . escapeshellarg($dir) . ' -c core.quotePath=false ' . implode(' ', array_map('escapeshellarg', $arguments)) . ' 2>/dev/null', $output, $status);
+    $status = 1;
+    $process = proc_open(
+        ['git', '-C', $dir, '-c', 'core.quotePath=false', ...$arguments],
+        [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
+        $pipes,
+        null,
+        withoutRepositoryLocation(getenv()),
+    );
+    if (!is_resource($process)) {
+        return '';
+    }
+    $output = (string) stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    $status = proc_close($process);
 
-    return implode("\n", $output);
+    return implode("\n", array_map('rtrim', explode("\n", rtrim($output))));
 }
 
 /**
