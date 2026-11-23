@@ -451,7 +451,11 @@ final class StructuralOutlierBudgetTest extends TestCase
         // #167 review) — a service that injects one whose initialize() waits for
         // its factories now waits too, in dependency order. Same ordering rule
         // of the build graph, so it stays where the graph is built.
-        'semitexa-core/src/Container/GraphBuilder.php' => [22, 829],
+        // 22/829 -> 18/679 on 2026-11-23: the resolver build left with the
+        // resolvers (buildResolvers, createInstanceWithConstructor,
+        // getResolverClassForContract, isResolverClass): the registry alone
+        // decides the active implementation (d-20261123-di-registry-one-source).
+        'semitexa-core/src/Container/GraphBuilder.php' => [18, 679],
         // 709 -> 713, 2026-11-02 (phpstan burn-down): a discovered class that
         // does not load is reported instead of a ReflectionException, and the
         // class-string guards it needs are declared. Relations became a typed
