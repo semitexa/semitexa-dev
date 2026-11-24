@@ -29,11 +29,11 @@ final class PageCheckTargets
     /**
      * @param list<ChangedFile> $changedFiles
      * @param list<array{path: string, module: string, file?: string, template?: string}> $routes public parameterless GET routes, as discovered
-     * @param (\Closure(string): list<string>)|null $usedBy the paths of the pages that render a changed file ({@see PageUsers})
+     * @param PageUsers|null $users what the templates say about which page shows a file
      *
      * @return list<VerificationTarget>
      */
-    public static function of(array $changedFiles, string $effectiveScope, array $routes, ?\Closure $usedBy = null): array
+    public static function of(array $changedFiles, string $effectiveScope, array $routes, ?PageUsers $users = null): array
     {
         if ($effectiveScope === VerificationPlan::SCOPE_MINIMAL) {
             return [];
@@ -45,8 +45,10 @@ final class PageCheckTargets
         foreach ($routes as $route) {
             $declaredIn[$route['path']] = $route['file'] ?? '';
         }
-        /** @var array<string, list<string>> $shows path => the files it is known to show ({@see PageUsers}), not put here by a fallback */
+        /** @var array<string, list<string>> $shows path => the changed templates its own chain holds ({@see PageUsers::rendering()}) */
         $shows = [];
+        /** @var array<string, true> $first the pages the templates chose, not a fallback */
+        $first = [];
         /** @var array<string, list<string>> $devSurfaces surface => the files it alone shows */
         $devSurfaces = [];
         foreach ($changedFiles as $file) {
@@ -58,18 +60,19 @@ final class PageCheckTargets
                 $devSurfaces[$surface][] = $file->path;
                 continue;
             }
-            [$paths, $known] = self::pagesOf($file->path, $routes, $usedBy);
+            [$paths, $chosen, $renders] = self::pagesOf($file->path, $routes, $users);
             foreach ($paths as $path) {
                 $pages[$path][] = $file->path;
-                if ($known) {
+                $first += $chosen ? [$path => true] : [];
+                if ($renders) {
                     $shows[$path][] = $file->path;
                 }
             }
         }
 
         $targets = [];
-        // The pages known to show a file before any file's fallback pages: eight of those must not push the exact page out.
-        foreach (array_slice(array_intersect_key($pages, $shows) + $pages, 0, self::LIMIT, true) as $path => $files) {
+        // The pages the templates chose before any file's fallback pages: eight of those must not push the exact page out.
+        foreach (array_slice(array_intersect_key($pages, $first) + $pages, 0, self::LIMIT, true) as $path => $files) {
             $targets[] = new VerificationTarget(
                 type: VerificationTarget::TYPE_PAGE,
                 id: "page:{$path}",
@@ -84,11 +87,10 @@ final class PageCheckTargets
 
     /**
      * @param list<array{path: string, module: string, file?: string, template?: string}> $routes
-     * @param (\Closure(string): list<string>)|null $usedBy
      *
-     * @return array{list<string>, bool} the paths, and whether they are known to show the file
+     * @return array{list<string>, bool, bool} the paths; whether the templates chose them; whether they render the file
      */
-    private static function pagesOf(string $file, array $routes, ?\Closure $usedBy): array
+    private static function pagesOf(string $file, array $routes, ?PageUsers $users): array
     {
         $usable = array_values(array_filter($routes, static fn (array $r): bool => self::isPage($r['path'])));
         $of = static fn (?string $module): array => $module === null ? [] : array_filter($usable, static fn (array $r): bool => $r['module'] === $module);
@@ -98,9 +100,10 @@ final class PageCheckTargets
         $mine = $of($module ?? $package);
         // The pages whose templates hold the changed one, or use its package when that has no route:
         // a package's eight shortest paths were its blog, which answers from another site.
-        $shows = $usedBy !== null ? $usedBy($file) : [];
-        $rendered = array_filter($usable, static fn (array $r): bool => in_array($r['path'], $shows, true));
-        $mine = $rendered !== [] ? $rendered : $mine;
+        $in = static fn (array $paths): array => array_filter($usable, static fn (array $r): bool => in_array($r['path'], $paths, true));
+        $rendering = $users !== null ? $in($users->rendering($file)) : [];
+        $chosen = $rendering !== [] || $users === null ? $rendering : $in($users->builtOn($file));
+        $mine = $chosen !== [] ? $chosen : $mine;
         if ($mine === [] && $module === null) {
             $mine = array_filter($usable, static fn (array $r): bool => !str_starts_with($r['module'], 'semitexa-'));
         }
@@ -108,7 +111,7 @@ final class PageCheckTargets
         // The shortest paths first: a section's front page shows more of its layout than a leaf.
         usort($paths, static fn (string $a, string $b): int => [substr_count($a, '/'), strlen($a), $a] <=> [substr_count($b, '/'), strlen($b), $b]);
 
-        return [$paths, $rendered !== []];
+        return [$paths, $chosen !== [], $rendering !== []];
     }
 
     /** A page a browser can open as it is: no parameter, not a dev surface, not an API. */

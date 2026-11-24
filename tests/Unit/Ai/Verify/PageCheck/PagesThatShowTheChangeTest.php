@@ -116,7 +116,7 @@ final class PagesThatShowTheChangeTest extends TestCase
     #[Test]
     public function a_stylesheet_of_a_package_with_routes_keeps_its_own_pages(): void
     {
-        self::assertSame([], (new PageUsers($this->root, self::ROUTES))->showing('packages/semitexa-demo/src/Application/Static/css/header.css'));
+        self::assertSame([], (new PageUsers($this->root, self::ROUTES))->builtOn('packages/semitexa-demo/src/Application/Static/css/header.css'));
     }
 
     #[Test]
@@ -172,7 +172,7 @@ final class PagesThatShowTheChangeTest extends TestCase
     {
         $template = 'packages/semitexa-demo/src/Application/View/templates/partials/orphan.html.twig';
         $this->write($template, '');
-        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, (new PageUsers($this->root, self::ROUTES))->showing(...));
+        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
         self::assertSame([], $targets[0]->commandInput['shows'], 'a fallback page is not known to show the file');
         $this->seen('/', $this->clean());
         $this->seen('/blog', $this->offSite());
@@ -189,7 +189,7 @@ final class PagesThatShowTheChangeTest extends TestCase
     public function the_plan_records_which_files_a_page_is_known_to_show(): void
     {
         $template = 'packages/semitexa-demo/src/Application/View/templates/platform/queue.html.twig';
-        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, (new PageUsers($this->root, self::ROUTES))->showing(...));
+        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
 
         self::assertSame([$template], $targets[0]->commandInput['shows']);
     }
@@ -207,7 +207,7 @@ final class PagesThatShowTheChangeTest extends TestCase
             [new ChangedFile('src/x.css', ChangedFile::KIND_STYLESHEET), new ChangedFile($template, ChangedFile::KIND_TEMPLATE)],
             VerificationPlan::SCOPE_STANDARD,
             $routes,
-            (new PageUsers($this->root, $routes))->showing(...),
+            new PageUsers($this->root, $routes),
         );
 
         self::assertCount(PageCheckTargets::LIMIT, $targets);
@@ -238,6 +238,115 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertSame(VerificationResult::STATUS_SKIPPED, $results[0]->status);
         self::assertFalse($results[0]->required);
         self::assertSame(VerificationResult::STATUS_PASS, $results[1]->status);
+    }
+
+    /**
+     * Review, dev#312: the changed stylesheet is its asset module and its path. Another module's
+     * file of the same name is not it, so it neither passes the page nor excuses another one.
+     */
+    #[Test]
+    public function another_modules_stylesheet_of_the_same_name_is_not_the_changed_one(): void
+    {
+        $this->seen('/blog', $this->offSite());
+        $this->seen('/', $this->clean(['http://localhost/assets/other-kit/css/nav.css?v=1']));
+        $this->seen('/about', $this->clean(['http://localhost/assets/other-kit/css/nav.css?v=1', 'http://localhost/assets/Site/css/site.css']));
+        $site = 'src/modules/Site/src/Application/Static/css/site.css';
+        $this->write('src/modules/Site/src/Application/Static/assets.json', (string) json_encode(['module' => 'Site']));
+
+        $other = $this->check('/', [self::NAV]);
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $other->status);
+        self::assertStringContainsString('does not load nav.css', $other->signal);
+
+        // /about passes for site.css, which it loads; that says nothing of nav.css.
+        $settled = $this->checker()->settle([$this->check('/blog', [self::NAV, $site]), $this->check('/about', [self::NAV, $site])]);
+        self::assertSame(VerificationResult::STATUS_PASS, $settled[1]->status);
+        self::assertTrue($settled[0]->required);
+        self::assertStringContainsString('no other opened page showed nav.css', $settled[0]->signal);
+
+        // The file itself, whatever its version query: shown.
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css?v=93e30410b6eb']));
+        self::assertSame(VerificationResult::STATUS_PASS, $this->check('/', [self::NAV])->status);
+        self::assertFalse($this->checker()->settle([$this->check('/blog', [self::NAV]), $this->check('/', [self::NAV])])[0]->required);
+
+        // A manifest that names no module identifies nothing: no href counts as the file.
+        $this->write('packages/semitexa-showcase-kit/src/Application/Static/assets.json', '{}');
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check('/', [self::NAV])->status);
+    }
+
+    /** Review, dev#312: home is built on showcase.html.twig; a change to feature.html.twig opens it and is not shown by it. */
+    #[Test]
+    public function a_page_on_a_sibling_layout_is_opened_and_not_recorded_as_showing_the_file(): void
+    {
+        $layout = 'packages/semitexa-showcase-kit/src/Application/View/templates/layouts/feature.html.twig';
+        $targets = PageCheckTargets::of([new ChangedFile($layout, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
+
+        self::assertSame('/', $targets[0]->commandInput['path']);
+        foreach ($targets as $target) {
+            self::assertSame([], $target->commandInput['shows'], (string) $target->commandInput['path']);
+        }
+
+        // So the home page passing excuses no page sent elsewhere for that layout.
+        $this->seen('/', $this->clean());
+        $this->seen('/blog', $this->offSite());
+        self::assertTrue($this->checker()->settle([$this->check('/blog', [$layout]), $this->checker()->check($targets[0])])[0]->required);
+    }
+
+    /** Review, dev#312: a gate that cannot read a file fails; it does not go on as if the file were empty. */
+    #[Test]
+    public function a_template_or_metadata_that_cannot_be_read_fails_with_its_path(): void
+    {
+        $queue = $this->root . '/packages/semitexa-demo/src/Application/View/templates/platform/queue.html.twig';
+        $unreadable = new PageUsers($this->root, self::ROUTES, static fn (string $path): string|false => $path === $queue ? false : file_get_contents($path));
+        try {
+            $unreadable->rendering('packages/semitexa-demo/src/Application/View/templates/platform/_feature.html.twig');
+            self::fail('an unreadable template was read as an empty one');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($queue, $e->getMessage());
+        }
+
+        // An empty template is a template: read, and it names nothing.
+        $this->write('packages/semitexa-demo/src/Application/View/templates/platform/queue.html.twig', '');
+        self::assertSame(['/demo/platform/config'], (new PageUsers($this->root, self::ROUTES))->rendering('packages/semitexa-demo/src/Application/View/templates/platform/_feature.html.twig'));
+
+        foreach (['packages/semitexa-showcase-kit/composer.json', 'packages/semitexa-showcase-kit/src/Application/Static/assets.json'] as $metadata) {
+            $before = (string) file_get_contents($this->root . '/' . $metadata);
+            $this->write($metadata, '{not json');
+            try {
+                (new PageUsers($this->root, self::ROUTES))->builtOn(self::NAV);
+                self::fail("{$metadata} was unreadable and the plan went on");
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString($metadata, $e->getMessage());
+            }
+            $this->write($metadata, $before);
+        }
+    }
+
+    /** Review, dev#312: a path in a comment or a plain string is no dependency; a real operation is. */
+    #[Test]
+    public function only_a_real_operation_makes_a_template_part_of_a_page(): void
+    {
+        $demo = 'packages/semitexa-demo/src/Application/View/templates/';
+        $this->write($demo . 'pages/home.html.twig', "{% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %}\n"
+            . "{# {% include '" . self::DEMO . "platform/queue.html.twig' %} #}\n"
+            . "{% set example = '" . self::DEMO . "platform/queue.html.twig' %}\n"
+            . "<code>{% verbatim %}{% include '" . self::DEMO . "platform/queue.html.twig' %}{% endverbatim %}</code>\n"
+            . "{% include '" . self::DEMO . "partials/a.html.twig' with {'see': '" . self::DEMO . "platform/queue.html.twig'} only %}\n"
+            . "{{ include('" . self::DEMO . "partials/b.html.twig') }}\n"
+            . "{%- embed '" . self::DEMO . "partials/c.html.twig' -%}{% endembed %}\n"
+            . "{% from '" . self::DEMO . "partials/d.html.twig' import field %}");
+        foreach (['a', 'b', 'c', 'd'] as $partial) {
+            $this->write($demo . "partials/{$partial}.html.twig", '');
+        }
+        $this->write('src/modules/Playground/src/Application/View/templates/pages/playground.html.twig', "{# {% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %} #}<html></html>");
+        $users = new PageUsers($this->root, self::ROUTES);
+
+        self::assertSame(['/demo/platform/queue'], $users->rendering($demo . 'platform/queue.html.twig'));
+        foreach (['a', 'b', 'c', 'd'] as $partial) {
+            self::assertSame(['/'], $users->rendering($demo . "partials/{$partial}.html.twig"), $partial);
+        }
+        $builtOn = $users->builtOn(self::NAV);
+        self::assertContains('/', $builtOn, 'the real extends is still found');
+        self::assertNotContains('/playground', $builtOn);
     }
 
     /** Each thing that would excuse it wrongly, one at a time: it stays required. */
@@ -295,7 +404,7 @@ final class PagesThatShowTheChangeTest extends TestCase
     {
         return array_map(
             static fn (VerificationTarget $t): string => (string) $t->commandInput['path'],
-            PageCheckTargets::of([new ChangedFile($file, $kind)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, (new PageUsers($this->root, self::ROUTES))->showing(...)),
+            PageCheckTargets::of([new ChangedFile($file, $kind)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES)),
         );
     }
 
