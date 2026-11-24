@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsResource;
 use Semitexa\Core\Auth\PayloadAccessType;
 use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\ModuleRegistry;
+use Semitexa\Ssr\Application\Service\Layout\LayoutSlotRegistry;
 
 /**
  * The routes a browser can open as they are, for {@see PageCheckTargets}:
@@ -21,7 +22,7 @@ final class PageRoutes
 {
     private const ACTIONS = '#/(?:log-?out|sign-?out|log-?in|sign-?in|start|callback|submit|delete|remove|unsubscribe|confirm|verify|reset|export|download)$#i';
 
-    /** @return list<array{path: string, module: string, file: string, template: string}> */
+    /** @return list<array{path: string, module: string, file: string, template: string, slots: list<string>}> */
     public static function of(?AttributeDiscovery $discovery, ?ModuleRegistry $modules): array
     {
         if ($discovery === null) {
@@ -41,6 +42,9 @@ final class PageRoutes
                     // What the page renders: a changed template opens the pages that render it,
                     // not its package's shortest paths (tk-verify-page-check-off-site-redirect-incomplete).
                     'template' => self::templateOf($route['responseClass'] ?? $route['responseWith'] ?? null),
+                    // And what its slots render: a slot's template is named by the slot, not by the page's
+                    // template (tk-verify-page-targeting-misses-slot-templates).
+                    'slots' => self::slotTemplatesOf($route['responseClass'] ?? $route['responseWith'] ?? null),
                 ];
             }
         }
@@ -59,6 +63,33 @@ final class PageRoutes
         }
 
         return '';
+    }
+
+    /**
+     * The templates of the slots registered under the handle of the route's resource, skeletons
+     * included: what `layout_slot()` and `layout_slot_deferred()` render on that page. Read from
+     * the slot registry, which discovery fills from #[AsSlotResource] and the layout slots alike.
+     * A slot under the global handle or a layout's is on no one page and is left to the fallback.
+     *
+     * @return list<string>
+     */
+    public static function slotTemplatesOf(mixed $resource): array
+    {
+        if (!is_string($resource) || !class_exists($resource)) {
+            return [];
+        }
+        $templates = [];
+        foreach ((new \ReflectionClass($resource))->getAttributes(AsResource::class) as $attribute) {
+            $handle = (string) $attribute->newInstance()->handle;
+            foreach ($handle === '' ? [] : LayoutSlotRegistry::getSlotsForHandle($handle) as $entries) {
+                foreach ($entries as $entry) {
+                    array_push($templates, $entry['template'], (string) ($entry['skeletonTemplate'] ?? ''));
+                }
+            }
+            break;
+        }
+
+        return array_values(array_unique(array_filter($templates, static fn (string $template): bool => $template !== '')));
     }
 
     /** @param array<string, mixed> $route as route discovery gives it */
