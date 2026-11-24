@@ -27,6 +27,13 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  *    (semitexa-os requires the theme and links none of its stylesheets), and
  *    neither does including one partial: a demo page includes the theme's
  *    switcher and links no skin.
+ *
+ * A page also renders the templates of the slots registered under its handle
+ * (`#[AsSlotResource]`, shown by `layout_slot()` and `layout_slot_deferred()`):
+ * nothing in its own template names them, so the route carries them
+ * ({@see PageRoutes::slotTemplatesOf()}) and each starts a chain of its own.
+ * A semitexa-demo deferred slot's template matched no page and opened the blog
+ * (tk-verify-page-targeting-misses-slot-templates).
  */
 final class PageUsers
 {
@@ -37,7 +44,7 @@ final class PageUsers
     private readonly \Closure $read;
 
     /**
-     * @param list<array{path: string, module: string, file?: string, template?: string}> $routes
+     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>}> $routes
      * @param (\Closure(string): (string|false))|null $read how a file is read; tests give one that fails
      */
     public function __construct(
@@ -49,7 +56,8 @@ final class PageUsers
     }
 
     /**
-     * The pages whose template chain names $file: the ones to open for it, before any fallback.
+     * The pages whose template chain names $file, from the page's own template or from a slot
+     * registered under its handle: the ones to open for it, before any fallback.
      * A choice, not proof that the page rendered it.
      *
      * @return list<string> their paths
@@ -103,10 +111,12 @@ final class PageUsers
         $pages = [];
         foreach ($this->routes as $route) {
             $templates = self::templatesOf($this->projectRoot, $route['module']);
-            if ($templates === null || ($route['template'] ?? '') === '') {
+            // The page's template first, then its slots': each is rendered on that page.
+            $starts = array_values(array_filter([$route['template'] ?? '', ...($route['slots'] ?? [])], static fn (string $name): bool => $name !== ''));
+            if ($templates === null || $starts === []) {
                 continue;
             }
-            if ($matches($this->chains[$templates . "\0" . $route['template']] ??= $this->chain($templates, $route['template']))) {
+            if ($matches($this->chains[$templates . "\0" . implode("\0", $starts)] ??= $this->chain($templates, $starts))) {
                 $pages[] = $route['path'];
             }
         }
@@ -115,15 +125,16 @@ final class PageUsers
     }
 
     /**
-     * The template and what it extends, includes, embeds or imports, as far as its own module holds it.
+     * The templates a page starts from and what they extend, include, embed or import, as far as its own module holds it.
      *
+     * @param non-empty-list<string> $starts the page's template and its slots'
      * @return array<string, list<array{string, list<string>}>> file => its real operations
      */
-    private function chain(string $templates, string $template): array
+    private function chain(string $templates, array $starts): array
     {
-        $alias = strstr($template, '/', true);
+        $alias = strstr($starts[0], '/', true);
         $chain = [];
-        $queue = [$template];
+        $queue = $starts;
         while ($queue !== []) {
             $name = (string) array_shift($queue);
             $path = $templates . substr($name, strlen((string) $alias));
