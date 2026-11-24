@@ -25,7 +25,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  */
 final class PageUsers
 {
-    /** @var array<string, array<string, string>> a route's template chain, read once for the plan */
+    /** @var array<string, array<string, list<array{string, list<string>}>>> a route's template chain, read once for the plan */
     private array $chains = [];
 
     /** @var \Closure(string): (string|false) */
@@ -72,12 +72,16 @@ final class PageUsers
         if (preg_match('#^((?:packages/semitexa-|vendor/semitexa/)([^/]+))/#', $file, $m) !== 1 || in_array('semitexa-' . $m[2], array_column($this->routes, 'module'), true)) {
             return [];
         }
-        $uses = $this->usePattern($this->projectRoot . '/' . $m[1]);
+        [$aliases, $assetModules] = $this->namesOf($this->projectRoot . '/' . $m[1]);
 
-        return $this->pagesWhere(static function (array $chain) use ($uses): bool {
-            foreach ($chain as $source) {
-                if (preg_match($uses, $source) === 1) {
-                    return true;
+        return $this->pagesWhere(static function (array $chain) use ($aliases, $assetModules): bool {
+            foreach ($chain as $operations) {
+                foreach ($operations as [$operation, $literals]) {
+                    // Built on its layout, not merely including a partial of it: the layout is what links the stylesheets.
+                    $named = $operation === 'extends' ? array_map(static fn (string $name): string => (string) strstr($name, '/', true), $literals) : ($operation === 'asset()' ? $literals : []);
+                    if (array_intersect($named, $operation === 'extends' ? $aliases : $assetModules) !== []) {
+                        return true;
+                    }
                 }
             }
 
@@ -86,7 +90,7 @@ final class PageUsers
     }
 
     /**
-     * @param \Closure(array<string, string>): bool $matches
+     * @param \Closure(array<string, list<array{string, list<string>}>>): bool $matches
      * @return list<string>
      */
     private function pagesWhere(\Closure $matches): array
@@ -108,7 +112,7 @@ final class PageUsers
     /**
      * The template and what it extends, includes, embeds or imports, as far as its own module holds it.
      *
-     * @return array<string, string> file => its source, comments removed
+     * @return array<string, list<array{string, list<string>}>> file => its real operations
      */
     private function chain(string $templates, string $template): array
     {
@@ -121,8 +125,10 @@ final class PageUsers
             if (strstr($name, '/', true) !== $alias || isset($chain[$path]) || str_contains($name, '..') || !is_file($path)) {
                 continue;
             }
-            $chain[$path] = self::active($this->contentsOf($path));
-            array_push($queue, ...self::dependencies($chain[$path]));
+            $chain[$path] = self::operations(self::active($this->contentsOf($path)));
+            foreach ($chain[$path] as [$operation, $literals]) {
+                array_push($queue, ...($operation === 'asset()' ? [] : preg_grep('~^@[\w.-]+/.+\.twig$~', $literals)));
+            }
         }
 
         return $chain;
@@ -146,49 +152,90 @@ final class PageUsers
     }
 
     /**
-     * The templates a source names in a real operation: the extends, include, embed, import,
-     * from and use tags, and the include() function. A path quoted anywhere else (a comment,
-     * a variable, an attribute) is no dependency (review, dev#312).
+     * The real operations of a source and the string literals each names: the extends, include,
+     * embed, import, from and use tags, and the include() and asset() functions. Read from the
+     * `{% %}` and `{{ }}` blocks with the contents of their strings masked, so that a path quoted
+     * anywhere else is no operation: in a comment, in a variable, or in a string Twig only
+     * prints, `{{ "include('…')" }}` (review, dev#312).
+     *
+     * @return list<array{string, list<string>}>
+     */
+    private static function operations(string $active): array
+    {
+        $operations = [];
+        $length = strlen($active);
+        $offset = 0;
+        while (preg_match('~\{[{%]~', $active, $open, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $close = $open[0][0] === '{{' ? '}}' : '%}';
+            $start = $open[0][1] + 2;
+            $masked = '';
+            for ($i = $start; $i < $length && substr($active, $i, 2) !== $close; $i = $start + strlen($masked)) {
+                $char = $active[$i];
+                if ($char !== '"' && $char !== "'") {
+                    $masked .= $char;
+                    continue;
+                }
+                for ($end = $i + 1; $end < $length && $active[$end] !== $char; $end += $active[$end] === '\\' ? 2 : 1);
+                $end = min($end, $length);
+                $masked .= $char . str_repeat(' ', $end - $i - 1) . ($end < $length ? $char : '');
+            }
+            $body = substr($active, $start, strlen($masked));
+            $offset = $start + strlen($masked) + 2;
+
+            if ($close === '%}' && preg_match('~^-?\s*(extends|include|embed|import|from|use)\s~', $masked, $tag) === 1) {
+                // The template expression only: what follows is the tag's own arguments.
+                $to = preg_match('~\s(?:with|only|ignore|import|as)\b~', $masked, $rest, PREG_OFFSET_CAPTURE, strlen($tag[0])) === 1 ? $rest[0][1] : strlen($masked);
+                $operations[] = [$tag[1], self::literals($body, $masked, 0, $to)];
+            }
+            preg_match_all('~(?<![.\w])(include|asset)\(\s*~', $masked, $calls, PREG_OFFSET_CAPTURE); // not o.include(): a method
+            foreach ($calls[1] as $n => [$function]) {
+                $from = $calls[0][$n][1] + strlen($calls[0][$n][0]);
+                // include(): its first argument, one template or a list of them. asset(): every argument.
+                $ends = $function === 'asset' ? ')' : (($masked[$from] ?? '') === '[' ? ']' : ',)');
+                $operations[] = [$function . '()', self::literals($body, $masked, $from, $from + strcspn($masked, $ends, $from))];
+            }
+        }
+
+        return $operations;
+    }
+
+    /**
+     * The string literals of a block between two offsets, found in its masked form and read from the real one.
      *
      * @return list<string>
      */
-    private static function dependencies(string $active): array
+    private static function literals(string $body, string $masked, int $from, int $to): array
     {
-        $named = [];
-        preg_match_all('~\{%-?\s*(?:extends|include|embed|import|from|use)\s+(.*?)-?%\}~s', $active, $tags);
-        foreach ($tags[1] as $expression) {
-            // The template expression only: what follows is the tag's own arguments.
-            $expression = (string) preg_split('~\s(?:with|only|ignore|import|as)\b~', $expression, 2)[0];
-            preg_match_all('~[\'"](@[\w.-]+/[^\'"]+\.twig)[\'"]~', $expression, $literals);
-            array_push($named, ...$literals[1]);
-        }
-        preg_match_all('~\{[{%](?:(?![%}]\}).)*?\binclude\(\s*\[?\s*[\'"](@[\w.-]+/[^\'"]+\.twig)[\'"]~s', $active, $calls);
+        preg_match_all('~([\'"])( *)\1~', substr($masked, $from, max(0, $to - $from)), $strings, PREG_OFFSET_CAPTURE);
 
-        return [...$named, ...$calls[1]];
+        return array_map(static fn (array $string): string => substr($body, $from + $string[1], strlen($string[0])), $strings[2]);
     }
 
-    /** A pattern for how a template builds on the package: extending its layout, or linking its asset. */
-    private function usePattern(string $package): string
+    /**
+     * The names a template uses the package by: its template namespaces, and its asset modules.
+     *
+     * @return array{list<string>, list<string>}
+     */
+    private function namesOf(string $package): array
     {
         // Metadata that is not there says nothing; metadata that is there has to be readable.
         $meta = is_file($package . '/composer.json') ? $this->json($package . '/composer.json')['extra']['semitexa-module'] ?? [] : [];
         $meta = is_array($meta) ? $meta : [];
-        $alternatives = ['project-layouts-' . preg_quote(basename($package), '~')];
+        $aliases = ['@project-layouts-' . basename($package)];
         foreach ([$meta['template_alias'] ?? null, is_string($meta['name'] ?? null) ? 'project-layouts-' . $meta['name'] : null] as $alias) {
             if (is_string($alias) && $alias !== '') {
-                $alternatives[] = preg_quote($alias, '~');
+                $aliases[] = '@' . $alias;
             }
         }
-        // Built on its layout, not merely including a partial of it: the layout is what links the stylesheets.
-        $alternatives = ['\{%-?\s*extends\s+[\'"]@(?:' . implode('|', $alternatives) . ')/'];
+        $assetModules = [];
         foreach (['/src/Application/Static/assets.json', '/Application/Static/assets.json'] as $manifest) {
             $assets = is_file($package . $manifest) ? $this->json($package . $manifest) : [];
             if (is_string($assets['module'] ?? null) && $assets['module'] !== '') {
-                $alternatives[] = '\basset\([^)]*[\'"]' . preg_quote($assets['module'], '~') . '[\'"]';
+                $assetModules[] = $assets['module'];
             }
         }
 
-        return '~' . implode('|', $alternatives) . '~';
+        return [$aliases, $assetModules];
     }
 
     /** @return array<mixed> */

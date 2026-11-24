@@ -309,6 +309,15 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertSame(['/demo/platform/config'], (new PageUsers($this->root, self::ROUTES))->rendering('packages/semitexa-demo/src/Application/View/templates/platform/_feature.html.twig'));
 
         foreach (['packages/semitexa-showcase-kit/composer.json', 'packages/semitexa-showcase-kit/src/Application/Static/assets.json'] as $metadata) {
+            // There and not readable (review, dev#312, round 2): the same failure as a template's.
+            $path = $this->root . '/' . $metadata;
+            try {
+                (new PageUsers($this->root, self::ROUTES, static fn (string $read): string|false => $read === $path ? false : file_get_contents($read)))->builtOn(self::NAV);
+                self::fail("{$metadata} could not be read and the plan went on");
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString($path, $e->getMessage());
+            }
+
             $before = (string) file_get_contents($this->root . '/' . $metadata);
             $this->write($metadata, '{not json');
             try {
@@ -330,18 +339,24 @@ final class PagesThatShowTheChangeTest extends TestCase
             . "{# {% include '" . self::DEMO . "platform/queue.html.twig' %} #}\n"
             . "{% set example = '" . self::DEMO . "platform/queue.html.twig' %}\n"
             . "<code>{% verbatim %}{% include '" . self::DEMO . "platform/queue.html.twig' %}{% endverbatim %}</code>\n"
+            . "{{ \"include('" . self::DEMO . "platform/queue.html.twig')\" }}\n"
+            . "{{ \"{% include '" . self::DEMO . "platform/queue.html.twig' %}\" }}\n"
+            . "{{ 'say \\'hi\\' then include(\"" . self::DEMO . "platform/queue.html.twig\")' }}\n"
+            . "{{ o.include('" . self::DEMO . "platform/queue.html.twig') }}\n"
+            . "{{ include(['" . self::DEMO . "partials/e.html.twig', '" . self::DEMO . "partials/f.html.twig'], {'see': '" . self::DEMO . "platform/queue.html.twig'}) }}\n"
             . "{% include '" . self::DEMO . "partials/a.html.twig' with {'see': '" . self::DEMO . "platform/queue.html.twig'} only %}\n"
             . "{{ include('" . self::DEMO . "partials/b.html.twig') }}\n"
             . "{%- embed '" . self::DEMO . "partials/c.html.twig' -%}{% endembed %}\n"
             . "{% from '" . self::DEMO . "partials/d.html.twig' import field %}");
-        foreach (['a', 'b', 'c', 'd'] as $partial) {
+        foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $partial) {
             $this->write($demo . "partials/{$partial}.html.twig", '');
         }
-        $this->write('src/modules/Playground/src/Application/View/templates/pages/playground.html.twig', "{# {% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %} #}<html></html>");
+        $this->write('src/modules/Playground/src/Application/View/templates/pages/playground.html.twig', "{# {% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %} #}"
+            . "<html>{{ \"{% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %}\" }}{{ \"asset('css/nav.css', 'showcase-kit')\" }}</html>");
         $users = new PageUsers($this->root, self::ROUTES);
 
         self::assertSame(['/demo/platform/queue'], $users->rendering($demo . 'platform/queue.html.twig'));
-        foreach (['a', 'b', 'c', 'd'] as $partial) {
+        foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $partial) {
             self::assertSame(['/'], $users->rendering($demo . "partials/{$partial}.html.twig"), $partial);
         }
         $builtOn = $users->builtOn(self::NAV);
