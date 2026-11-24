@@ -55,6 +55,9 @@ final class PagesThatShowTheChangeTest extends TestCase
 
     private string $root;
 
+    /** @var array<mixed>|null the slot registry as it was before a test registered into it */
+    private ?array $slotsBefore = null;
+
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/page-users-' . bin2hex(random_bytes(4));
@@ -73,6 +76,11 @@ final class PagesThatShowTheChangeTest extends TestCase
 
     protected function tearDown(): void
     {
+        // Back to what the registry held, whatever the test asserted: later tests inherit nothing.
+        if ($this->slotsBefore !== null) {
+            (new \ReflectionProperty(LayoutSlotRegistry::class, 'slots'))->setValue(null, $this->slotsBefore);
+            $this->slotsBefore = null;
+        }
         exec('rm -rf ' . escapeshellarg($this->root));
     }
 
@@ -180,6 +188,82 @@ final class PagesThatShowTheChangeTest extends TestCase
         } catch (\RuntimeException $e) {
             self::assertStringContainsString($path, $e->getMessage());
         }
+    }
+
+    /** tearDown puts the slot registry back: the registration above is gone, and nothing else is. */
+    #[Test]
+    public function a_test_that_registers_a_slot_leaves_the_registry_as_it_found_it(): void
+    {
+        $property = new \ReflectionProperty(LayoutSlotRegistry::class, 'slots');
+        LayoutSlotRegistry::register(handle: 'page_check_fixture_kept', slot: 'kept', template: '@x/kept.html.twig');
+        $before = $property->getValue();
+        try {
+            $this->registerSlots(SearchFilterSlot::class);
+            self::assertNotSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_deferred'));
+            $this->tearDown();
+            self::assertSame($before, $property->getValue());
+            self::assertSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_deferred'));
+            self::assertNotSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_kept'), 'what was there before stays');
+        } finally {
+            $kept = $before;
+            unset($kept['page_check_fixture_kept'], $kept['page_check_fixture_deferred']);
+            $property->setValue(null, $kept);
+            $this->setUp();
+        }
+    }
+
+    /**
+     * Review, dev#313: a slot template in another module's namespace is no file under this module's
+     * template root. Read there, it matched demo's unrelated partials/orphan.html.twig and replaced
+     * the package's fallback pages with one false match.
+     */
+    #[Test]
+    public function a_slot_template_of_another_modules_namespace_keeps_the_fallback(): void
+    {
+        $demo = 'packages/semitexa-demo/src/Application/View/templates/';
+        $this->write($demo . 'partials/orphan.html.twig', '');
+        $this->write($demo . 'partials/own.html.twig', '');
+        $routes = self::ROUTES;
+        self::assertSame(['/blog', ''], [$routes[1]['path'], $routes[1]['template']]);
+        $routes[1]['slots'] = ['@project-layouts-Playground/partials/orphan.html.twig'];
+        $users = new PageUsers($this->root, $routes);
+
+        self::assertSame([], $users->rendering($demo . 'partials/orphan.html.twig'));
+        $targets = PageCheckTargets::of([new ChangedFile($demo . 'partials/orphan.html.twig', ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, $routes, $users);
+        self::assertSame(['/', '/blog', '/blog/a', '/demo/platform/queue', '/demo/platform/config', '/demo/rendering/deferred'], array_map(static fn (VerificationTarget $t): string => (string) $t->commandInput['path'], $targets), 'the package fallback, not one false match');
+
+        // The same with a page template beside it: the foreign slot is still no demo file.
+        $routes[5]['slots'] = ['@project-layouts-Playground/partials/orphan.html.twig'];
+        self::assertSame([], (new PageUsers($this->root, $routes))->rendering($demo . 'partials/orphan.html.twig'));
+
+        // The module's own slot template stays eligible when the page names no template.
+        $routes[1]['slots'] = ['@project-layouts-Playground/partials/orphan.html.twig', self::DEMO . 'partials/own.html.twig'];
+        self::assertSame(['/blog'], (new PageUsers($this->root, $routes))->rendering($demo . 'partials/own.html.twig'));
+    }
+
+    /**
+     * Independent review, dev#313: the template loader takes the bare alias, `@<directory>` and
+     * `@<name>`, as it takes `@project-layouts-…`. A page written that way keeps its match.
+     */
+    #[Test]
+    public function a_page_template_under_the_bare_alias_still_matches(): void
+    {
+        $hello = 'src/modules/Hello/src/Application/View/templates/';
+        $this->write($hello . 'pages/hello.html.twig', "{% include '@Hello/partials/guide.html.twig' %}");
+        $this->write($hello . 'partials/guide.html.twig', '');
+        $kit = 'packages/semitexa-showcase-kit/src/Application/View/templates/';
+        $this->write($kit . 'pages/kit.html.twig', "{% include '@semitexa-showcase-kit/partials/card.html.twig' %}");
+        $this->write($kit . 'partials/card.html.twig', '');
+        $routes = [
+            ['path' => '/hello', 'module' => 'Hello', 'template' => '@Hello/pages/hello.html.twig'],
+            ['path' => '/kit', 'module' => 'semitexa-showcase-kit', 'template' => '@ShowcaseKit/pages/kit.html.twig'],
+        ];
+        $users = new PageUsers($this->root, $routes);
+
+        self::assertSame(['/hello'], $users->rendering($hello . 'pages/hello.html.twig'));
+        self::assertSame(['/hello'], $users->rendering($hello . 'partials/guide.html.twig'));
+        self::assertSame(['/kit'], $users->rendering($kit . 'pages/kit.html.twig'), 'by the name in composer.json');
+        self::assertSame(['/kit'], $users->rendering($kit . 'partials/card.html.twig'), 'by the directory');
     }
 
     /** Independent review's cap rule holds for a slot's page: it comes before another file's fallback pages. */
@@ -563,6 +647,9 @@ final class PagesThatShowTheChangeTest extends TestCase
      */
     private function registerSlots(string $slot): void
     {
+        /** @var array<mixed> $held */
+        $held = (new \ReflectionProperty(LayoutSlotRegistry::class, 'slots'))->getValue();
+        $this->slotsBefore ??= $held;
         foreach ((new \ReflectionClass($slot))->getAttributes(AsSlotResource::class) as $attribute) {
             $declared = $attribute->newInstance();
             LayoutSlotRegistry::register(
