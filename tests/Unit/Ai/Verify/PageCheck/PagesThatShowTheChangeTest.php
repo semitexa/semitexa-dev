@@ -195,9 +195,11 @@ final class PagesThatShowTheChangeTest extends TestCase
     public function a_test_that_registers_a_slot_leaves_the_registry_as_it_found_it(): void
     {
         $property = new \ReflectionProperty(LayoutSlotRegistry::class, 'slots');
-        LayoutSlotRegistry::register(handle: 'page_check_fixture_kept', slot: 'kept', template: '@x/kept.html.twig');
-        $before = $property->getValue();
+        // As the test found it, before its own registrations: what the cleanup puts back.
+        $original = $property->getValue();
         try {
+            LayoutSlotRegistry::register(handle: 'page_check_fixture_kept', slot: 'kept', template: '@x/kept.html.twig');
+            $before = $property->getValue();
             $this->registerSlots(SearchFilterSlot::class);
             self::assertNotSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_deferred'));
             $this->tearDown();
@@ -205,9 +207,10 @@ final class PagesThatShowTheChangeTest extends TestCase
             self::assertSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_deferred'));
             self::assertNotSame([], LayoutSlotRegistry::getSlotsForHandle('page_check_fixture_kept'), 'what was there before stays');
         } finally {
-            $kept = $before;
-            unset($kept['page_check_fixture_kept'], $kept['page_check_fixture_deferred']);
-            $property->setValue(null, $kept);
+            // Whichever assertion failed: the registry as found, and nothing left for tearDown to restore
+            // (its snapshot would hold the fixture registered above; review, semitexa-dev#313).
+            $property->setValue(null, $original);
+            $this->slotsBefore = null;
             $this->setUp();
         }
     }
