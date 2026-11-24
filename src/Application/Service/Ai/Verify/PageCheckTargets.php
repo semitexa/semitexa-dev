@@ -13,10 +13,12 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  * for this list (`--list-pages`), opens each page in light and dark in the
  * e2e-runner, and files what it saw where {@see PageCheckResult} reads it.
  *
- * Which pages: public GET routes with no parameter. A file of a local module
- * picks that module's pages, a package's file that package's pages; only one
- * whose package has no page of its own (the theme, a layout) and a project
- * file outside a module pick the project's pages. A file only a dev surface shows
+ * Which pages: public GET routes with no parameter. First the pages whose
+ * templates are known to show the file ({@see PageUsers}): those that render a
+ * changed template, or use a package that has no route. When none is known, a
+ * file of a local module picks that module's pages, a package's file that
+ * package's pages; only one whose package has no page of its own (the theme, a
+ * layout) and a project file outside a module pick the project's pages. A file only a dev surface shows
  * (the graph viewer's stylesheet) picks no page: {@see DevSurfaceAssets}. Capped: a browser is the dearest check there is, so not at
  * minimal scope either.
  */
@@ -26,11 +28,12 @@ final class PageCheckTargets
 
     /**
      * @param list<ChangedFile> $changedFiles
-     * @param list<array{path: string, module: string, file?: string}> $routes public parameterless GET routes, as discovered
+     * @param list<array{path: string, module: string, file?: string, template?: string}> $routes public parameterless GET routes, as discovered
+     * @param (\Closure(string): list<string>)|null $usedBy the paths of the pages that render a changed file ({@see PageUsers})
      *
      * @return list<VerificationTarget>
      */
-    public static function of(array $changedFiles, string $effectiveScope, array $routes): array
+    public static function of(array $changedFiles, string $effectiveScope, array $routes, ?\Closure $usedBy = null): array
     {
         if ($effectiveScope === VerificationPlan::SCOPE_MINIMAL) {
             return [];
@@ -42,6 +45,8 @@ final class PageCheckTargets
         foreach ($routes as $route) {
             $declaredIn[$route['path']] = $route['file'] ?? '';
         }
+        /** @var array<string, list<string>> $shows path => the files it is known to show ({@see PageUsers}), not put here by a fallback */
+        $shows = [];
         /** @var array<string, list<string>> $devSurfaces surface => the files it alone shows */
         $devSurfaces = [];
         foreach ($changedFiles as $file) {
@@ -53,19 +58,24 @@ final class PageCheckTargets
                 $devSurfaces[$surface][] = $file->path;
                 continue;
             }
-            foreach (self::pagesOf($file->path, $routes) as $path) {
+            [$paths, $known] = self::pagesOf($file->path, $routes, $usedBy);
+            foreach ($paths as $path) {
                 $pages[$path][] = $file->path;
+                if ($known) {
+                    $shows[$path][] = $file->path;
+                }
             }
         }
 
         $targets = [];
-        foreach (array_slice($pages, 0, self::LIMIT, true) as $path => $files) {
+        // The pages known to show a file before any file's fallback pages: eight of those must not push the exact page out.
+        foreach (array_slice(array_intersect_key($pages, $shows) + $pages, 0, self::LIMIT, true) as $path => $files) {
             $targets[] = new VerificationTarget(
                 type: VerificationTarget::TYPE_PAGE,
                 id: "page:{$path}",
                 reason: 'a changed template or stylesheet shows here — opened in light and dark in the e2e-runner, against the running app',
                 triggeredBy: array_values(array_unique($files)),
-                commandInput: ['path' => (string) $path, 'declared_in' => $declaredIn[$path] ?? ''],
+                commandInput: ['path' => (string) $path, 'declared_in' => $declaredIn[$path] ?? '', 'shows' => array_values(array_unique($shows[$path] ?? []))],
             );
         }
 
@@ -73,28 +83,32 @@ final class PageCheckTargets
     }
 
     /**
-     * @param list<array{path: string, module: string, file?: string}> $routes
+     * @param list<array{path: string, module: string, file?: string, template?: string}> $routes
+     * @param (\Closure(string): list<string>)|null $usedBy
      *
-     * @return list<string>
+     * @return array{list<string>, bool} the paths, and whether they are known to show the file
      */
-    private static function pagesOf(string $file, array $routes): array
+    private static function pagesOf(string $file, array $routes, ?\Closure $usedBy): array
     {
         $usable = array_values(array_filter($routes, static fn (array $r): bool => self::isPage($r['path'])));
-        if (preg_match('#^src/modules/([^/]+)/#', $file, $m) === 1) {
-            $mine = array_filter($usable, static fn (array $r): bool => $r['module'] === $m[1]);
-        } else {
-            $package = preg_match('#^(?:packages/semitexa-|vendor/semitexa/)([^/]+)/#', $file, $p) === 1 ? 'semitexa-' . $p[1] : null;
-            // Its own pages first: six other modules' pages passing said nothing about a demo template (review dev#216).
-            $mine = $package !== null ? array_filter($usable, static fn (array $r): bool => $r['module'] === $package) : [];
-            if ($mine === []) {
-                $mine = array_filter($usable, static fn (array $r): bool => !str_starts_with($r['module'], 'semitexa-'));
-            }
+        $of = static fn (?string $module): array => $module === null ? [] : array_filter($usable, static fn (array $r): bool => $r['module'] === $module);
+        $package = preg_match('#^(?:packages/semitexa-|vendor/semitexa/)([^/]+)/#', $file, $p) === 1 ? 'semitexa-' . $p[1] : null;
+        $module = preg_match('#^src/modules/([^/]+)/#', $file, $m) === 1 ? $m[1] : null;
+        // Its own pages first: six other modules' pages passing said nothing about a demo template (review dev#216).
+        $mine = $of($module ?? $package);
+        // The pages whose templates hold the changed one, or use its package when that has no route:
+        // a package's eight shortest paths were its blog, which answers from another site.
+        $shows = $usedBy !== null ? $usedBy($file) : [];
+        $rendered = array_filter($usable, static fn (array $r): bool => in_array($r['path'], $shows, true));
+        $mine = $rendered !== [] ? $rendered : $mine;
+        if ($mine === [] && $module === null) {
+            $mine = array_filter($usable, static fn (array $r): bool => !str_starts_with($r['module'], 'semitexa-'));
         }
         $paths = array_values(array_unique(array_map(static fn (array $r): string => $r['path'], $mine)));
         // The shortest paths first: a section's front page shows more of its layout than a leaf.
         usort($paths, static fn (string $a, string $b): int => [substr_count($a, '/'), strlen($a), $a] <=> [substr_count($b, '/'), strlen($b), $b]);
 
-        return $paths;
+        return [$paths, $rendered !== []];
     }
 
     /** A page a browser can open as it is: no parameter, not a dev surface, not an API. */

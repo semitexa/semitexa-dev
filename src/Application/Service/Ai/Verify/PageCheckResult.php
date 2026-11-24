@@ -63,6 +63,12 @@ final readonly class PageCheckResult
             return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $deliberate, required: false);
         }
 
+        $offSite = self::sentOffSite($seen['modes']);
+        if ($offSite !== null) {
+            // Required until settle() finds the change shown on another page.
+            return self::notRun($target, "{$path} {$offSite} in light and dark: another site, which cannot show the change");
+        }
+
         $found = [];
         $missing = [];
         $html = true;
@@ -179,6 +185,96 @@ final readonly class PageCheckResult
             exitCode: 1,
             signal:   SignalText::compress("{$path} — " . implode('; ', array_slice($found, 0, 6)) . (count($found) > 6 ? sprintf('; and %d more', count($found) - 6) : '')),
         );
+    }
+
+    /**
+     * A page the server sends to another site (a blog that moved to the public site, 301) shows
+     * nothing of a change made here: not a failed check of the change, and never a pass. It is
+     * skipped and not required only when, for every changed file that chose it, another page of
+     * this run passed and is known to show it: a stylesheet it loaded in both modes, a template the
+     * plan found it renders (`shows`). Otherwise it stays
+     * incomplete: no opened page showed the change (tk-verify-page-check-off-site-redirect-incomplete).
+     *
+     * @param list<VerificationResult> $results
+     * @return list<VerificationResult>
+     */
+    public function settle(array $results): array
+    {
+        foreach ($results as $i => $result) {
+            if ($result->target->type !== VerificationTarget::TYPE_PAGE || $result->status !== VerificationResult::STATUS_INCOMPLETE) {
+                continue;
+            }
+            $path = (string) ($result->target->commandInput['path'] ?? '');
+            $offSite = self::sentOffSite($this->modesOf($path));
+            if ($offSite === null) {
+                continue;
+            }
+            $unshown = array_values(array_filter($result->target->triggeredBy, fn (string $file): bool => !$this->shownOnAnotherPage($file, $results)));
+            $results[$i] = $unshown === [] && $result->target->triggeredBy !== []
+                ? new VerificationResult($result->target, VerificationResult::STATUS_SKIPPED, 0, "{$path} {$offSite} in light and dark: another site, which cannot show the change; another opened page showed it", required: false)
+                : self::notRun($result->target, $result->signal . '; no other opened page showed ' . implode(', ', array_map('basename', $unshown !== [] ? $unshown : ['it'])));
+        }
+
+        return $results;
+    }
+
+    /** @param list<VerificationResult> $results */
+    private function shownOnAnotherPage(string $file, array $results): bool
+    {
+        foreach ($results as $result) {
+            if ($result->target->type !== VerificationTarget::TYPE_PAGE || $result->status !== VerificationResult::STATUS_PASS || !in_array($file, $result->target->triggeredBy, true)) {
+                continue;
+            }
+            // A template cannot be told from the page: only a page known to render it shows it, never
+            // one the plan fell back to (independent review).
+            if (!str_ends_with($file, '.css') && !in_array($file, (array) ($result->target->commandInput['shows'] ?? []), true)) {
+                continue;
+            }
+            $modes = $this->modesOf((string) ($result->target->commandInput['path'] ?? ''));
+            // A pass says any changed stylesheet loaded: this one has to, in both modes.
+            if (!self::anyStylesheetUnloaded([$file], $modes['light']['stylesheets'] ?? null) && !self::anyStylesheetUnloaded([$file], $modes['dark']['stylesheets'] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<mixed> what the browser filed for the page, [] when nothing */
+    private function modesOf(string $path): array
+    {
+        if ($this->runId === null || preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\z/', $this->runId) !== 1) {
+            return [];
+        }
+        $raw = @file_get_contents($this->projectRoot . '/' . E2eSpecResultCheck::RESULTS_DIR . "/{$this->runId}/pages/" . self::fileName($path));
+        $seen = is_string($raw) ? json_decode($raw, true) : null;
+
+        return is_array($seen) && is_array($seen['modes'] ?? null) ? $seen['modes'] : [];
+    }
+
+    /**
+     * "answers 301 to https://…" when the route's own first answer is a 3xx that ends on the
+     * same address of another site in every mode; null for anything else (a bounce by script,
+     * a mode not reached, a different landing per mode, a landing on this site).
+     *
+     * @param array<mixed> $modes
+     */
+    private static function sentOffSite(array $modes): ?string
+    {
+        $landing = null;
+        $code = null;
+        foreach (self::MODES as $mode) {
+            $view = $modes[$mode] ?? null;
+            if (!is_array($view) || isset($view['error']) || !is_int($view['firstStatus'] ?? null) || $view['firstStatus'] < 300 || $view['firstStatus'] >= 400
+                || !is_string($view['landed'] ?? null) || preg_match('#^https?://#i', $view['landed']) !== 1 || ($landing !== null && $view['landed'] !== $landing)) {
+                return null;
+            }
+            $landing = $view['landed'];
+            $code = $view['firstStatus'];
+        }
+
+        // MODES is never empty: every pass either returned null or set both.
+        return "answers {$code} to {$landing}";
     }
 
     /** Whether $file changed after the running server started (its pid file is written at start). */

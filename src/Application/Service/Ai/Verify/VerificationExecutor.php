@@ -100,7 +100,7 @@ final class VerificationExecutor
                 $results[] = $this->failed($target, 'verification could not complete: ' . SignalText::compress($e->getMessage()));
             }
         }
-        return $results;
+        return PageCheckResult::fromEnvironment($this->projectRoot)->settle($results); // a page sent to another site: excused only when another page showed the change
     }
 
     private function runLint(VerificationTarget $target): VerificationResult
