@@ -366,6 +366,70 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertNotContains('/playground', $builtOn);
     }
 
+    /**
+     * Review, dev#312: two include() calls in one expression are two dependencies. /demo/platform/queue
+     * renders queue.html.twig itself, so no package fallback can stand in for the second call: home
+     * is in the plan only when the scanner read past the first.
+     */
+    #[Test]
+    public function every_include_call_of_one_expression_is_a_dependency(): void
+    {
+        $demo = 'packages/semitexa-demo/src/Application/View/templates/';
+        $this->write($demo . 'partials/a.html.twig', '');
+        $this->write($demo . 'pages/home.html.twig', "{% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %}\n"
+            . "{{ include('" . self::DEMO . "partials/a.html.twig') ~ include('" . self::DEMO . "platform/queue.html.twig') }}");
+
+        self::assertSame(['/', '/demo/platform/queue'], $this->paths($demo . 'platform/queue.html.twig', ChangedFile::KIND_TEMPLATE));
+        self::assertSame(['/'], $this->paths($demo . 'partials/a.html.twig', ChangedFile::KIND_TEMPLATE));
+    }
+
+    /**
+     * Review, dev#312: an asset manifest that is there and cannot be read or parsed fails the check
+     * with the manifest's path. Read as empty it said "does not load nav.css", which was not so.
+     */
+    #[Test]
+    public function an_asset_manifest_that_cannot_be_read_fails_and_names_it(): void
+    {
+        $manifest = $this->root . '/packages/semitexa-showcase-kit/src/Application/Static/assets.json';
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css']));
+        $this->seen('/blog', $this->offSite());
+        $plan = new VerificationPlan(VerificationPlan::SCOPE_STANDARD, VerificationPlan::SCOPE_STANDARD, [new ChangedFile(self::NAV, ChangedFile::KIND_STYLESHEET)], [$this->target('/', [self::NAV])]);
+        $unreadable = new PageCheckResult($this->root, 'run-1', static fn (string $path): string|false => $path === $manifest ? false : file_get_contents($path));
+
+        // Not readable: the check itself throws, and settling a page sent elsewhere reports it the same way.
+        try {
+            $unreadable->check($this->target('/', [self::NAV]));
+            self::fail('an unreadable manifest was read as an empty one');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($manifest, $e->getMessage());
+        }
+        $passed = new VerificationResult($this->target('/', [self::NAV]), VerificationResult::STATUS_PASS, 0, 'opened');
+        $settled = $unreadable->settle([$unreadable->check($this->target('/blog', [self::NAV])), $passed]);
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $settled[0]->status);
+        self::assertTrue($settled[0]->required);
+        self::assertStringContainsString($manifest, $settled[0]->signal);
+
+        // Not JSON: through the executor, which reports a check that threw with its reason.
+        $this->write('packages/semitexa-showcase-kit/src/Application/Static/assets.json', '{not json');
+        $before = getenv(E2eSpecResultCheck::RUN_ENV);
+        putenv(E2eSpecResultCheck::RUN_ENV . '=run-1');
+        try {
+            $results = (new VerificationExecutor(new Application(), $this->root, new FixedProcessRunner(['exit' => 0, 'output' => ''])))->execute($plan);
+        } finally {
+            putenv(E2eSpecResultCheck::RUN_ENV . ($before === false ? '' : '=' . $before));
+        }
+        // The executor's report of a check that threw: required, with the check's own reason.
+        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $results[0]->status);
+        self::assertTrue($results[0]->required);
+        self::assertStringContainsString('could not read the asset manifest', $results[0]->signal);
+        self::assertStringContainsString('assets.json', $results[0]->signal);
+        self::assertStringNotContainsString('does not load', $results[0]->signal);
+
+        // Absent: the path under Static/ is compared, as before.
+        unlink($manifest);
+        self::assertSame(VerificationResult::STATUS_PASS, $this->check('/', [self::NAV])->status);
+    }
+
     /** Each thing that would excuse it wrongly, one at a time: it stays required. */
     #[Test]
     public function what_does_not_show_the_change_excuses_nothing(): void

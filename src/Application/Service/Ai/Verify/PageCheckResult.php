@@ -22,9 +22,11 @@ final readonly class PageCheckResult
 {
     public const MODES = ['light', 'dark'];
 
+    /** @param (\Closure(string): (string|false))|null $read how an asset manifest is read; tests give one that fails */
     public function __construct(
         private string $projectRoot,
         private ?string $runId,
+        private ?\Closure $read = null,
     ) {}
 
     public static function fromEnvironment(string $projectRoot): self
@@ -213,7 +215,13 @@ final readonly class PageCheckResult
             if ($offSite === null) {
                 continue;
             }
-            $unshown = array_values(array_filter($result->target->triggeredBy, fn (string $file): bool => !$this->shownOnAnotherPage($file, $results)));
+            try {
+                $unshown = array_values(array_filter($result->target->triggeredBy, fn (string $file): bool => !$this->shownOnAnotherPage($file, $results)));
+            } catch (\RuntimeException $e) {
+                // An asset manifest that could not be read: reported as the executor reports one thrown from check().
+                $results[$i] = self::notRun($result->target, 'verification could not complete: ' . SignalText::compress($e->getMessage()));
+                continue;
+            }
             $results[$i] = $unshown === [] && $result->target->triggeredBy !== []
                 ? new VerificationResult($result->target, VerificationResult::STATUS_SKIPPED, 0, "{$path} {$offSite} in light and dark: another site, which cannot show the change; another opened page showed it", required: false)
                 : self::notRun($result->target, $result->signal . '; no other opened page showed ' . implode(', ', array_map('basename', $unshown !== [] ? $unshown : ['it'])));
@@ -365,7 +373,8 @@ final readonly class PageCheckResult
      * manifest's, not the package's name (semitexa-theme serves layouts.css as theme-base).
      * A skin is served outside its module, at /assets/skins/…, and is told by its own name. Without a manifest only the
      * path under Static/ is known, and that is compared. Null when the manifest is there and
-     * names no module: the file cannot be identified, so nothing counts as it.
+     * names no module: the file cannot be identified, so nothing counts as it. A manifest that is
+     * there and cannot be read or parsed throws: a gate does not go on past a file it could not read.
      */
     private function servedAs(string $file): ?string
     {
@@ -379,9 +388,15 @@ final readonly class PageCheckResult
         if (!is_file($manifest)) {
             return '/' . $m[2];
         }
-        $assets = json_decode((string) @file_get_contents($manifest), true);
+        // There and not readable, or not JSON: the check fails saying so. Read as empty it reported
+        // "does not load nav.css", a reason that was not the page's (review, dev#312).
+        $raw = $this->read !== null ? ($this->read)($manifest) : @file_get_contents($manifest);
+        $assets = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($assets)) {
+            throw new \RuntimeException("The page check could not read the asset manifest {$manifest}: it cannot tell whether a page loaded " . basename($file));
+        }
 
-        return is_array($assets) && is_string($assets['module'] ?? null) && $assets['module'] !== '' ? "/assets/{$assets['module']}/{$m[2]}" : null;
+        return is_string($assets['module'] ?? null) && $assets['module'] !== '' ? "/assets/{$assets['module']}/{$m[2]}" : null;
     }
 
     /**
