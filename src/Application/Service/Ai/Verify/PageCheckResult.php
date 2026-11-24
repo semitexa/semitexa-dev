@@ -22,9 +22,11 @@ final readonly class PageCheckResult
 {
     public const MODES = ['light', 'dark'];
 
+    /** @param (\Closure(string): (string|false))|null $read how an asset manifest is read; tests give one that fails */
     public function __construct(
         private string $projectRoot,
         private ?string $runId,
+        private ?\Closure $read = null,
     ) {}
 
     public static function fromEnvironment(string $projectRoot): self
@@ -58,9 +60,15 @@ final readonly class PageCheckResult
             return self::notRun($target, "{$path} was NOT opened: {$why}");
         }
 
-        $deliberate = self::deliberateRedirect($path, $seen['modes'], $target->triggeredBy);
+        $deliberate = $this->deliberateRedirect($path, $seen['modes'], $target->triggeredBy);
         if ($deliberate !== null) {
             return new VerificationResult($target, VerificationResult::STATUS_SKIPPED, 0, $deliberate, required: false);
+        }
+
+        $offSite = self::sentOffSite($seen['modes']);
+        if ($offSite !== null) {
+            // Required until settle() finds the change shown on another page.
+            return self::notRun($target, "{$path} {$offSite} in light and dark: another site, which cannot show the change");
         }
 
         $found = [];
@@ -159,8 +167,8 @@ final readonly class PageCheckResult
 
         // In both modes: a page may load a stylesheet for one colour scheme only (review dev#216).
         $unloaded = array_values(array_unique(array_merge(
-            self::unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null),
-            self::unloaded($target->triggeredBy, $seen['modes']['dark']['stylesheets'] ?? null),
+            $this->unloaded($target->triggeredBy, $seen['modes']['light']['stylesheets'] ?? null),
+            $this->unloaded($target->triggeredBy, $seen['modes']['dark']['stylesheets'] ?? null),
         )));
         // An error page loads none of the page's stylesheets: the error is the result (independent review).
         $erred = array_filter($found, static fn (string $f): bool => preg_match('/^(?:light|dark): HTTP \d+$/', $f) === 1) !== [];
@@ -181,6 +189,105 @@ final readonly class PageCheckResult
         );
     }
 
+    /**
+     * A page the server sends to another site (a blog that moved to the public site, 301) shows
+     * nothing of a change made here: not a failed check of the change, and never a pass. It is
+     * skipped and not required only when every changed file that chose it is a stylesheet that
+     * another page of this run, one that passed, was seen loading in both modes ({@see loads()}).
+     * Otherwise it stays incomplete (tk-verify-page-check-off-site-redirect-incomplete).
+     *
+     * The static chain chooses pages; only a stylesheet seen loading excuses an off-site page. A
+     * changed template never does: what {@see PageUsers} reads from the templates says which page
+     * to open, not what Twig rendered there (`include ['a', 'b']` renders the first that exists),
+     * and nothing the browser files tells one template from another (review, dev#312).
+     *
+     * @param list<VerificationResult> $results
+     * @return list<VerificationResult>
+     */
+    public function settle(array $results): array
+    {
+        foreach ($results as $i => $result) {
+            if ($result->target->type !== VerificationTarget::TYPE_PAGE || $result->status !== VerificationResult::STATUS_INCOMPLETE) {
+                continue;
+            }
+            $path = (string) ($result->target->commandInput['path'] ?? '');
+            $offSite = self::sentOffSite($this->modesOf($path));
+            if ($offSite === null) {
+                continue;
+            }
+            try {
+                $unshown = array_values(array_filter($result->target->triggeredBy, fn (string $file): bool => !$this->shownOnAnotherPage($file, $results)));
+            } catch (\RuntimeException $e) {
+                // An asset manifest that could not be read: reported as the executor reports one thrown from check().
+                $results[$i] = self::notRun($result->target, 'verification could not complete: ' . SignalText::compress($e->getMessage()));
+                continue;
+            }
+            $results[$i] = $unshown === [] && $result->target->triggeredBy !== []
+                ? new VerificationResult($result->target, VerificationResult::STATUS_SKIPPED, 0, "{$path} {$offSite} in light and dark: another site, which cannot show the change; another opened page showed it", required: false)
+                : self::notRun($result->target, $result->signal . '; no other opened page showed ' . implode(', ', array_map('basename', $unshown !== [] ? $unshown : ['it'])));
+        }
+
+        return $results;
+    }
+
+    /** @param list<VerificationResult> $results */
+    private function shownOnAnotherPage(string $file, array $results): bool
+    {
+        // Only a stylesheet is seen loading. A template is never shown to have rendered.
+        if (!str_ends_with($file, '.css')) {
+            return false;
+        }
+        foreach ($results as $result) {
+            if ($result->target->type !== VerificationTarget::TYPE_PAGE || $result->status !== VerificationResult::STATUS_PASS || !in_array($file, $result->target->triggeredBy, true)) {
+                continue;
+            }
+            $modes = $this->modesOf((string) ($result->target->commandInput['path'] ?? ''));
+            // A pass says any changed stylesheet loaded: this one has to, in both modes.
+            if (!$this->anyStylesheetUnloaded([$file], $modes['light']['stylesheets'] ?? null) && !$this->anyStylesheetUnloaded([$file], $modes['dark']['stylesheets'] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<mixed> what the browser filed for the page, [] when nothing */
+    private function modesOf(string $path): array
+    {
+        if ($this->runId === null || preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\z/', $this->runId) !== 1) {
+            return [];
+        }
+        $raw = @file_get_contents($this->projectRoot . '/' . E2eSpecResultCheck::RESULTS_DIR . "/{$this->runId}/pages/" . self::fileName($path));
+        $seen = is_string($raw) ? json_decode($raw, true) : null;
+
+        return is_array($seen) && is_array($seen['modes'] ?? null) ? $seen['modes'] : [];
+    }
+
+    /**
+     * "answers 301 to https://…" when the route's own first answer is a 3xx that ends on the
+     * same address of another site in every mode; null for anything else (a bounce by script,
+     * a mode not reached, a different landing per mode, a landing on this site).
+     *
+     * @param array<mixed> $modes
+     */
+    private static function sentOffSite(array $modes): ?string
+    {
+        $landing = null;
+        $code = null;
+        foreach (self::MODES as $mode) {
+            $view = $modes[$mode] ?? null;
+            if (!is_array($view) || isset($view['error']) || !is_int($view['firstStatus'] ?? null) || $view['firstStatus'] < 300 || $view['firstStatus'] >= 400
+                || !is_string($view['landed'] ?? null) || preg_match('#^https?://#i', $view['landed']) !== 1 || ($landing !== null && $view['landed'] !== $landing)) {
+                return null;
+            }
+            $landing = $view['landed'];
+            $code = $view['firstStatus'];
+        }
+
+        // MODES is never empty: every pass either returned null or set both.
+        return "answers {$code} to {$landing}";
+    }
+
     /** Whether $file changed after the running server started (its pid file is written at start). */
     private function declaredSinceServerStart(string $file): bool
     {
@@ -199,34 +306,16 @@ final readonly class PageCheckResult
     }
 
     /**
-     * The changed stylesheets the page did not load, when stylesheets are all that changed.
-     * A template change cannot be told from the page, so it is never reported here.
-     *
-     * @param list<string> $triggers
-     * @return list<string> their file names
-     */
-    /**
      * Whether a changed stylesheet among the triggers is not loaded by the page: each one on
      * its own, unlike unloaded(), which counts a page as showing the change when any of them
      * loads. A redirect is skipped only when its landing shows all of them (review, dev#263).
      *
      * @param list<string> $triggers
      */
-    private static function anyStylesheetUnloaded(array $triggers, mixed $loaded): bool
+    private function anyStylesheetUnloaded(array $triggers, mixed $loaded): bool
     {
         foreach ($triggers as $file) {
-            if (!str_ends_with($file, '.css')) {
-                continue;
-            }
-            $served = self::servedAs($file);
-            $isLoaded = false;
-            foreach (is_array($loaded) ? $loaded : [] as $href) {
-                if (str_ends_with((string) parse_url((string) $href, PHP_URL_PATH), '/' . $served)) {
-                    $isLoaded = true;
-                    break;
-                }
-            }
-            if (!$isLoaded) {
+            if (str_ends_with($file, '.css') && !$this->loads($file, $loaded)) {
                 return true;
             }
         }
@@ -234,7 +323,14 @@ final readonly class PageCheckResult
         return false;
     }
 
-    private static function unloaded(array $triggers, mixed $loaded): array
+    /**
+     * The changed stylesheets the page did not load, when stylesheets are all that changed.
+     * A template change cannot be told from the page, so it is never reported here.
+     *
+     * @param list<string> $triggers
+     * @return list<string> their file names
+     */
+    private function unloaded(array $triggers, mixed $loaded): array
     {
         if ($triggers === [] || !is_array($loaded)) {
             return [];
@@ -244,17 +340,7 @@ final readonly class PageCheckResult
             if (!str_ends_with($file, '.css')) {
                 return [];
             }
-            $served = self::servedAs($file);
-            $isLoaded = false;
-            foreach ($loaded as $href) {
-                $hrefPath = (string) parse_url((string) $href, PHP_URL_PATH);
-                // The asset's own path, not its name: another module's components.css is not this one (review dev#216).
-                if (str_ends_with($hrefPath, '/' . $served)) {
-                    $isLoaded = true;
-                    break;
-                }
-            }
-            if (!$isLoaded) {
+            if (!$this->loads($file, $loaded)) {
                 $missing[] = basename($file);
             }
         }
@@ -264,20 +350,53 @@ final readonly class PageCheckResult
     }
 
     /**
-     * The part of a changed stylesheet's path its served URL ends with: from skins/ for a
-     * skin (served at /assets/skins/…), otherwise what follows Static/ (css/components.css),
-     * which tells two modules' same-named files apart by directory. The asset prefix is not
-     * the package's name (semitexa-theme serves layouts.css as theme-base), so it is not
-     * compared.
-     *
+     * Whether one of the hrefs a page loaded is the changed stylesheet. The one test of that,
+     * wherever a stylesheet is judged loaded: its served path, whatever the `?v=` query.
      */
-    private static function servedAs(string $file): string
+    private function loads(string $file, mixed $loaded): bool
     {
-        if (preg_match('#/(skins/.+)$#', $file, $m) === 1 || preg_match('#/(?:Static|static)/(.+)$#', $file, $m) === 1) {
-            return $m[1];
+        $served = $this->servedAs($file);
+        foreach (is_array($loaded) ? $loaded : [] as $href) {
+            if ($served !== null && str_ends_with((string) parse_url((string) $href, PHP_URL_PATH), $served)) {
+                return true;
+            }
         }
 
-        return basename($file);
+        return false;
+    }
+
+    /**
+     * What a changed stylesheet's served URL path ends with. With an asset manifest beside it
+     * (Static/assets.json), the asset module and the path: /assets/showcase-kit/css/nav.css.
+     * The path alone let another module's /assets/other-kit/css/nav.css stand for it, and so
+     * excuse a page for a file that never loaded (review, dev#312). The module is the
+     * manifest's, not the package's name (semitexa-theme serves layouts.css as theme-base).
+     * A skin is served outside its module, at /assets/skins/…, and is told by its own name. Without a manifest only the
+     * path under Static/ is known, and that is compared. Null when the manifest is there and
+     * names no module: the file cannot be identified, so nothing counts as it. A manifest that is
+     * there and cannot be read or parsed throws: a gate does not go on past a file it could not read.
+     */
+    private function servedAs(string $file): ?string
+    {
+        if (preg_match('#/(skins/.+)$#', $file, $m) === 1) {
+            return '/' . $m[1];
+        }
+        if (preg_match('#^(.*/(?:Static|static))/(.+)$#', $file, $m) !== 1) {
+            return '/' . basename($file);
+        }
+        $manifest = $this->projectRoot . '/' . $m[1] . '/assets.json';
+        if (!is_file($manifest)) {
+            return '/' . $m[2];
+        }
+        // There and not readable, or not JSON: the check fails saying so. Read as empty it reported
+        // "does not load nav.css", a reason that was not the page's (review, dev#312).
+        $raw = $this->read !== null ? ($this->read)($manifest) : @file_get_contents($manifest);
+        $assets = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($assets)) {
+            throw new \RuntimeException("The page check could not read the asset manifest {$manifest}: it cannot tell whether a page loaded " . basename($file));
+        }
+
+        return is_string($assets['module'] ?? null) && $assets['module'] !== '' ? "/assets/{$assets['module']}/{$m[2]}" : null;
     }
 
     /**
@@ -296,7 +415,7 @@ final readonly class PageCheckResult
      * @param mixed $modes
      * @param list<string> $triggeredBy
      */
-    private static function deliberateRedirect(string $path, mixed $modes, array $triggeredBy): ?string
+    private function deliberateRedirect(string $path, mixed $modes, array $triggeredBy): ?string
     {
         if (!is_array($modes)) {
             return null;
@@ -317,7 +436,7 @@ final readonly class PageCheckResult
             if ($landing !== null && $view['landed'] !== $landing) {
                 return null;
             }
-            if (self::anyStylesheetUnloaded($triggeredBy, $view['stylesheets'] ?? null)) {
+            if ($this->anyStylesheetUnloaded($triggeredBy, $view['stylesheets'] ?? null)) {
                 return null;
             }
             $landing = $view['landed'];

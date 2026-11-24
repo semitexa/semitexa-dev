@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
+use Semitexa\Core\Attribute\AsResource;
 use Semitexa\Core\Auth\PayloadAccessType;
 use Semitexa\Core\Discovery\AttributeDiscovery;
 use Semitexa\Core\ModuleRegistry;
@@ -20,7 +21,7 @@ final class PageRoutes
 {
     private const ACTIONS = '#/(?:log-?out|sign-?out|log-?in|sign-?in|start|callback|submit|delete|remove|unsubscribe|confirm|verify|reset|export|download)$#i';
 
-    /** @return list<array{path: string, module: string, file: string}> */
+    /** @return list<array{path: string, module: string, file: string, template: string}> */
     public static function of(?AttributeDiscovery $discovery, ?ModuleRegistry $modules): array
     {
         if ($discovery === null) {
@@ -37,11 +38,27 @@ final class PageRoutes
                     // Where the route is declared: a page check tells a server that has
                     // not loaded it yet from a route that answers 404 (tk-page-check-stale-route).
                     'file' => class_exists($class) ? (string) (new \ReflectionClass($class))->getFileName() : '',
+                    // What the page renders: a changed template opens the pages that render it,
+                    // not its package's shortest paths (tk-verify-page-check-off-site-redirect-incomplete).
+                    'template' => self::templateOf($route['responseClass'] ?? $route['responseWith'] ?? null),
                 ];
             }
         }
 
         return $routes;
+    }
+
+    /** The template the route's resource names in #[AsResource], '' when it names none. */
+    public static function templateOf(mixed $resource): string
+    {
+        if (!is_string($resource) || !class_exists($resource)) {
+            return '';
+        }
+        foreach ((new \ReflectionClass($resource))->getAttributes(AsResource::class) as $attribute) {
+            return (string) $attribute->newInstance()->template;
+        }
+
+        return '';
     }
 
     /** @param array<string, mixed> $route as route discovery gives it */
