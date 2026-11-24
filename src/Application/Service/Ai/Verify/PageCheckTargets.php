@@ -29,7 +29,7 @@ final class PageCheckTargets
     /**
      * @param list<ChangedFile> $changedFiles
      * @param list<array{path: string, module: string, file?: string, template?: string}> $routes public parameterless GET routes, as discovered
-     * @param PageUsers|null $users what the templates say about which page shows a file
+     * @param PageUsers|null $users what the templates say about which pages to open: a choice, never proof that one showed the file
      *
      * @return list<VerificationTarget>
      */
@@ -45,8 +45,6 @@ final class PageCheckTargets
         foreach ($routes as $route) {
             $declaredIn[$route['path']] = $route['file'] ?? '';
         }
-        /** @var array<string, list<string>> $shows path => the changed templates its own chain holds ({@see PageUsers::rendering()}) */
-        $shows = [];
         /** @var array<string, true> $first the pages the templates chose, not a fallback */
         $first = [];
         /** @var array<string, list<string>> $devSurfaces surface => the files it alone shows */
@@ -60,13 +58,10 @@ final class PageCheckTargets
                 $devSurfaces[$surface][] = $file->path;
                 continue;
             }
-            [$paths, $chosen, $renders] = self::pagesOf($file->path, $routes, $users);
+            [$paths, $chosen] = self::pagesOf($file->path, $routes, $users);
             foreach ($paths as $path) {
                 $pages[$path][] = $file->path;
                 $first += $chosen ? [$path => true] : [];
-                if ($renders) {
-                    $shows[$path][] = $file->path;
-                }
             }
         }
 
@@ -78,7 +73,7 @@ final class PageCheckTargets
                 id: "page:{$path}",
                 reason: 'a changed template or stylesheet shows here — opened in light and dark in the e2e-runner, against the running app',
                 triggeredBy: array_values(array_unique($files)),
-                commandInput: ['path' => (string) $path, 'declared_in' => $declaredIn[$path] ?? '', 'shows' => array_values(array_unique($shows[$path] ?? []))],
+                commandInput: ['path' => (string) $path, 'declared_in' => $declaredIn[$path] ?? ''],
             );
         }
 
@@ -88,7 +83,7 @@ final class PageCheckTargets
     /**
      * @param list<array{path: string, module: string, file?: string, template?: string}> $routes
      *
-     * @return array{list<string>, bool, bool} the paths; whether the templates chose them; whether they render the file
+     * @return array{list<string>, bool} the paths, and whether the templates chose them (a choice of what to open, never proof of what rendered)
      */
     private static function pagesOf(string $file, array $routes, ?PageUsers $users): array
     {
@@ -111,7 +106,7 @@ final class PageCheckTargets
         // The shortest paths first: a section's front page shows more of its layout than a leaf.
         usort($paths, static fn (string $a, string $b): int => [substr_count($a, '/'), strlen($a), $a] <=> [substr_count($b, '/'), strlen($b), $b]);
 
-        return [$paths, $chosen !== [], $rendering !== []];
+        return [$paths, $chosen !== []];
     }
 
     /** A page a browser can open as it is: no parameter, not a dev surface, not an API. */

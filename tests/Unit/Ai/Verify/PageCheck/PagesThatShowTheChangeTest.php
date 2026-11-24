@@ -23,8 +23,9 @@ use Semitexa\Dev\Tests\Unit\Ai\Verify\PageCheck\Fixture\QueuePageResource;
 use Symfony\Component\Console\Application;
 
 /**
- * The page check opens pages that can show the change, and a page that cannot
- * is excused only when another one did (tk-verify-page-check-off-site-redirect-incomplete).
+ * The page check opens pages that can show the change. The static chain chooses
+ * pages; only a stylesheet seen loading excuses a page sent to another site
+ * (tk-verify-page-check-off-site-redirect-incomplete).
  *
  * REGRESSION (2026-11-24, measured on the dev server). A semitexa-demo template
  * opened "/", "/blog" and six "/blog/*" (the package's shortest paths), never
@@ -127,20 +128,20 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertSame('', PageRoutes::templateOf(null));
     }
 
+    /** Only a stylesheet seen loading excuses an off-site page: the browser files what each page loaded. */
     #[Test]
-    public function a_page_sent_to_another_site_is_excused_only_when_another_page_showed_the_change(): void
+    public function a_page_sent_to_another_site_is_excused_when_another_page_was_seen_loading_the_stylesheet(): void
     {
-        $template = 'packages/semitexa-demo/src/Application/View/templates/partials/orphan.html.twig';
         $this->seen('/blog', $this->offSite());
-        $this->seen('/', $this->clean());
-        $blog = $this->check('/blog', [$template]);
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css?v=93e30410b6eb']));
+        $blog = $this->check('/blog', [self::NAV]);
 
         // On its own it is no pass and no skip: nothing showed the change.
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $blog->status);
         self::assertTrue($blog->required);
         self::assertSame('/blog answers 301 to https://semitexa.com/blog in light and dark: another site, which cannot show the change', $blog->signal);
 
-        $settled = $this->checker()->settle([$blog, $this->check('/', [$template], [$template])]);
+        $settled = $this->checker()->settle([$blog, $this->check('/', [self::NAV])]);
         self::assertSame(VerificationResult::STATUS_SKIPPED, $settled[0]->status, 'never a pass');
         self::assertFalse($settled[0]->required);
         self::assertStringContainsString('another opened page showed it', $settled[0]->signal);
@@ -163,40 +164,48 @@ final class PagesThatShowTheChangeTest extends TestCase
     }
 
     /**
-     * Independent review: a template no route is known to render opens its package's shortest
-     * pages. One of them passing says nothing about the template, so it excuses nothing: the
-     * run was incomplete before the off-site rule and stays so.
+     * The static chain chooses pages; it is never proof. A page sent to another site for a
+     * changed template stays incomplete, even when another page passed and its chain names
+     * that template. Review, dev#312: `{% include ['present', 'queue'] %}` renders the first
+     * that exists, so home, which the chain holds queue for, never rendered it.
      */
     #[Test]
-    public function a_fallback_page_passing_does_not_excuse_a_template(): void
+    public function a_template_never_excuses_a_page_sent_to_another_site(): void
     {
-        $template = 'packages/semitexa-demo/src/Application/View/templates/partials/orphan.html.twig';
-        $this->write($template, '');
-        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
-        self::assertSame([], $targets[0]->commandInput['shows'], 'a fallback page is not known to show the file');
+        $demo = 'packages/semitexa-demo/src/Application/View/templates/';
+        $this->write($demo . 'partials/present.html.twig', '');
+        $this->write($demo . 'pages/home.html.twig', "{% extends '@project-layouts-ShowcaseKit/layouts/showcase.html.twig' %}\n"
+            . "{% include ['" . self::DEMO . "partials/present.html.twig', '" . self::DEMO . "platform/queue.html.twig'] %}");
+        $queue = $demo . 'platform/queue.html.twig';
+
+        // The plan opens both pages whose chain names it: that is a choice of what to open.
+        $targets = PageCheckTargets::of([new ChangedFile($queue, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
+        self::assertSame(['/', '/demo/platform/queue'], array_map(static fn (VerificationTarget $t): string => (string) $t->commandInput['path'], $targets));
+        self::assertSame(['path', 'declared_in'], array_keys($targets[0]->commandInput), 'the plan hands the check no claim about what a page renders');
+
         $this->seen('/', $this->clean());
+        $this->seen('/demo/platform/queue', $this->clean());
         $this->seen('/blog', $this->offSite());
+        foreach (['the list include', 'the page whose resource names it'] as $n => $case) {
+            // The targets as the plan made them, with whatever it says of them.
+            $settled = $this->checker()->settle([$this->check('/blog', [$queue]), $this->checker()->check($targets[$n])]);
+            self::assertSame(VerificationResult::STATUS_PASS, $settled[1]->status, $case);
+            self::assertSame(VerificationResult::STATUS_INCOMPLETE, $settled[0]->status, $case);
+            self::assertTrue($settled[0]->required, $case);
+            self::assertStringContainsString('no other opened page showed queue.html.twig', $settled[0]->signal, $case);
+            self::assertFalse((new VerifyReportSerializer())->completed($settled), $case);
+        }
 
-        $settled = $this->checker()->settle([$this->checker()->check($targets[1]), $this->checker()->check($targets[0])]);
-        self::assertSame('/blog', $targets[1]->commandInput['path']);
-        self::assertSame(VerificationResult::STATUS_PASS, $settled[1]->status);
-        self::assertSame(VerificationResult::STATUS_INCOMPLETE, $settled[0]->status);
+        // A stylesheet beside it that was seen loading does not carry the template through.
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css?v=93e30410b6eb']));
+        $settled = $this->checker()->settle([$this->check('/blog', [self::NAV, $queue]), $this->check('/', [self::NAV, $queue])]);
         self::assertTrue($settled[0]->required);
-        self::assertFalse((new VerifyReportSerializer())->completed($settled));
-    }
-
-    #[Test]
-    public function the_plan_records_which_files_a_page_is_known_to_show(): void
-    {
-        $template = 'packages/semitexa-demo/src/Application/View/templates/platform/queue.html.twig';
-        $targets = PageCheckTargets::of([new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
-
-        self::assertSame([$template], $targets[0]->commandInput['shows']);
+        self::assertStringEndsWith('no other opened page showed queue.html.twig', $settled[0]->signal, 'the stylesheet was shown; the template is what holds it');
     }
 
     /** Independent review: the cap cut in changed-file order, so one file's fallback pages pushed out another's exact page. */
     #[Test]
-    public function the_pages_known_to_show_a_file_come_before_any_fallback_page(): void
+    public function the_pages_the_templates_chose_come_before_any_fallback_page(): void
     {
         $routes = self::ROUTES;
         for ($i = 1; $i <= PageCheckTargets::LIMIT + 2; $i++) {
@@ -219,12 +228,11 @@ final class PagesThatShowTheChangeTest extends TestCase
     #[Test]
     public function the_executor_settles_the_pages_of_a_run(): void
     {
-        $template = 'packages/semitexa-demo/src/Application/View/templates/platform/queue.html.twig';
         $this->seen('/blog', $this->offSite());
-        $this->seen('/demo/platform/queue', $this->clean());
-        $plan = new VerificationPlan(VerificationPlan::SCOPE_STANDARD, VerificationPlan::SCOPE_STANDARD, [new ChangedFile($template, ChangedFile::KIND_TEMPLATE)], [
-            $this->target('/blog', [$template]),
-            $this->target('/demo/platform/queue', [$template], [$template]),
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css?v=93e30410b6eb']));
+        $plan = new VerificationPlan(VerificationPlan::SCOPE_STANDARD, VerificationPlan::SCOPE_STANDARD, [new ChangedFile(self::NAV, ChangedFile::KIND_STYLESHEET)], [
+            $this->target('/blog', [self::NAV]),
+            $this->target('/', [self::NAV]),
         ]);
 
         $before = getenv(E2eSpecResultCheck::RUN_ENV);
@@ -273,22 +281,16 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertSame(VerificationResult::STATUS_INCOMPLETE, $this->check('/', [self::NAV])->status);
     }
 
-    /** Review, dev#312: home is built on showcase.html.twig; a change to feature.html.twig opens it and is not shown by it. */
+    /** Review, dev#312: home is built on showcase.html.twig; a change to feature.html.twig opens it, and its pass excuses nothing. */
     #[Test]
-    public function a_page_on_a_sibling_layout_is_opened_and_not_recorded_as_showing_the_file(): void
+    public function a_page_on_a_sibling_layout_is_opened_and_excuses_nothing(): void
     {
         $layout = 'packages/semitexa-showcase-kit/src/Application/View/templates/layouts/feature.html.twig';
-        $targets = PageCheckTargets::of([new ChangedFile($layout, ChangedFile::KIND_TEMPLATE)], VerificationPlan::SCOPE_STANDARD, self::ROUTES, new PageUsers($this->root, self::ROUTES));
+        self::assertSame(['/', '/demo/platform/queue', '/demo/platform/config'], $this->paths($layout, ChangedFile::KIND_TEMPLATE));
 
-        self::assertSame('/', $targets[0]->commandInput['path']);
-        foreach ($targets as $target) {
-            self::assertSame([], $target->commandInput['shows'], (string) $target->commandInput['path']);
-        }
-
-        // So the home page passing excuses no page sent elsewhere for that layout.
         $this->seen('/', $this->clean());
         $this->seen('/blog', $this->offSite());
-        self::assertTrue($this->checker()->settle([$this->check('/blog', [$layout]), $this->checker()->check($targets[0])])[0]->required);
+        self::assertTrue($this->checker()->settle([$this->check('/blog', [$layout]), $this->check('/', [$layout])])[0]->required);
     }
 
     /** Review, dev#312: a gate that cannot read a file fails; it does not go on as if the file were empty. */
@@ -396,7 +398,6 @@ final class PagesThatShowTheChangeTest extends TestCase
     #[Test]
     public function a_redirect_that_is_not_the_servers_own_to_one_other_site_is_not_excused(): void
     {
-        $template = 'src/modules/Site/src/Application/View/templates/pages/home.html.twig';
         $good = $this->offSite()['light'];
         $cases = [
             'a bounce by script (first answer 200)' => [['firstStatus' => 200] + $good, $good],
@@ -405,10 +406,11 @@ final class PagesThatShowTheChangeTest extends TestCase
             'a landing on this site, with a finding there' => [['landed' => '/login', 'findings' => ['label x1']] + $good, ['landed' => '/login'] + $good],
             'a mode not reached' => [$good, ['status' => 0, 'error' => 'net::ERR_NAME_NOT_RESOLVED'] + $good],
         ];
-        $this->seen('/', $this->clean());
+        // A page that was seen loading the stylesheet stands beside each: only the redirect is at fault.
+        $this->seen('/', $this->clean(['http://localhost/assets/showcase-kit/css/nav.css?v=93e30410b6eb']));
         foreach ($cases as $name => [$light, $dark]) {
             $this->seen('/blog', ['light' => $light, 'dark' => $dark]);
-            $settled = $this->checker()->settle([$this->check('/blog', [$template]), $this->check('/', [$template], [$template])]);
+            $settled = $this->checker()->settle([$this->check('/blog', [self::NAV]), $this->check('/', [self::NAV])]);
             self::assertTrue($settled[0]->required, $name);
             self::assertContains($settled[0]->status, [VerificationResult::STATUS_INCOMPLETE, VerificationResult::STATUS_FAIL], $name);
         }
@@ -461,21 +463,15 @@ final class PagesThatShowTheChangeTest extends TestCase
         return new PageCheckResult($this->root, 'run-1');
     }
 
-    /**
-     * @param list<string> $triggers
-     * @param list<string> $shows the triggers the plan found this page renders
-     */
-    private function check(string $path, array $triggers, array $shows = []): VerificationResult
+    /** @param list<string> $triggers */
+    private function check(string $path, array $triggers): VerificationResult
     {
-        return $this->checker()->check($this->target($path, $triggers, $shows));
+        return $this->checker()->check($this->target($path, $triggers));
     }
 
-    /**
-     * @param list<string> $triggers
-     * @param list<string> $shows
-     */
-    private function target(string $path, array $triggers, array $shows = []): VerificationTarget
+    /** @param list<string> $triggers */
+    private function target(string $path, array $triggers): VerificationTarget
     {
-        return new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path, 'declared_in' => '', 'shows' => $shows]);
+        return new VerificationTarget(VerificationTarget::TYPE_PAGE, "page:{$path}", 'test', $triggers, commandInput: ['path' => $path, 'declared_in' => '']);
     }
 }

@@ -190,10 +190,14 @@ final readonly class PageCheckResult
     /**
      * A page the server sends to another site (a blog that moved to the public site, 301) shows
      * nothing of a change made here: not a failed check of the change, and never a pass. It is
-     * skipped and not required only when, for every changed file that chose it, another page of
-     * this run passed and is known to show it: a stylesheet it loaded in both modes, a template the
-     * plan found it renders (`shows`). Otherwise it stays
-     * incomplete: no opened page showed the change (tk-verify-page-check-off-site-redirect-incomplete).
+     * skipped and not required only when every changed file that chose it is a stylesheet that
+     * another page of this run, one that passed, was seen loading in both modes ({@see loads()}).
+     * Otherwise it stays incomplete (tk-verify-page-check-off-site-redirect-incomplete).
+     *
+     * The static chain chooses pages; only a stylesheet seen loading excuses an off-site page. A
+     * changed template never does: what {@see PageUsers} reads from the templates says which page
+     * to open, not what Twig rendered there (`include ['a', 'b']` renders the first that exists),
+     * and nothing the browser files tells one template from another (review, dev#312).
      *
      * @param list<VerificationResult> $results
      * @return list<VerificationResult>
@@ -221,13 +225,12 @@ final readonly class PageCheckResult
     /** @param list<VerificationResult> $results */
     private function shownOnAnotherPage(string $file, array $results): bool
     {
+        // Only a stylesheet is seen loading. A template is never shown to have rendered.
+        if (!str_ends_with($file, '.css')) {
+            return false;
+        }
         foreach ($results as $result) {
             if ($result->target->type !== VerificationTarget::TYPE_PAGE || $result->status !== VerificationResult::STATUS_PASS || !in_array($file, $result->target->triggeredBy, true)) {
-                continue;
-            }
-            // A template cannot be told from the page: only a page known to render it shows it, never
-            // one the plan fell back to (independent review).
-            if (!str_ends_with($file, '.css') && !in_array($file, (array) ($result->target->commandInput['shows'] ?? []), true)) {
                 continue;
             }
             $modes = $this->modesOf((string) ($result->target->commandInput['path'] ?? ''));

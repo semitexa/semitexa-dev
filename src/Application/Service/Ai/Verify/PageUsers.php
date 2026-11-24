@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 /**
- * The pages that render a changed template or use a changed package, for
+ * The pages worth opening for a changed template or a changed package, for
  * {@see PageCheckTargets}: read from the templates, starting at the one each
  * route's resource names and following what it extends and includes inside its
  * own module.
+ *
+ * The static chain chooses pages; it is never proof. What Twig renders is
+ * decided when it runs (`include ['a', 'b']` takes the first that exists, a
+ * name may be a variable), so nothing here excuses a page: only a stylesheet
+ * seen loading excuses an off-site page ({@see PageCheckResult::settle()}).
  *
  * Two cases, both measured (tk-verify-page-check-off-site-redirect-incomplete):
  *
@@ -44,8 +49,8 @@ final class PageUsers
     }
 
     /**
-     * The pages whose template chain holds $file: they render it. Only these are recorded as
-     * showing a changed template ({@see PageCheckResult::settle()}).
+     * The pages whose template chain names $file: the ones to open for it, before any fallback.
+     * A choice, not proof that the page rendered it.
      *
      * @return list<string> their paths
      */
