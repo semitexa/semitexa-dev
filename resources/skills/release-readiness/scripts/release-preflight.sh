@@ -89,10 +89,18 @@ report_soft_failures() {
 
 on_exit() {
     local status=$?
+    # A second INT or TERM while this handler runs must not end it before the
+    # restore, and the traps below would turn one into an exit. ':' rather than
+    # '': an ignored signal is inherited, and a hung server:start could no
+    # longer be stopped with Ctrl-C.
+    trap : INT TERM
     if [ "$status" -ne 0 ]; then
         # Not fatal: under set -e a report that cannot be written (a full disk)
         # would end this handler before the dev stack is restored (review, dev#296).
-        write_failure_report "$CURRENT_STAGE" "$(report_failure_reason)" || warn "Could not write the failure report"
+        # In a subshell too: the report loads the release session, and with no
+        # session.env that calls fail, which exits. An exit here ends the handler
+        # before the restore below, and || does not catch an exit.
+        ( write_failure_report "$CURRENT_STAGE" "$(report_failure_reason)" ) || warn "Could not write the failure report"
         printf '\nRELEASE READINESS: FAIL\n'
         # No finalize follows a failed preflight, and finalize is what starts the
         # dev stack the stop stage took down (the two share host ports). A failed
@@ -105,6 +113,14 @@ on_exit() {
 }
 
 trap on_exit EXIT
+# A signal becomes an exit with its conventional status, so the handler above
+# sees a failure and restores the dev stack. Left alone, SIGTERM ran the handler
+# with status 0, so nothing was restored, and a SIGINT sent to this shell alone
+# let the run carry on. A trap waits for the command in the foreground to end,
+# so a TERM sent to the preflight alone takes effect when the running stage
+# ends, which can take minutes for phpunit or playwright.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 run_stage "sync-masters" "$SCRIPT_DIR/release-sync-masters.sh"
 # FIRST of the structural gates, because it is the only one that can explain the
