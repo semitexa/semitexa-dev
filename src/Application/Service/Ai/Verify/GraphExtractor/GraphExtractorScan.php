@@ -182,7 +182,13 @@ final class GraphExtractorScan
         $problems = [];
         /** @var array<string, ?string> $tests "Class::method" => what is wrong with it, null when it is there */
         $tests = [];
-        [$project, $unreadable] = self::reach($root, self::seeds($root));
+        // A selection outside the package, without --all, does not involve the project: it is not
+        // discovered, so a package file that cannot be read does not fail a clean selection.
+        $involvesProject = $files === [] || $withProject;
+        foreach ($files as $file) {
+            $involvesProject = $involvesProject || str_starts_with(ltrim($file, '/'), self::PACKAGE . '/');
+        }
+        [$project, $unreadable] = $involvesProject ? self::reach($root, self::seeds($root)) : [[], []];
         $given = $reaching = [];
         foreach ($files as $file) {
             $path = ltrim($file, '/');
@@ -196,7 +202,7 @@ final class GraphExtractorScan
         }
         $sources = $files === [] || $withProject ? array_values(array_unique([...$given, ...$project])) : array_values(array_unique([...$given, ...self::reach($root, $reaching)[0]]));
         foreach ($unreadable as $relative) {
-            // Found while following imports, whatever was asked for: what it imports was not followed.
+            // Found while following imports, for any selection that involves the package: what it imports was not followed.
             $problems[$relative][] = 'cannot be read: the lint did not check it';
             $sources = array_values(array_diff($sources, [$relative]));
         }
@@ -470,13 +476,16 @@ final class GraphExtractorScan
             // What stands before the declaration being read: PHPUnit's #[Test], a modifier that is not public.
             $marked = $hidden = false;
             $attribute = 0;
+            // Parentheses open inside the attribute: a `,` of an argument list separates no attributes.
+            $parentheses = 0;
             for ($i = $namespace['from']; $i <= $namespace['to']; $i++) {
                 $token = $tokens[$i];
                 $next = $tokens[$i + 1] ?? null;
                 if ($attribute > 0 || $token->is(T_ATTRIBUTE)) {
                     $attribute += $token->is(T_ATTRIBUTE) || $token->text === '[' ? 1 : ($token->text === ']' ? -1 : 0);
+                    $parentheses = $attribute === 0 ? 0 : $parentheses + ($token->text === '(' ? 1 : ($token->text === ')' ? -1 : 0));
                     // The attribute's own name, not one of its arguments: it follows `#[` or a `,` of the group.
-                    $names = $token->is(T_ATTRIBUTE) || ($attribute === 1 && $token->text === ',');
+                    $names = $token->is(T_ATTRIBUTE) || ($attribute === 1 && $parentheses === 0 && $token->text === ',');
                     $marked = $marked || ($names && $next?->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) === true && strcasecmp($resolve($next), 'PHPUnit\Framework\Attributes\Test') === 0);
                 } elseif ($token->text === '{' || $token->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES])) {
                     $depth++;

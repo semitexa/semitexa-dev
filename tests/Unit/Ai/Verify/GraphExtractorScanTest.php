@@ -326,6 +326,8 @@ final class GraphExtractorScanTest extends TestCase
             // Review, semitexa-dev#316: any attribute called Test counted, and PHPUnit's under an alias did not.
             'unrelated' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
             'local' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
+            // Review, semitexa-dev#316: a `,` inside another attribute's arguments was read as a new attribute.
+            'inArguments' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
             // Review, semitexa-dev#316: PHPUnit runs only public methods.
             'hidden' => "in {$tests}/Integration/ConvergenceTest.php that method is not public: PHPUnit runs only a public method",
             'testHidden' => "in {$tests}/Integration/ConvergenceTest.php that method is not public: PHPUnit runs only a public method",
@@ -377,6 +379,8 @@ final class GraphExtractorScanTest extends TestCase
                     public function unrelated(): void {}
                     #[Attributes\Test]
                     public function local(): void {}
+                    #[Other('example', Test::class)]
+                    public function inArguments(): void {}
                     #[Test]
                     private function hidden(): void {}
                     protected function testHidden(): void {}
@@ -429,12 +433,14 @@ final class GraphExtractorScanTest extends TestCase
         unlink("{$root}/{$tests}/Integration/ConvergenceTest.php");
         self::assertSame([], GraphExtractorScan::problems($root), 'the other file of that name declares it');
 
-        // A source that discovery cannot read is reported whatever was asked for: what it imports was not followed.
+        // A source that discovery cannot read is reported for any selection that involves the package: what it imports was not followed.
         symlink("{$root}/gone/Closed.php", "{$root}/{$dir}/Closed.php");
         $closed = ["{$dir}/Closed.php" => ['cannot be read: the lint did not check it']];
         self::assertSame($closed, GraphExtractorScan::problems($root, ["{$dir}/Clean.php"]));
         self::assertSame($closed, GraphExtractorScan::problems($root));
-        self::assertSame($closed, GraphExtractorScan::problems($root, ['src/NotOfThePackage.txt']));
+        // Review, semitexa-dev#316: a selection outside the package does not involve the project, unless --all asks.
+        self::assertSame([], GraphExtractorScan::problems($root, ['src/NotOfThePackage.txt']));
+        self::assertSame($closed, GraphExtractorScan::problems($root, ['src/NotOfThePackage.txt'], true));
     }
 
     #[Test]
