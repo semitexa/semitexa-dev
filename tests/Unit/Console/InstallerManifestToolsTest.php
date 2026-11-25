@@ -10,12 +10,13 @@ use Semitexa\Dev\Application\Service\Console\InstallerManifestTools;
 
 /**
  * What scaffold:sync runs for semitexa/installer's own manifest, which update
- * reads from vendor/ from step 2 of one source for bin/semitexa: both checks at
- * verify time, the history against the installer's last release tag, and the
- * derive tool only while update still ships the runtime entries itself.
+ * reads from vendor/ from step 2 of one source for bin/semitexa: the installer's
+ * check at verify time, with the history against its last release tag.
  */
 final class InstallerManifestToolsTest extends TestCase
 {
+    // verify:accept-test-change the derive tool and update's runtime entries are gone (installer bbf0566, step 2d of tk-one-source-for-bin-semitexa); the tests of that branch go with it
+
     private const INSTALLER = '/packages/semitexa-installer';
 
     private string $root = '';
@@ -26,10 +27,7 @@ final class InstallerManifestToolsTest extends TestCase
         mkdir($this->root . self::INSTALLER . '/tools', 0777, true);
         mkdir($this->root . self::INSTALLER . '/scaffold/bin', 0777, true);
         mkdir($this->root . self::INSTALLER . '/resources', 0777, true);
-        mkdir($this->root . '/packages/semitexa-update/resources', 0777, true);
         file_put_contents($this->root . self::INSTALLER . '/scaffold/bin/semitexa', "#!/usr/bin/env bash\n");
-        // After the switch by default: update's manifest lists the agent docs only.
-        $this->updateManifest(['AGENTS.md']);
     }
 
     protected function tearDown(): void
@@ -38,102 +36,30 @@ final class InstallerManifestToolsTest extends TestCase
     }
 
     #[Test]
-    public function while_update_ships_the_runtime_entries_both_checks_run(): void
+    public function the_check_runs_the_installers_own_tool(): void
     {
-        $this->tools('check-manifest.php', 'derive-manifest.php');
-        $this->updateManifest(['AGENTS.md', 'bin/semitexa']);
-        $tools = new InstallerManifestTools($this->root);
+        $this->tools('check-manifest.php');
+        $command = (new InstallerManifestTools($this->root))->checkCommand();
 
-        self::assertTrue($tools->updateShipsInstallerFiles());
-        self::assertSame(['derive-manifest.php --check', 'check-manifest.php'], array_column($tools->commands(true), 'label'));
-        self::assertSame(['derive-manifest.php'], array_column($tools->commands(false), 'label'), 'a write keeps the installer manifest in step with the update rebuild before it');
-    }
-
-    #[Test]
-    public function once_update_lists_none_of_the_installers_files_nothing_is_derived(): void
-    {
-        $this->tools('check-manifest.php', 'derive-manifest.php');
-        // After step 2b: update's own manifest holds only the agent docs, and a
-        // path the installer does not ship is not one of its files.
-        $this->updateManifest(['AGENTS.md', 'CLAUDE.md', 'docker-compose.legacy.yml']);
-        $tools = new InstallerManifestTools($this->root);
-
-        self::assertFalse($tools->updateShipsInstallerFiles());
-        self::assertSame(['check-manifest.php'], array_column($tools->commands(true), 'label'));
-        self::assertSame([], $tools->commands(false));
-    }
-
-    /**
-     * Review on dev#291: an unreadable or malformed manifest read as one that
-     * ships nothing, and the derive check was left out without a word.
-     */
-    #[Test]
-    public function an_update_manifest_that_cannot_be_read_is_an_error(): void
-    {
-        $this->tools('derive-manifest.php', 'check-manifest.php');
-        file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [');
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage("Cannot read semitexa/update's manifest");
-        (new InstallerManifestTools($this->root))->commands(true);
-    }
-
-    #[Test]
-    public function an_entry_without_a_path_is_an_error(): void
-    {
-        file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [{"current_sha256": "x"}]}');
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('files[0]');
-        (new InstallerManifestTools($this->root))->updateShipsInstallerFiles();
-    }
-
-    #[Test]
-    public function without_an_update_package_there_is_nothing_to_derive_from(): void
-    {
-        exec('rm -rf ' . escapeshellarg($this->root . '/packages/semitexa-update'));
-        $this->tools('derive-manifest.php', 'check-manifest.php');
-
-        $tools = new InstallerManifestTools($this->root);
-
-        self::assertFalse($tools->updateShipsInstallerFiles());
-        self::assertSame(['check-manifest.php'], array_column($tools->commands(true), 'label'));
+        self::assertSame('check-manifest.php', $command['label']);
+        self::assertSame([$this->root . self::INSTALLER . '/tools/check-manifest.php'], $command['argv']);
     }
 
     #[Test]
     public function a_check_without_the_check_tool_cannot_run(): void
     {
-        $this->tools('derive-manifest.php');
-
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('check-manifest.php is missing');
-        (new InstallerManifestTools($this->root))->commands(true);
-    }
-
-    #[Test]
-    public function while_update_ships_the_runtime_entries_a_missing_derive_tool_is_an_error(): void
-    {
-        $this->tools('check-manifest.php');
-        $this->updateManifest(['AGENTS.md', 'bin/semitexa']);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('derive-manifest.php is missing');
-        (new InstallerManifestTools($this->root))->commands(false);
-    }
-
-    #[Test]
-    public function a_write_after_the_switch_runs_nothing(): void
-    {
-        self::assertSame([], (new InstallerManifestTools($this->root))->commands(false));
+        (new InstallerManifestTools($this->root))->checkCommand();
     }
 
     #[Test]
     public function the_history_check_is_given_the_earlier_manifest(): void
     {
         $this->tools('check-manifest.php');
-        $commands = (new InstallerManifestTools($this->root))->commands(true, '/tmp/earlier.json');
+        $command = (new InstallerManifestTools($this->root))->checkCommand('/tmp/earlier.json');
 
-        self::assertSame([$this->root . self::INSTALLER . '/tools/check-manifest.php', '--previous=/tmp/earlier.json'], $commands[0]['argv']);
+        self::assertSame([$this->root . self::INSTALLER . '/tools/check-manifest.php', '--previous=/tmp/earlier.json'], $command['argv']);
     }
 
     #[Test]
@@ -206,15 +132,6 @@ final class InstallerManifestToolsTest extends TestCase
         foreach ($names as $name) {
             file_put_contents($this->root . self::INSTALLER . '/tools/' . $name, "<?php\nexit(0);\n");
         }
-    }
-
-    /** @param list<string> $paths */
-    private function updateManifest(array $paths): void
-    {
-        file_put_contents(
-            $this->root . '/packages/semitexa-update/resources/scaffold-manifest.json',
-            json_encode(['files' => array_map(static fn (string $path): array => ['path' => $path], $paths)], JSON_THROW_ON_ERROR),
-        );
     }
 
     private function tagManifest(string $tag, string $manifest): void

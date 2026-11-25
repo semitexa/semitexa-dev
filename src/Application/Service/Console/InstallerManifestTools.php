@@ -5,99 +5,49 @@ declare(strict_types=1);
 namespace Semitexa\Dev\Application\Service\Console;
 
 /**
- * semitexa/installer's scaffold manifest, as scaffold:sync checks and keeps it.
+ * semitexa/installer's scaffold manifest, as scaffold:sync checks it.
  *
  * From step 2 of one source for bin/semitexa (dec-one-source-for-bin-semitexa),
  * semitexa/update reads the scaffold and this manifest from
- * vendor/semitexa/installer, so the installer's own tools answer for it:
+ * vendor/semitexa/installer, so the installer's own tool answers for it:
+ * tools/check-manifest.php says the manifest describes scaffold/ in a form
+ * every released update reads, and still knows every hash the manifest at the
+ * installer's last release tag knew (Fable's review of the step 2 plan, D2 and
+ * D3). update:scaffold:rebuild writes it.
  *
- *  - tools/check-manifest.php: the manifest describes scaffold/ in a form every
- *    released update reads, and still knows every hash the manifest at the
- *    installer's last release tag knew (Fable's review of the step 2 plan, D2
- *    and D3);
- *  - tools/derive-manifest.php, while update still ships the runtime entries
- *    itself: it copies them, so this manifest says what update's says. Once
- *    update's manifest lists none of the installer's files there is nothing to
- *    copy from, and the tool goes away (step 2d).
- *
- * The release stage installer-manifest-fresh runs the same two checks on the
- * host; this is the same question asked at verify time, from the PR that
- * changes the scaffold.
+ * The release stage installer-manifest-fresh runs the same check on the host;
+ * this is the same question asked at verify time, from the PR that changes the
+ * scaffold.
  */
 final class InstallerManifestTools
 {
     private const INSTALLER = 'packages/semitexa-installer';
-    private const UPDATE = 'packages/semitexa-update';
 
     public function __construct(private readonly string $root)
     {
     }
 
     /**
-     * What to run: in check mode both checks, in write mode the derive tool.
+     * The check to run, against $previous when there is one.
      *
-     * Whatever cannot be read throws: the check tool missing, update's manifest
-     * unreadable. A gate that cannot read what it checks must fail, not skip it
-     * (review, dev#291).
+     * A missing check tool throws: a gate that cannot read what it checks must
+     * fail, not skip it (review, dev#291).
      *
-     * @param ?string $previous an earlier manifest to check the history against (check mode)
-     * @return list<array{label: string, argv: list<string>}>
-     * @throws \RuntimeException when a tool or update's manifest cannot be read
+     * @param ?string $previous an earlier manifest to check the history against
+     * @return array{label: string, argv: list<string>}
+     * @throws \RuntimeException when the check tool is missing
      */
-    public function commands(bool $check, ?string $previous = null): array
+    public function checkCommand(?string $previous = null): array
     {
-        $commands = [];
-        if ($this->updateShipsInstallerFiles()) {
-            $derive = $this->tool('derive-manifest.php');
-            if ($derive === null) {
-                throw new \RuntimeException('semitexa/update still ships the runtime entries, and ' . self::INSTALLER . '/tools/derive-manifest.php is missing.');
-            }
-            $commands[] = $check
-                ? ['label' => 'derive-manifest.php --check', 'argv' => [$derive, '--check']]
-                : ['label' => 'derive-manifest.php', 'argv' => [$derive]];
-        }
-        if ($check) {
-            $checkTool = $this->tool('check-manifest.php');
-            if ($checkTool === null) {
-                throw new \RuntimeException(self::INSTALLER . '/tools/check-manifest.php is missing: the manifest semitexa/update reads cannot be checked.');
-            }
-            $commands[] = [
-                'label' => 'check-manifest.php',
-                'argv' => $previous !== null ? [$checkTool, '--previous=' . $previous] : [$checkTool],
-            ];
+        $checkTool = $this->tool('check-manifest.php');
+        if ($checkTool === null) {
+            throw new \RuntimeException(self::INSTALLER . '/tools/check-manifest.php is missing: the manifest semitexa/update reads cannot be checked.');
         }
 
-        return $commands;
-    }
-
-    /**
-     * True while semitexa/update's own manifest still lists a file of the
-     * installer's scaffold; false when it lists none, or there is no update
-     * package to compare with.
-     *
-     * @throws \RuntimeException when update's manifest cannot be read as one
-     */
-    public function updateShipsInstallerFiles(): bool
-    {
-        if (!is_dir($this->root . '/' . self::UPDATE)) {
-            return false;
-        }
-        $path = $this->root . '/' . self::UPDATE . '/resources/scaffold-manifest.json';
-        $raw = is_file($path) ? file_get_contents($path) : false;
-        $manifest = is_string($raw) ? json_decode($raw, true) : null;
-        if (!is_array($manifest) || !is_array($manifest['files'] ?? null)) {
-            throw new \RuntimeException("Cannot read semitexa/update's manifest as a scaffold manifest: {$path}");
-        }
-        foreach ($manifest['files'] as $index => $entry) {
-            if (!is_array($entry) || !is_string($entry['path'] ?? null) || $entry['path'] === '') {
-                throw new \RuntimeException("files[{$index}] of {$path} has no path.");
-            }
-            if (is_file($this->root . '/' . self::INSTALLER . '/scaffold/' . $entry['path'])) {
-                return true;
-            }
-        }
-
-        return false;
+        return [
+            'label' => 'check-manifest.php',
+            'argv' => $previous !== null ? [$checkTool, '--previous=' . $previous] : [$checkTool],
+        ];
     }
 
     /**
