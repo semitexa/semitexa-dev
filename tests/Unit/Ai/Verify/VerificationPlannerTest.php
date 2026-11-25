@@ -118,6 +118,8 @@ class VerificationPlannerTest extends TestCase
             'lint:deferred-slots',
             'lint:deferred-twig',
             'lint:di',
+            // Project-graph extractors: a read beyond the file a refresh re-reads.
+            'lint:graph-extractors',
             'lint:handlers',
             // A nonce-less inline <script> in a package fails only in a
             // browser, and only on a consumer that enforces a policy.

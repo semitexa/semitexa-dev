@@ -97,8 +97,8 @@ final class VerificationPlanner
         'lint:deferred-slots',
         'lint:components',
         'lint:ui-contracts',
-        // A deleted stylesheet may have held the only declaration an unchanged template uses; a deleted pack leaves its siblings to read.
-        'lint:css-tokens', 'lint:locales',
+        // A deleted stylesheet may have held the only declaration an unchanged template uses; a deleted pack leaves its siblings to read; a deleted or renamed project-graph test may be the one an accept names, a deleted helper one an extractor still imports.
+        'lint:css-tokens', 'lint:locales', 'lint:graph-extractors',
     ];
 
     private const ALL_LINTS = [
@@ -115,7 +115,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
-        'lint:css-tokens', 'lint:locales', 'lint:shell-fallbacks',
+        'lint:css-tokens', 'lint:locales', 'lint:shell-fallbacks', 'lint:graph-extractors',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -649,7 +649,7 @@ final class VerificationPlanner
         array &$lintsByCommand,
         bool $onlyCrossFile = false,
     ): void {
-        $lints = self::KIND_LINT_MAP[$file->kind] ?? [];
+        $lints = [...(self::KIND_LINT_MAP[$file->kind] ?? []), ...(GraphExtractor\GraphExtractorScan::covers($file->path) ? ['lint:graph-extractors'] : [])]; // by path, not kind: PHP of the package (an extractor, a helper it reaches, a test an accept names) keeps its kind's lints
         foreach ($lints as $lint) {
             if ($onlyCrossFile && !in_array($lint, self::CROSS_FILE_LINTS, true)) {
                 continue;
@@ -675,7 +675,7 @@ final class VerificationPlanner
             if (!isset($lintsByCommand[$lint])) {
                 $lintsByCommand[$lint] = [
                     'triggeredBy' => [],
-                    'reason'      => "{$file->kind} change requires {$lint}",
+                    'reason'      => $lint === 'lint:graph-extractors' ? 'project-graph change requires lint:graph-extractors' : "{$file->kind} change requires {$lint}",
                 ];
             }
             $lintsByCommand[$lint]['triggeredBy'][] = $file->path;
