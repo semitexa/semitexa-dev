@@ -55,6 +55,9 @@ final class VerifyNeverRebuildsTheGraphTest extends TestCase
         self::assertSame(['line 2: ->fullBuild('], self::rebuilds("<?php\n\$graph->fullBuild(\$root);\n"), 'a full build is refused whatever the receiver');
         self::assertSame(['line 2: ->update('], self::rebuilds("<?php\n(new \\Semitexa\\ProjectGraph\\Application\\Service\\Index\\IncrementalEngine(\$a, \$b))->update(\$root);\n"), 'and the engine named by its full name');
         self::assertSame(['line 2: AutoRefreshesProjectGraph'], self::rebuilds("<?php\nuse Semitexa\\ProjectGraph\\Application\\Service\\Support\\AutoRefreshesProjectGraph;\nfinal class Check\n{\n    use AutoRefreshesProjectGraph;\n}\n"), 'the trait whose refresh calls update()');
+        // Review, semitexa-dev#317: a grouped import names the trait as a bare name.
+        self::assertSame(['line 2: AutoRefreshesProjectGraph'], self::rebuilds("<?php\nuse Semitexa\\ProjectGraph\\Application\\Service\\Support\\{AutoRefreshesProjectGraph};\nfinal class Check\n{\n    use AutoRefreshesProjectGraph;\n}\n"), 'and imported in a group');
+        self::assertSame([], self::rebuilds("<?php\nfinal class Check\n{\n    private string \$why = 'AutoRefreshesProjectGraph';\n}\n"), 'its name in a string is no use of it');
 
         self::assertSame([], self::rebuilds($engine . "if (\$engine->isCurrentBuild()) {\n    \$engine->updateUnlessBusy(\$root);\n}\n"));
         self::assertSame([], self::rebuilds("<?php\n\$receipts->update(\$id, \$row);\n"), 'update() of anything in a file that names no engine is not the engine\'s');
@@ -77,8 +80,10 @@ final class VerifyNeverRebuildsTheGraphTest extends TestCase
         $found = [];
         foreach ($tokens as $token) {
             $namesTheEngine = $namesTheEngine || ($token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) && str_ends_with($token->text, 'IncrementalEngine'));
-            // Named once by its import or its full name; its refreshProjectGraph() calls update().
-            if ($token->is([T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) && str_ends_with($token->text, '\\AutoRefreshesProjectGraph') && $found === []) {
+            // Its refreshProjectGraph() calls update(). Named by its import (grouped ones too), its
+            // full name or its short name; reported once a file.
+            $trait = $token->is(T_STRING) ? $token->text === 'AutoRefreshesProjectGraph' : str_ends_with($token->text, '\\AutoRefreshesProjectGraph');
+            if ($token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) && $trait && $found === []) {
                 $found[] = sprintf('line %d: AutoRefreshesProjectGraph', $token->line);
             }
         }

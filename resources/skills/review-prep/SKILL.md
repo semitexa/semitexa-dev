@@ -59,8 +59,9 @@ scripts/run-review-checks.sh /absolute/path/to/repo --summary-file /tmp/review-c
   owns) whether it is read from where it is defined or guessed: a guessed value passes the tests written beside it and
   goes stale the first time its source changes. No check finds this one (class 4 of the 19.11 review verdicts)
 - a check that runs on every change must not rebuild what it reads: under `Ai\Verify` the project graph is refreshed
-  only through `updateUnlessBusy()` behind `isCurrentBuild()`, and `VerifyNeverRebuildsTheGraphTest` refuses
-  `fullBuild()` and `update()` there (class 3)
+  only through `updateUnlessBusy()` behind `isCurrentBuild()` (class 3). `VerifyNeverRebuildsTheGraphTest` refuses
+  `fullBuild()` and `AutoRefreshesProjectGraph` there, but `update()` only in a file that names `IncrementalEngine`:
+  an engine held in a property typed elsewhere passes it, so look for that call yourself
 - if the review finds actionable issues, fix them in the repo
 - rerun the narrowest useful validation for the touched area after the fix
 - commit the review fixes before continuing
