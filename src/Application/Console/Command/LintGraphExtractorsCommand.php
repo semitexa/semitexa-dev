@@ -19,6 +19,8 @@ final class LintGraphExtractorsCommand extends BaseCommand
     /** Why this check exists, and what taught us; ai:verify prints it when the lint fails. */
     public const RATIONALE = 'Why: the probe makes an extracted fact depend on a file the incremental engine does not re-read, so a refresh drifts from a full build. Learned 2026-11-18: the review of the UI flow graph found renders_template edges that a refresh never added or removed.';
 
+    private const NOTHING = 'this project holds no PHP under ' . GraphExtractorScan::DIRECTORIES[0] . ' or ' . GraphExtractorScan::DIRECTORIES[1];
+
     public function __construct()
     {
         parent::__construct('lint:graph-extractors');
@@ -34,7 +36,7 @@ final class LintGraphExtractorsCommand extends BaseCommand
             . "  // " . GraphExtractorScan::MARKER . " <kind>[,<kind>] <TestClass>::<testMethod> <reason>\n"
             . "Kinds: " . implode(', ', CrossFileProbes::KINDS) . ". The test is a test method under " . GraphExtractorScan::TESTS . ".\n\n"
             . "Not seen: a function called through a variable (\$f()), a static call on a class named at run time (\$c::from()), unserialize(), "
-            . "and a class of the package named only by its full name.\n"
+            . "and a class of the package named only by its full name or as a neighbour in its namespace.\n"
             . "Flagged though they may read nothing: is_a, method_exists and property_exists given an object.",
         );
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Emit one JSON envelope');
@@ -46,11 +48,12 @@ final class LintGraphExtractorsCommand extends BaseCommand
         $files = array_values(array_filter((array) $input->getOption('file'), is_string(...)));
         $root = $this->getProjectRoot();
         $problems = GraphExtractorScan::problems($root, $files, (bool) $input->getOption('all'));
-        // A project without the package's source (a consumer) has no extractor to read: said, so a pass is not taken for a reading.
-        $nothing = $files === [] && !GraphExtractorScan::hasExtractors($root);
+        // A project without the package's source (a consumer) has nothing to read: said, so a pass is not taken for a reading.
+        // The parser alone is something to read.
+        $nothing = $files === [] && !GraphExtractorScan::hasSources($root);
 
         if ((bool) $input->getOption('json')) {
-            $output->writeln((string) json_encode(['ok' => $problems === [], 'problems' => $problems] + ($nothing ? ['scanned' => 'nothing: ' . GraphExtractorScan::DIRECTORY . ' is not in this project'] : []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
+            $output->writeln((string) json_encode(['ok' => $problems === [], 'problems' => $problems] + ($nothing ? ['scanned' => 'nothing: ' . self::NOTHING] : []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
 
             return $problems === [] ? self::SUCCESS : self::FAILURE;
         }
@@ -62,7 +65,7 @@ final class LintGraphExtractorsCommand extends BaseCommand
         $first = array_key_first($problems);
         $output->writeln(match (true) {
             $first !== null => sprintf('lint:graph-extractors → %d file(s) with a problem, first %s %s', count($problems), $first, $problems[$first][0]),
-            $nothing => 'lint:graph-extractors → nothing to scan: ' . GraphExtractorScan::DIRECTORY . ' is not in this project',
+            $nothing => 'lint:graph-extractors → nothing to scan: ' . self::NOTHING,
             default => 'lint:graph-extractors → nothing an extractor runs reads beyond the file it extracts without an accept that names a convergence test',
         });
 

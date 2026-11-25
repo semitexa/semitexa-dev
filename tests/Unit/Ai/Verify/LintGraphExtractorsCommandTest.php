@@ -51,11 +51,11 @@ final class LintGraphExtractorsCommandTest extends TestCase
         $tester = new CommandTester(new LintGraphExtractorsCommand());
 
         self::assertSame(0, $tester->execute([]));
-        self::assertSame('lint:graph-extractors → nothing to scan: ' . GraphExtractorScan::DIRECTORY . " is not in this project\n", $tester->getDisplay());
+        self::assertSame('lint:graph-extractors → nothing to scan: this project holds no PHP under ' . GraphExtractorScan::DIRECTORIES[0] . ' or ' . GraphExtractorScan::DIRECTORIES[1] . "\n", $tester->getDisplay());
 
         $json = new CommandTester(new LintGraphExtractorsCommand());
         self::assertSame(0, $json->execute(['--json' => true]));
-        self::assertSame(['ok' => true, 'problems' => [], 'scanned' => 'nothing: ' . GraphExtractorScan::DIRECTORY . ' is not in this project'], json_decode($json->getDisplay(), true));
+        self::assertSame(['ok' => true, 'problems' => [], 'scanned' => 'nothing: this project holds no PHP under ' . GraphExtractorScan::DIRECTORIES[0] . ' or ' . GraphExtractorScan::DIRECTORIES[1]], json_decode($json->getDisplay(), true));
     }
 
     #[Test]
@@ -78,7 +78,7 @@ final class LintGraphExtractorsCommandTest extends TestCase
     public function clean_extractors_pass(): void
     {
         $this->write(GraphExtractorScan::DIRECTORY . '/Clean.php', "<?php\nfinal class Clean {}\n");
-        $this->write(GraphExtractorScan::TESTS . '/ConvergenceTest.php', "<?php\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void {}\n}\n");
+        $this->write(GraphExtractorScan::TESTS . '/ConvergenceTest.php', "<?php\nuse PHPUnit\\Framework\\Attributes\\Test;\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void {}\n}\n");
         $this->write(GraphExtractorScan::DIRECTORY . '/Accepted.php', "<?php\nfinal class Accepted\n{\n    public function of(string \$p): bool\n    {\n        // verify:accept-cross-file-read filesystem ConvergenceTest::a_refresh_converges read when the graph is read\n        return is_file(\$p);\n    }\n}\n");
 
         $tester = new CommandTester(new LintGraphExtractorsCommand());
@@ -107,12 +107,33 @@ final class LintGraphExtractorsCommandTest extends TestCase
     #[Test]
     public function an_empty_file_value_fails_and_scans_nothing_else(): void
     {
-        $this->write(GraphExtractorScan::DIRECTORY . '/Clean.php', "<?php\nfinal class Clean {}\n");
+        // A file with a finding: a scan of the directory would report it beside the empty value.
+        $this->write(GraphExtractorScan::DIRECTORY . '/Probing.php', self::BAD);
 
         $tester = new CommandTester(new LintGraphExtractorsCommand());
 
+        self::assertSame(1, $tester->execute(['--file' => [''], '--json' => true]));
+        self::assertSame(['(empty --file)'], array_keys(self::problems($tester)));
         self::assertSame(1, $tester->execute(['--file' => ['']]));
-        self::assertStringContainsString('(empty --file) no path was given', $tester->getDisplay());
+        self::assertSame("  (empty --file) no path was given: the lint checked nothing for it\nlint:graph-extractors → 1 file(s) with a problem, first (empty --file) no path was given: the lint checked nothing for it\n", $tester->getDisplay());
+    }
+
+    /** Review, semitexa-dev#316: with the parser and no extractor directory the lint read the parser and said "nothing to scan". */
+    #[Test]
+    public function a_project_with_the_parser_alone_is_scanned_and_says_so(): void
+    {
+        $this->write(GraphExtractorScan::DIRECTORIES[1] . '/Reader.php', self::BAD);
+
+        $tester = new CommandTester(new LintGraphExtractorsCommand());
+        self::assertSame(1, $tester->execute(['--json' => true]));
+        $json = json_decode($tester->getDisplay(), true);
+        self::assertIsArray($json);
+        self::assertSame(['ok', 'problems'], array_keys($json), 'no "scanned": nothing');
+        self::assertSame([GraphExtractorScan::DIRECTORIES[1] . '/Reader.php'], array_keys(self::problems($tester)));
+
+        $this->write(GraphExtractorScan::DIRECTORIES[1] . '/Reader.php', "<?php\nfinal class Reader {}\n");
+        self::assertSame(0, $tester->execute([]));
+        self::assertSame("lint:graph-extractors → nothing an extractor runs reads beyond the file it extracts without an accept that names a convergence test\n", $tester->getDisplay());
     }
 
     #[Test]

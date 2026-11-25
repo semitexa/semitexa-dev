@@ -97,8 +97,8 @@ final class VerificationPlanner
         'lint:deferred-slots',
         'lint:components',
         'lint:ui-contracts',
-        // A deleted stylesheet may have held the only declaration an unchanged template uses; a deleted pack leaves its siblings to read.
-        'lint:css-tokens', 'lint:locales',
+        // A deleted stylesheet may have held the only declaration an unchanged template uses; a deleted pack leaves its siblings to read; a deleted or renamed project-graph test may be the one an accept names, a deleted helper one an extractor still imports.
+        'lint:css-tokens', 'lint:locales', 'lint:graph-extractors',
     ];
 
     private const ALL_LINTS = [

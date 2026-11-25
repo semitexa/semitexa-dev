@@ -341,13 +341,28 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         self::assertSame(['--file' => [$test]], $this->lintInput('lint:graph-extractors', [$classifier->classify($test)], VerificationPlan::SCOPE_STANDARD));
     }
 
-    /** A deleted extractor leaves nothing to read. */
+    /**
+     * Review, semitexa-dev#316: a deleted or renamed test may be the one an accept names, and a deleted
+     * helper one an extractor still imports. The lint reads the project for a path with no file.
+     */
     #[Test]
-    public function a_deleted_extractor_selects_no_lint(): void
+    public function a_deleted_or_renamed_file_of_project_graph_still_selects_the_extractor_lint(): void
     {
-        $deleted = new ChangedFile('packages/semitexa-project-graph/src/Application/Service/Extractor/TemplateRenderExtractor.php', ChangedFile::KIND_SERVICE, ChangedFile::STATUS_DELETED);
+        $test = 'packages/semitexa-project-graph/tests/Integration/UiFlowRefreshConvergenceTest.php';
+        $extractor = 'packages/semitexa-project-graph/src/Application/Service/Extractor/TemplateRenderExtractor.php';
+        // A deleted test selected lint:test-integrity before this; a deleted service selected nothing.
+        foreach ([$test => [ChangedFile::KIND_TEST, ['lint:graph-extractors', 'lint:test-integrity'], ['lint:test-integrity']], $extractor => [ChangedFile::KIND_SERVICE, ['lint:graph-extractors'], []]] as $path => [$kind, $expected, $minimal]) {
+            $deleted = new ChangedFile($path, $kind, ChangedFile::STATUS_DELETED);
+            $names = $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_STANDARD));
+            sort($names);
+            self::assertSame($expected, $names, $path);
+            self::assertSame(['--file' => [$path]], $this->lintInput('lint:graph-extractors', [$deleted], VerificationPlan::SCOPE_STANDARD));
+            self::assertSame($minimal, $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_MINIMAL)), $path);
+        }
 
-        self::assertSame([], $this->lintCommandNames($this->planner()->plan([$deleted], VerificationPlan::SCOPE_STANDARD)));
+        // Renamed out of the package: the new path selects what its kind does, and the old one the lint.
+        $renamed = new ChangedFile('src/modules/Shop/tests/Unit/MovedTest.php', ChangedFile::KIND_TEST, ChangedFile::STATUS_RENAMED, originalPath: $test);
+        self::assertSame(['--file' => [$test]], $this->lintInput('lint:graph-extractors', [$renamed], VerificationPlan::SCOPE_STANDARD));
     }
 
     /** A deleted script leaves nothing to read, and the lint compares it with no other file. */

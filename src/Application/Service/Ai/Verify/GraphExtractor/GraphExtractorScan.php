@@ -19,8 +19,10 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\GraphExtractor;
  * parser that hands them a file, and every class of the package those files
  * import with `use`, followed from import to import. A read an extractor
  * delegates to a helper is the extractor's read. Not followed: a class of the
- * package named only by its full name in the code. A project that does not
- * hold the package there (a consumer) has nothing to read, and passes.
+ * package named only by its full name in the code, or only as a neighbour in
+ * its own namespace. A project that does not hold the package there (a
+ * consumer) has nothing to read, and passes. A file that is there and cannot
+ * be read is a problem, never a file with nothing in it.
  *
  * Accepted with
  *
@@ -31,9 +33,9 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\GraphExtractor;
  * to its `;`, or to the `{` of the block it opens, never the block. The kinds
  * are {@see CrossFileProbes::KINDS}; a read of a kind the marker does not name
  * is not accepted. The test named is the convergence test that proves a
- * refresh still gives what a full build gives; it must be a test method
- * (`#[Test]`, or a name that starts with `test`) of a class under
- * {@see self::TESTS}. A marker that names no kind, no test, an unknown one,
+ * refresh still gives what a full build gives; it must be a public test method
+ * (PHPUnit's `#[Test]`, or a name that starts with `test`) that the named class
+ * under {@see self::TESTS} declares itself. A marker that names no kind, no test, an unknown one,
  * gives no reason of 20 characters, or accepts a read that is not there is a
  * problem of its own.
  */
@@ -81,9 +83,10 @@ final class GraphExtractorScan
         return str_ends_with($path, '.php') && (str_starts_with($path, self::SOURCE . '/') || str_starts_with($path, self::TESTS . '/'));
     }
 
-    public static function hasExtractors(string $projectRoot): bool
+    /** Whether the project holds anything this lint reads: an extractor, or the parser. */
+    public static function hasSources(string $projectRoot): bool
     {
-        return is_dir(rtrim($projectRoot, '/') . '/' . self::DIRECTORY);
+        return self::sources($projectRoot) !== [];
     }
 
     /**
@@ -165,9 +168,11 @@ final class GraphExtractorScan
      * Every file the extractors run, or the given files, with what was found in each.
      *
      * @param list<string> $files       paths relative to the project root; empty: every file of {@see self::sources()}.
-     *                                  A given file of the package that is no such file (a test, a class no extractor
-     *                                  reaches) is not read itself: it may have changed what an accept names or what
-     *                                  is reached, so the project is read
+     *                                  A given file the extractors run is read with every helper it reaches, which a
+     *                                  new import may have added. A given file of the package that they do not run
+     *                                  (a test, another class) or that is gone is not read itself: it may have changed
+     *                                  what an accept names or what is reached, so the project is read. Any other given
+     *                                  file is read alone
      * @param bool         $withProject read the project beside the given files
      * @return array<string, list<string>> file, relative to the project => its problems
      */
@@ -177,17 +182,24 @@ final class GraphExtractorScan
         $problems = [];
         /** @var array<string, ?string> $tests "Class::method" => what is wrong with it, null when it is there */
         $tests = [];
-        $project = self::sources($root);
-        $given = [];
+        [$project, $unreadable] = self::reach($root, self::seeds($root));
+        $given = $reaching = [];
         foreach ($files as $file) {
-            $inPackage = str_ends_with($file, '.php') && str_starts_with(ltrim($file, '/'), self::PACKAGE . '/');
-            if ($inPackage && !in_array(ltrim($file, '/'), $project, true) && !self::isUnder($file, self::DIRECTORIES)) {
+            $path = ltrim($file, '/');
+            if (in_array($path, $project, true)) {
+                $given[] = $reaching[] = $path;
+            } elseif (str_ends_with($path, '.php') && str_starts_with($path, self::PACKAGE . '/')) {
                 $withProject = true;
             } else {
                 $given[] = $file;
             }
         }
-        $sources = $files === [] || $withProject ? array_values(array_unique([...$given, ...$project])) : $given;
+        $sources = $files === [] || $withProject ? array_values(array_unique([...$given, ...$project])) : array_values(array_unique([...$given, ...self::reach($root, $reaching)[0]]));
+        foreach ($unreadable as $relative) {
+            // Found while following imports, whatever was asked for: what it imports was not followed.
+            $problems[$relative][] = 'cannot be read: the lint did not check it';
+            $sources = array_values(array_diff($sources, [$relative]));
+        }
         foreach ($sources as $relative) {
             if ($relative === '') {
                 // An unset variable in `--file="$path"`: it names nothing, and must not pass as "nothing found".
@@ -251,11 +263,32 @@ final class GraphExtractorScan
     public static function sources(string $projectRoot): array
     {
         $root = rtrim($projectRoot, '/');
-        $queue = array_merge(...array_map(static fn (string $directory): array => self::phpFilesUnder($root, $directory), self::DIRECTORIES));
+
+        return self::reach($root, self::seeds($root))[0];
+    }
+
+    /** @return list<string> */
+    private static function seeds(string $root): array
+    {
+        return array_merge(...array_map(static fn (string $directory): array => self::phpFilesUnder($root, $directory), self::DIRECTORIES));
+    }
+
+    /**
+     * The given files of the package and every class of the package they import, from import to import.
+     *
+     * @param list<string> $seeds relative to the root
+     * @return array{list<string>, list<string>} the files, sorted; those of them that could not be read, so that what they import is unknown
+     */
+    private static function reach(string $root, array $seeds): array
+    {
+        $queue = $seeds;
         $seen = array_fill_keys($queue, true);
+        $unreadable = [];
         while ($queue !== []) {
-            $source = @file_get_contents($root . '/' . array_shift($queue));
+            $current = array_shift($queue);
+            $source = @file_get_contents($root . '/' . $current);
             if ($source === false) {
+                $unreadable[] = $current;
                 continue;
             }
             foreach (self::imports($source) as $class) {
@@ -269,24 +302,22 @@ final class GraphExtractorScan
         $found = array_keys($seen);
         sort($found);
 
-        return $found;
+        return [$found, $unreadable];
     }
 
     /**
-     * The classes of the package a file imports: `use A\B;`, `use A\B as C;`, `use A\{B, C};`.
+     * The classes of the package a file imports at namespace level, in a namespace with
+     * braces too: `use A\B;`, `use A\B as C;`, `use A\{B, C};`. Read from its tokens.
      *
      * @return list<string>
      */
     private static function imports(string $source): array
     {
         $found = [];
-        preg_match_all('~^use\s+(' . preg_quote(self::NAMESPACE, '~') . '[^;]+);~mi', $source, $uses);
-        foreach ($uses[1] as $use) {
-            [$prefix, $names] = preg_match('~^(.*)\{(.*)\}~s', $use, $group) === 1 ? [$group[1], $group[2]] : ['', $use];
-            foreach (explode(',', $names) as $name) {
-                $name = trim((string) preg_replace('~\s+as\s+\w+$~i', '', trim($name)));
-                if ($name !== '') {
-                    $found[] = trim($prefix) . $name;
+        foreach (self::namespaces($source) as $namespace) {
+            foreach ($namespace['imports'] as $class) {
+                if (stripos($class, self::NAMESPACE) === 0) {
+                    $found[] = self::NAMESPACE . substr($class, strlen(self::NAMESPACE));
                 }
             }
         }
@@ -294,16 +325,63 @@ final class GraphExtractorScan
         return $found;
     }
 
-    /** @param list<string> $directories */
-    private static function isUnder(string $path, array $directories): bool
+    /**
+     * Each namespace of a file with its class imports, and the tokens that are code.
+     *
+     * @return list<array{name: string, imports: array<string, string>, from: int, to: int}> `imports`: alias, lower case => the class;
+     *   `from`..`to`: the namespace's tokens in {@see self::code()}
+     */
+    private static function namespaces(string $source): array
     {
-        foreach ($directories as $directory) {
-            if (str_starts_with(ltrim($path, '/'), $directory . '/')) {
-                return true;
+        $tokens = self::code($source);
+        $found = [];
+        $name = '';
+        /** @var array<string, string> $imports */
+        $imports = [];
+        $from = 0;
+        $depth = 0;
+        $bracketed = false;
+        $count = count($tokens);
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            $next = $tokens[$i + 1] ?? null;
+            if ($token->text === '{' || $token->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES])) {
+                $depth++;
+            } elseif ($token->text === '}') {
+                $depth--;
+            } elseif ($token->is(T_NAMESPACE) && $next?->is(T_NS_SEPARATOR) !== true) {
+                $named = $next !== null && $next->is([T_STRING, T_NAME_QUALIFIED]);
+                $bracketed = ($tokens[$i + ($named ? 2 : 1)] ?? null)?->text === '{';
+                $found[] = ['name' => $name, 'imports' => $imports, 'from' => $from, 'to' => $i - 1];
+                [$name, $imports, $from] = [$named ? $next->text : '', [], $i];
+            } elseif ($token->is(T_USE) && $depth === ($bracketed ? 1 : 0) && $next?->text !== '(') {
+                $text = '';
+                for ($i++; $i < $count && $tokens[$i]->text !== ';'; $i++) {
+                    $text .= $tokens[$i]->text . ' ';
+                }
+                if (preg_match('~^(function|const) ~i', $text) === 1) {
+                    continue;
+                }
+                [$prefix, $names] = preg_match('~^(.*?)\{(.*)\}~s', $text, $group) === 1 ? [str_replace(' ', '', $group[1]), $group[2]] : ['', $text];
+                foreach (explode(',', $names) as $item) {
+                    $parts = preg_split('~\s+as\s+~i', trim($item)) ?: [];
+                    $class = ltrim($prefix . str_replace(' ', '', $parts[0] ?? ''), '\\');
+                    if ($class !== '' && preg_match('~^(function|const) ~i', trim($item)) !== 1) {
+                        $imports[strtolower(trim($parts[1] ?? substr((string) strrchr('\\' . $class, '\\'), 1)))] = $class;
+                    }
+                }
             }
         }
 
-        return false;
+        $found[] = ['name' => $name, 'imports' => $imports, 'from' => $from, 'to' => $count - 1];
+
+        return $found;
+    }
+
+    /** @return list<\PhpToken> the tokens of a source that are code: no whitespace, no comment. A source that does not parse still has tokens */
+    private static function code(string $source): array
+    {
+        return array_values(array_filter(\PhpToken::tokenize($source), static fn (\PhpToken $t): bool => !$t->isIgnorable()));
     }
 
     /** @return list<string> relative to the root, sorted */
@@ -323,70 +401,105 @@ final class GraphExtractorScan
         return $found;
     }
 
-    /** What is wrong with the test an accept names; null when the class is declared under the tests and declares the method as a test. */
+    /** What is wrong with the test an accept names; null when the class is declared under the tests and declares the method as a public test. */
     private static function testProblem(string $root, string $class, string $method): ?string
     {
         $short = substr((string) strrchr('\\' . $class, '\\'), 1);
         $candidates = array_filter(self::phpFilesUnder($root, self::TESTS), static fn (string $path): bool => basename($path) === $short . '.php');
-        $declaredIn = $noTestIn = null;
+        $declaredIn = $found = null;
         foreach ($candidates as $path) {
-            $methods = self::methodsOf((string) @file_get_contents($root . '/' . $path), $class);
+            $source = @file_get_contents($root . '/' . $path);
+            if ($source === false) {
+                // It may be the one that declares the class: not reading it must not pass for "another file has it".
+                return sprintf('names %s::%s, and %s, which may declare it, cannot be read: the lint did not check the test', $class, $method, $path);
+            }
+            $methods = self::methodsOf($source, $class);
             if ($methods === null) {
                 continue;
             }
-            if (($methods[$method] ?? false) === true) {
-                return null;
+            if (($methods[$method] ?? null) === 'test') {
+                $found = $path;
+                continue;
             }
-            $declaredIn = $path;
-            $noTestIn = isset($methods[$method]) ? $path : $noTestIn;
+            $declaredIn = [$path, $methods[$method] ?? null];
+        }
+        if ($found !== null) {
+            return null;
         }
 
-        return match (true) {
-            $noTestIn !== null => sprintf('names %s::%s, and in %s that method is no test: it carries no #[Test] and its name does not start with `test`', $class, $method, $noTestIn),
-            $declaredIn !== null => sprintf('names %s::%s, and %s declares no method %s', $class, $method, $declaredIn, $method),
-            default => sprintf('names the test class %s, and no class of that name is declared under %s', $class, self::TESTS),
+        if ($declaredIn === null) {
+            return sprintf('names the test class %s, and no class of that name is declared under %s', $class, self::TESTS);
+        }
+
+        return match ($declaredIn[1]) {
+            'not public' => sprintf('names %s::%s, and in %s that method is not public: PHPUnit runs only a public method', $class, $method, $declaredIn[0]),
+            'no test' => sprintf('names %s::%s, and in %s that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`', $class, $method, $declaredIn[0]),
+            default => sprintf('names %s::%s, and %s declares no method %s', $class, $method, $declaredIn[0], $method),
         };
     }
 
     /**
-     * The methods a file declares in the named class, each with whether it is a test
-     * (`#[Test]`, or a name that starts with `test`); null when the file does not declare that class.
+     * The methods the named class declares itself in a file, each as `test` (public, and PHPUnit's
+     * `#[Test]` or a name that starts with `test`), `not public` or `no test`; null when the file
+     * does not declare that class.
      *
      * @param string $class a short name, or a full one whose namespace must then be the file's
-     * @return ?array<string, bool>
+     * @return ?array<string, string>
      */
     private static function methodsOf(string $source, string $class): ?array
     {
-        try {
-            $tokens = array_values(array_filter(\PhpToken::tokenize($source, TOKEN_PARSE), static fn (\PhpToken $t): bool => !$t->isIgnorable()));
-        } catch (\ParseError) {
-            return null;
-        }
-        $namespace = '';
+        $tokens = self::code($source);
         $declared = false;
         $methods = [];
-        // Whether a #[Test] stands before the declaration being read.
-        $marked = false;
-        $attribute = 0;
-        foreach ($tokens as $i => $token) {
-            $next = $tokens[$i + 1] ?? null;
-            if ($next === null) {
-                break;
-            }
-            if ($attribute > 0 || $token->is(T_ATTRIBUTE)) {
-                $attribute += $token->is(T_ATTRIBUTE) || $token->text === '[' ? 1 : ($token->text === ']' ? -1 : 0);
-                // The attribute's own name, not one of its arguments: it follows `#[` or a `,` of the group.
-                $names = $token->is(T_ATTRIBUTE) || ($attribute === 1 && $token->text === ',');
-                $marked = $marked || ($names && $next->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) && strtolower(substr((string) strrchr('\\' . $next->text, '\\'), 1)) === 'test');
-            } elseif ($token->is(T_NAMESPACE) && $next->is([T_STRING, T_NAME_QUALIFIED])) {
-                $namespace = $next->text . '\\';
-            } elseif ($token->is(T_CLASS) && $next->is(T_STRING) && !($tokens[$i - 1] ?? $token)->is(T_DOUBLE_COLON)) {
-                $declared = $declared || in_array($class, [$next->text, $namespace . $next->text], true);
-            } elseif ($token->is(T_FUNCTION) && $next->is(T_STRING)) {
-                $methods[$next->text] = $marked || stripos($next->text, 'test') === 0;
-                $marked = false;
-            } elseif (in_array($token->text, [';', '{', '}'], true)) {
-                $marked = false;
+        foreach (self::namespaces($source) as $namespace) {
+            $prefix = $namespace['name'] === '' ? '' : $namespace['name'] . '\\';
+            $resolve = static function (\PhpToken $name) use ($namespace, $prefix): string {
+                if ($name->is(T_NAME_FULLY_QUALIFIED)) {
+                    return ltrim($name->text, '\\');
+                }
+                $parts = explode('\\', $name->text, 2);
+                $rest = $parts[1] ?? null;
+                $head = $namespace['imports'][strtolower($parts[0])] ?? $prefix . $parts[0];
+
+                return $rest === null ? $head : $head . '\\' . $rest;
+            };
+            $depth = 0;
+            // The depth of the body of the named class while inside it; a class waits for its `{`.
+            $body = null;
+            $waiting = false;
+            // What stands before the declaration being read: PHPUnit's #[Test], a modifier that is not public.
+            $marked = $hidden = false;
+            $attribute = 0;
+            for ($i = $namespace['from']; $i <= $namespace['to']; $i++) {
+                $token = $tokens[$i];
+                $next = $tokens[$i + 1] ?? null;
+                if ($attribute > 0 || $token->is(T_ATTRIBUTE)) {
+                    $attribute += $token->is(T_ATTRIBUTE) || $token->text === '[' ? 1 : ($token->text === ']' ? -1 : 0);
+                    // The attribute's own name, not one of its arguments: it follows `#[` or a `,` of the group.
+                    $names = $token->is(T_ATTRIBUTE) || ($attribute === 1 && $token->text === ',');
+                    $marked = $marked || ($names && $next?->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED]) === true && strcasecmp($resolve($next), 'PHPUnit\Framework\Attributes\Test') === 0);
+                } elseif ($token->text === '{' || $token->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES])) {
+                    $depth++;
+                    [$body, $waiting] = $waiting ? [$depth, false] : [$body, false];
+                    $marked = $hidden = false;
+                } elseif ($token->text === '}') {
+                    $body = $depth === $body ? null : $body;
+                    $depth--;
+                    $marked = $hidden = false;
+                } elseif ($token->text === ';') {
+                    $marked = $hidden = false;
+                } elseif ($token->is(T_CLASS) && $next?->is(T_STRING) === true && !($tokens[$i - 1] ?? $token)->is([T_DOUBLE_COLON, T_NEW]) && $body === null) {
+                    $waiting = in_array($class, [$next->text, $prefix . $next->text], true);
+                    $declared = $declared || $waiting;
+                } elseif ($token->is([T_PRIVATE, T_PROTECTED])) {
+                    $hidden = true;
+                } elseif ($token->is(T_FUNCTION) && $next?->is(T_STRING) === true && $depth === $body) {
+                    $methods[$next->text] = match (true) {
+                        !$marked && stripos($next->text, 'test') !== 0 => 'no test',
+                        $hidden => 'not public',
+                        default => 'test',
+                    };
+                }
             }
         }
 

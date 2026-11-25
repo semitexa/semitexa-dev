@@ -98,8 +98,9 @@ final class CrossFileProbes
      *     markers: list<array{line: int, text: string, trailing: bool, from: int, to: int}>,
      * } `index` is the probe's token. A marker's `text` is what follows the marker word. A trailing
      *   marker (code stands before it on its line) covers the probes of that line; any other covers
-     *   the tokens `from`..`to`, the statement that follows it: up to its `;`, or the `{` of the block
-     *   it opens, or, inside a list, the `,` that ends the element
+     *   the tokens `from`..`to`, the statement that follows it: up to its `;`, or the `{` of a block
+     *   it opens (its own, or a closure's among its arguments), or, as an element of a list, the `,`
+     *   that ends the element
      *
      * @throws \ParseError when the source is not PHP that parses: a scan that could not read must not pass
      */
@@ -118,13 +119,14 @@ final class CrossFileProbes
     private function markers(string $marker): array
     {
         $found = [];
-        $nesting = 0;
+        /** @var list<bool> $open every bracket open here, innermost last: true for a list (`(`, `[`, `#[`), false for a block */
+        $open = [];
         foreach ($this->tokens as $i => $token) {
-            $nesting += match (true) {
-                $token->is(T_ATTRIBUTE), in_array($token->text, ['(', '['], true) => 1,
-                in_array($token->text, [')', ']'], true) => -1,
-                default => 0,
-            };
+            if ($token->is([T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES]) || in_array($token->text, ['(', '[', '{'], true)) {
+                $open[] = $token->is(T_ATTRIBUTE) || $token->text === '(' || $token->text === '[';
+            } elseif (in_array($token->text, [')', ']', '}'], true)) {
+                array_pop($open);
+            }
             if (!$token->is([T_COMMENT, T_DOC_COMMENT])) {
                 continue;
             }
@@ -138,7 +140,8 @@ final class CrossFileProbes
                     'text' => trim($match[1]),
                     'trailing' => $n === 0 && $this->followsCode($i),
                     'from' => $from,
-                    'to' => $this->statementEnd($from, $nesting > 0),
+                    // A statement in a closure's block is no element of the call that closure is an argument of.
+                    'to' => $this->statementEnd($from, $open !== [] && $open[array_key_last($open)]),
                 ];
             }
         }
@@ -175,7 +178,10 @@ final class CrossFileProbes
                 if (--$depth < 0) {
                     return $k;
                 }
-            } elseif ($depth === 0 && ($text === ';' || $text === '}' || $this->tokens[$k]->id === ord('{') || ($inList && $text === ','))) {
+            } elseif ($this->tokens[$k]->id === ord('{')) {
+                // A block, at whatever depth: `run(static function () { … })` runs other statements, each with its own accept.
+                return $k;
+            } elseif ($depth === 0 && ($text === ';' || $text === '}' || ($inList && $text === ','))) {
                 return $k;
             }
         }
@@ -275,28 +281,90 @@ final class CrossFileProbes
     }
 
     /**
-     * A probe that $function, called at $index, reaches through its first argument:
-     * `constant("A::B")`, `array_map('is_file', $paths)`.
+     * A probe that $function, called at $index, reaches through the argument that names it:
+     * `constant("A::B")`, `array_map('is_file', $paths)`, `array_map(array: $paths, callback: 'is_file')`.
      *
      * @return array{string, string}|null the probe as reported, its kind
      */
     private function calledByName(int $index, string $function): ?array
     {
-        $argument = $this->nextIndex($this->nextIndex($index));
-        $first = $this->tokens[$argument] ?? null;
-        $literal = $first?->is(T_CONSTANT_ENCAPSED_STRING) === true && in_array($this->next($argument)?->text, [',', ')'], true)
-            ? stripslashes(substr($first->text, 1, -1))
+        $parameter = $function === 'constant' ? 'name' : (in_array($function, self::CALLERS, true) ? 'callback' : null);
+        if ($parameter === null) {
+            return null;
+        }
+        $argument = $this->argument($this->nextIndex($index), $parameter);
+        $first = $argument === null ? null : $this->tokens[$argument] ?? null;
+        $literal = $argument !== null && $first?->is(T_CONSTANT_ENCAPSED_STRING) === true && in_array($this->next($argument)?->text, [',', ')'], true)
+            ? self::stringValue($first->text)
             : null;
         if ($function === 'constant') {
             // A plain name is a global constant; anything else may name a class, and loads it.
             return $literal !== null && !str_contains($literal, '::') ? null : ['constant', self::CLASS_PROBE];
         }
-        if (!in_array($function, self::CALLERS, true) || $literal === null) {
+        if ($literal === null) {
             return null;
         }
         $called = strtolower(ltrim($literal, '\\'));
 
         return isset(self::FUNCTIONS[$called]) ? ["{$function}('{$called}')", self::FUNCTIONS[$called]] : null;
+    }
+
+    /**
+     * Where the value of a call's argument starts: the one given by that name (`callback: …`),
+     * else the first one when it is given by position.
+     *
+     * @param int $open the index of the call's `(`
+     * @return ?int null when the call gives no such argument
+     */
+    private function argument(int $open, string $parameter): ?int
+    {
+        $first = $this->nextIndex($open);
+        $depth = 0;
+        $count = count($this->tokens);
+        for ($k = $open; $k < $count; $k++) {
+            $token = $this->tokens[$k];
+            if ($token->is(T_ATTRIBUTE) || in_array($token->text, ['(', '[', '{'], true)) {
+                $depth++;
+            } elseif (in_array($token->text, [')', ']', '}'], true)) {
+                if (--$depth === 0) {
+                    break;
+                }
+            } elseif ($depth === 1 && $token->is(T_STRING) && $this->next($k)?->text === ':' && in_array($this->previous($k)?->text, ['(', ','], true)) {
+                // A label: `name: value`.
+                if (strtolower($token->text) === $parameter) {
+                    return $this->nextIndex($this->nextIndex($k));
+                }
+                if ($k === $first) {
+                    // The first argument is given by another name: none is given by position.
+                    $first = null;
+                }
+            }
+        }
+
+        return $first !== null && ($this->tokens[$first] ?? null)?->text !== ')' ? $first : null;
+    }
+
+    /**
+     * What a string literal without interpolation says, by PHP's rules for its quotes;
+     * the source is read, never run.
+     */
+    private static function stringValue(string $literal): string
+    {
+        $body = substr($literal, 1, -1);
+        if ($literal[0] === "'") {
+            return strtr($body, ['\\\\' => '\\', "\\'" => "'"]);
+        }
+
+        return (string) preg_replace_callback(
+            '~\\\\(u\{[0-9A-Fa-f]+\}|x[0-9A-Fa-f]{1,2}|[0-7]{1,3}|[nrtvef\\\\$"])~',
+            static fn (array $m): string => match (true) {
+                $m[1][0] === 'u' => (string) mb_chr((int) hexdec(substr($m[1], 2, -1)), 'UTF-8'),
+                $m[1][0] === 'x' => chr((int) hexdec(substr($m[1], 1))),
+                ctype_digit($m[1]) => chr(((int) octdec($m[1])) & 0xFF),
+                default => ['n' => "\n", 'r' => "\r", 't' => "\t", 'v' => "\v", 'e' => "\e", 'f' => "\f", '\\' => '\\', '$' => '$', '"' => '"'][$m[1]] ?? $m[1],
+            },
+            $body,
+        );
     }
 
     /** A name before `(` that calls no function: a method, a declaration, a class after `new`. */

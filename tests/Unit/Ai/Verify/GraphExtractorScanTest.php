@@ -74,6 +74,12 @@ final class GraphExtractorScanTest extends TestCase
         yield 'a string for call_user_func' => ['$x = call_user_func("is_file", $path);', "call_user_func('is_file')", CrossFileProbes::FILESYSTEM];
         yield 'a string for call_user_func_array' => ['$x = \call_user_func_array(\'\\\\class_exists\', [$class]);', "call_user_func_array('class_exists')", CrossFileProbes::CLASS_PROBE];
         yield 'a string for array_map' => ['$x = array_map("realpath", $paths);', "array_map('realpath')", CrossFileProbes::FILESYSTEM];
+        yield 'a callback given by name' => ['$x = array_map(array: $paths, callback: "is_file");', "array_map('is_file')", CrossFileProbes::FILESYSTEM];
+        yield 'a callback given by name, first' => ['$x = call_user_func(callback: \'is_dir\', args: $path);', "call_user_func('is_dir')", CrossFileProbes::FILESYSTEM];
+        yield 'constant() with its name given by name' => ['$x = constant(name: "App\\\\Routes::LIST");', 'constant', CrossFileProbes::CLASS_PROBE];
+        yield 'a callback spelled with a hexadecimal escape' => ['$x = array_map("is_\x66ile", $paths);', "array_map('is_file')", CrossFileProbes::FILESYSTEM];
+        yield 'a callback spelled with an octal and a unicode escape' => ['$x = array_map("\151s_\u{64}ir", $paths);', "array_map('is_dir')", CrossFileProbes::FILESYSTEM];
+        yield 'a callback with a leading backslash in single quotes' => ['$x = array_map(\'\\\\is_file\', $paths);', "array_map('is_file')", CrossFileProbes::FILESYSTEM];
         yield 'a static call on a reflection class' => ['$x = \ReflectionMethod::createFromMethodName($name);', 'ReflectionMethod::createFromMethodName', CrossFileProbes::REFLECTION];
         yield 'a static call on an imported reflection class' => ['$x = ReflectionMethod::createFromMethodName($name);', 'ReflectionMethod::createFromMethodName', CrossFileProbes::REFLECTION];
         yield 'constant() of a class constant' => ['$x = constant("App\\\\Routes::LIST");', 'constant', CrossFileProbes::CLASS_PROBE];
@@ -99,6 +105,7 @@ final class GraphExtractorScanTest extends TestCase
         yield 'a method of the same name' => ['$x = $files->glob("*.twig"); $y = $files?->is_file($path); $z = $this->file($path);'];
         yield 'a static method of the same name' => ['$x = Paths::realpath($path); $y = self::is_dir($path); $z = static::file($path);'];
         yield 'a string naming the function' => ['$x = usort($paths, "realpath"); $y = "is_file($path)"; $z = \'class_exists\'; $w = array_map("strlen", $paths); $v = array_map($name, $paths);'];
+        yield 'escapes single quotes do not have, and a callback that is another argument' => ['$x = array_map(\'is_\x66ile\', $paths); $y = array_map(array: "is_file", callback: "strlen"); $z = usort(callback: "is_file", array: $paths);'];
         yield 'constant() of a plain global name, and a class constant of a reflection class' => ['$x = constant("PHP_INT_MAX") + constant(\'E_ALL\') + \ReflectionMethod::IS_PUBLIC; $y = ReflectionMethod::class;'];
         yield 'a function called through a variable, a static call on a class named at run time, unserialize: known limits' => ['$f = "is_file"; $x = $f($path); $y = $class::from($name); $z = unserialize($path);'];
         yield 'a function imported from a namespace' => ['$x = is_link($path);'];
@@ -203,6 +210,9 @@ final class GraphExtractorScanTest extends TestCase
         yield 'the block a statement opens' => ["{$accept}\n        if (is_file(\$path)) {\n            \$x = glob(\$path);\n        }", ['glob'], ['is_file']];
         yield 'the next element of a list' => ["\$x = [\n            {$accept}\n            is_file(\$path),\n            is_dir(\$path),\n        ];", ['is_dir'], ['is_file']];
         yield 'the next argument of a call' => ["\$x = max(\n            {$accept}\n            (int) is_file(\$path),\n            (int) is_dir(\$path),\n        );", ['is_dir'], ['is_file']];
+        yield 'the body of a closure among the arguments of the statement' => ["{$accept}\n        \$x = max(is_dir(\$path), run(static function () use (\$path) {\n            return is_file(\$path);\n        }));", ['is_file'], ['is_dir']];
+        yield 'a call over several lines, with no block' => ["{$accept}\n        \$x = max(\n            1,\n            (int) is_file(\$path),\n            fn (): bool => is_dir(\$path),\n        );", [], ['is_file', 'is_dir']];
+        yield 'a statement with a comma, in a closure that is an argument' => ["\$x = array_map(static function (string \$p) {\n            {$accept}\n            echo '', is_file(\$p);\n            return is_dir(\$p);\n        }, \$paths);", ['is_dir'], ['is_file']];
         yield 'a read of a kind the accept does not name' => ["{$accept}\n        \$x = is_file(\$path) ? new \\ReflectionClass(\$o) : require \$path;", ['new ReflectionClass', 'require'], ['is_file']];
         yield 'a read of another kind on the line of a trailing accept' => ["\$x = is_file(\$path) && class_exists(\$class); {$accept}", ['class_exists'], ['is_file']];
         yield 'two kinds named' => ["// verify:accept-cross-file-read filesystem, class-probe " . self::TEST . " a refresh re-reads the referrer\n        \$x = is_file(\$path) && class_exists(\$class) ? new \$class() : null;", ['new $class'], ['is_file', 'class_exists']];
@@ -301,42 +311,130 @@ final class GraphExtractorScanTest extends TestCase
     }
 
     #[Test]
-    public function an_accept_must_name_a_test_that_is_there(): void
+    public function an_accept_must_name_a_public_test_the_class_declares(): void
     {
         $accept = static fn (string $test): string => self::extractor('$x = is_file($path); // verify:accept-cross-file-read filesystem ' . $test . ' the engine re-reads the referrer');
-        $root = $this->project([
-            GraphExtractorScan::DIRECTORY . '/Good.php' => $accept('ConvergenceTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/GoodByFullName.php' => $accept('Semitexa\ProjectGraph\Tests\Integration\ConvergenceTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/Ast/NoSuchClass.php' => $accept('MissingTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/Ast/NoSuchMethod.php' => $accept('ConvergenceTest::a_refresh_diverges'),
-            GraphExtractorScan::DIRECTORY . '/Ast/WrongNamespace.php' => $accept('App\ConvergenceTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/Ast/OutsideTheTests.php' => $accept('ElsewhereTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/Ast/MentionedOnly.php' => $accept('MentionedTest::a_refresh_converges'),
-            GraphExtractorScan::DIRECTORY . '/GoodByPrefix.php' => $accept('ConvergenceTest::testARefreshConverges'),
-            GraphExtractorScan::DIRECTORY . '/GoodInAGroup.php' => $accept('ConvergenceTest::grouped'),
-            GraphExtractorScan::DIRECTORY . '/Ast/AHelper.php' => $accept('ConvergenceTest::fixture'),
-            GraphExtractorScan::DIRECTORY . '/Ast/AProvider.php' => $accept('ConvergenceTest::edits'),
-            GraphExtractorScan::DIRECTORY . '/Clean.php' => self::extractor('$x = strlen($path);'),
-            GraphExtractorScan::DIRECTORY . '/notes.txt' => 'is_file($path)',
-            // A test by #[Test], by its prefix, in a group of attributes; a helper, and a provider whose attribute only mentions a test.
-            GraphExtractorScan::TESTS . '/Integration/ConvergenceTest.php' => "<?php\nnamespace Semitexa\\ProjectGraph\\Tests\\Integration;\nuse PHPUnit\\Framework\\Attributes\\Test;\nfinal class ConvergenceTest\n{\n    #[Test]\n    #[DataProvider('edits')]\n    public function a_refresh_converges(): void {}\n    public function testARefreshConverges(): void {}\n    #[Group('slow'), \\PHPUnit\\Framework\\Attributes\\Test]\n    public function grouped(): void {}\n    private function fixture(): void {}\n    #[Covers(Test::class, 'Test')]\n    public static function edits(): array { return []; }\n}\n",
+        $dir = GraphExtractorScan::DIRECTORY;
+        $tests = GraphExtractorScan::TESTS;
+        $good = ['a_refresh_converges', 'testARefreshConverges', 'grouped', 'aliased', 'byFullName'];
+        $bad = [
+            'a_refresh_diverges' => "{$tests}/Integration/ConvergenceTest.php declares no method a_refresh_diverges",
+            // Review, semitexa-dev#316: the method of another class of the file passed for this one's.
+            'elsewhere' => "{$tests}/Integration/ConvergenceTest.php declares no method elsewhere",
+            'fixture' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
+            'edits' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
+            // Review, semitexa-dev#316: any attribute called Test counted, and PHPUnit's under an alias did not.
+            'unrelated' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
+            'local' => "in {$tests}/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] of PHPUnit and its name does not start with `test`",
+            // Review, semitexa-dev#316: PHPUnit runs only public methods.
+            'hidden' => "in {$tests}/Integration/ConvergenceTest.php that method is not public: PHPUnit runs only a public method",
+            'testHidden' => "in {$tests}/Integration/ConvergenceTest.php that method is not public: PHPUnit runs only a public method",
+        ];
+        $files = [];
+        foreach ([...$good, ...array_keys($bad)] as $method) {
+            $files["{$dir}/M_{$method}.php"] = $accept("ConvergenceTest::{$method}");
+        }
+        $root = $this->project($files + [
+            "{$dir}/GoodByFullName.php" => $accept('Semitexa\ProjectGraph\Tests\Integration\ConvergenceTest::a_refresh_converges'),
+            "{$dir}/Ast/NoSuchClass.php" => $accept('MissingTest::a_refresh_converges'),
+            "{$dir}/Ast/WrongNamespace.php" => $accept('App\ConvergenceTest::a_refresh_converges'),
+            "{$dir}/Ast/OutsideTheTests.php" => $accept('ElsewhereTest::a_refresh_converges'),
+            "{$dir}/Ast/MentionedOnly.php" => $accept('MentionedTest::a_refresh_converges'),
+            "{$dir}/Clean.php" => self::extractor('$x = strlen($path);'),
+            "{$dir}/notes.txt" => 'is_file($path)',
+            "{$tests}/Integration/ConvergenceTest.php" => <<<'PHP'
+                <?php
+                namespace Semitexa\ProjectGraph\Tests\Integration;
+
+                use PHPUnit\Framework\Attributes\Test;
+                use PHPUnit\Framework\Attributes\{DataProvider, Test as VerifyCase};
+                use PHPUnit\Framework;
+
+                final class Other
+                {
+                    #[Test]
+                    public function elsewhere(): void {}
+                }
+
+                final class ConvergenceTest
+                {
+                    private int $runs = 0;
+
+                    #[Test]
+                    #[DataProvider('edits')]
+                    public function a_refresh_converges(): void {}
+                    public function testARefreshConverges(): void { $x = new class { private function hidden(): void {} }; }
+                    #[Group('slow'), \PHPUnit\Framework\Attributes\Test]
+                    public function grouped(): void {}
+                    #[VerifyCase]
+                    public function aliased(): void {}
+                    #[Framework\Attributes\Test]
+                    public function byFullName(): void {}
+                    private function fixture(): void {}
+                    #[Covers(Test::class, 'Test')]
+                    public static function edits(): array { return []; }
+                    #[\App\Attributes\Test]
+                    public function unrelated(): void {}
+                    #[Attributes\Test]
+                    public function local(): void {}
+                    #[Test]
+                    private function hidden(): void {}
+                    protected function testHidden(): void {}
+                }
+                PHP,
             // A file of that name that only mentions the class, and a method named in a string.
-            GraphExtractorScan::TESTS . '/Unit/MentionedTest.php' => "<?php\n\$x = MentionedTest::class;\n\$y = 'function a_refresh_converges';\n",
-            'packages/semitexa-project-graph/src/ElsewhereTest.php' => "<?php\nfinal class ElsewhereTest\n{\n    public function a_refresh_converges(): void {}\n}\n",
+            "{$tests}/Unit/MentionedTest.php" => "<?php\n\$x = MentionedTest::class;\n\$y = 'function a_refresh_converges';\n",
+            GraphExtractorScan::PACKAGE . '/src/ElsewhereTest.php' => "<?php\nfinal class ElsewhereTest\n{\n    public function testIt(): void {}\n}\n",
         ]);
 
-        $problems = GraphExtractorScan::problems($root);
+        $expected = [
+            "{$dir}/Ast/MentionedOnly.php" => ["names the test class MentionedTest, and no class of that name is declared under {$tests}"],
+            "{$dir}/Ast/NoSuchClass.php" => ["names the test class MissingTest, and no class of that name is declared under {$tests}"],
+            "{$dir}/Ast/OutsideTheTests.php" => ["names the test class ElsewhereTest, and no class of that name is declared under {$tests}"],
+            "{$dir}/Ast/WrongNamespace.php" => ["names the test class App\ConvergenceTest, and no class of that name is declared under {$tests}"],
+        ];
+        foreach ($bad as $method => $problem) {
+            $expected["{$dir}/M_{$method}.php"] = ["names ConvergenceTest::{$method}, and {$problem}"];
+        }
+        ksort($expected);
+        $found = [];
+        foreach (GraphExtractorScan::problems($root) as $file => $problems) {
+            $found[$file] = array_map(static fn (string $problem): string => str_replace('line 18: `is_file` accepted with `verify:accept-cross-file-read` ', '', $problem), $problems);
+        }
+        self::assertSame($expected, $found);
+    }
 
+    /** Review, semitexa-dev#316: a candidate that could not be read was skipped, and another file of that name cleared the accept. */
+    #[Test]
+    public function a_test_file_or_a_source_that_cannot_be_read_is_a_problem_not_a_file_with_nothing_in_it(): void
+    {
+        // A link to nothing is a file the directory lists and nobody can read, root included: no mode to change, nothing to skip.
         $dir = GraphExtractorScan::DIRECTORY;
-        self::assertSame([
-            "{$dir}/Ast/AHelper.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::fixture, and in packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] and its name does not start with `test`'],
-            "{$dir}/Ast/AProvider.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::edits, and in packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] and its name does not start with `test`'],
-            "{$dir}/Ast/MentionedOnly.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class MentionedTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/NoSuchClass.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class MissingTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/NoSuchMethod.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::a_refresh_diverges, and packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php declares no method a_refresh_diverges'],
-            "{$dir}/Ast/OutsideTheTests.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class ElsewhereTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/WrongNamespace.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class App\ConvergenceTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-        ], $problems);
+        $tests = GraphExtractorScan::TESTS;
+        $test = "<?php\nfinal class ConvergenceTest\n{\n    public function testIt(): void {}\n}\n";
+        $root = $this->project([
+            "{$dir}/Accepted.php" => self::extractor('$x = is_file($path); // verify:accept-cross-file-read filesystem ConvergenceTest::testIt the engine re-reads the referrer'),
+            "{$dir}/Clean.php" => self::extractor('$x = strlen($path);'),
+            "{$tests}/Integration/ConvergenceTest.php" => $test,
+            "{$tests}/Unit/ConvergenceTest.php" => $test,
+        ]);
+        self::assertSame([], GraphExtractorScan::problems($root));
+
+        unlink("{$root}/{$tests}/Integration/ConvergenceTest.php");
+        symlink("{$root}/gone/ConvergenceTest.php", "{$root}/{$tests}/Integration/ConvergenceTest.php");
+        self::assertSame(
+            ["{$dir}/Accepted.php" => ["line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::testIt, and {$tests}/Integration/ConvergenceTest.php, which may declare it, cannot be read: the lint did not check the test"]],
+            GraphExtractorScan::problems($root),
+        );
+        unlink("{$root}/{$tests}/Integration/ConvergenceTest.php");
+        self::assertSame([], GraphExtractorScan::problems($root), 'the other file of that name declares it');
+
+        // A source that discovery cannot read is reported whatever was asked for: what it imports was not followed.
+        symlink("{$root}/gone/Closed.php", "{$root}/{$dir}/Closed.php");
+        $closed = ["{$dir}/Closed.php" => ['cannot be read: the lint did not check it']];
+        self::assertSame($closed, GraphExtractorScan::problems($root, ["{$dir}/Clean.php"]));
+        self::assertSame($closed, GraphExtractorScan::problems($root));
+        self::assertSame($closed, GraphExtractorScan::problems($root, ['src/NotOfThePackage.txt']));
     }
 
     #[Test]
@@ -371,7 +469,7 @@ final class GraphExtractorScanTest extends TestCase
     {
         $root = $this->project(['src/Other.php' => self::extractor('$x = is_dir($path);')]);
 
-        self::assertFalse(GraphExtractorScan::hasExtractors($root));
+        self::assertFalse(GraphExtractorScan::hasSources($root));
         self::assertSame([], GraphExtractorScan::problems($root));
         self::assertSame([], GraphExtractorScan::problems($root, [], true));
     }
@@ -396,11 +494,16 @@ final class GraphExtractorScanTest extends TestCase
             "{$src}/Domain/Model/Edge.php" => $helper('Domain\Model', 'Edge', '', 'new \ReflectionClass($p)'),
             // Imported by nothing an extractor runs: the engine, a query.
             "{$src}/Application/Service/Index/IncrementalEngine.php" => $helper('Application\Service\Index', 'IncrementalEngine', 'use Semitexa\ProjectGraph\Application\Service\Graph\NodeId;', 'is_dir($p)'),
+            // Review, semitexa-dev#316: an import inside `namespace X { }` is indented, and was not seen. A trait's `use` and a closure's are no imports.
+            GraphExtractorScan::DIRECTORY . '/Braced.php' => "<?php\nnamespace Semitexa\\ProjectGraph\\Application\\Service\\Extractor {\n    use Semitexa\\ProjectGraph\\Application\\Service\\Coverage\\Gap;\n    use function Semitexa\\ProjectGraph\\Application\\Service\\Index\\IncrementalEngine;\n    final class Braced\n    {\n        use \\Semitexa\\ProjectGraph\\Application\\Service\\Index\\IncrementalEngine;\n        public function read(string \$p): mixed { return static function () use (\$p) { return strlen(\$p); }; }\n    }\n}\n",
+            "{$src}/Application/Service/Coverage/Gap.php" => $helper('Application\Service\Coverage', 'Gap', '', 'glob($p)'),
             'src/Other.php' => self::extractor('$x = is_dir($path);'),
         ]);
 
         self::assertSame([
+            "{$src}/Application/Service/Coverage/Gap.php",
             GraphExtractorScan::DIRECTORY . '/Ast/ReferenceExtractor.php',
+            GraphExtractorScan::DIRECTORY . '/Braced.php',
             "{$src}/Application/Service/Graph/EdgeType.php",
             "{$src}/Application/Service/Graph/NodeId.php",
             "{$src}/Application/Service/Parser/ClassDeclarationReader.php",
@@ -411,10 +514,18 @@ final class GraphExtractorScanTest extends TestCase
             $probes[$file] = (string) preg_replace('~^line \d+: `([^`]+)`.*$~s', '$1', $found[0]);
         }
         self::assertSame([
+            "{$src}/Application/Service/Coverage/Gap.php" => 'glob',
             "{$src}/Application/Service/Graph/EdgeType.php" => 'class_exists',
             "{$src}/Application/Service/Parser/ClassDeclarationReader.php" => 'is_file',
             "{$src}/Domain/Model/Edge.php" => 'new ReflectionClass',
         ], $probes);
+
+        // Review, semitexa-dev#316: a changed extractor is read with the helpers it reaches, which its change may have
+        // added; nothing else of the project is, and a given file outside the package is read alone.
+        $extractor = GraphExtractorScan::DIRECTORY . '/Ast/ReferenceExtractor.php';
+        self::assertSame(["{$src}/Application/Service/Graph/EdgeType.php", "{$src}/Domain/Model/Edge.php"], array_keys(GraphExtractorScan::problems($root, [$extractor])));
+        self::assertSame(["{$src}/Domain/Model/Edge.php"], array_keys(GraphExtractorScan::problems($root, ["{$src}/Application/Service/Graph/NodeId.php"])));
+        self::assertSame(['src/Other.php'], array_keys(GraphExtractorScan::problems($root, ['src/Other.php'])));
     }
 
     /**
@@ -430,7 +541,7 @@ final class GraphExtractorScanTest extends TestCase
         $root = $this->project([
             "{$dir}/Accepted.php" => self::extractor('$x = is_file($path); // ' . self::ACCEPT . ' the engine re-reads the referrer'),
             "{$dir}/Clean.php" => self::extractor('$x = strlen($path);'),
-            $test => "<?php\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void { is_file(__FILE__); }\n}\n",
+            $test => "<?php\nuse PHPUnit\\Framework\\Attributes\\Test;\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void { is_file(__FILE__); }\n}\n",
             $engine => self::extractor('$x = is_dir($path);'),
         ]);
         self::assertSame([], GraphExtractorScan::problems($root, [$test]));
@@ -442,6 +553,11 @@ final class GraphExtractorScanTest extends TestCase
         self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, [$test])));
         self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, [$engine, "{$dir}/Clean.php"])));
         self::assertSame([], GraphExtractorScan::problems($root, ["{$dir}/Clean.php"]), 'a given extractor is still read alone');
+
+        // Review, semitexa-dev#316: the test deleted or renamed away is a path with no file, and the same event.
+        unlink("{$root}/{$test}");
+        self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, [$test])));
+        self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, ["{$dir}/Deleted.php"])), 'so is an extractor that is gone');
     }
 
     #[Test]
