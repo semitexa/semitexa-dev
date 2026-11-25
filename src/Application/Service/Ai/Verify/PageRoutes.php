@@ -22,7 +22,7 @@ final class PageRoutes
 {
     private const ACTIONS = '#/(?:log-?out|sign-?out|log-?in|sign-?in|start|callback|submit|delete|remove|unsubscribe|confirm|verify|reset|export|download)$#i';
 
-    /** @return list<array{path: string, module: string, file: string, template: string, slots: list<string>}> */
+    /** @return list<array{path: string, module: string, file: string, template: string, slots: list<string>, sources: list<string>}> */
     public static function of(?AttributeDiscovery $discovery, ?ModuleRegistry $modules): array
     {
         if ($discovery === null) {
@@ -30,7 +30,8 @@ final class PageRoutes
         }
 
         $routes = [];
-        foreach ($discovery->getRoutes() as $route) {
+        // Enriched: with the response class and the handlers, whose files sourcesOf() reads.
+        foreach ($discovery->getEnrichedRoutes() as $route) {
             if (self::isPage($route)) {
                 $class = (string) ($route['class'] ?? '');
                 $routes[] = [
@@ -45,6 +46,9 @@ final class PageRoutes
                     // And what its slots render: a slot's template is named by the slot, not by the page's
                     // template (tk-verify-page-targeting-misses-slot-templates).
                     'slots' => self::slotTemplatesOf($route['responseClass'] ?? $route['responseWith'] ?? null),
+                    // And the PHP that answers it: a handler hands its resource a template by name, which no
+                    // template and no attribute says (tk-verify-page-plan-misses-the-page-a-demo-template-renders).
+                    'sources' => self::sourcesOf($route),
                 ];
             }
         }
@@ -90,6 +94,31 @@ final class PageRoutes
         }
 
         return array_values(array_unique(array_filter($templates, static fn (string $template): bool => $template !== '')));
+    }
+
+    /**
+     * The files of the route's handlers and of its resource: the PHP that may name a template the
+     * page renders (`->withResultPreviewTemplate('@alias/…/x.html.twig')`). {@see PageUsers} reads
+     * their string literals. A class that cannot be loaded or has no file gives none.
+     *
+     * @param array<string, mixed> $route as route discovery gives it
+     * @return list<string> absolute paths
+     */
+    public static function sourcesOf(array $route): array
+    {
+        $classes = [$route['responseClass'] ?? $route['responseWith'] ?? null];
+        foreach (is_array($route['handlers'] ?? null) ? $route['handlers'] : [] as $handler) {
+            $classes[] = is_array($handler) ? $handler['class'] ?? null : $handler;
+        }
+        $files = [];
+        foreach ($classes as $class) {
+            $file = is_string($class) && $class !== '' && class_exists($class) ? (new \ReflectionClass($class))->getFileName() : false;
+            if (is_string($file)) {
+                $files[] = $file;
+            }
+        }
+
+        return array_values(array_unique($files));
     }
 
     /** @param array<string, mixed> $route as route discovery gives it */

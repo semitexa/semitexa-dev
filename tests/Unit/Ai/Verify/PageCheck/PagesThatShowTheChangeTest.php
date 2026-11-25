@@ -366,6 +366,76 @@ final class PagesThatShowTheChangeTest extends TestCase
         self::assertStringEndsWith('no other opened page showed queue.html.twig', $settled[0]->signal, 'the stylesheet was shown; the template is what holds it');
     }
 
+    /**
+     * REGRESSION (2026-11-25, measured: `ai:verify --list-pages` for semitexa-demo's
+     * components/previews/execution-arena.html.twig printed "/ /blog /demo/videos /blog/…" and
+     * not /demo/events/arena). No template includes a preview: the page's handler names it,
+     * `->withResultPreviewTemplate('@project-layouts-semitexa-demo/components/previews/…')`.
+     */
+    #[Test]
+    public function a_template_the_routes_handler_names_opens_that_page_first(): void
+    {
+        $demo = 'packages/semitexa-demo/src/Application/View/templates/';
+        $this->write($demo . 'components/previews/execution-arena.html.twig', "{% include '" . self::DEMO . "components/previews/_lane.html.twig' %}");
+        $this->write($demo . 'components/previews/_lane.html.twig', '');
+        $this->write($demo . 'components/previews/bare.html.twig', '');
+        $this->write($demo . 'components/previews/commented.html.twig', '');
+        $this->write($demo . 'components/previews/inside.html.twig', '');
+        $this->write($demo . 'partials/orphan.html.twig', '');
+        $handler = 'packages/semitexa-demo/src/Application/Handler/PayloadHandler/Async/ExecutionArenaHandler.php';
+        $this->write($handler, <<<'PHP'
+            <?php
+            // '@project-layouts-semitexa-demo/components/previews/commented.html.twig'
+            return $resource
+                ->withTitle('see @project-layouts-semitexa-demo/components/previews/inside.html.twig for it')
+                ->withResultPreviewTemplate('@project-layouts-semitexa-demo/components/previews/execution-arena.html.twig', [])
+                ->withAside("components/previews/bare.html.twig")
+                ->withOther('@project-layouts-Playground/components/previews/execution-arena.html.twig');
+            PHP);
+        $routes = [...self::ROUTES, ['path' => '/demo/events/arena', 'module' => 'semitexa-demo', 'template' => '', 'sources' => [$this->root . '/' . $handler]]];
+        $users = new PageUsers($this->root, $routes);
+        $pathsOf = static fn (array $files): array => array_map(
+            static fn (VerificationTarget $t): string => (string) $t->commandInput['path'],
+            PageCheckTargets::of(array_map(static fn (string $file): ChangedFile => new ChangedFile($file, ChangedFile::KIND_TEMPLATE), $files), VerificationPlan::SCOPE_STANDARD, $routes, $users),
+        );
+
+        foreach (['execution-arena.html.twig' => 'named by the handler', '_lane.html.twig' => 'included by the one it names', 'bare.html.twig' => 'named with no namespace'] as $template => $case) {
+            self::assertSame(['/demo/events/arena'], $pathsOf([$demo . 'components/previews/' . $template]), "{$case}: that page, and no fallback to /blog");
+        }
+        // Chosen, so before another file's fallback pages.
+        self::assertSame('/demo/events/arena', $pathsOf([$demo . 'partials/orphan.html.twig', $demo . 'components/previews/execution-arena.html.twig'])[0]);
+        // Only a whole string literal is a name: a comment and a sentence are none.
+        self::assertSame([], $users->rendering($demo . 'components/previews/commented.html.twig'));
+        self::assertSame([], $users->rendering($demo . 'components/previews/inside.html.twig'));
+        // Another module's name is no file of this one: the Playground template of the same path is not the page's.
+        $this->write('src/modules/Playground/src/Application/View/templates/components/previews/execution-arena.html.twig', '');
+        self::assertSame([], $users->rendering('src/modules/Playground/src/Application/View/templates/components/previews/execution-arena.html.twig'));
+
+        // A handler that cannot be read fails with its path, as a template does.
+        $path = $this->root . '/' . $handler;
+        try {
+            (new PageUsers($this->root, $routes, static fn (string $read): string|false => $read === $path ? false : file_get_contents($read)))->rendering($demo . 'partials/orphan.html.twig');
+            self::fail('an unreadable handler was read as an empty one');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($path, $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function a_route_carries_the_files_of_its_handlers_and_its_resource(): void
+    {
+        $files = PageRoutes::sourcesOf(['responseClass' => QueuePageResource::class, 'handlers' => [['class' => PlainResource::class], ['class' => 'No\\Such\\Handler'], ['class' => QueuePageResource::class]]]);
+
+        self::assertSame([(string) (new \ReflectionClass(QueuePageResource::class))->getFileName(), (string) (new \ReflectionClass(PlainResource::class))->getFileName()], $files);
+        self::assertSame([], PageRoutes::sourcesOf(['path' => '/']));
+
+        // Discovery's plain routes carry no handlers: the plan has to ask for the enriched ones.
+        $discovery = $this->createMock(\Semitexa\Core\Discovery\AttributeDiscovery::class);
+        $discovery->method('getRoutes')->willReturn([['path' => '/demo/events/arena', 'methods' => ['GET'], 'accessType' => 'public', 'class' => PlainResource::class, 'responseWith' => QueuePageResource::class]]);
+        $discovery->method('getEnrichedRoutes')->willReturn([['path' => '/demo/events/arena', 'methods' => ['GET'], 'accessType' => 'public', 'class' => PlainResource::class, 'responseClass' => QueuePageResource::class, 'handlers' => [['class' => PlainResource::class]]]]);
+        self::assertSame($files, PageRoutes::of($discovery, null)[0]['sources']);
+    }
+
     /** Independent review: the cap cut in changed-file order, so one file's fallback pages pushed out another's exact page. */
     #[Test]
     public function the_pages_the_templates_chose_come_before_any_fallback_page(): void
