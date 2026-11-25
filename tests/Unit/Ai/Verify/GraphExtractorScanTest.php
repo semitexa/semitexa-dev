@@ -19,6 +19,9 @@ final class GraphExtractorScanTest extends TestCase
 {
     private const TEST = 'ConvergenceTest::a_refresh_converges';
 
+    /** An accept of a filesystem read, as far as its reason. */
+    private const ACCEPT = 'verify:accept-cross-file-read filesystem ' . self::TEST;
+
     private ?string $root = null;
 
     protected function tearDown(): void
@@ -64,6 +67,17 @@ final class GraphExtractorScanTest extends TestCase
         yield 'upper case' => ['$x = IS_FILE($path);', 'is_file', CrossFileProbes::FILESYSTEM];
         yield 'the global function, imported' => ['$x = is_readable($path) && filemtime($path) > 0 ? realpath($path) : null;', 'is_readable', CrossFileProbes::FILESYSTEM];
         yield 'a first-class callable' => ['$x = array_filter($paths, is_dir(...));', 'is_dir', CrossFileProbes::FILESYSTEM];
+        foreach (['is_writable', 'readfile', 'filectime', 'simplexml_load_file'] as $function) {
+            yield $function => ["\$x = {$function}(\$path);", $function, CrossFileProbes::FILESYSTEM];
+        }
+        yield 'a global function under an alias' => ['$x = there($path);', 'there (is_file)', CrossFileProbes::FILESYSTEM];
+        yield 'a string for call_user_func' => ['$x = call_user_func("is_file", $path);', "call_user_func('is_file')", CrossFileProbes::FILESYSTEM];
+        yield 'a string for call_user_func_array' => ['$x = \call_user_func_array(\'\\\\class_exists\', [$class]);', "call_user_func_array('class_exists')", CrossFileProbes::CLASS_PROBE];
+        yield 'a string for array_map' => ['$x = array_map("realpath", $paths);', "array_map('realpath')", CrossFileProbes::FILESYSTEM];
+        yield 'a static call on a reflection class' => ['$x = \ReflectionMethod::createFromMethodName($name);', 'ReflectionMethod::createFromMethodName', CrossFileProbes::REFLECTION];
+        yield 'a static call on an imported reflection class' => ['$x = ReflectionMethod::createFromMethodName($name);', 'ReflectionMethod::createFromMethodName', CrossFileProbes::REFLECTION];
+        yield 'constant() of a class constant' => ['$x = constant("App\\\\Routes::LIST");', 'constant', CrossFileProbes::CLASS_PROBE];
+        yield 'constant() of a name built at run time' => ['$x = constant($class . "::" . $name);', 'constant', CrossFileProbes::CLASS_PROBE];
         yield 'inside a closure that uses a variable' => ['$x = static function () use ($path): bool { return is_file($path); };', 'is_file', CrossFileProbes::FILESYSTEM];
     }
 
@@ -76,7 +90,7 @@ final class GraphExtractorScanTest extends TestCase
         self::assertSame([], $scan['accepted']);
         self::assertSame([], $scan['markers']);
         self::assertNotSame([], $scan['findings'], $code);
-        self::assertSame(['line' => 17, 'probe' => $probe, 'kind' => $kind], $scan['findings'][0], $code);
+        self::assertSame(['line' => 18, 'probe' => $probe, 'kind' => $kind], $scan['findings'][0], $code);
     }
 
     /** @return iterable<string, array{string}> */
@@ -84,7 +98,9 @@ final class GraphExtractorScanTest extends TestCase
     {
         yield 'a method of the same name' => ['$x = $files->glob("*.twig"); $y = $files?->is_file($path); $z = $this->file($path);'];
         yield 'a static method of the same name' => ['$x = Paths::realpath($path); $y = self::is_dir($path); $z = static::file($path);'];
-        yield 'a string naming the function' => ['$x = array_map("realpath", $paths); $y = "is_file($path)"; $z = \'class_exists\';'];
+        yield 'a string naming the function' => ['$x = usort($paths, "realpath"); $y = "is_file($path)"; $z = \'class_exists\'; $w = array_map("strlen", $paths); $v = array_map($name, $paths);'];
+        yield 'constant() of a plain global name, and a class constant of a reflection class' => ['$x = constant("PHP_INT_MAX") + constant(\'E_ALL\') + \ReflectionMethod::IS_PUBLIC; $y = ReflectionMethod::class;'];
+        yield 'a function called through a variable, a static call on a class named at run time, unserialize: known limits' => ['$f = "is_file"; $x = $f($path); $y = $class::from($name); $z = unserialize($path);'];
         yield 'a function imported from a namespace' => ['$x = is_link($path);'];
         yield 'a function imported under an alias of a probe' => ['$x = stat($path);'];
         yield 'a function imported in a group' => ['$x = lstat($path) + scandir($path);'];
@@ -136,90 +152,144 @@ final class GraphExtractorScanTest extends TestCase
     public function every_probe_of_a_file_is_reported_with_its_line(): void
     {
         self::assertSame(
-            [[17, 'is_file'], [18, 'new ReflectionClass'], [19, 'require_once']],
+            [[18, 'is_file'], [19, 'new ReflectionClass'], [20, 'require_once']],
             self::flagged(self::extractor("\$a = is_file(\$p);\n        \$b = new \\ReflectionClass(\$o);\n        \$c = require_once \$p;")),
         );
     }
 
     #[Test]
-    public function an_accept_on_the_line_or_the_line_above_names_the_test(): void
+    public function an_accept_on_the_line_or_above_the_statement_names_the_kind_and_the_test(): void
     {
-        $onTheLine = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read ' . self::TEST . ' the engine re-reads this file when the target changes'));
+        $onTheLine = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // ' . self::ACCEPT . ' the engine re-reads this file when the target changes'));
         self::assertSame([], $onTheLine['findings']);
-        self::assertSame([['line' => 17, 'probe' => 'is_file', 'kind' => CrossFileProbes::FILESYSTEM, 'test' => 'ConvergenceTest', 'method' => 'a_refresh_converges', 'reason' => 'the engine re-reads this file when the target changes']], $onTheLine['accepted']);
+        self::assertSame([], $onTheLine['markers']);
+        self::assertSame([['line' => 18, 'probe' => 'is_file', 'kind' => CrossFileProbes::FILESYSTEM, 'test' => 'ConvergenceTest', 'method' => 'a_refresh_converges', 'reason' => 'the engine re-reads this file when the target changes']], $onTheLine['accepted']);
 
-        $above = GraphExtractorScan::scan(self::extractor("// verify:accept-cross-file-read \\App\\Tests\\ConvergenceTest::a_refresh_converges() — a refresh re-reads the referrer\n        \$x = is_file(\$path);"));
+        $above = GraphExtractorScan::scan(self::extractor("// verify:accept-cross-file-read filesystem \\App\\Tests\\ConvergenceTest::a_refresh_converges() — a refresh re-reads the referrer\n        \$x = is_file(\$path);"));
         self::assertSame([], $above['findings']);
         self::assertSame(['App\Tests\ConvergenceTest', 'a_refresh_converges', 'a refresh re-reads the referrer'], [$above['accepted'][0]['test'], $above['accepted'][0]['method'], $above['accepted'][0]['reason']]);
 
-        // Two lines above is another statement's comment; so is the line below.
-        $far = GraphExtractorScan::scan(self::extractor("// verify:accept-cross-file-read " . self::TEST . " a refresh re-reads the referrer\n\n        \$x = is_file(\$path);\n        // verify:accept-cross-file-read " . self::TEST . ' a refresh re-reads the referrer'));
-        self::assertSame([[19, 'is_file']], array_map(static fn (array $f): array => [$f['line'], $f['probe']], $far['findings']));
+        // The statement may start further down and run over several lines; the marker below it accepts nothing and says so.
+        $far = GraphExtractorScan::scan(self::extractor("// " . self::ACCEPT . " a refresh re-reads the referrer\n\n        \$x = strlen(\n            (string) is_file(\$path),\n        );\n        // " . self::ACCEPT . ' a refresh re-reads the referrer'));
+        self::assertSame([], $far['findings']);
+        self::assertSame([[21, 'is_file']], array_map(static fn (array $f): array => [$f['line'], $f['probe']], $far['accepted']));
+        self::assertSame([23], array_column($far['markers'], 'line'));
         // Another marker accepts nothing here, nor does prose that mentions this one.
-        $other = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-reads ' . self::TEST . " a refresh re-reads the referrer\n        \$y = is_dir(\$path); // see verify:accept-cross-file-read " . self::TEST . ' a refresh re-reads the referrer'));
+        $other = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-reads filesystem ' . self::TEST . " a refresh re-reads the referrer\n        \$y = is_dir(\$path); // see " . self::ACCEPT . ' a refresh re-reads the referrer'));
         self::assertCount(2, $other['findings']);
+        self::assertSame([], $other['markers']);
+    }
+
+    /** Review of f2808af: a trailing marker also accepted the read on the next line. */
+    #[Test]
+    public function a_trailing_accept_does_not_reach_the_next_line(): void
+    {
+        $scan = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // ' . self::ACCEPT . " a refresh re-reads the referrer\n        \$y = is_dir(\$path);"));
+
+        self::assertSame([[18, 'is_file']], array_map(static fn (array $f): array => [$f['line'], $f['probe']], $scan['accepted']));
+        self::assertSame([[19, 'is_dir']], array_map(static fn (array $f): array => [$f['line'], $f['probe']], $scan['findings']));
+
+        // Nor does an accept above a statement reach into the body of the closure it starts: the read is refused, and the accept accepts nothing.
+        $closure = GraphExtractorScan::scan(self::extractor('// ' . self::ACCEPT . " a refresh re-reads the referrer\n        \$x = static function () use (\$path) {\n            return is_file(\$path);\n        };"));
+        self::assertSame(['is_file'], array_column($closure['findings'], 'probe'));
+        self::assertSame([18], array_column($closure['markers'], 'line'));
+    }
+
+    /** @return iterable<string, array{string, list<string>, list<string>}> code from line 18, the probes refused, the probes accepted */
+    public static function oneReadSite(): iterable
+    {
+        $accept = '// ' . self::ACCEPT . ' a refresh re-reads the referrer';
+        yield 'the statement after the one accepted' => ["{$accept}\n        \$x = is_file(\$path);\n        \$y = is_dir(\$path);", ['is_dir'], ['is_file']];
+        yield 'the block a statement opens' => ["{$accept}\n        if (is_file(\$path)) {\n            \$x = glob(\$path);\n        }", ['glob'], ['is_file']];
+        yield 'the next element of a list' => ["\$x = [\n            {$accept}\n            is_file(\$path),\n            is_dir(\$path),\n        ];", ['is_dir'], ['is_file']];
+        yield 'the next argument of a call' => ["\$x = max(\n            {$accept}\n            (int) is_file(\$path),\n            (int) is_dir(\$path),\n        );", ['is_dir'], ['is_file']];
+        yield 'a read of a kind the accept does not name' => ["{$accept}\n        \$x = is_file(\$path) ? new \\ReflectionClass(\$o) : require \$path;", ['new ReflectionClass', 'require'], ['is_file']];
+        yield 'a read of another kind on the line of a trailing accept' => ["\$x = is_file(\$path) && class_exists(\$class); {$accept}", ['class_exists'], ['is_file']];
+        yield 'two kinds named' => ["// verify:accept-cross-file-read filesystem, class-probe " . self::TEST . " a refresh re-reads the referrer\n        \$x = is_file(\$path) && class_exists(\$class) ? new \$class() : null;", ['new $class'], ['is_file', 'class_exists']];
+        yield 'two accepts above one statement' => ["{$accept}\n        // verify:accept-cross-file-read reflection " . self::TEST . " the class is PHP's own\n        \$x = is_file(\$path) ? new \\ReflectionClass(\$o) : null;", [], ['is_file', 'new ReflectionClass']];
+    }
+
+    /**
+     * Review of f2808af: one marker above a class accepted glob, include and new ReflectionClass together.
+     *
+     * @param list<string> $refused
+     * @param list<string> $accepted
+     */
+    #[Test]
+    #[DataProvider('oneReadSite')]
+    public function an_accept_covers_one_read_site_and_the_kinds_it_names(string $code, array $refused, array $accepted): void
+    {
+        $scan = GraphExtractorScan::scan(self::extractor($code));
+
+        self::assertSame($refused, array_column($scan['findings'], 'probe'));
+        self::assertSame($accepted, array_column($scan['accepted'], 'probe'));
+        self::assertSame([], $scan['markers']);
+    }
+
+    /** @return iterable<string, array{string}> the lines before `{` */
+    public static function classLevel(): iterable
+    {
+        $marker = self::ACCEPT . ' read when the graph is read';
+        yield 'the line above the class' => ["// {$marker}\nfinal class Reader"];
+        yield 'the last line of the docblock' => ["/**\n * Reads the disk.\n *\n * {$marker}\n */\nfinal class Reader"];
+        yield 'the docblock, with an attribute between' => ["/**\n * {$marker}\n */\n#[Service(names: ['a', 'b'])]\nabstract class Reader"];
+        yield 'a one-line docblock' => ["/** {$marker} */\nclass Reader"];
     }
 
     #[Test]
-    public function an_accept_without_a_test_or_without_a_reason_is_a_problem_of_its_own(): void
+    #[DataProvider('classLevel')]
+    public function an_accept_on_a_class_accepts_nothing_in_it_and_is_a_problem(string $declaration): void
     {
+        $scan = GraphExtractorScan::scan("<?php\nnamespace App;\n\n{$declaration}\n{\n    public function a(string \$p): bool { return is_file(\$p); }\n\n    public function b(string \$p): array\n    {\n        return glob(\$p . '/*') ?: [];\n    }\n}\n");
+
+        self::assertSame(['is_file', 'glob'], array_column($scan['findings'], 'probe'));
+        self::assertSame([], $scan['accepted']);
+        self::assertSame(['accepts a filesystem read, and none stands in the statement below it: an accept covers one read site. Remove it, or move it to the read'], array_column($scan['markers'], 'problem'));
+    }
+
+    /** Review of f2808af: an accept stayed when its read was gone, and read as a reviewed exception. */
+    #[Test]
+    public function an_accept_with_no_read_of_its_kind_is_a_problem(): void
+    {
+        $trailing = GraphExtractorScan::scan(self::extractor('$x = strlen($path); // ' . self::ACCEPT . ' a refresh re-reads the referrer'));
+        self::assertSame([['line' => 18, 'problem' => 'accepts a filesystem read, and none stands on its line: an accept covers one read site. Remove it, or move it to the read']], $trailing['markers']);
+
+        // One of two kinds is there: the other is named for nothing.
+        $half = GraphExtractorScan::scan(self::extractor("// verify:accept-cross-file-read filesystem,reflection,include " . self::TEST . " a refresh re-reads the referrer\n        \$x = is_file(\$path);"));
+        self::assertSame(['is_file'], array_column($half['accepted'], 'probe'));
+        self::assertSame([['line' => 18, 'problem' => 'accepts a reflection, include read, and none stands in the statement below it: an accept covers one read site. Remove it, or move it to the read']], $half['markers']);
+    }
+
+    #[Test]
+    public function an_accept_without_a_kind_a_test_or_a_reason_is_a_problem_of_its_own(): void
+    {
+        $form = '`// verify:accept-cross-file-read <kind>[,<kind>] <TestClass>::<testMethod> <reason>`';
         $noTest = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read the projection reads it later'));
         self::assertSame([], $noTest['accepted']);
-        self::assertSame([['line' => 17, 'problem' => 'names no test: write it as `// verify:accept-cross-file-read <TestClass>::<testMethod> <reason>`']], $noTest['markers']);
+        self::assertSame([], $noTest['findings'], 'the marker is the problem; the read it stands at is not reported twice');
+        self::assertSame([['line' => 18, 'problem' => "names no test: write it as {$form}"]], $noTest['markers']);
 
         $bare = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read'));
         self::assertSame([], $bare['accepted']);
         self::assertStringStartsWith('names no test', $bare['markers'][0]['problem']);
 
+        // The form before the review of f2808af: a test and a reason, for whatever stands there.
+        $noKind = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read ' . self::TEST . ' a refresh re-reads the referrer'));
+        self::assertSame([], $noKind['accepted']);
+        self::assertSame([['line' => 18, 'problem' => "names no kind of read: write it as {$form}, where a kind is one of filesystem, include, reflection, class-probe, dynamic-new"]], $noKind['markers']);
+        $unknown = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read filesystem,disk ' . self::TEST . ' a refresh re-reads the referrer'));
+        self::assertSame([], $unknown['accepted']);
+        self::assertStringStartsWith('names no kind of read this lint knows (disk): ', $unknown['markers'][0]['problem']);
+
         // 19 characters is a word or two, not a reason: the floor of lint:shell-fallbacks.
         foreach ([self::TEST, self::TEST . '()', self::TEST . ' :', self::TEST . ' covered', self::TEST . ' — ' . str_repeat('я', 19)] as $marker) {
-            $noReason = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read ' . $marker));
+            $noReason = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read filesystem ' . $marker));
             self::assertSame([], $noReason['accepted'], $marker);
-            self::assertSame([['line' => 17, 'problem' => 'names ConvergenceTest::a_refresh_converges and gives no reason of 20 characters: say why this read is safe after the test name']], $noReason['markers'], $marker);
+            self::assertSame([['line' => 18, 'problem' => 'names ConvergenceTest::a_refresh_converges and gives no reason of 20 characters: say why this read is safe after the test name']], $noReason['markers'], $marker);
         }
-        $enough = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // verify:accept-cross-file-read ' . self::TEST . ' ' . str_repeat('я', 20)));
+        $enough = GraphExtractorScan::scan(self::extractor('$x = is_file($path); // ' . self::ACCEPT . ' ' . str_repeat('я', 20)));
         self::assertSame([], $enough['markers']);
         self::assertSame(str_repeat('я', 20), $enough['accepted'][0]['reason']);
-    }
-
-    /** @return iterable<string, array{string, bool}> the lines before `{`, and whether they accept the probes of the class */
-    public static function classLevel(): iterable
-    {
-        $marker = 'verify:accept-cross-file-read ' . self::TEST . ' read when the graph is read';
-        yield 'the line above the class' => ["// {$marker}\nfinal class Reader", true];
-        yield 'the line above a trait' => ["// {$marker}\ntrait Reader", true];
-        yield 'the line above the first modifier' => ["// {$marker}\nfinal readonly class Reader", true];
-        yield 'the last line of the docblock' => ["/**\n * Reads the disk.\n *\n * {$marker}\n */\nfinal class Reader", true];
-        yield 'the docblock, with an attribute between' => ["/**\n * {$marker}\n */\n#[Service(names: ['a', 'b'])]\n#[Other]\nabstract class Reader", true];
-        yield 'a one-line docblock' => ["/** {$marker} */\nclass Reader", true];
-        yield 'a docblock line that is not the last' => ["/**\n * {$marker}\n * Reads the disk.\n */\nfinal class Reader", false];
-        yield 'two lines above the class' => ["// {$marker}\n\nfinal class Reader", false];
-        yield 'a docblock of something else' => ["/**\n * {$marker}\n */\nconst LIMIT = 1;\nfinal class Reader", false];
-        yield 'no marker' => ["/** Reads the disk. */\nfinal class Reader", false];
-    }
-
-    #[Test]
-    #[DataProvider('classLevel')]
-    public function an_accept_on_a_class_covers_every_probe_in_it(string $declaration, bool $accepts): void
-    {
-        $source = "<?php\nnamespace App;\n\n{$declaration}\n{\n    public function a(string \$p): bool { return is_file(\$p); }\n\n    public function b(string \$p): array\n    {\n        return glob(\$p . '/*') ?: [];\n    }\n}\n\nfunction outside(string \$p): bool\n{\n    return is_dir(\$p);\n}\n";
-        $scan = GraphExtractorScan::scan($source);
-
-        $probes = static fn (array $rows): array => array_column($rows, 'probe');
-        // The function after the class is outside it: a class-level accept never reaches it.
-        self::assertSame($accepts ? ['is_dir'] : ['is_file', 'glob', 'is_dir'], $probes($scan['findings']));
-        self::assertSame($accepts ? ['is_file', 'glob'] : [], $probes($scan['accepted']));
-    }
-
-    #[Test]
-    public function a_class_level_accept_with_no_reason_is_one_problem_not_one_per_probe(): void
-    {
-        $scan = GraphExtractorScan::scan("<?php\n// verify:accept-cross-file-read " . self::TEST . "\nfinal class Reader\n{\n    public function a(string \$p): bool { return is_file(\$p) || is_dir(\$p); }\n}\n");
-
-        self::assertSame([], $scan['findings']);
-        self::assertSame([], $scan['accepted']);
-        self::assertCount(1, $scan['markers']);
-        self::assertSame(2, $scan['markers'][0]['line']);
     }
 
     #[Test]
@@ -233,7 +303,7 @@ final class GraphExtractorScanTest extends TestCase
     #[Test]
     public function an_accept_must_name_a_test_that_is_there(): void
     {
-        $accept = static fn (string $test): string => self::extractor('$x = is_file($path); // verify:accept-cross-file-read ' . $test . ' the engine re-reads the referrer');
+        $accept = static fn (string $test): string => self::extractor('$x = is_file($path); // verify:accept-cross-file-read filesystem ' . $test . ' the engine re-reads the referrer');
         $root = $this->project([
             GraphExtractorScan::DIRECTORY . '/Good.php' => $accept('ConvergenceTest::a_refresh_converges'),
             GraphExtractorScan::DIRECTORY . '/GoodByFullName.php' => $accept('Semitexa\ProjectGraph\Tests\Integration\ConvergenceTest::a_refresh_converges'),
@@ -242,9 +312,14 @@ final class GraphExtractorScanTest extends TestCase
             GraphExtractorScan::DIRECTORY . '/Ast/WrongNamespace.php' => $accept('App\ConvergenceTest::a_refresh_converges'),
             GraphExtractorScan::DIRECTORY . '/Ast/OutsideTheTests.php' => $accept('ElsewhereTest::a_refresh_converges'),
             GraphExtractorScan::DIRECTORY . '/Ast/MentionedOnly.php' => $accept('MentionedTest::a_refresh_converges'),
+            GraphExtractorScan::DIRECTORY . '/GoodByPrefix.php' => $accept('ConvergenceTest::testARefreshConverges'),
+            GraphExtractorScan::DIRECTORY . '/GoodInAGroup.php' => $accept('ConvergenceTest::grouped'),
+            GraphExtractorScan::DIRECTORY . '/Ast/AHelper.php' => $accept('ConvergenceTest::fixture'),
+            GraphExtractorScan::DIRECTORY . '/Ast/AProvider.php' => $accept('ConvergenceTest::edits'),
             GraphExtractorScan::DIRECTORY . '/Clean.php' => self::extractor('$x = strlen($path);'),
             GraphExtractorScan::DIRECTORY . '/notes.txt' => 'is_file($path)',
-            GraphExtractorScan::TESTS . '/Integration/ConvergenceTest.php' => "<?php\nnamespace Semitexa\\ProjectGraph\\Tests\\Integration;\nfinal class ConvergenceTest\n{\n    public function a_refresh_converges(): void {}\n}\n",
+            // A test by #[Test], by its prefix, in a group of attributes; a helper, and a provider whose attribute only mentions a test.
+            GraphExtractorScan::TESTS . '/Integration/ConvergenceTest.php' => "<?php\nnamespace Semitexa\\ProjectGraph\\Tests\\Integration;\nuse PHPUnit\\Framework\\Attributes\\Test;\nfinal class ConvergenceTest\n{\n    #[Test]\n    #[DataProvider('edits')]\n    public function a_refresh_converges(): void {}\n    public function testARefreshConverges(): void {}\n    #[Group('slow'), \\PHPUnit\\Framework\\Attributes\\Test]\n    public function grouped(): void {}\n    private function fixture(): void {}\n    #[Covers(Test::class, 'Test')]\n    public static function edits(): array { return []; }\n}\n",
             // A file of that name that only mentions the class, and a method named in a string.
             GraphExtractorScan::TESTS . '/Unit/MentionedTest.php' => "<?php\n\$x = MentionedTest::class;\n\$y = 'function a_refresh_converges';\n",
             'packages/semitexa-project-graph/src/ElsewhereTest.php' => "<?php\nfinal class ElsewhereTest\n{\n    public function a_refresh_converges(): void {}\n}\n",
@@ -254,11 +329,13 @@ final class GraphExtractorScanTest extends TestCase
 
         $dir = GraphExtractorScan::DIRECTORY;
         self::assertSame([
-            "{$dir}/Ast/MentionedOnly.php" => ['line 17: `is_file` accepted with `verify:accept-cross-file-read` names the test class MentionedTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/NoSuchClass.php" => ['line 17: `is_file` accepted with `verify:accept-cross-file-read` names the test class MissingTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/NoSuchMethod.php" => ['line 17: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::a_refresh_diverges, and packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php declares no method a_refresh_diverges'],
-            "{$dir}/Ast/OutsideTheTests.php" => ['line 17: `is_file` accepted with `verify:accept-cross-file-read` names the test class ElsewhereTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
-            "{$dir}/Ast/WrongNamespace.php" => ['line 17: `is_file` accepted with `verify:accept-cross-file-read` names the test class App\ConvergenceTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
+            "{$dir}/Ast/AHelper.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::fixture, and in packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] and its name does not start with `test`'],
+            "{$dir}/Ast/AProvider.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::edits, and in packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php that method is no test: it carries no #[Test] and its name does not start with `test`'],
+            "{$dir}/Ast/MentionedOnly.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class MentionedTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
+            "{$dir}/Ast/NoSuchClass.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class MissingTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
+            "{$dir}/Ast/NoSuchMethod.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names ConvergenceTest::a_refresh_diverges, and packages/semitexa-project-graph/tests/Integration/ConvergenceTest.php declares no method a_refresh_diverges'],
+            "{$dir}/Ast/OutsideTheTests.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class ElsewhereTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
+            "{$dir}/Ast/WrongNamespace.php" => ['line 18: `is_file` accepted with `verify:accept-cross-file-read` names the test class App\ConvergenceTest, and no class of that name is declared under packages/semitexa-project-graph/tests'],
         ], $problems);
     }
 
@@ -275,8 +352,8 @@ final class GraphExtractorScanTest extends TestCase
         $problems = GraphExtractorScan::problems($root);
         self::assertSame(["{$dir}/Attribute/Probing.php", "{$dir}/Broken.php"], array_keys($problems), 'only the extractor directory is walked, subdirectories included');
         self::assertSame([
-            'line 17: `is_file` reads the filesystem; a refresh re-reads only the files that changed, so a fact that depends on another file goes stale. Resolve it where the graph is read, or accept it with `// verify:accept-cross-file-read <TestClass>::<testMethod> <reason>`, naming the convergence test that covers it',
-            'line 18: `verify:accept-cross-file-read` names no test: write it as `// verify:accept-cross-file-read <TestClass>::<testMethod> <reason>`',
+            'line 18: `is_file` reads the filesystem; a refresh re-reads only the files that changed, so a fact that depends on another file goes stale. Resolve it where the graph is read, or accept it with `// verify:accept-cross-file-read filesystem <TestClass>::<testMethod> <reason>`, naming the convergence test that covers it',
+            'line 19: `verify:accept-cross-file-read` names no test: write it as `// verify:accept-cross-file-read <kind>[,<kind>] <TestClass>::<testMethod> <reason>`',
         ], $problems["{$dir}/Attribute/Probing.php"]);
         self::assertStringStartsWith('could not be parsed (line 2: ', $problems["{$dir}/Broken.php"][0]);
         self::assertStringEndsWith('the lint did not check it', $problems["{$dir}/Broken.php"][0]);
@@ -299,17 +376,89 @@ final class GraphExtractorScanTest extends TestCase
         self::assertSame([], GraphExtractorScan::problems($root, [], true));
     }
 
+    /**
+     * Review of f2808af: ReferenceExtractor's reads went through Parser\ClassDeclarationReader,
+     * outside the extractor directory, and the lint saw none of them.
+     */
     #[Test]
-    public function only_a_php_file_under_the_extractor_directory_is_covered(): void
+    public function a_read_in_a_helper_an_extractor_reaches_is_the_extractors_read(): void
+    {
+        $src = GraphExtractorScan::PACKAGE . '/src';
+        $helper = static fn (string $namespace, string $class, string $uses, string $body): string => "<?php\nnamespace Semitexa\\ProjectGraph\\{$namespace};\n{$uses}\nfinal class {$class}\n{\n    public function read(string \$p): mixed { return {$body}; }\n}\n";
+        $root = $this->project([
+            GraphExtractorScan::DIRECTORY . '/Ast/ReferenceExtractor.php' => $helper('Application\Service\Extractor\Ast', 'ReferenceExtractor', "use Semitexa\\ProjectGraph\\Application\\Service\\Graph\\{NodeId, EdgeType as Type};\nuse Semitexa\\ProjectGraph\\Missing\\Gone;\nuse App\\Other\\Thing;", 'strlen($p)'),
+            // The parser's directory is read whole, imported or not.
+            "{$src}/Application/Service/Parser/ClassDeclarationReader.php" => $helper('Application\Service\Parser', 'ClassDeclarationReader', '', 'is_file($p)'),
+            // Imported in a group, and under an alias.
+            "{$src}/Application/Service/Graph/NodeId.php" => $helper('Application\Service\Graph', 'NodeId', 'use Semitexa\ProjectGraph\Domain\Model\Edge;', 'strlen($p)'),
+            "{$src}/Application/Service/Graph/EdgeType.php" => $helper('Application\Service\Graph', 'EdgeType', '', 'class_exists($p)'),
+            // Imported by what an extractor imports.
+            "{$src}/Domain/Model/Edge.php" => $helper('Domain\Model', 'Edge', '', 'new \ReflectionClass($p)'),
+            // Imported by nothing an extractor runs: the engine, a query.
+            "{$src}/Application/Service/Index/IncrementalEngine.php" => $helper('Application\Service\Index', 'IncrementalEngine', 'use Semitexa\ProjectGraph\Application\Service\Graph\NodeId;', 'is_dir($p)'),
+            'src/Other.php' => self::extractor('$x = is_dir($path);'),
+        ]);
+
+        self::assertSame([
+            GraphExtractorScan::DIRECTORY . '/Ast/ReferenceExtractor.php',
+            "{$src}/Application/Service/Graph/EdgeType.php",
+            "{$src}/Application/Service/Graph/NodeId.php",
+            "{$src}/Application/Service/Parser/ClassDeclarationReader.php",
+            "{$src}/Domain/Model/Edge.php",
+        ], GraphExtractorScan::sources($root));
+        $probes = [];
+        foreach (GraphExtractorScan::problems($root) as $file => $found) {
+            $probes[$file] = (string) preg_replace('~^line \d+: `([^`]+)`.*$~s', '$1', $found[0]);
+        }
+        self::assertSame([
+            "{$src}/Application/Service/Graph/EdgeType.php" => 'class_exists',
+            "{$src}/Application/Service/Parser/ClassDeclarationReader.php" => 'is_file',
+            "{$src}/Domain/Model/Edge.php" => 'new ReflectionClass',
+        ], $probes);
+    }
+
+    /**
+     * Review of f2808af: an accept names a test, and nothing read the accepts again when that test
+     * changed. A file of the package that no extractor runs is not read itself: every extractor is.
+     */
+    #[Test]
+    public function a_changed_test_or_another_class_of_the_package_reads_every_extractor(): void
+    {
+        $dir = GraphExtractorScan::DIRECTORY;
+        $test = GraphExtractorScan::TESTS . '/Integration/ConvergenceTest.php';
+        $engine = GraphExtractorScan::PACKAGE . '/src/Application/Service/Index/IncrementalEngine.php';
+        $root = $this->project([
+            "{$dir}/Accepted.php" => self::extractor('$x = is_file($path); // ' . self::ACCEPT . ' the engine re-reads the referrer'),
+            "{$dir}/Clean.php" => self::extractor('$x = strlen($path);'),
+            $test => "<?php\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void { is_file(__FILE__); }\n}\n",
+            $engine => self::extractor('$x = is_dir($path);'),
+        ]);
+        self::assertSame([], GraphExtractorScan::problems($root, [$test]));
+        self::assertSame([], GraphExtractorScan::problems($root, [$engine]), 'the engine reads the disk, and is no extractor');
+        self::assertSame([], GraphExtractorScan::problems($root, ["{$dir}/Clean.php"]));
+
+        // The test loses the method the accept names: the extractor did not change, and is the one reported.
+        file_put_contents("{$root}/{$test}", "<?php\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_diverges(): void {}\n}\n");
+        self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, [$test])));
+        self::assertSame(["{$dir}/Accepted.php"], array_keys(GraphExtractorScan::problems($root, [$engine, "{$dir}/Clean.php"])));
+        self::assertSame([], GraphExtractorScan::problems($root, ["{$dir}/Clean.php"]), 'a given extractor is still read alone');
+    }
+
+    #[Test]
+    public function php_of_the_package_and_of_its_tests_is_covered(): void
     {
         $dir = GraphExtractorScan::DIRECTORY;
 
         self::assertTrue(GraphExtractorScan::covers("{$dir}/TemplateRenderExtractor.php"));
         self::assertTrue(GraphExtractorScan::covers("{$dir}/Attribute/UiNavigationExtractor.php"));
+        self::assertTrue(GraphExtractorScan::covers('packages/semitexa-project-graph/src/Application/Service/Parser/ClassDeclarationReader.php'));
+        self::assertTrue(GraphExtractorScan::covers('packages/semitexa-project-graph/src/Application/Service/Index/IncrementalEngine.php'));
+        self::assertTrue(GraphExtractorScan::covers('packages/semitexa-project-graph/tests/Integration/UiFlowRefreshConvergenceTest.php'));
         self::assertFalse(GraphExtractorScan::covers("{$dir}/README.md"));
-        self::assertFalse(GraphExtractorScan::covers("{$dir}Other/A.php"));
-        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-project-graph/src/Application/Service/Index/IncrementalEngine.php'));
-        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-project-graph/tests/Unit/Extractor/SomeTest.php'));
+        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-project-graph/tests/Fixture/notes.txt'));
+        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-project-graph/composer.json'));
+        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-project-graph-extra/src/A.php'));
+        self::assertFalse(GraphExtractorScan::covers('packages/semitexa-dev/src/Application/Service/Extractor/A.php'));
         self::assertFalse(GraphExtractorScan::covers("vendor/acme/{$dir}/A.php"));
     }
 
@@ -339,6 +488,7 @@ final class GraphExtractorScanTest extends TestCase
             use function App\Paths\{$link};
             use function App\Paths\{$stat};
             use function is_readable, filemtime, realpath;
+            use function is_file as there;
 
             function extract(string \$path, object \$o, string \$class, string \$name, array \$arguments, array \$paths, object \$files): mixed {
                     {$code}

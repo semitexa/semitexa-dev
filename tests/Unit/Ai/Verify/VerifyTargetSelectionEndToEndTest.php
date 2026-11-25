@@ -290,9 +290,13 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
         self::assertSame([], $input([$classifier->classify('src/modules/Foo/src/Domain/Service/A.php')], VerificationPlan::SCOPE_BROAD));
     }
 
-    /** tk-verify-catches-review-no-classes, class 5: an extractor is a service by its path, and by its path also gets the lint that reads it. */
+    /**
+     * tk-verify-catches-review-no-classes, class 5: an extractor is a service by its path, and by its path also gets the lint that reads it.
+     * So does every other PHP file of the package (review of f2808af): a helper an extractor reaches is read like the extractor,
+     * and a test is what an accept names.
+     */
     #[Test]
-    public function a_project_graph_extractor_selects_the_extractor_lint_beside_a_services(): void
+    public function php_of_project_graph_selects_the_extractor_lint_beside_its_kinds(): void
     {
         $classifier = new ChangedFileClassifier();
         foreach (['packages/semitexa-project-graph/src/Application/Service/Extractor/TemplateRenderExtractor.php', 'packages/semitexa-project-graph/src/Application/Service/Extractor/Attribute/UiNavigationExtractor.php'] as $path) {
@@ -302,10 +306,11 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
             sort($names);
             self::assertSame(['lint:di', 'lint:graph-extractors', 'lint:scoping'], $names, $path);
         }
-        // Another service of the package, a test about extractors, a document in the directory, a same-named directory elsewhere: each keeps what its kind selects.
         foreach ([
-            'packages/semitexa-project-graph/src/Application/Service/Index/IncrementalEngine.php' => ['lint:di', 'lint:scoping'],
-            'packages/semitexa-project-graph/tests/Unit/Extractor/TemplateRenderExtractorTest.php' => ['lint:test-integrity'],
+            'packages/semitexa-project-graph/src/Application/Service/Parser/ClassDeclarationReader.php' => ['lint:di', 'lint:graph-extractors', 'lint:scoping'],
+            'packages/semitexa-project-graph/src/Application/Service/Index/IncrementalEngine.php' => ['lint:di', 'lint:graph-extractors', 'lint:scoping'],
+            'packages/semitexa-project-graph/tests/Integration/UiFlowRefreshConvergenceTest.php' => ['lint:graph-extractors', 'lint:test-integrity'],
+            // A document in the directory, a same-named directory elsewhere: each keeps what its kind selects.
             'packages/semitexa-project-graph/src/Application/Service/Extractor/NOTES.md' => [],
             'packages/semitexa-dev/src/Application/Service/Extractor/Thing.php' => ['lint:di', 'lint:scoping'],
             'src/modules/Shop/src/Application/Service/Extractor/Thing.php' => ['lint:di', 'lint:mechanisms', 'lint:scoping'],
@@ -317,20 +322,23 @@ final class VerifyTargetSelectionEndToEndTest extends TestCase
     }
 
     #[Test]
-    public function the_extractor_lint_is_given_the_changed_extractors(): void
+    public function the_extractor_lint_is_given_the_changed_files_of_the_package(): void
     {
         $classifier = new ChangedFileClassifier();
         $paths = ['packages/semitexa-project-graph/src/Application/Service/Extractor/ExtractorPipeline.php', 'packages/semitexa-project-graph/src/Application/Service/Extractor/Ast/ClassScope.php'];
-        $changed = [...array_map($classifier->classify(...), $paths), $classifier->classify('packages/semitexa-project-graph/src/Application/Service/Index/IncrementalEngine.php')];
+        $changed = [...array_map($classifier->classify(...), $paths), $classifier->classify('packages/semitexa-dev/src/Application/Service/Index/Engine.php')];
         $other = [$classifier->classify('src/modules/Foo/src/Domain/Service/A.php')];
 
-        // Only the extractors are handed over: the other service of the same change did not schedule it.
+        // Only the package's files are handed over: the other service of the same change did not schedule it.
         self::assertSame(['--file' => $paths], $this->lintInput('lint:graph-extractors', $changed, VerificationPlan::SCOPE_STANDARD));
         self::assertSame(['--file' => $paths, '--all' => true], $this->lintInput('lint:graph-extractors', $changed, VerificationPlan::SCOPE_BROAD));
         // A broad run with no extractor changed reads the directory: no --file, so the lint's own default.
         self::assertSame([], $this->lintInput('lint:graph-extractors', $other, VerificationPlan::SCOPE_BROAD));
         self::assertNull($this->lintInput('lint:graph-extractors', $other, VerificationPlan::SCOPE_STANDARD));
         self::assertNull($this->lintInput('lint:graph-extractors', $changed, VerificationPlan::SCOPE_MINIMAL));
+        // A changed test is handed over too: the lint reads every extractor for it, since an accept may name it.
+        $test = 'packages/semitexa-project-graph/tests/Integration/UiFlowRefreshConvergenceTest.php';
+        self::assertSame(['--file' => [$test]], $this->lintInput('lint:graph-extractors', [$classifier->classify($test)], VerificationPlan::SCOPE_STANDARD));
     }
 
     /** A deleted extractor leaves nothing to read. */

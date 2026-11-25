@@ -10,19 +10,32 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify\GraphExtractor;
  *
  * A probe is one of:
  *  - a call of a global filesystem function (`is_file`, `glob`, `file_get_contents`, …),
- *    or a `new` of a class that walks or opens files (`SplFileInfo`, `Finder`, …), or
- *    Symfony's `Finder::create()`;
+ *    under its own name or an alias (`use function is_file as there`), or a `new` of a
+ *    class that walks or opens files (`SplFileInfo`, `Finder`, …), or Symfony's
+ *    `Finder::create()`;
  *  - `include` / `require`, in all four forms;
- *  - `new Reflection*`;
+ *  - `new Reflection*`, and a static call on such a class
+ *    (`ReflectionMethod::createFromMethodName()`);
  *  - a call that asks the runtime about a class (`class_exists`, `method_exists`,
- *    `is_subclass_of`, …);
+ *    `is_subclass_of`, …), and `constant()` of anything but a plain global name
+ *    (`constant("A::B")` loads A);
+ *  - one of those functions named as a string for `call_user_func`,
+ *    `call_user_func_array` or `array_map` to call;
  *  - a `new` of a class named at run time (`new $x(…)`, `new ($expr)`): it autoloads
  *    whichever file declares that class.
  *
  * Not a probe: a method of the same name (`$files->glob(`, `Finder::file(`), a
- * string, a function imported from a namespace (`use function App\is_file`), a
- * qualified call (`App\is_file(`), a function the file itself declares in its
- * namespace, and anything inside an attribute.
+ * string that nothing calls, a function imported from a namespace
+ * (`use function App\is_file`), a qualified call (`App\is_file(`), a function the
+ * file itself declares in its namespace, and anything inside an attribute.
+ *
+ * Flagged though it may read nothing: `is_a`, `method_exists` and `property_exists`
+ * given an object ask about a class that is loaded already. Tokens do not say what
+ * the argument is, so the call is flagged and the accept says why it is safe.
+ *
+ * Not seen, known limits: a function called through a variable (`$f = 'is_file';
+ * $f($p)`), a static call on a class named at run time (`$c::from($v)`, which
+ * autoloads `$c`), and `unserialize()`, which autoloads whatever class the data names.
  */
 final class CrossFileProbes
 {
@@ -40,12 +53,20 @@ final class CrossFileProbes
         'realpath' => self::FILESYSTEM, 'filemtime' => self::FILESYSTEM, 'filesize' => self::FILESYSTEM,
         'stat' => self::FILESYSTEM, 'lstat' => self::FILESYSTEM, 'parse_ini_file' => self::FILESYSTEM,
         'md5_file' => self::FILESYSTEM, 'sha1_file' => self::FILESYSTEM, 'hash_file' => self::FILESYSTEM,
+        'is_writable' => self::FILESYSTEM, 'readfile' => self::FILESYSTEM, 'filectime' => self::FILESYSTEM,
+        'simplexml_load_file' => self::FILESYSTEM,
         'class_exists' => self::CLASS_PROBE, 'interface_exists' => self::CLASS_PROBE, 'trait_exists' => self::CLASS_PROBE,
         'enum_exists' => self::CLASS_PROBE, 'method_exists' => self::CLASS_PROBE, 'property_exists' => self::CLASS_PROBE,
         'get_class_methods' => self::CLASS_PROBE, 'get_parent_class' => self::CLASS_PROBE, 'class_implements' => self::CLASS_PROBE,
         'class_parents' => self::CLASS_PROBE, 'class_uses' => self::CLASS_PROBE, 'is_subclass_of' => self::CLASS_PROBE,
         'is_a' => self::CLASS_PROBE,
     ];
+
+    /** Functions that call the function their first argument names. */
+    private const CALLERS = ['call_user_func', 'call_user_func_array', 'array_map'];
+
+    /** Every kind of probe, as an accept names it. */
+    public const KINDS = [self::FILESYSTEM, self::INCLUDE, self::REFLECTION, self::CLASS_PROBE, self::DYNAMIC_NEW];
 
     /** Classes whose construction opens or walks files, lower case. */
     private const FILESYSTEM_CLASSES = [
@@ -71,43 +92,102 @@ final class CrossFileProbes
     private function __construct(private readonly array $tokens) {}
 
     /**
+     * @param string $marker what a comment starts with to accept a probe
      * @return array{
-     *     probes: list<array{line: int, probe: string, kind: string, classLike: ?int}>,
-     *     comments: array<int, string>,
-     *     classLikes: list<array{name: string, line: int, markerLines: list<int>}>,
-     * } `classLike` indexes `classLikes`: the named class, trait, interface or enum the probe stands in;
-     *   `comments` is line => the text of the comment on it, without its `//`, `#` or `*`
+     *     probes: list<array{line: int, probe: string, kind: string, index: int}>,
+     *     markers: list<array{line: int, text: string, trailing: bool, from: int, to: int}>,
+     * } `index` is the probe's token. A marker's `text` is what follows the marker word. A trailing
+     *   marker (code stands before it on its line) covers the probes of that line; any other covers
+     *   the tokens `from`..`to`, the statement that follows it: up to its `;`, or the `{` of the block
+     *   it opens, or, inside a list, the `,` that ends the element
      *
      * @throws \ParseError when the source is not PHP that parses: a scan that could not read must not pass
      */
-    public static function read(string $source): array
+    public static function read(string $source, string $marker): array
     {
         $reader = new self(array_values(\PhpToken::tokenize($source, TOKEN_PARSE)));
-        $extents = $reader->classLikes();
         $probes = [];
         foreach ($reader->probes() as [$index, $probe, $kind]) {
-            $inside = null;
-            foreach ($extents as $n => $extent) {
-                if ($index > $extent['open'] && $index < $extent['close']) {
-                    $inside = $n;
-                    break;
-                }
-            }
-            $probes[] = ['line' => $reader->tokens[$index]->line, 'probe' => $probe, 'kind' => $kind, 'classLike' => $inside];
+            $probes[] = ['line' => $reader->tokens[$index]->line, 'probe' => $probe, 'kind' => $kind, 'index' => $index];
         }
 
-        return [
-            'probes' => $probes,
-            'comments' => $reader->comments(),
-            'classLikes' => array_map(static fn (array $e): array => ['name' => $e['name'], 'line' => $e['line'], 'markerLines' => $e['markerLines']], $extents),
-        ];
+        return ['probes' => $probes, 'markers' => $reader->markers($marker)];
+    }
+
+    /** @return list<array{line: int, text: string, trailing: bool, from: int, to: int}> */
+    private function markers(string $marker): array
+    {
+        $found = [];
+        $nesting = 0;
+        foreach ($this->tokens as $i => $token) {
+            $nesting += match (true) {
+                $token->is(T_ATTRIBUTE), in_array($token->text, ['(', '['], true) => 1,
+                in_array($token->text, [')', ']'], true) => -1,
+                default => 0,
+            };
+            if (!$token->is([T_COMMENT, T_DOC_COMMENT])) {
+                continue;
+            }
+            foreach (explode("\n", $token->text) as $n => $line) {
+                if (preg_match('~^' . preg_quote($marker, '~') . '(?![\w-])(.*)$~u', self::commentText($line), $match) !== 1) {
+                    continue;
+                }
+                $from = $this->nextIndex($i);
+                $found[] = [
+                    'line' => $token->line + $n,
+                    'text' => trim($match[1]),
+                    'trailing' => $n === 0 && $this->followsCode($i),
+                    'from' => $from,
+                    'to' => $this->statementEnd($from, $nesting > 0),
+                ];
+            }
+        }
+
+        return $found;
+    }
+
+    /** Whether code stands before the comment on its line. */
+    private function followsCode(int $comment): bool
+    {
+        for ($k = $comment - 1; $k >= 0 && $this->tokens[$k]->is(T_WHITESPACE); $k--) {
+            if (str_contains($this->tokens[$k]->text, "\n")) {
+                return false;
+            }
+        }
+        // An opening tag and a `//` comment end with the line they stand on.
+        return $k >= 0 && !str_ends_with($this->tokens[$k]->text, "\n") && !$this->tokens[$k]->is(T_OPEN_TAG);
+    }
+
+    /**
+     * The last token of the statement that starts at $from.
+     *
+     * @param bool $inList the statement is an element of a list (an argument, an array item): a `,` ends it
+     */
+    private function statementEnd(int $from, bool $inList): int
+    {
+        $depth = 0;
+        $count = count($this->tokens);
+        for ($k = $from; $k < $count; $k++) {
+            $text = $this->tokens[$k]->text;
+            if ($this->tokens[$k]->is(T_ATTRIBUTE) || $text === '(' || $text === '[') {
+                $depth++;
+            } elseif ($text === ')' || $text === ']') {
+                if (--$depth < 0) {
+                    return $k;
+                }
+            } elseif ($depth === 0 && ($text === ';' || $text === '}' || $this->tokens[$k]->id === ord('{') || ($inList && $text === ','))) {
+                return $k;
+            }
+        }
+
+        return $count - 1;
     }
 
     /** @return list<array{int, string, string}> token index, the probe as written, its kind */
     private function probes(): array
     {
         $found = [];
-        /** @var list<array{int, string, string, string}> $calls index, namespace, name, kind: unqualified calls, judged once every declaration is known */
+        /** @var list<array{int, string, string, string, string}> $calls index, namespace, name, kind, the probe as reported: unqualified calls, judged once every declaration is known */
         $calls = [];
         $declared = [];
         $bracketed = false;
@@ -157,29 +237,66 @@ final class CrossFileProbes
                 $called = $this->next($this->nextIndex($this->nextIndex($i)))?->text === '(';
                 if ($called && $method !== null && strtolower($method->text) === 'create' && $this->classNamed($token) === self::FINDER) {
                     $found[] = [$i, ltrim($token->text, '\\') . '::create', self::FILESYSTEM];
+                } elseif ($called && $method !== null && preg_match('~^reflection\w*$~', $this->classNamed($token)) === 1) {
+                    $found[] = [$i, ltrim($token->text, '\\') . '::' . $method->text, self::REFLECTION];
                 }
             } elseif ($token->is([T_STRING, T_NAME_FULLY_QUALIFIED]) && $next?->text === '(') {
-                $name = strtolower(ltrim($token->text, '\\'));
-                $kind = self::FUNCTIONS[$name] ?? null;
-                if ($kind === null || $this->namesNoFunctionCall($i)) {
+                $written = strtolower(ltrim($token->text, '\\'));
+                // `use function is_file as there`: the call reaches what the alias stands for.
+                $name = $token->is(T_STRING) ? $this->functions[$written] ?? $written : $written;
+                if ($this->namesNoFunctionCall($i)) {
                     continue;
                 }
-                if ($token->is(T_NAME_FULLY_QUALIFIED)) {
-                    $found[] = [$i, $name, $kind];
-                } elseif (($this->functions[$name] ?? $name) === $name) {
-                    $calls[] = [$i, $this->namespace, $name, $kind];
+                $imported = $token->is(T_NAME_FULLY_QUALIFIED) || isset($this->functions[$written]);
+                $probe = $name === $written ? $name : "{$written} ({$name})";
+                $kind = self::FUNCTIONS[$name] ?? null;
+                if ($kind === null) {
+                    [$probe, $kind] = $this->calledByName($i, $name) ?? [$probe, null];
+                }
+                if ($kind === null) {
+                    continue;
+                }
+                if ($imported) {
+                    $found[] = [$i, $probe, $kind];
+                } else {
+                    $calls[] = [$i, $this->namespace, $written, $kind, $probe];
                 }
             }
         }
-        foreach ($calls as [$index, $namespace, $name, $kind]) {
+        foreach ($calls as [$index, $namespace, $name, $kind, $probe]) {
             // A function the file declares in its own namespace is the one an unqualified call reaches.
             if ($namespace === '' || !isset($declared[$namespace][$name])) {
-                $found[] = [$index, $name, $kind];
+                $found[] = [$index, $probe, $kind];
             }
         }
         usort($found, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
 
         return $found;
+    }
+
+    /**
+     * A probe that $function, called at $index, reaches through its first argument:
+     * `constant("A::B")`, `array_map('is_file', $paths)`.
+     *
+     * @return array{string, string}|null the probe as reported, its kind
+     */
+    private function calledByName(int $index, string $function): ?array
+    {
+        $argument = $this->nextIndex($this->nextIndex($index));
+        $first = $this->tokens[$argument] ?? null;
+        $literal = $first?->is(T_CONSTANT_ENCAPSED_STRING) === true && in_array($this->next($argument)?->text, [',', ')'], true)
+            ? stripslashes(substr($first->text, 1, -1))
+            : null;
+        if ($function === 'constant') {
+            // A plain name is a global constant; anything else may name a class, and loads it.
+            return $literal !== null && !str_contains($literal, '::') ? null : ['constant', self::CLASS_PROBE];
+        }
+        if (!in_array($function, self::CALLERS, true) || $literal === null) {
+            return null;
+        }
+        $called = strtolower(ltrim($literal, '\\'));
+
+        return isset(self::FUNCTIONS[$called]) ? ["{$function}('{$called}')", self::FUNCTIONS[$called]] : null;
     }
 
     /** A name before `(` that calls no function: a method, a declaration, a class after `new`. */
@@ -255,98 +372,6 @@ final class CrossFileProbes
         }
 
         return $k;
-    }
-
-    /**
-     * Every named class, trait, interface and enum: where its body lies, and the lines a marker for all of it may stand on.
-     *
-     * @return list<array{name: string, line: int, markerLines: list<int>, open: int, close: int}>
-     */
-    private function classLikes(): array
-    {
-        $found = [];
-        $count = count($this->tokens);
-        foreach ($this->tokens as $i => $token) {
-            $name = $this->next($i);
-            if (!$token->is([T_CLASS, T_TRAIT, T_INTERFACE, T_ENUM]) || $name?->is(T_STRING) !== true || $this->previous($i)?->is(T_DOUBLE_COLON) === true) {
-                continue;
-            }
-            // The declaration starts at its first modifier.
-            $start = $i;
-            while (($before = $this->previousIndex($start)) !== null && $this->tokens[$before]->is([T_FINAL, T_ABSTRACT, T_READONLY])) {
-                $start = $before;
-            }
-            for ($open = $i; $open < $count && $this->tokens[$open]->text !== '{'; $open++);
-            $depth = 0;
-            for ($close = $open; $close < $count; $close++) {
-                $at = $this->tokens[$close];
-                if ($at->text === '{' || $at->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES])) {
-                    $depth++;
-                } elseif ($at->text === '}' && --$depth === 0) {
-                    break;
-                }
-            }
-            $line = $this->tokens[$start]->line;
-            $found[] = ['name' => $name->text, 'line' => $line, 'markerLines' => [$line - 1, ...$this->docblockLastLine($start)], 'open' => $open, 'close' => $close];
-        }
-
-        return $found;
-    }
-
-    /**
-     * The last line with text of the docblock a declaration carries; attributes and comments may stand between the two.
-     *
-     * @return list<int> one line, or none without a docblock
-     */
-    private function docblockLastLine(int $declaration): array
-    {
-        for ($k = $declaration - 1; $k >= 0; $k--) {
-            $token = $this->tokens[$k];
-            if ($token->is(T_DOC_COMMENT)) {
-                $lines = explode("\n", $token->text);
-                for ($n = count($lines) - 1; $n >= 0; $n--) {
-                    if (self::commentText($lines[$n]) !== '') {
-                        return [$token->line + $n];
-                    }
-                }
-
-                return [];
-            }
-            if ($token->text === ']') {
-                // An attribute group: back to the `#[` that opens it.
-                for ($depth = 0; $k >= 0; $k--) {
-                    $depth += $this->tokens[$k]->text === ']' ? 1 : ($this->tokens[$k]->text === '[' || $this->tokens[$k]->is(T_ATTRIBUTE) ? -1 : 0);
-                    if ($depth === 0) {
-                        break;
-                    }
-                }
-                continue;
-            }
-            if (!$token->is([T_WHITESPACE, T_COMMENT])) {
-                break;
-            }
-        }
-
-        return [];
-    }
-
-    /** @return array<int, string> */
-    private function comments(): array
-    {
-        $comments = [];
-        foreach ($this->tokens as $token) {
-            if (!$token->is([T_COMMENT, T_DOC_COMMENT])) {
-                continue;
-            }
-            foreach (explode("\n", $token->text) as $n => $line) {
-                $text = self::commentText($line);
-                if ($text !== '') {
-                    $comments[$token->line + $n] = isset($comments[$token->line + $n]) ? $comments[$token->line + $n] . ' ' . $text : $text;
-                }
-            }
-        }
-
-        return $comments;
     }
 
     /** One line of a comment without what frames it: `//`, `#`, `/**`, a leading `*`, the closing mark. */

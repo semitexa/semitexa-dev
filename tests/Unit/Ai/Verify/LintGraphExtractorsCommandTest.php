@@ -78,13 +78,13 @@ final class LintGraphExtractorsCommandTest extends TestCase
     public function clean_extractors_pass(): void
     {
         $this->write(GraphExtractorScan::DIRECTORY . '/Clean.php', "<?php\nfinal class Clean {}\n");
-        $this->write(GraphExtractorScan::TESTS . '/ConvergenceTest.php', "<?php\nfinal class ConvergenceTest\n{\n    public function a_refresh_converges(): void {}\n}\n");
-        $this->write(GraphExtractorScan::DIRECTORY . '/Accepted.php', "<?php\n// verify:accept-cross-file-read ConvergenceTest::a_refresh_converges read when the graph is read\nfinal class Accepted\n{\n    public function of(string \$p): bool { return is_file(\$p); }\n}\n");
+        $this->write(GraphExtractorScan::TESTS . '/ConvergenceTest.php', "<?php\nfinal class ConvergenceTest\n{\n    #[Test]\n    public function a_refresh_converges(): void {}\n}\n");
+        $this->write(GraphExtractorScan::DIRECTORY . '/Accepted.php', "<?php\nfinal class Accepted\n{\n    public function of(string \$p): bool\n    {\n        // verify:accept-cross-file-read filesystem ConvergenceTest::a_refresh_converges read when the graph is read\n        return is_file(\$p);\n    }\n}\n");
 
         $tester = new CommandTester(new LintGraphExtractorsCommand());
 
         self::assertSame(0, $tester->execute([]), $tester->getDisplay());
-        self::assertSame("lint:graph-extractors → no project-graph extractor reads beyond the file it extracts without an accepted convergence test\n", $tester->getDisplay());
+        self::assertSame("lint:graph-extractors → nothing an extractor runs reads beyond the file it extracts without an accept that names a convergence test\n", $tester->getDisplay());
     }
 
     #[Test]
