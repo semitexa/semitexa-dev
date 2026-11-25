@@ -13,8 +13,7 @@ use PHPUnit\Framework\TestCase;
  * for bin/semitexa, holds before a release.
  *
  * It runs tools/check-manifest.php against the manifest at the installer's last
- * tag (Fable's review of the step 2 plan, D2), and derive-manifest.php --check
- * only while update still ships the runtime entries. Both run on the host:
+ * tag (Fable's review of the step 2 plan, D2), on the host:
  * review on dev#283 found the stage exec'ing into an app container that is not
  * up before preflight starts it, and reporting the failed exec as a stale
  * manifest. Only a tool's own "stale" answer (exit 1) is called stale.
@@ -24,6 +23,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class ReleaseInstallerManifestCheckTest extends TestCase
 {
+    // verify:accept-test-change the derive tool and update's runtime entries are gone (installer bbf0566, step 2d of tk-one-source-for-bin-semitexa); the tests of that branch go with it
+
     private const STALE = 'does not hold';
     private const BROKEN = 'Could not check';
     private const INSTALLER = '/packages/semitexa-installer';
@@ -37,8 +38,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
         mkdir($this->root . self::INSTALLER . '/resources', 0777, true);
         mkdir($this->root . self::INSTALLER . '/scaffold/bin', 0777, true);
         file_put_contents($this->root . self::INSTALLER . '/scaffold/bin/semitexa', "#!/usr/bin/env bash\n");
-        mkdir($this->root . '/packages/semitexa-update/resources', 0777, true);
-        $this->updateShipsTheRuntimeEntries(true);
         // A repository with no release tag yet: an answer, unlike git failing.
         $this->git('init -q -b develop');
     }
@@ -49,16 +48,14 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     }
 
     #[Test]
-    public function a_manifest_both_tools_accept_passes_with_no_container_to_exec_into(): void
+    public function a_manifest_the_check_accepts_passes_with_no_container_to_exec_into(): void
     {
         $this->tool('check-manifest.php', 0, 'scaffold-manifest.json describes scaffold/ (19 files).');
-        $this->tool('derive-manifest.php', 0, 'scaffold-manifest.json is current (19 files).');
 
         [$status, $output] = $this->check();
 
         self::assertSame(0, $status, $output);
         self::assertStringContainsString('ran check-manifest.php', $output);
-        self::assertStringContainsString('ran derive-manifest.php --check', $output);
         self::assertStringNotContainsString(self::STALE, $output);
     }
 
@@ -66,7 +63,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     public function a_manifest_the_check_refuses_fails_and_says_how_to_rebuild_it(): void
     {
         $this->tool('check-manifest.php', 1, 'bin/semitexa: the file hashes to 1111, the manifest says 2222.');
-        $this->tool('derive-manifest.php', 0, 'is current');
 
         [$status, $output] = $this->check();
 
@@ -74,7 +70,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
         self::assertStringContainsString('bin/semitexa: the file hashes to 1111', $output);
         self::assertStringContainsString(self::STALE, $output);
         self::assertStringContainsString('bin/semitexa scaffold:sync', $output);
-        self::assertStringNotContainsString('ran derive-manifest.php', $output, 'the stage went on after a refusal');
     }
 
     #[Test]
@@ -93,8 +88,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     #[Test]
     public function an_installer_without_the_check_tool_cannot_pass(): void
     {
-        $this->tool('derive-manifest.php', 0, 'is current');
-
         [$status, $output] = $this->check();
 
         self::assertSame(2, $status, $output);
@@ -123,8 +116,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     #[Test]
     public function a_tag_from_before_the_installer_had_a_manifest_is_checked_without_a_history(): void
     {
-        // About the history alone: update ships no runtime entries, so no derive runs.
-        $this->updateShipsTheRuntimeEntries(false);
         $this->tool('check-manifest.php', 0, 'describes scaffold/');
         file_put_contents($this->root . self::INSTALLER . '/README.md', "# installer\n");
         $this->git('add README.md');
@@ -151,81 +142,8 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     }
 
     #[Test]
-    public function while_update_ships_the_runtime_entries_a_stale_derived_manifest_fails(): void
-    {
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 1, 'scaffold-manifest.json is stale');
-
-        [$status, $output] = $this->check();
-
-        self::assertSame(1, $status, $output);
-        self::assertStringContainsString(self::STALE, $output);
-        self::assertStringContainsString('php packages/semitexa-installer/tools/derive-manifest.php', $output);
-    }
-
-    /**
-     * Review on dev#291: the stage grepped for `"path": "bin/semitexa"`, and a
-     * manifest written without the space read as one that ships nothing.
-     */
-    #[Test]
-    public function update_s_manifest_is_read_as_json_however_it_is_spaced(): void
-    {
-        file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files":[{"path":"AGENTS.md"},{"path":"bin/semitexa"}]}');
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 1, 'scaffold-manifest.json is stale');
-
-        [$status, $output] = $this->check();
-
-        self::assertSame(1, $status, $output);
-        self::assertStringContainsString('ran derive-manifest.php --check', $output);
-    }
-
-    #[Test]
-    public function an_update_manifest_that_cannot_be_read_is_an_error_not_one_that_ships_nothing(): void
-    {
-        file_put_contents($this->root . '/packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [');
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 0, 'is current');
-
-        [$status, $output] = $this->check();
-
-        self::assertSame(2, $status, $output);
-        self::assertStringContainsString("Cannot read semitexa/update's manifest", $output);
-        self::assertStringNotContainsString('ran derive-manifest.php', $output);
-    }
-
-    #[Test]
-    public function while_update_ships_the_runtime_entries_a_missing_derive_tool_cannot_pass(): void
-    {
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-
-        [$status, $output] = $this->check();
-
-        self::assertSame(2, $status, $output);
-        self::assertStringContainsString('derive-manifest.php is missing', $output);
-    }
-
-    #[Test]
-    public function once_update_lists_none_of_the_installers_files_the_comparison_is_not_run(): void
-    {
-        // After step 2b update's own manifest holds only the agent docs; the
-        // derive tool would refuse for want of entries, which is not a defect.
-        $this->updateShipsTheRuntimeEntries(false);
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 1, "No entry in update's manifest for: bin/semitexa");
-
-        [$status, $output] = $this->check();
-
-        self::assertSame(0, $status, $output);
-        self::assertStringContainsString('ran check-manifest.php', $output);
-        self::assertStringNotContainsString('ran derive-manifest.php', $output);
-    }
-
-    #[Test]
     public function the_history_is_checked_against_the_manifest_at_the_newest_release_tag(): void
     {
-        // About the history alone: update ships no runtime entries, so no derive runs.
-        $this->updateShipsTheRuntimeEntries(false);
         $this->tool('check-manifest.php', 0, 'describes scaffold/');
         // The newest release tagged first: the stage goes by version, not by
         // when a tag was made, and not by `git describe` (tags sit on master's
@@ -244,8 +162,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
     #[Test]
     public function an_installer_with_no_release_tag_is_checked_without_a_history(): void
     {
-        // About the history alone: update ships no runtime entries, so no derive runs.
-        $this->updateShipsTheRuntimeEntries(false);
         $this->tool('check-manifest.php', 0, 'describes scaffold/');
 
         [$status, $output] = $this->check();
@@ -272,18 +188,6 @@ final class ReleaseInstallerManifestCheckTest extends TestCase
             PHP;
         $code .= sprintf("\nfwrite(%s, %s . \"\\n\");\nexit(%d);\n", $stream, var_export($message, true), $exit);
         file_put_contents($this->root . self::INSTALLER . '/tools/' . $name, $code);
-    }
-
-    private function updateShipsTheRuntimeEntries(bool $ships): void
-    {
-        $files = [['path' => 'AGENTS.md']];
-        if ($ships) {
-            $files[] = ['path' => 'bin/semitexa'];
-        }
-        file_put_contents(
-            $this->root . '/packages/semitexa-update/resources/scaffold-manifest.json',
-            json_encode(['files' => $files], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n",
-        );
     }
 
     private function tagManifest(string $tag, string $manifest): void

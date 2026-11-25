@@ -33,9 +33,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   4. installer scaffold → semitexa-update resources/scaffold + manifest
  *      (via update:scaffold:rebuild)
  *   5. semitexa/installer's own manifest, which update reads from vendor/ from
- *      step 2 of one source for bin/semitexa: checked by the installer's tools,
- *      and derived from update's while update still ships the runtime entries
- *      ({@see InstallerManifestTools})
+ *      step 2 of one source for bin/semitexa: written by step 4, checked by the
+ *      installer's own tool in --check ({@see InstallerManifestTools})
  *
  * `--check` performs no writes and exits 1 on any drift — usable as a CI /
  * ai:verify gate. Only meaningful in the framework authoring workspace where
@@ -159,11 +158,9 @@ final class ScaffoldSyncCommand extends BaseCommand
         }
 
         // 5. semitexa/installer's own manifest, which update reads from vendor/.
-        $installerManifest = new InstallerManifestTools($root);
+        // Step 4 wrote it; a check asks the installer's tool whether it holds.
         if ($check) {
-            $drift += $this->checkInstallerManifest($installerManifest, $io);
-        } elseif (!$this->writeInstallerManifest($installerManifest, $io)) {
-            return Command::FAILURE;
+            $drift += $this->checkInstallerManifest(new InstallerManifestTools($root), $io);
         }
 
         if ($check) {
@@ -192,10 +189,10 @@ final class ScaffoldSyncCommand extends BaseCommand
      * Runs the installer's manifest checks, the history against its last release tag.
      *
      * What cannot be read counts as drift with its reason, never as nothing to
-     * check: an unreadable update manifest, git failing on the installer's tags,
-     * a missing check tool (review, dev#291).
+     * check: git failing on the installer's tags, a missing check tool (review,
+     * dev#291).
      *
-     * @return int the checks that did not pass
+     * @return int 1 when the check did not pass, 0 when it did
      */
     private function checkInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): int
     {
@@ -207,13 +204,12 @@ final class ScaffoldSyncCommand extends BaseCommand
         $drift = 0;
         try {
             $tag = $tools->writeManifestAtLastTag($previous);
-            foreach ($tools->commands(true, $tag !== null ? $previous : null) as $command) {
-                [$exit, $text] = $tools->run($command['argv']);
-                $against = $tag !== null && $command['label'] === 'check-manifest.php' ? " (history against {$tag})" : '';
-                if ($exit === 0) {
-                    $io->writeln("  <info>ok</info>     installer manifest: {$command['label']}{$against}");
-                    continue;
-                }
+            $command = $tools->checkCommand($tag !== null ? $previous : null);
+            [$exit, $text] = $tools->run($command['argv']);
+            $against = $tag !== null ? " (history against {$tag})" : '';
+            if ($exit === 0) {
+                $io->writeln("  <info>ok</info>     installer manifest: {$command['label']}{$against}");
+            } else {
                 $drift++;
                 $io->writeln("  <comment>DRIFT</comment> installer manifest: {$command['label']}{$against} exited {$exit}");
                 $io->writeln(preg_replace('/^/m', '         ', rtrim($text)) ?? rtrim($text));
@@ -226,27 +222,6 @@ final class ScaffoldSyncCommand extends BaseCommand
         }
 
         return $drift;
-    }
-
-    /** While update ships the runtime entries, copies them into the installer's manifest after update's rebuild. */
-    private function writeInstallerManifest(InstallerManifestTools $tools, SymfonyStyle $io): bool
-    {
-        try {
-            $commands = $tools->commands(false);
-        } catch (\RuntimeException $e) {
-            $io->error("installer manifest: {$e->getMessage()}");
-            return false;
-        }
-        foreach ($commands as $command) {
-            [$exit, $text] = $tools->run($command['argv']);
-            if ($exit !== 0) {
-                $io->error("installer manifest: {$command['label']} exited {$exit}:\n" . rtrim($text));
-                return false;
-            }
-            $io->writeln("  <info>synced</info> installer manifest ({$command['label']})");
-        }
-
-        return true;
     }
 
     /**

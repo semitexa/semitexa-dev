@@ -141,14 +141,15 @@ $dirs = array_filter(
 );
 
 // NAMED, not silently dropped. `packages/semitexa-*` is the glob that defines
-// the package set, and two directories inside it are not Composer packages:
-// semitexa-installer is a Docker project that publishes an image, and
-// semitexa-companion is a browser extension. Neither has a composer.json and
-// neither is ever tagged here.
+// the package set, and a directory inside it may not be a Composer package:
+// semitexa-companion is a browser extension, with no composer.json, and is
+// never tagged here. (semitexa-installer was one too, until it gained a
+// composer.json in step 2 of one source for bin/semitexa; it is tagged now.)
 //
-// Saying nothing about them made every release end with "Released 10
-// package(s)" over an eleven-directory merge, which reads like something was
-// forgotten — and cost somebody the time to go and prove it had not been.
+// Saying nothing about such a directory made every release end with
+// "Released 10 package(s)" over an eleven-directory merge, which reads like
+// something was forgotten — and cost somebody the time to go and prove it had
+// not been.
 $notPackages = array_map(
     'basename',
     array_values(array_diff($allDirs, $dirs)),

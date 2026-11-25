@@ -34,6 +34,8 @@ final class ScaffoldSyncCommandTest extends TestCase
     /** The root ProjectRoot held before this test, put back as it was (review, dev#291). */
     private ?string $savedProjectRoot = null;
 
+    // verify:accept-test-change the derive tool and update's runtime entries are gone (installer bbf0566, step 2d of tk-one-source-for-bin-semitexa); the tests of that branch go with it
+
     /** @var list<string> how each sibling ran, e.g. "update:scaffold:rebuild --check" */
     private array $siblingRuns = [];
 
@@ -53,7 +55,6 @@ final class ScaffoldSyncCommandTest extends TestCase
         $this->write('Dockerfile', "# Dockerfile\n");
         // After the switch: update's own copy holds only the agent docs.
         $this->write('packages/semitexa-update/resources/scaffold/AGENTS.md', "# agents\n");
-        $this->updateManifest(['AGENTS.md']);
         // A repository with no release tag yet: an answer, unlike git failing.
         exec('git -C ' . escapeshellarg($this->root . '/packages/semitexa-installer') . ' init -q -b develop 2>&1', $gitOutput, $gitStatus);
         self::assertSame(0, $gitStatus, implode("\n", $gitOutput));
@@ -86,7 +87,6 @@ final class ScaffoldSyncCommandTest extends TestCase
         // --check would write in a check (review, dev#291).
         self::assertSame(['scaffold:sync-docs --check', 'update:scaffold:rebuild --check'], $this->siblingRuns);
         self::assertStringContainsString('ok     installer manifest: check-manifest.php', $display);
-        self::assertStringNotContainsString('derive-manifest', $display, 'nothing to derive once update lists none of the installer files');
     }
 
     public function test_a_manifest_the_installer_check_refuses_is_drift_with_its_findings(): void
@@ -98,22 +98,6 @@ final class ScaffoldSyncCommandTest extends TestCase
         self::assertSame(1, $status, $display);
         self::assertStringContainsString('DRIFT installer manifest: check-manifest.php exited 1', $display);
         self::assertStringContainsString('bin/semitexa: the file hashes to 1111', $display);
-    }
-
-    /**
-     * Review on dev#291: what cannot be read is drift with its reason, never
-     * nothing to check.
-     */
-    public function test_an_update_manifest_that_cannot_be_read_is_drift_not_a_skipped_derive(): void
-    {
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 0, 'is current');
-        $this->write('packages/semitexa-update/resources/scaffold-manifest.json', '{"files": [');
-
-        [$status, $display] = $this->sync(['--check' => true]);
-
-        self::assertSame(1, $status, $display);
-        self::assertStringContainsString("DRIFT installer manifest: could not check: Cannot read semitexa/update's manifest", $display);
     }
 
     public function test_tags_git_cannot_list_are_drift_not_an_installer_without_releases(): void
@@ -146,32 +130,19 @@ final class ScaffoldSyncCommandTest extends TestCase
         self::assertStringContainsString('1 scaffold copy is out of sync', $display);
     }
 
-    public function test_while_update_ships_the_runtime_entries_the_derived_manifest_is_checked_and_written(): void
+    /**
+     * update:scaffold:rebuild (step 4) writes the installer's manifest; a write
+     * runs none of the installer's tools after it.
+     */
+    public function test_a_write_leaves_the_installer_manifest_to_the_rebuild(): void
     {
-        $this->updateManifest(['AGENTS.md', 'bin/semitexa']);
-        $this->tool('check-manifest.php', 0, 'describes scaffold/');
-        $this->tool('derive-manifest.php', 0, 'is current');
-
-        [$status, $display] = $this->sync(['--check' => true]);
-        self::assertSame(0, $status, $display);
-        self::assertStringContainsString('ok     installer manifest: derive-manifest.php --check', $display);
-
-        [$status, $display] = $this->sync([]);
-        self::assertSame(0, $status, $display);
-        self::assertSame(['scaffold:sync-docs', 'update:scaffold:rebuild'], array_slice($this->siblingRuns, -2), 'update rebuilds first, so derive copies its fresh entries');
-        self::assertStringContainsString('synced installer manifest (derive-manifest.php)', $display);
-        self::assertStringContainsString('ran derive-manifest.php' . "\n", file_get_contents($this->root . '/tool-runs.log') ?: '');
-    }
-
-    public function test_a_derive_that_fails_in_a_write_stops_the_sync(): void
-    {
-        $this->updateManifest(['AGENTS.md', 'bin/semitexa']);
-        $this->tool('derive-manifest.php', 2, "Cannot read semitexa/update's manifest");
-
         [$status, $display] = $this->sync([]);
 
-        self::assertSame(1, $status, $display);
-        self::assertStringContainsString('installer manifest: derive-manifest.php exited 2', $display);
+        self::assertSame(0, $status, $display);
+        self::assertSame(['scaffold:sync-docs', 'update:scaffold:rebuild'], $this->siblingRuns);
+        self::assertMatchesRegularExpression('/Everything already in sync|Scaffold propagated/', $display, 'the write said how it ended');
+        self::assertStringNotContainsString('installer manifest', $display);
+        self::assertFileDoesNotExist($this->root . '/tool-runs.log', 'no installer tool ran in a write');
     }
 
     /**
@@ -231,15 +202,6 @@ final class ScaffoldSyncCommandTest extends TestCase
             var_export($message, true),
             $exit,
         ));
-    }
-
-    /** @param list<string> $paths */
-    private function updateManifest(array $paths): void
-    {
-        $this->write(
-            'packages/semitexa-update/resources/scaffold-manifest.json',
-            json_encode(['files' => array_map(static fn (string $path): array => ['path' => $path], $paths)], JSON_THROW_ON_ERROR),
-        );
     }
 
     private function write(string $relative, string $content): void
