@@ -28,7 +28,7 @@ final class PageCheckTargets
 
     /**
      * @param list<ChangedFile> $changedFiles
-     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>}> $routes public parameterless GET routes, as discovered
+     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>, sources?: list<string>}> $routes public parameterless GET routes, as discovered
      * @param PageUsers|null $users what the templates say about which pages to open: a choice, never proof that one showed the file
      *
      * @return list<VerificationTarget>
@@ -81,7 +81,7 @@ final class PageCheckTargets
     }
 
     /**
-     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>}> $routes
+     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>, sources?: list<string>}> $routes
      *
      * @return array{list<string>, bool} the paths, and whether the templates chose them (a choice of what to open, never proof of what rendered)
      */

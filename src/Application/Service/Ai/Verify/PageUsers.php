@@ -34,6 +34,14 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  * ({@see PageRoutes::slotTemplatesOf()}) and each starts a chain of its own.
  * A semitexa-demo deferred slot's template matched no page and opened the blog
  * (tk-verify-page-targeting-misses-slot-templates).
+ *
+ * And the templates its PHP names: a handler hands its resource a template as a string
+ * (`->withResultPreviewTemplate('@alias/components/previews/arena.html.twig', …)`), which no
+ * template and no attribute says. The route carries the files of its handlers and its resource
+ * ({@see PageRoutes::sourcesOf()}); every string literal in them that names a template of the
+ * module starts a chain too. Named is not rendered (a handler may pick one of several), so this
+ * is the same choice of what to open. semitexa-demo's execution-arena preview matched no page
+ * and opened the blog (tk-verify-page-plan-misses-the-page-a-demo-template-renders).
  */
 final class PageUsers
 {
@@ -43,11 +51,14 @@ final class PageUsers
     /** @var array<string, list<string>> template root => the namespaces that name it */
     private array $own = [];
 
+    /** @var array<string, list<string>> PHP file => the template names its string literals hold */
+    private array $named = [];
+
     /** @var \Closure(string): (string|false) */
     private readonly \Closure $read;
 
     /**
-     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>}> $routes
+     * @param list<array{path: string, module: string, file?: string, template?: string, slots?: list<string>, sources?: list<string>}> $routes
      * @param (\Closure(string): (string|false))|null $read how a file is read; tests give one that fails
      */
     public function __construct(
@@ -114,16 +125,25 @@ final class PageUsers
         $pages = [];
         foreach ($this->routes as $route) {
             $templates = self::templatesOf($this->projectRoot, $route['module']);
-            // The page's template first, then its slots': each is rendered on that page.
-            $starts = array_values(array_filter([$route['template'] ?? '', ...($route['slots'] ?? [])], static fn (string $name): bool => $name !== ''));
-            if ($templates === null || $starts === []) {
+            if ($templates === null) {
+                continue;
+            }
+            // The page's template first, then its slots', then what its handlers and resource name.
+            $starts = [$route['template'] ?? '', ...($route['slots'] ?? [])];
+            foreach ($route['sources'] ?? [] as $source) {
+                array_push($starts, ...($this->named[$source] ??= self::templateNames($this->contentsOf($source))));
+            }
+            $starts = array_values(array_unique(array_filter($starts, static fn (string $name): bool => $name !== '')));
+            if ($starts === []) {
                 continue;
             }
             // Only a name in the module's own namespace is a file under its template root: a slot
             // template of another module, read there, matched an unrelated file of the same
             // relative path and replaced the fallback with a false match (review, dev#313).
             $own = $this->own[$templates] ??= $this->namesOf((string) preg_replace('~(?:/src)?/Application/View/templates$~', '', $templates))[0];
-            $starts = array_values(array_filter($starts, static fn (string $name): bool => in_array(strstr($name, '/', true), $own, true)));
+            // A name with no namespace ('components/x.html.twig') is read under the module's own root.
+            $starts = array_map(static fn (string $name): string => $name[0] === '@' || $own === [] ? $name : $own[0] . '/' . $name, $starts);
+            $starts = array_values(array_unique(array_filter($starts, static fn (string $name): bool => in_array(strstr($name, '/', true), $own, true))));
             if ($starts === []) {
                 continue;
             }
@@ -160,6 +180,25 @@ final class PageUsers
         }
 
         return $chain;
+    }
+
+    /**
+     * The template names among the string literals of a PHP source: '@alias/path/x.html.twig' or
+     * 'path/x.html.twig', whole literals only. Read from the tokens, so a name in a comment or
+     * inside a longer string is none.
+     *
+     * @return list<string>
+     */
+    private static function templateNames(string $php): array
+    {
+        $names = [];
+        foreach (\PhpToken::tokenize($php) as $token) {
+            if ($token->id === T_CONSTANT_ENCAPSED_STRING && preg_match('~^(?:@[\w.-]+/)?[\w.-]+(?:/[\w.-]+)*\.twig$~', $name = substr($token->text, 1, -1)) === 1) {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
     }
 
     /** What a file holds. One that cannot be read fails the plan: a gate does not skip what it could not read. */
