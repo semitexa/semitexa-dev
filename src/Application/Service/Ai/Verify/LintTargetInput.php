@@ -6,7 +6,7 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
 
 /**
  * What a planned lint is run with. Most lints read the whole tree and take
- * nothing; the two here are given the files that scheduled them.
+ * nothing; the ones here are given the files that scheduled them.
  */
 final class LintTargetInput
 {
@@ -27,6 +27,8 @@ final class LintTargetInput
             // lie in none of them (a root-level deploy.sh): unnamed, it was a target that read
             // nothing and passed (review, dev#282). A broad run reads the project and these.
             'lint:shell-fallbacks' => ['--file' => $triggeredBy] + ($broad ? ['--all' => true] : []),
+            // The changed extractors; a broad run reads every extractor beside them.
+            'lint:graph-extractors' => ['--file' => $triggeredBy] + ($broad ? ['--all' => true] : []),
             default => [],
         };
     }

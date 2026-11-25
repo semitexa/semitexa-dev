@@ -34,6 +34,8 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         'lint:deferred-slots',
         'lint:deferred-twig',
         'lint:di',
+        // Reads tokens of project-graph extractors and looks an accepted test up; scheduled by path, not kind (design 2026-11-19, class 5).
+        'lint:graph-extractors',
         'lint:handlers',
         'lint:inline-script',
         'lint:locales',
@@ -66,11 +68,14 @@ final class VerifyLintSetIsDeclaredTest extends TestCase
         self::assertSame(self::PLANNED, $all, 'ALL_LINTS changed. A new rule belongs in an existing lint as a detector (tk-verify-one-door); a new lint is added here on purpose, or not at all.');
 
         foreach (self::constant('KIND_LINT_MAP') as $kind => $lints) {
+            self::assertIsArray($lints);
             foreach ($lints as $lint) {
+                self::assertIsString($lint);
                 self::assertContains($lint, self::PLANNED, "KIND_LINT_MAP[{$kind}] schedules {$lint}, which a broad run would never run.");
             }
         }
         foreach (self::constant('CROSS_FILE_LINTS') as $lint) {
+            self::assertIsString($lint);
             self::assertContains($lint, self::PLANNED, "CROSS_FILE_LINTS names {$lint}, which no plan runs.");
         }
     }

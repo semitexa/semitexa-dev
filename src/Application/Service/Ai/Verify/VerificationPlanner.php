@@ -115,7 +115,7 @@ final class VerificationPlanner
         'lint:ui-contracts',
         'lint:transport-doors',
         'lint:access',
-        'lint:css-tokens', 'lint:locales', 'lint:shell-fallbacks',
+        'lint:css-tokens', 'lint:locales', 'lint:shell-fallbacks', 'lint:graph-extractors',
     ];
 
     private readonly ModuleStructureTargetResolver $targetResolver;
@@ -649,7 +649,7 @@ final class VerificationPlanner
         array &$lintsByCommand,
         bool $onlyCrossFile = false,
     ): void {
-        $lints = self::KIND_LINT_MAP[$file->kind] ?? [];
+        $lints = [...(self::KIND_LINT_MAP[$file->kind] ?? []), ...(GraphExtractor\GraphExtractorScan::covers($file->path) ? ['lint:graph-extractors'] : [])]; // by path, not kind: an extractor stays a service, with a service's lints
         foreach ($lints as $lint) {
             if ($onlyCrossFile && !in_array($lint, self::CROSS_FILE_LINTS, true)) {
                 continue;
@@ -675,7 +675,7 @@ final class VerificationPlanner
             if (!isset($lintsByCommand[$lint])) {
                 $lintsByCommand[$lint] = [
                     'triggeredBy' => [],
-                    'reason'      => "{$file->kind} change requires {$lint}",
+                    'reason'      => $lint === 'lint:graph-extractors' ? 'project-graph extractor change requires lint:graph-extractors' : "{$file->kind} change requires {$lint}",
                 ];
             }
             $lintsByCommand[$lint]['triggeredBy'][] = $file->path;
