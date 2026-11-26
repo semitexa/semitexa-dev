@@ -262,8 +262,8 @@ final class VerificationPlanner
         // It costs a cmp over ~26 small files and skips itself outside the
         // monorepo, so an always-on target is affordable here in a way it would
         // not be for phpunit or phpstan.
-        // The scaffold's copies, unlike the skills', ARE in git: ultimate's infra
-        // files, the root bin/semitexa, the root guidance docs and
+        // The scaffold's copies, unlike the skills', ARE in git: ultimate's docs
+        // mirror (all it keeps since step 4), the root bin/semitexa and guidance docs, and
         // semitexa-update's resources/scaffold with its checksum manifest. An
         // edit to any of them shows up in a changed-file list, so this triggers
         // on paths instead of running on every invocation — and the paths
@@ -290,7 +290,7 @@ final class VerificationPlanner
                 || $path === 'packages/semitexa-installer/resources/scaffold-manifest.json'
                 || str_starts_with($path, 'packages/semitexa-update/resources/scaffold/')
                 || $path === 'packages/semitexa-update/resources/scaffold-manifest.json'
-                || str_starts_with($path, 'packages/semitexa-ultimate/')
+                || in_array(preg_replace('#^packages/semitexa-ultimate/#', '', $path, 1, $inUltimate), $inUltimate === 1 ? ScaffoldSyncDocsCommand::MIRRORED_FILES : [], true)
                 || $path === 'bin/semitexa'
             ) {
                 $scaffoldTriggers[] = $path;
@@ -301,7 +301,7 @@ final class VerificationPlanner
             $targets[] = new VerificationTarget(
                 type: VerificationTarget::TYPE_SCAFFOLD_DRIFT,
                 id: 'scaffold_drift:project',
-                reason: 'the installer scaffold is propagated into four copies; a partial sync ships drift, and a hand-edited copy is silently overwritten by the next one',
+                reason: 'the installer scaffold and the guidance docs are propagated into their copies (the root bin/semitexa and Dockerfile, ultimate\'s docs, update\'s scaffold and manifest); a partial sync ships drift, and a hand-edited copy is silently overwritten by the next one',
                 triggeredBy: $scaffoldTriggers,
                 filePath: null,
             );
