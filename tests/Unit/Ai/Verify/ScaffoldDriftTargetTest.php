@@ -106,6 +106,21 @@ final class ScaffoldDriftTargetTest extends TestCase
         );
     }
 
+    /** CodeRabbit on dev#320: a mirrored doc renamed away from ultimate still schedules the check. */
+    #[Test]
+    public function a_mirrored_doc_renamed_away_schedules_it(): void
+    {
+        $planner = new VerificationPlanner(getcwd() ?: '.');
+        $plan = $planner->plan(
+            [new ChangedFile('packages/semitexa-ultimate/OTHER.md', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_RENAMED, originalPath: 'packages/semitexa-ultimate/AGENTS.md')],
+            VerificationPlan::SCOPE_MINIMAL,
+        );
+        $drift = array_values(array_filter($plan->targets, static fn ($t): bool => $t->type === VerificationTarget::TYPE_SCAFFOLD_DRIFT));
+
+        self::assertCount(1, $drift);
+        self::assertContains('packages/semitexa-ultimate/AGENTS.md', $drift[0]->triggeredBy);
+    }
+
     private function plans(string $path): bool
     {
         $planner = new VerificationPlanner(getcwd() ?: '.');
