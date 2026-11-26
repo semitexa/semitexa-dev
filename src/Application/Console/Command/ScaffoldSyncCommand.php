@@ -23,7 +23,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * fails the release gate an hour later.
  *
  * Copies and their policies:
- *   1. installer scaffold → packages/semitexa-ultimate  (infra files, exact)
+ *   1. none into packages/semitexa-ultimate any more: from step 4 of one source
+ *      for bin/semitexa the installer alone ships bin/semitexa and the runtime
+ *      files, and a project takes them from it (installer commands/install.sh).
+ *      ultimate's copies go in its own step 4c; until then nothing here keeps
+ *      them, and ultimate's tests compare them with the installer.
  *   2. installer scaffold → project root bin/semitexa and Dockerfile (exact).
  *      The root Dockerfile used to be report-only ("dev-workspace extras"), and
  *      by 2026-11-13 the workspace ran without the intl/bcmath, imagick pin and
@@ -43,18 +47,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'scaffold:sync', description: 'Propagate the installer scaffold SSoT into every downstream copy and regenerate the shipped manifest')]
 final class ScaffoldSyncCommand extends BaseCommand
 {
-    /** Scaffold-relative source → ultimate-relative target. */
-    private const INFRA_FILES = [
-        'bin/semitexa' => 'bin/semitexa',
-        'Dockerfile' => 'Dockerfile',
-        'docker-compose.yml' => 'docker-compose.yml',
-        'docker-compose.ollama.yml' => 'docker-compose.ollama.yml',
-        'docker-compose.worker.yml' => 'docker-compose.worker.yml',
-        // NOTE: no '.gitignore' => 'gitignore' mapping — the non-dot copy in
-        // ultimate was removed as orphan drift (no installer reads it; see
-        // ultimate config/module-structure.php).
-    ];
-
     /** Scaffold-relative files mirrored to the project root as exact copies. */
     private const ROOT_EXACT_FILES = ['bin/semitexa', 'Dockerfile'];
 
@@ -79,11 +71,8 @@ final class ScaffoldSyncCommand extends BaseCommand
 
         $drift = 0;
 
-        // 1. Infra files → ultimate, and exact root copies.
+        // 2. Exact root copies (1, ultimate's copies, is gone).
         $targets = [];
-        foreach (self::INFRA_FILES as $src => $dst) {
-            $targets[] = [$scaffold . '/' . $src, $root . '/packages/semitexa-ultimate/' . $dst, $src . ' → ultimate/' . $dst];
-        }
         foreach (self::ROOT_EXACT_FILES as $src) {
             $targets[] = [$scaffold . '/' . $src, $root . '/' . $src, $src . ' → root/' . $src];
         }
