@@ -46,10 +46,10 @@ final class ScaffoldSyncCommandTest extends TestCase
         // without both it falls back to the workspace, and a write would sync that.
         mkdir($this->root . '/src/modules', 0755, true);
         file_put_contents($this->root . '/composer.json', '{"name":"temp/project"}');
+        // The installer's scaffold only: from step 4 of one source for
+        // bin/semitexa, ultimate holds no copy that scaffold:sync keeps.
         foreach (self::INFRA as $file) {
-            foreach (['packages/semitexa-installer/scaffold/', 'packages/semitexa-ultimate/'] as $copy) {
-                $this->write($copy . $file, "# {$file}\n");
-            }
+            $this->write('packages/semitexa-installer/scaffold/' . $file, "# {$file}\n");
         }
         $this->write('bin/semitexa', "# bin/semitexa\n");
         $this->write('Dockerfile', "# Dockerfile\n");
@@ -128,6 +128,23 @@ final class ScaffoldSyncCommandTest extends TestCase
 
         self::assertSame(1, $status, $display);
         self::assertStringContainsString('1 scaffold copy is out of sync', $display);
+    }
+
+    /** Step 4b of one source for bin/semitexa: ultimate's copies are neither required nor written. */
+    public function test_ultimate_holds_no_copy_and_a_stale_one_is_left_alone(): void
+    {
+        $this->tool('check-manifest.php', 0, 'describes scaffold/');
+
+        [$status, $display] = $this->sync(['--check' => true]);
+        self::assertSame(0, $status, $display);
+        self::assertStringContainsString('All scaffold copies match', $display);
+        self::assertStringNotContainsString('ultimate/', $display, 'no copy in ultimate is asked for');
+
+        $this->write('packages/semitexa-ultimate/bin/semitexa', "# an old copy\n");
+        [$status, $display] = $this->sync([]);
+        self::assertSame(0, $status, $display);
+        self::assertSame("# an old copy\n", file_get_contents($this->root . '/packages/semitexa-ultimate/bin/semitexa'), 'nor written: 4c deletes it');
+        self::assertFileDoesNotExist($this->root . '/packages/semitexa-ultimate/Dockerfile');
     }
 
     /**

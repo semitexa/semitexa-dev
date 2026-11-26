@@ -88,7 +88,10 @@ if [ "$CODE_ONLY" -eq 0 ]; then
     sync_file "phpunit.xml.dist"
     sync_file "server.php"
     mkdir -p "$RELEASE_ROOT/bin"
-    rsync -a "$DEV_ROOT/packages/semitexa-ultimate/bin/semitexa" "$RELEASE_ROOT/bin/semitexa"
+    # The dev root's copy: scaffold:sync keeps it exact with the installer's,
+    # executable (the scaffold's own copy is stored 0664), and ultimate's goes
+    # in step 4c of one source for bin/semitexa.
+    rsync -a "$DEV_ROOT/bin/semitexa" "$RELEASE_ROOT/bin/semitexa"
 else
     info "Syncing release clone application code (src/, public/, docs/) and scaffold docs from $DEV_ROOT..."
 fi
