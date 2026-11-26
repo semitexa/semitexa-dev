@@ -39,7 +39,9 @@ final class ScaffoldDriftTargetTest extends TestCase
             'the installer manifest' => ['packages/semitexa-installer/resources/scaffold-manifest.json'],
             'the update mirror'   => ['packages/semitexa-update/resources/scaffold/Dockerfile'],
             'the update manifest' => ['packages/semitexa-update/resources/scaffold-manifest.json'],
-            'the ultimate copy'   => ['packages/semitexa-ultimate/composer.json'],
+            // Since step 4 of one source for bin/semitexa ultimate keeps only
+            // the mirrored guidance docs.
+            'the ultimate docs mirror' => ['packages/semitexa-ultimate/AGENTS.md'],
             'the root launcher'   => ['bin/semitexa'],
             // The fourth copy: scaffold:sync mirrors these into ultimate
             // byte-for-byte, so an edit to one is the same partial-ritual risk.
@@ -87,6 +89,10 @@ final class ScaffoldDriftTargetTest extends TestCase
             // Named in the command as deliberately NOT mirrored.
             'a root doc that diverges on purpose' => ['AI_NOTES.md'],
             'a doc that is not root guidance'     => ['docs/SOMETHING.md'],
+            // ultimate's own files: no copy of anything since step 4.
+            'ultimate\'s own composer.json'       => ['packages/semitexa-ultimate/composer.json'],
+            'ultimate\'s own module'              => ['packages/semitexa-ultimate/src/modules/Hello/src/Application/Resource/Slot/GuideOneSlot.php'],
+            'a doc deeper in ultimate'           => ['packages/semitexa-ultimate/docs/AGENTS.md'],
         ];
     }
 
@@ -98,6 +104,21 @@ final class ScaffoldDriftTargetTest extends TestCase
             $this->plans($path),
             $path . ' must not drag in a scaffold check it has nothing to do with',
         );
+    }
+
+    /** CodeRabbit on dev#320: a mirrored doc renamed away from ultimate still schedules the check. */
+    #[Test]
+    public function a_mirrored_doc_renamed_away_schedules_it(): void
+    {
+        $planner = new VerificationPlanner(getcwd() ?: '.');
+        $plan = $planner->plan(
+            [new ChangedFile('packages/semitexa-ultimate/OTHER.md', ChangedFile::KIND_NON_PHP, ChangedFile::STATUS_RENAMED, originalPath: 'packages/semitexa-ultimate/AGENTS.md')],
+            VerificationPlan::SCOPE_MINIMAL,
+        );
+        $drift = array_values(array_filter($plan->targets, static fn ($t): bool => $t->type === VerificationTarget::TYPE_SCAFFOLD_DRIFT));
+
+        self::assertCount(1, $drift);
+        self::assertContains('packages/semitexa-ultimate/AGENTS.md', $drift[0]->triggeredBy);
     }
 
     private function plans(string $path): bool

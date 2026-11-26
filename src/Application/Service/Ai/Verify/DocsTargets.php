@@ -12,6 +12,9 @@ namespace Semitexa\Dev\Application\Service\Ai\Verify;
  */
 final class DocsTargets
 {
+    /** The shell entry point whose help lines docs:reference reads. */
+    private const WRAPPER_SCRIPTS = ['bin/semitexa', 'packages/semitexa-installer/scaffold/bin/semitexa'];
+
     /**
      * Documentation gates.
      *
@@ -45,7 +48,11 @@ final class DocsTargets
                 if ($file->status !== ChangedFile::STATUS_DELETED && is_file(self::absolute($file->path, $projectRoot))) {
                     $markdown[] = $file->path;
                 }
-            } elseif (str_ends_with(strtolower($file->path), '.php')) {
+            } elseif (str_ends_with(strtolower($file->path), '.php')
+                // The reference also reads the commands bin/semitexa handles
+                // itself, from their help lines (step 6 of one source for
+                // bin/semitexa): its scaffold source and the root copy.
+                || in_array($file->path, self::WRAPPER_SCRIPTS, true)) {
                 $php[] = $file->path;
             }
         }
